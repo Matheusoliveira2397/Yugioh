@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-900 text-white;
+  }
+}
+
+@layer components {
+  .card-yugioh {
+    @apply relative bg-gradient-to-br from-amber-600 to-amber-800 rounded-lg shadow-2xl border-4 border-amber-400 overflow-hidden transition-transform hover:scale-105;
+  }
+
+  .duel-field-zone {
+    @apply border-2 border-blue-500 rounded-lg p-2 min-h-[120px] bg-gray-800 bg-opacity-50 hover:bg-opacity-70 transition-all;
+  }
+
+  .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-lg;
+  }
+
+  .btn-secondary {
+    @apply bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-lg;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors;
+  }
+}

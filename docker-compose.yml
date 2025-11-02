@@ -1,0 +1,132 @@
+services:
+  # PostgreSQL - Banco de dados principal
+  postgres:
+    image: postgres:16-alpine
+    container_name: yugioh-postgres
+    environment:
+      POSTGRES_USER: yugioh_user
+      POSTGRES_PASSWORD: yugioh_password_2024
+      POSTGRES_DB: yugioh_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - yugioh-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yugioh_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB - Para chat e logs
+  mongodb:
+    image: mongo:7.0
+    container_name: yugioh-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: yugioh_mongo
+      MONGO_INITDB_ROOT_PASSWORD: yugioh_mongo_password
+      MONGO_INITDB_DATABASE: yugioh_chat
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - yugioh-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Cache e sessões
+  redis:
+    image: redis:7-alpine
+    container_name: yugioh-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - yugioh-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: yugioh-backend
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://yugioh_user:yugioh_password_2024@postgres:5432/yugioh_db
+      MONGODB_URI: mongodb://yugioh_mongo:yugioh_mongo_password@mongodb:27017/yugioh_chat?authSource=admin
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: yugioh_super_secret_key_2024_change_in_production
+      CORS_ORIGIN: http://localhost:5173
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - yugioh-network
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - uploads_data:/app/uploads
+    command: npm run start:dev
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: yugioh-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:3000
+      VITE_WS_URL: ws://localhost:3000
+    depends_on:
+      - backend
+    networks:
+      - yugioh-network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev -- --host
+
+  # Nginx - Load Balancer
+  nginx:
+    image: nginx:alpine
+    container_name: yugioh-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - yugioh-network
+
+networks:
+  yugioh-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  redis_data:
+  uploads_data:
