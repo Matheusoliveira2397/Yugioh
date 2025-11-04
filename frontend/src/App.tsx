@@ -10,8 +10,14 @@ import TournamentPage from './pages/TournamentPage';
 import ChatPage from './pages/ChatPage';
 import RandomDuelPage from './pages/RandomDuelPage';
 import InventoryPage from './pages/InventoryPage';
+import FriendsPage from './pages/FriendsPage';
 import ShopPage from './pages/ShopPage';
+import GroupsPage from './pages/GroupsPage';
+import GroupDetailPage from './pages/GroupDetailPage';
+import RankingPage from './pages/RankingPage';
 import { ProfilePage } from './pages/ProfilePage';
+import AdminPanel from './pages/AdminPanel';
+import DuelArena from './pages/DuelArena';
 import Layout from './components/Layout';
 
 function App() {
@@ -102,12 +108,37 @@ function App() {
           }
         />
         
+        {/* Arena em nova aba - SEM Layout */}
+        <Route
+          path="/arena/:duelId"
+          element={
+            isAuthenticated ? (
+              <DuelArena />
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+        
         <Route
           path="/inventory"
           element={
             isAuthenticated ? (
               <Layout>
                 <InventoryPage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+        
+        <Route
+          path="/friends"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <FriendsPage />
               </Layout>
             ) : (
               <Navigate to="/login" />
@@ -134,6 +165,71 @@ function App() {
             isAuthenticated ? (
               <Layout>
                 <ProfilePage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+        
+        <Route
+          path="/groups"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <GroupsPage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+        
+        <Route
+          path="/groups/:id"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <GroupDetailPage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+        
+        <Route
+          path="/ranking"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <RankingPage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+        
+        <Route
+          path="/profile/:id"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <ProfilePage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminPanel />
               </Layout>
             ) : (
               <Navigate to="/login" />

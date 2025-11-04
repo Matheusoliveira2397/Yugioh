@@ -8,6 +8,12 @@ import {
 } from 'typeorm';
 import { Deck } from '../../decks/entities/deck.entity';
 
+export enum UserRole {
+  PLAYER = 'PLAYER',
+  ADMIN = 'ADMIN',
+  MASTER = 'MASTER',
+}
+
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
@@ -25,6 +31,9 @@ export class User {
   @Column()
   password: string;
 
+  @Column({ type: 'enum', enum: UserRole, default: UserRole.PLAYER })
+  role: UserRole;
+
   @Column({ default: false })
   emailVerified: boolean;
 
@@ -40,8 +49,29 @@ export class User {
   @Column({ default: 1000 })
   rating: number;
 
+  // Sistema de Economia
+  @Column({ type: 'int', default: 0 })
+  coins: number; // Moedas (grátis)
+
+  @Column({ type: 'int', default: 0 })
+  credits: number; // Crédito (premium gratuito)
+
+  @Column({ type: 'int', default: 0 })
+  cash: number; // Cash (premium pago)
+
   @Column({ default: 0 })
-  gems: number;
+  gems: number; // Mantido para compatibilidade (será migrado para coins)
+
+  // Sistema de Níveis
+  @Column({ type: 'int', default: 1 })
+  level: number;
+
+  @Column({ type: 'int', default: 0 })
+  experience: number;
+
+  // Sistema de Score
+  @Column({ type: 'int', default: 0 })
+  totalScore: number; // Score geral acumulado de todas as seasons
 
   @Column({ default: '/avatars/default.png', name: 'profileImage' })
   profileImage: string;

@@ -1,13 +1,22 @@
 import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { User } from './entities/user.entity';
+import { SeasonRanking } from '../seasons/entities/season-ranking.entity';
+import { Season } from '../seasons/entities/season.entity';
+import { GroupMember } from '../groups/entities/group-member.entity';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    @InjectRepository(SeasonRanking)
+    private seasonRankingRepository: Repository<SeasonRanking>,
+    @InjectRepository(Season)
+    private seasonRepository: Repository<Season>,
+    @InjectRepository(GroupMember)
+    private groupMemberRepository: Repository<GroupMember>,
   ) {}
 
   async create(userData: Partial<User>): Promise<User> {
@@ -61,5 +70,109 @@ export class UsersService {
   async updateProfileImage(userId: string, profileImage: string): Promise<User> {
     await this.usersRepository.update(userId, { profileImage });
     return this.findById(userId);
+  }
+
+  async getSeasonRanking(): Promise<any[]> {
+    // Busca a season ativa
+    const activeSeason = await this.seasonRepository.findOne({
+      where: { isActive: true },
+    });
+
+    if (!activeSeason) {
+      return [];
+    }
+
+    // Busca os rankings da season ativa
+    const rankings = await this.seasonRankingRepository.find({
+      where: { seasonId: activeSeason.id },
+      relations: ['user'],
+      order: { seasonScore: 'DESC' },
+      take: 100,
+    });
+
+    // Busca os grupos dos usuários
+    const userIds = rankings.map(r => r.userId);
+    const groupMembers = userIds.length > 0 
+      ? await this.groupMemberRepository.find({
+          where: { userId: In(userIds) },
+          relations: ['group'],
+        })
+      : [];
+
+    const groupMap = new Map(groupMembers.map(gm => [gm.userId, gm.group]));
+
+    // Formata os dados para o frontend
+    return rankings.map(ranking => ({
+      id: ranking.user.id,
+      nickname: ranking.user.nickname,
+      profileImage: ranking.user.profileImage,
+      seasonScore: ranking.seasonScore,
+      totalScore: ranking.user.totalScore,
+      wins: ranking.wins,
+      losses: ranking.losses,
+      division: ranking.division,
+      seasonRank: ranking.rank,
+      group: groupMap.get(ranking.userId) || null,
+    }));
+  }
+
+  async getGeneralRanking(): Promise<any[]> {
+    const users = await this.usersRepository.find({
+      order: { totalScore: 'DESC' },
+      take: 100,
+    });
+
+    // Busca os dados da season ativa para cada usuário
+    const activeSeason = await this.seasonRepository.findOne({
+      where: { isActive: true },
+    });
+
+    // Busca os grupos dos usuários
+    const userIds = users.map(u => u.id);
+    const groupMembers = userIds.length > 0
+      ? await this.groupMemberRepository.find({
+          where: { userId: In(userIds) },
+          relations: ['group'],
+        })
+      : [];
+
+    const groupMap = new Map(groupMembers.map(gm => [gm.userId, gm.group]));
+
+    if (!activeSeason) {
+      return users.map(user => ({
+        id: user.id,
+        nickname: user.nickname,
+        profileImage: user.profileImage,
+        seasonScore: 0,
+        totalScore: user.totalScore,
+        wins: user.wins,
+        losses: user.losses,
+        division: 'Bronze',
+        group: groupMap.get(user.id) || null,
+      }));
+    }
+
+    const rankings = await this.seasonRankingRepository.find({
+      where: { seasonId: activeSeason.id },
+      relations: ['user'],
+    });
+
+    const rankingMap = new Map(rankings.map(r => [r.userId, r]));
+
+    return users.map(user => {
+      const seasonRanking = rankingMap.get(user.id);
+      return {
+        id: user.id,
+        nickname: user.nickname,
+        profileImage: user.profileImage,
+        seasonScore: seasonRanking?.seasonScore || 0,
+        totalScore: user.totalScore,
+        wins: seasonRanking?.wins || user.wins,
+        losses: seasonRanking?.losses || user.losses,
+        division: seasonRanking?.division || 'Bronze',
+        globalRank: 0, // Será calculado no frontend baseado na posição
+        group: groupMap.get(user.id) || null,
+      };
+    });
   }
 }

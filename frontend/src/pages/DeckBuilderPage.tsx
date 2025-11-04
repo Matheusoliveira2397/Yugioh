@@ -4,129 +4,142 @@ export default function DeckBuilderPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-gray-900 py-12 px-4">
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-12"
-        >
-          <h1 className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-orange-400 to-red-400 mb-4">
-            🎴 Deck
-          </h1>
-          <p className="text-gray-300 text-lg">Monte seu deck de duelo perfeito</p>
-        </motion.div>
-
-        {/* Card de Apresentação */}
+        {/* Card Principal com Imagem */}
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.2 }}
-          className="bg-gradient-to-br from-slate-800 via-slate-900 to-slate-800 rounded-2xl p-8 border-2 border-purple-500/30 shadow-2xl shadow-purple-500/20 mb-8"
+          transition={{ delay: 0.1 }}
+          className="bg-gradient-to-br from-slate-800/90 via-slate-900/90 to-slate-800/90 rounded-2xl overflow-hidden border-2 border-slate-700/50 shadow-2xl mb-8"
         >
-          {/* Imagem de Cartas */}
-          <div className="flex justify-center mb-8">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-              className="relative"
-            >
-              <img
-                src="https://images.unsplash.com/photo-1611068813580-c80b5f7c69da?w=800&q=80"
-                alt="Yu-Gi-Oh Cards"
-                className="w-full max-w-2xl rounded-xl shadow-2xl"
-                onError={(e) => {
-                  e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400" viewBox="0 0 800 400"><rect fill="%23374151" width="800" height="400"/><text x="50%" y="50%" font-size="48" fill="%239CA3AF" text-anchor="middle" dominant-baseline="middle">🎴 Yu-Gi-Oh! Cards</text></svg>';
-                }}
-              />
-              {/* Efeito de brilho */}
-              <div className="absolute inset-0 bg-gradient-to-t from-purple-500/20 to-transparent rounded-xl"></div>
-            </motion.div>
+          {/* Imagem de Fundo com Overlay */}
+          <div className="relative h-64 overflow-hidden">
+            <img
+              src="/images/decks/deck.png"
+              alt="Yu-Gi-Oh Deck"
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400"><rect fill="%23374151" width="1200" height="400"/><text x="50%" y="50%" font-size="64" fill="%239CA3AF" text-anchor="middle" dominant-baseline="middle">🎴 Deck</text></svg>';
+              }}
+            />
+            {/* Overlay escuro */}
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-slate-900/60 to-slate-900"></div>
+            
+            {/* Texto sobre a imagem */}
+            <div className="absolute bottom-6 left-8">
+              <h1 className="text-5xl font-bold text-white mb-2 drop-shadow-2xl">Organize seu deck</h1>
+              <p className="text-xl text-gray-200 drop-shadow-lg">Crie e edite seus baralhos</p>
+            </div>
           </div>
 
-          {/* Título "Deck" */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.6 }}
-            className="text-center"
-          >
-            <h2 className="text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-orange-400 to-yellow-400 mb-4 tracking-wider">
-              DECK
-            </h2>
-            <p className="text-gray-300 text-xl mb-8">
-              Construa estratégias imbatíveis com as melhores cartas
-            </p>
-          </motion.div>
+          {/* Conteúdo do Card */}
+          <div className="p-8">
 
-          {/* Estatísticas do Deck */}
-          <div className="grid md:grid-cols-3 gap-6 mb-8">
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.7 }}
-              className="bg-slate-800/50 rounded-lg p-6 border border-slate-700/50 text-center"
-            >
-              <div className="text-4xl mb-2">🎴</div>
-              <div className="text-3xl font-bold text-yellow-400">0/60</div>
-              <div className="text-sm text-gray-400 mt-1">Cartas no Deck</div>
-            </motion.div>
+            {/* Grid de Cards de Deck */}
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+              {/* Card 1 - Deck Principal */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                whileHover={{ scale: 1.03 }}
+                className="bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl p-6 border border-slate-600/50 cursor-pointer hover:border-purple-500/50 transition-all"
+              >
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-purple-800 rounded-lg flex items-center justify-center text-3xl">
+                    🎴
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-white">Deck Principal</h3>
+                    <p className="text-sm text-gray-400">0/60 cartas</p>
+                  </div>
+                </div>
+                <div className="flex justify-between text-sm mb-3">
+                  <span className="text-gray-400">Monstros:</span>
+                  <span className="text-orange-400 font-bold">0</span>
+                </div>
+                <div className="flex justify-between text-sm mb-3">
+                  <span className="text-gray-400">Magias:</span>
+                  <span className="text-blue-400 font-bold">0</span>
+                </div>
+                <div className="flex justify-between text-sm mb-4">
+                  <span className="text-gray-400">Armadilhas:</span>
+                  <span className="text-purple-400 font-bold">0</span>
+                </div>
+                <button className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 rounded-lg transition-colors">
+                  Editar Deck
+                </button>
+              </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.8 }}
-              className="bg-slate-800/50 rounded-lg p-6 border border-slate-700/50 text-center"
-            >
-              <div className="text-4xl mb-2">⚔️</div>
-              <div className="text-3xl font-bold text-red-400">0</div>
-              <div className="text-sm text-gray-400 mt-1">Monstros</div>
-            </motion.div>
+              {/* Card 2 - Criar Novo Deck */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                whileHover={{ scale: 1.03 }}
+                className="bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl p-6 border border-dashed border-slate-600 cursor-pointer hover:border-green-500/50 transition-all"
+              >
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  <div className="w-20 h-20 bg-gradient-to-br from-green-600 to-green-800 rounded-full flex items-center justify-center text-4xl mb-4">
+                    ➕
+                  </div>
+                  <h3 className="text-xl font-bold text-white mb-2">Criar Novo Deck</h3>
+                  <p className="text-sm text-gray-400 mb-4">Monte um deck do zero</p>
+                  <button className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors">
+                    Começar
+                  </button>
+                </div>
+              </motion.div>
 
+              {/* Card 3 - Deck Aleatório */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                whileHover={{ scale: 1.03 }}
+                className="bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl p-6 border border-slate-600/50 cursor-pointer hover:border-yellow-500/50 transition-all"
+              >
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  <div className="w-20 h-20 bg-gradient-to-br from-yellow-600 to-orange-600 rounded-full flex items-center justify-center text-4xl mb-4">
+                    🎲
+                  </div>
+                  <h3 className="text-xl font-bold text-white mb-2">Deck Aleatório</h3>
+                  <p className="text-sm text-gray-400 mb-4">Gere um deck surpresa</p>
+                  <button className="bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors">
+                    Gerar
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+
+            {/* Seção de Decks Recomendados */}
             <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.9 }}
-              className="bg-slate-800/50 rounded-lg p-6 border border-slate-700/50 text-center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.6 }}
+              className="bg-slate-800/50 rounded-xl p-6 border border-slate-700/50"
             >
-              <div className="text-4xl mb-2">✨</div>
-              <div className="text-3xl font-bold text-purple-400">0</div>
-              <div className="text-sm text-gray-400 mt-1">Magias/Armadilhas</div>
+              <h3 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
+                <span>⭐</span> Decks Recomendados
+              </h3>
+              <div className="grid md:grid-cols-3 gap-4">
+                <div className="bg-slate-700/50 rounded-lg p-4 hover:bg-slate-700 transition-colors cursor-pointer">
+                  <h4 className="font-bold text-white mb-2">🐉 Dragões</h4>
+                  <p className="text-sm text-gray-400 mb-3">Deck focado em monstros tipo Dragão</p>
+                  <span className="text-xs text-purple-400">40 cartas</span>
+                </div>
+                <div className="bg-slate-700/50 rounded-lg p-4 hover:bg-slate-700 transition-colors cursor-pointer">
+                  <h4 className="font-bold text-white mb-2">⚔️ Guerreiros</h4>
+                  <p className="text-sm text-gray-400 mb-3">Estratégia de ataque direto</p>
+                  <span className="text-xs text-purple-400">40 cartas</span>
+                </div>
+                <div className="bg-slate-700/50 rounded-lg p-4 hover:bg-slate-700 transition-colors cursor-pointer">
+                  <h4 className="font-bold text-white mb-2">🌟 Exodia</h4>
+                  <p className="text-sm text-gray-400 mb-3">Vitória por cartas especiais</p>
+                  <span className="text-xs text-purple-400">40 cartas</span>
+                </div>
+              </div>
             </motion.div>
           </div>
-
-          {/* Botões de Ação */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1 }}
-            className="grid md:grid-cols-3 gap-4"
-          >
-            <button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
-              📋 Ver Meus Decks
-            </button>
-            <button className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
-              ➕ Criar Novo Deck
-            </button>
-            <button className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
-              🎲 Deck Aleatório
-            </button>
-          </motion.div>
-
-          {/* Mensagem de Desenvolvimento */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 1.2 }}
-            className="mt-8 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 text-center"
-          >
-            <p className="text-yellow-400 font-semibold">
-              🚧 Sistema de construção de decks em desenvolvimento
-            </p>
-            <p className="text-gray-400 text-sm mt-2">
-              Em breve você poderá criar, editar e salvar seus decks personalizados!
-            </p>
-          </motion.div>
         </motion.div>
       </div>
     </div>

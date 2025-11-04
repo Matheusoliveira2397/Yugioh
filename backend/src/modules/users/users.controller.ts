@@ -61,4 +61,14 @@ export class UsersController {
       throw new BadRequestException(error.message || 'Erro ao fazer upload da imagem');
     }
   }
+
+  @Get('ranking/season')
+  async getSeasonRanking() {
+    return this.usersService.getSeasonRanking();
+  }
+
+  @Get('ranking/general')
+  async getGeneralRanking() {
+    return this.usersService.getGeneralRanking();
+  }
 }

@@ -42,7 +42,7 @@ export default function ChatPage() {
     emit('sendMessage', {
       channel: currentChannel,
       userId: user.id,
-      username: user.username,
+      username: user.nickname || user.username,
       content: messageInput,
     });
 

@@ -28,4 +28,61 @@
   .btn-danger {
     @apply bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors;
   }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+  }
+
+  .gradient-text.blue-purple {
+    @apply bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400;
+  }
+
+  .gradient-text.red-orange {
+    @apply bg-gradient-to-r from-red-500 via-orange-500 to-yellow-500;
+  }
+
+  .gradient {
+    @apply font-bold text-white shadow-lg hover:shadow-xl transition-all;
+  }
+
+  .gradient.blue-purple {
+    @apply bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700;
+  }
+
+  .gradient.red-orange {
+    @apply bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700;
+  }
+
+  .gradient.red-pink {
+    @apply bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700;
+  }
+
+  .gradient.purple-pink {
+    @apply bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700;
+  }
+
+  .gradient.yellow-orange {
+    @apply bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-yellow-600 hover:to-orange-700;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+
+  .scrollbar-thumb-purple-500 {
+    scrollbar-color: rgb(168, 85, 247) rgb(30, 41, 59);
+  }
+
+  .scrollbar-track-slate-800 {
+    scrollbar-color: rgb(168, 85, 247) rgb(30, 41, 59);
+  }
 }

@@ -35,7 +35,7 @@ export class AuthService {
   }
 
   async login(user: any) {
-    const payload = { username: user.username, sub: user.id };
+    const payload = { username: user.username, sub: user.id, role: user.role };
     return {
       access_token: this.jwtService.sign(payload),
       user: {
@@ -48,6 +48,7 @@ export class AuthService {
         rating: user.rating,
         gems: user.gems,
         profileImage: user.profileImage || '/avatars/default.png',
+        role: user.role,
       },
     };
   }

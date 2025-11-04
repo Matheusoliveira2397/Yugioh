@@ -14,6 +14,24 @@ interface User {
   rating: number;
   gems: number;
   profileImage: string;
+  role?: 'PLAYER' | 'ADMIN' | 'MASTER';
+  level?: number;
+  experience?: number;
+  coins?: number;
+  avatar?: string;
+  clanTag?: string;
+  credits?: number;
+  cash?: number;
+  seasonScore?: number;
+  totalScore?: number;
+  seasonRank?: number;
+  globalRank?: number;
+  division?: string;
+  group?: {
+    id: string;
+    name: string;
+    tag: string;
+  };
 }
 
 interface AuthState {
