@@ -3,7 +3,7 @@ import { useAuthStore } from './stores/authStore';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
-import HomePage from './pages/HomePage';
+import HomePage from './pages/NewHomePage';
 import DeckBuilderPage from './pages/DeckBuilderPage';
 import DuelPage from './pages/DuelPage';
 import TournamentPage from './pages/TournamentPage';

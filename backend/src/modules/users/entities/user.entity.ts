@@ -79,6 +79,25 @@ export class User {
   @Column({ default: true })
   isOnline: boolean;
 
+  // Sistema de Ban e Moderação
+  @Column({ default: false })
+  isBanned: boolean;
+
+  @Column({ type: 'text', nullable: true })
+  banReason: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lastLogin: Date;
+
+  @Column({ type: 'varchar', nullable: true })
+  lastIpAddress: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  avatar: string;
+
+  @Column({ default: false })
+  isEmailVerified: boolean;
+
   @OneToMany(() => Deck, (deck) => deck.user)
   decks: Deck[];
 

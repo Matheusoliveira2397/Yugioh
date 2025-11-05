@@ -7,25 +7,40 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 interface CardForm {
   // Básico
   name: string;
+  nameEn?: string;
   description: string;
+  cardImage?: string;
   type: 'Monster' | 'Spell' | 'Trap';
   
   // Monstro
-  monsterType?: 'Normal' | 'Effect' | 'Fusion' | 'Synchro' | 'Xyz' | 'Link';
-  attribute?: 'DARK' | 'LIGHT' | 'WATER' | 'FIRE' | 'EARTH' | 'WIND';
-  race?: string;
+  monsterType?: 'Normal' | 'Effect' | 'Ritual' | 'Fusion' | 'Synchro' | 'Xyz' | 'Pendulum' | 'Link';
+  attribute?: 'DARK' | 'LIGHT' | 'WATER' | 'FIRE' | 'EARTH' | 'WIND' | 'DIVINE';
+  race?: 'Warrior' | 'Spellcaster' | 'Fairy' | 'Fiend' | 'Zombie' | 'Machine' | 'Aqua' | 'Pyro' | 'Rock' | 'Winged Beast' | 'Plant' | 'Insect' | 'Thunder' | 'Dragon' | 'Beast' | 'Beast-Warrior' | 'Dinosaur' | 'Fish' | 'Sea Serpent' | 'Reptile' | 'Psychic' | 'Divine-Beast' | 'Creator God' | 'Wyrm' | 'Cyberse';
   level?: number;
+  rank?: number;
+  linkRating?: number;
   atk?: number;
   def?: number;
+  pendulumScale?: number;
+  pendulumEffect?: string;
+  
+  // Spell/Trap
+  spellType?: 'Normal' | 'Continuous' | 'Equip' | 'Field' | 'Quick-Play' | 'Ritual';
+  trapType?: 'Normal' | 'Continuous' | 'Counter';
   
   // Raridade
-  rarity: 'Common' | 'Rare' | 'Super Rare' | 'Ultra Rare' | 'Secret Rare';
+  rarity: 'Common' | 'Rare' | 'Super Rare' | 'Ultra Rare' | 'Secret Rare' | 'Legendary';
   
   // Preços
   priceCoins?: number;
   priceCredits?: number;
   priceCash?: number;
   isForSale: boolean;
+
+  // Avançado
+  archetype?: string;
+  isBanned?: boolean;
+  isLimited?: boolean;
 }
 
 interface EffectForm {
@@ -71,7 +86,7 @@ export default function AdminCardCreator() {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(
-        `${API_URL}/api/cards`,
+        `${API_URL}/cards`,
         cardForm,
         {
           headers: {
@@ -108,7 +123,7 @@ export default function AdminCardCreator() {
     try {
       const token = localStorage.getItem('token');
       await axios.post(
-        `${API_URL}/api/cards/effects/add`,
+        `${API_URL}/cards/effects/add`,
         effectForm,
         {
           headers: {
@@ -150,7 +165,7 @@ export default function AdminCardCreator() {
   const loadTemplates = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/api/cards/effects/templates`, {
+      const response = await axios.get(`${API_URL}/cards/effects/templates`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setTemplates(response.data);
@@ -293,8 +308,9 @@ export default function AdminCardCreator() {
               <>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-bold mb-2">Tipo de Monstro</label>
+                    <label className="block text-sm font-bold mb-2">Tipo de Monstro *</label>
                     <select
+                      required
                       value={cardForm.monsterType || ''}
                       onChange={(e) => setCardForm({ ...cardForm, monsterType: e.target.value as any })}
                       className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
@@ -302,31 +318,97 @@ export default function AdminCardCreator() {
                       <option value="">Selecione...</option>
                       <option value="Normal">Normal</option>
                       <option value="Effect">Effect</option>
+                      <option value="Ritual">Ritual</option>
                       <option value="Fusion">Fusion</option>
                       <option value="Synchro">Synchro</option>
                       <option value="Xyz">Xyz</option>
+                      <option value="Pendulum">Pendulum</option>
                       <option value="Link">Link</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-bold mb-2">Atributo</label>
+                    <label className="block text-sm font-bold mb-2">Atributo *</label>
                     <select
+                      required
                       value={cardForm.attribute || ''}
                       onChange={(e) => setCardForm({ ...cardForm, attribute: e.target.value as any })}
                       className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
                     >
                       <option value="">Selecione...</option>
-                      <option value="DARK">DARK</option>
-                      <option value="LIGHT">LIGHT</option>
-                      <option value="WATER">WATER</option>
-                      <option value="FIRE">FIRE</option>
-                      <option value="EARTH">EARTH</option>
-                      <option value="WIND">WIND</option>
+                      <option value="DARK">⚫ DARK</option>
+                      <option value="LIGHT">⚪ LIGHT</option>
+                      <option value="WATER">💧 WATER</option>
+                      <option value="FIRE">🔥 FIRE</option>
+                      <option value="EARTH">🌍 EARTH</option>
+                      <option value="WIND">🌪️ WIND</option>
+                      <option value="DIVINE">✨ DIVINE</option>
                     </select>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-bold mb-2">Raça *</label>
+                  <select
+                    required
+                    value={cardForm.race || ''}
+                    onChange={(e) => setCardForm({ ...cardForm, race: e.target.value as any })}
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                  >
+                    <option value="">Selecione...</option>
+                    <option value="Warrior">Warrior</option>
+                    <option value="Spellcaster">Spellcaster</option>
+                    <option value="Fairy">Fairy</option>
+                    <option value="Fiend">Fiend</option>
+                    <option value="Zombie">Zombie</option>
+                    <option value="Machine">Machine</option>
+                    <option value="Aqua">Aqua</option>
+                    <option value="Pyro">Pyro</option>
+                    <option value="Rock">Rock</option>
+                    <option value="Winged Beast">Winged Beast</option>
+                    <option value="Plant">Plant</option>
+                    <option value="Insect">Insect</option>
+                    <option value="Thunder">Thunder</option>
+                    <option value="Dragon">Dragon</option>
+                    <option value="Beast">Beast</option>
+                    <option value="Beast-Warrior">Beast-Warrior</option>
+                    <option value="Dinosaur">Dinosaur</option>
+                    <option value="Fish">Fish</option>
+                    <option value="Sea Serpent">Sea Serpent</option>
+                    <option value="Reptile">Reptile</option>
+                    <option value="Psychic">Psychic</option>
+                    <option value="Divine-Beast">Divine-Beast</option>
+                    <option value="Creator God">Creator God</option>
+                    <option value="Wyrm">Wyrm</option>
+                    <option value="Cyberse">Cyberse</option>
+                  </select>
+                </div>
+
+                {/* Level/Rank/Link Rating */}
+                {cardForm.monsterType === 'Link' ? (
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Link Rating</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="8"
+                      value={cardForm.linkRating || ''}
+                      onChange={(e) => setCardForm({ ...cardForm, linkRating: Number(e.target.value) })}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                    />
+                  </div>
+                ) : cardForm.monsterType === 'Xyz' ? (
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Rank</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="12"
+                      value={cardForm.rank || ''}
+                      onChange={(e) => setCardForm({ ...cardForm, rank: Number(e.target.value) })}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                    />
+                  </div>
+                ) : (
                   <div>
                     <label className="block text-sm font-bold mb-2">Level</label>
                     <input
@@ -338,6 +420,10 @@ export default function AdminCardCreator() {
                       className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
                     />
                   </div>
+                )}
+
+                {/* ATK e DEF */}
+                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-bold mb-2">ATK</label>
                     <input
@@ -346,21 +432,138 @@ export default function AdminCardCreator() {
                       value={cardForm.atk || ''}
                       onChange={(e) => setCardForm({ ...cardForm, atk: Number(e.target.value) })}
                       className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                      placeholder="Ex: 2500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-bold mb-2">DEF</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={cardForm.def || ''}
-                      onChange={(e) => setCardForm({ ...cardForm, def: Number(e.target.value) })}
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
-                    />
-                  </div>
+                  {cardForm.monsterType !== 'Link' && (
+                    <div>
+                      <label className="block text-sm font-bold mb-2">DEF</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={cardForm.def || ''}
+                        onChange={(e) => setCardForm({ ...cardForm, def: Number(e.target.value) })}
+                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                        placeholder="Ex: 2000"
+                      />
+                    </div>
+                  )}
                 </div>
+
+                {/* Pendulum */}
+                {cardForm.monsterType === 'Pendulum' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-bold mb-2">Pendulum Scale</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="13"
+                        value={cardForm.pendulumScale || ''}
+                        onChange={(e) => setCardForm({ ...cardForm, pendulumScale: Number(e.target.value) })}
+                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">Pendulum Effect</label>
+                      <input
+                        type="text"
+                        value={cardForm.pendulumEffect || ''}
+                        onChange={(e) => setCardForm({ ...cardForm, pendulumEffect: e.target.value })}
+                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                        placeholder="Pendulum effect text..."
+                      />
+                    </div>
+                  </div>
+                )}
               </>
             )}
+
+            {/* Se for Spell */}
+            {cardForm.type === 'Spell' && (
+              <div>
+                <label className="block text-sm font-bold mb-2">Tipo de Spell *</label>
+                <select
+                  required
+                  value={cardForm.spellType || ''}
+                  onChange={(e) => setCardForm({ ...cardForm, spellType: e.target.value as any })}
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                >
+                  <option value="">Selecione...</option>
+                  <option value="Normal">🟢 Normal</option>
+                  <option value="Continuous">♾️ Continuous</option>
+                  <option value="Equip">⚔️ Equip</option>
+                  <option value="Field">🏞️ Field</option>
+                  <option value="Quick-Play">⚡ Quick-Play</option>
+                  <option value="Ritual">🔮 Ritual</option>
+                </select>
+              </div>
+            )}
+
+            {/* Se for Trap */}
+            {cardForm.type === 'Trap' && (
+              <div>
+                <label className="block text-sm font-bold mb-2">Tipo de Trap *</label>
+                <select
+                  required
+                  value={cardForm.trapType || ''}
+                  onChange={(e) => setCardForm({ ...cardForm, trapType: e.target.value as any })}
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                >
+                  <option value="">Selecione...</option>
+                  <option value="Normal">🟢 Normal</option>
+                  <option value="Continuous">♾️ Continuous</option>
+                  <option value="Counter">🛡️ Counter</option>
+                </select>
+              </div>
+            )}
+
+            {/* Campos Avançados */}
+            <div className="border-t border-gray-700 pt-6">
+              <h3 className="text-xl font-bold mb-4">⚙️ Avançado (Opcional)</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold mb-2">Arquétipo</label>
+                  <input
+                    type="text"
+                    value={cardForm.archetype || ''}
+                    onChange={(e) => setCardForm({ ...cardForm, archetype: e.target.value })}
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                    placeholder="Ex: Blue-Eyes, Dark Magician"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-2">Nome em Inglês</label>
+                  <input
+                    type="text"
+                    value={cardForm.nameEn || ''}
+                    onChange={(e) => setCardForm({ ...cardForm, nameEn: e.target.value })}
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                    placeholder="English name"
+                  />
+                </div>
+              </div>
+              <div className="mt-4 flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={cardForm.isBanned || false}
+                    onChange={(e) => setCardForm({ ...cardForm, isBanned: e.target.checked })}
+                    className="w-5 h-5"
+                  />
+                  <span className="font-bold text-red-500">⛔ Banida</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={cardForm.isLimited || false}
+                    onChange={(e) => setCardForm({ ...cardForm, isLimited: e.target.checked })}
+                    className="w-5 h-5"
+                  />
+                  <span className="font-bold text-yellow-500">⚠️ Limitada</span>
+                </label>
+              </div>
+            </div>
 
             {/* Preços */}
             <div className="border-t border-gray-700 pt-6">

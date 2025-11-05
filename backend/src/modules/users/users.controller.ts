@@ -71,4 +71,9 @@ export class UsersController {
   async getGeneralRanking() {
     return this.usersService.getGeneralRanking();
   }
+
+  @Get('ranking/top5')
+  async getTop5Players() {
+    return this.usersService.getTop5Players();
+  }
 }

@@ -176,4 +176,33 @@ export class DuelsService {
     duel.currentTurn = newTurn;
     return this.duelsRepository.save(duel);
   }
+
+  // Criar duelo (usado pelo sistema de torneios)
+  async createDuel(player1Id: string, player2Id: string): Promise<Duel> {
+    const player1 = await this.usersRepository.findOne({ where: { id: player1Id } });
+    const player2 = await this.usersRepository.findOne({ where: { id: player2Id } });
+
+    if (!player1 || !player2) {
+      throw new Error('Jogadores não encontrados');
+    }
+
+    const duel = this.duelsRepository.create({
+      player1,
+      player2,
+      status: DuelStatus.IN_PROGRESS,
+      player1LifePoints: 8000,
+      player2LifePoints: 8000,
+      currentTurn: Math.random() > 0.5 ? 1 : 2,
+      player1Field: this.createEmptyField(),
+      player2Field: this.createEmptyField()
+    } as any);
+
+    const savedDuel = await this.duelsRepository.save(duel) as any;
+    this.activeDuels.set(savedDuel.id, savedDuel);
+
+    await this.createLog(savedDuel.id, player1.id, DuelActionType.DUEL_START, 
+      `Duelo iniciado entre ${player1.username} e ${player2.username}`);
+
+    return savedDuel;
+  }
 }

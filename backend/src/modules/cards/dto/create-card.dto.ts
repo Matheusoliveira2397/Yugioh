@@ -12,7 +12,7 @@ import {
   ValidateNested
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { CardType, CardAttribute, CardRarity, MonsterType } from '../entities/card.entity';
+import { CardType, CardAttribute, CardRarity, MonsterType, SpellType, TrapType, MonsterRace } from '../entities/card.entity';
 
 // DTO para Efeito da Carta
 export class CardEffectDto {
@@ -74,8 +74,16 @@ export class CreateCardDto {
   attribute?: CardAttribute;
 
   @IsOptional()
-  @IsString()
-  race?: string; // Warrior, Dragon, Spellcaster, etc.
+  @IsEnum(MonsterRace)
+  race?: MonsterRace;
+
+  @IsOptional()
+  @IsEnum(SpellType)
+  spellType?: SpellType;
+
+  @IsOptional()
+  @IsEnum(TrapType)
+  trapType?: TrapType;
 
   // ==================== ESTATÍSTICAS ====================
   @IsOptional()

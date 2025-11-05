@@ -5,8 +5,9 @@ import { Navigate } from 'react-router-dom';
 import CardManagement from '../components/admin/CardManagement';
 import UserManagement from '../components/admin/UserManagement';
 import SeasonManagement from '../components/admin/SeasonManagement';
+import NewsManagement from '../components/admin/NewsManagement';
 
-type TabType = 'cards' | 'users' | 'seasons' | 'economy';
+type TabType = 'cards' | 'users' | 'seasons' | 'economy' | 'news';
 
 export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState<TabType>('cards');
@@ -20,6 +21,7 @@ export default function AdminPanel() {
   const tabs = [
     { id: 'cards' as TabType, label: '🃏 Cartas', icon: '🎴' },
     { id: 'users' as TabType, label: '👥 Usuários', icon: '👤' },
+    { id: 'news' as TabType, label: '📰 Notícias', icon: '📢' },
     { id: 'seasons' as TabType, label: '📅 Seasons', icon: '🏆' },
     { id: 'economy' as TabType, label: '💰 Economia', icon: '💵' },
   ];
@@ -81,6 +83,7 @@ export default function AdminPanel() {
         >
           {activeTab === 'cards' && <CardManagement />}
           {activeTab === 'users' && <UserManagement />}
+          {activeTab === 'news' && <NewsManagement />}
           {activeTab === 'seasons' && <SeasonManagement />}
           {activeTab === 'economy' && (
             <div className="text-center text-slate-400 py-12">

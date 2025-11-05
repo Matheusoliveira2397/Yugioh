@@ -59,6 +59,11 @@ export class GroupsController {
     return this.groupsService.getGroupsRanking();
   }
 
+  @Get('ranking/top5')
+  async getTop5Groups() {
+    return this.groupsService.getTop5Groups();
+  }
+
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
   async deleteGroup(@Request() req: ExpressRequest & { user: any }, @Param('id') id: string) {

@@ -355,6 +355,10 @@ export class TournamentsService {
       where: { id: tournamentId },
     });
 
+    if (!tournament) {
+      throw new Error('Tournament not found');
+    }
+
     tournament.currentRound++;
     await this.tournamentRepository.save(tournament);
 
@@ -369,6 +373,10 @@ export class TournamentsService {
       where: { id: tournamentId },
       relations: ['matches'],
     });
+
+    if (!tournament) {
+      throw new Error('Tournament not found');
+    }
 
     const finalMatch = tournament.matches.find(
       (m) => m.nextMatchId === null && m.status === MatchStatus.FINISHED,

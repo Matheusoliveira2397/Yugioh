@@ -7,13 +7,13 @@ import { DuelLog } from '../duels/entities/duel-log.entity';
 import { Duel } from '../duels/entities/duel.entity';
 import { User } from '../users/entities/user.entity';
 import { Card } from '../cards/entities/card.entity';
-import { ChatMessage, ChatMessageSchema } from '../chat/schemas/chat-message.schema';
+import { Message, MessageSchema } from '../chat/schemas/message.schema';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([DuelLog, Duel, User, Card]),
     MongooseModule.forFeature([
-      { name: ChatMessage.name, schema: ChatMessageSchema },
+      { name: Message.name, schema: MessageSchema },
     ]),
   ],
   providers: [DatabaseCleanupService, DatabaseOptimizationService],

@@ -227,6 +227,26 @@ export class GroupsService {
     });
   }
 
+  // Top 5 grupos da season
+  async getTop5Groups(): Promise<any[]> {
+    const groups = await this.groupRepository.find({
+      where: { isActive: true },
+      relations: ['leader', 'members'],
+      order: { totalScore: 'DESC' },
+      take: 5
+    });
+
+    return groups.map((group, index) => ({
+      rank: index + 1,
+      id: group.id,
+      name: group.name,
+      tag: group.tag,
+      totalScore: group.totalScore,
+      memberCount: group.members.filter(m => m.isActive).length,
+      leaderName: group.leader?.nickname || 'Desconhecido',
+    }));
+  }
+
   // Excluir grupo (apenas o líder pode)
   async deleteGroup(userId: string, groupId: string): Promise<void> {
     const group = await this.groupRepository.findOne({

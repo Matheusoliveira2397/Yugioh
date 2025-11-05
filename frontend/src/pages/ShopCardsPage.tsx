@@ -34,12 +34,12 @@ export default function ShopCardsPage() {
 
   const loadCards = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/cards/shop/for-sale`);
+      const response = await axios.get(`${API_URL}/cards/shop/for-sale`);
       setCards(response.data);
       console.log('🛒 Cartas na loja:', response.data);
     } catch (error) {
       console.error('❌ Erro ao carregar cartas:', error);
-    } finally {
+    } finally{
       setLoading(false);
     }
   };
@@ -85,7 +85,7 @@ export default function ShopCardsPage() {
     try {
       const token = localStorage.getItem('token');
       await axios.post(
-        `${API_URL}/api/shop/purchase`,
+        `${API_URL}/shop/purchase`,
         {
           cardId: card.id,
           paymentMethod: selectedCurrency,

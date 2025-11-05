@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { useSocketStore } from '../stores/socketStore';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -9,43 +10,65 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 interface RankingPlayer {
   id: string;
   username: string;
+  avatar?: string;
   rating: number;
   wins: number;
   losses: number;
+  winRate: number;
+}
+
+interface Clan {
+  id: string;
+  name: string;
+  tag: string;
+  score: number;
+  members: number;
+  leader: string;
 }
 
 interface News {
-  id: number;
+  id: string;
   title: string;
   content: string;
-  date: string;
+  author: string;
+  createdAt: string;
+  image?: string;
+}
+
+interface Arena {
+  id: string;
+  name: string;
+  isActive: boolean;
+  startTime: string;
+  endTime: string;
+  participants: number;
+  scoreMultiplier: number;
+}
+
+interface ChatMessage {
+  id: string;
+  username: string;
+  message: string;
+  timestamp: string;
+  avatar?: string;
 }
 
 export default function HomePage() {
   const { user } = useAuthStore();
-  const { connect } = useSocketStore();
-  const [activeTab, setActiveTab] = useState<'news' | 'ranking' | 'clans'>('news');
-  const [ranking, setRanking] = useState<RankingPlayer[]>([]);
-  const [news] = useState<News[]>([
-    {
-      id: 1,
-      title: '🎉 Bem-vindo ao Yu-Gi-Oh! Duel Arena',
-      content: 'Prepare-se para os duelos mais épicos! Construa seu deck, desafie duelistas do mundo todo e prove que você é o rei dos jogos!',
-      date: '01/11/2025'
-    },
-    {
-      id: 2,
-      title: '🏆 Novo Torneio Começando em Breve',
-      content: 'Inscreva-se agora para o Torneio Mensal! Prêmios incríveis aguardam os melhores duelistas. Não perca essa chance!',
-      date: '01/11/2025'
-    },
-    {
-      id: 3,
-      title: '✨ Novas Cartas Adicionadas',
-      content: 'Confira as novas cartas disponíveis na loja! Dragões lendários, magos poderosos e armadilhas devastadoras te esperam.',
-      date: '01/11/2025'
-    }
-  ]);
+  const { socket, connect } = useSocketStore();
+  const navigate = useNavigate();
+
+  // Estados
+  const [activeSection, setActiveSection] = useState<'home' | 'chat' | 'arena' | 'tournaments'>('home');
+  const [topPlayers, setTopPlayers] = useState<RankingPlayer[]>([]);
+  const [topClans, setTopClans] = useState<Clan[]>([]);
+  const [news, setNews] = useState<News[]>([]);
+  const [arena, setArena] = useState<Arena | null>(null);
+  const [nextArenaTime, setNextArenaTime] = useState<string>('');
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [onlineUsers, setOnlineUsers] = useState<number>(0);
 
   useEffect(() => {
     const token = useAuthStore.getState().token;

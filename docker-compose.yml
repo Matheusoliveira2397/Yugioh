@@ -61,6 +61,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        - NODE_ENV=development
     container_name: yugioh-backend
     ports:
       - "3000:3000"
@@ -82,10 +84,8 @@ services:
     networks:
       - yugioh-network
     volumes:
-      - ./backend:/app
-      - /app/node_modules
       - uploads_data:/app/uploads
-    command: npm run start:dev
+    command: npm run start:prod
 
   # Frontend
   frontend:
@@ -102,9 +102,6 @@ services:
       - backend
     networks:
       - yugioh-network
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     command: npm run dev -- --host
 
   # Nginx - Load Balancer

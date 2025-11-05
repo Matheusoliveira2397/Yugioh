@@ -111,6 +111,8 @@ export default function FriendsPage() {
     } catch (error) {
       console.error('Erro ao carregar mensagens:', error);
       // Mensagens mockadas
+      if (!user) return;
+      
       const mockMessages: Message[] = [
         {
           id: '1',
@@ -168,6 +170,8 @@ export default function FriendsPage() {
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error);
       // Mock: adicionar mensagem localmente
+      if (!user) return;
+      
       const newMessage: Message = {
         id: Date.now().toString(),
         senderId: user.id,
@@ -333,7 +337,7 @@ export default function FriendsPage() {
                   {/* Mensagens */}
                   <div className="flex-1 overflow-y-auto p-4 space-y-4">
                     {currentConversation?.messages.map((message) => {
-                      const isMyMessage = message.senderId === user.id;
+                      const isMyMessage = message.senderId === user?.id;
                       return (
                         <motion.div
                           key={message.id}

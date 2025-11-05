@@ -37,19 +37,29 @@ export default function AdminCardsPanel() {
   // Form state
   const [formData, setFormData] = useState({
     name: '',
+    nameEn: '',
     description: '',
     type: 'Monster' as CardType,
     rarity: 'Common' as CardRarity,
     monsterType: 'Normal' as MonsterType | undefined,
     attribute: 'DARK' as CardAttribute | undefined,
+    race: 'Warrior' as string | undefined,
     level: 4,
+    rank: undefined as number | undefined,
+    linkRating: undefined as number | undefined,
     atk: 0,
     def: 0,
+    pendulumScale: undefined as number | undefined,
+    pendulumEffect: '',
+    spellType: 'Normal' as string | undefined,
+    trapType: 'Normal' as string | undefined,
     priceCoins: 0,
     priceCredits: 0,
     priceCash: 0,
     isForSale: true,
     cardImage: '',
+    archetype: '',
+    isBanned: false,
   });
 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -61,7 +71,7 @@ export default function AdminCardsPanel() {
   const loadCards = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/api/cards/admin/all`, {
+      const response = await axios.get(`${API_URL}/cards/admin/all`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setCards(response.data);
@@ -83,7 +93,7 @@ export default function AdminCardsPanel() {
       if (editingCard) {
         // EDITAR
         await axios.put(
-          `${API_URL}/api/cards/${editingCard.id}`,
+          `${API_URL}/cards/${editingCard.id}`,
           formData,
           { headers: { Authorization: `Bearer ${token}` } }
         );
@@ -91,7 +101,7 @@ export default function AdminCardsPanel() {
       } else {
         // CRIAR
         await axios.post(
-          `${API_URL}/api/cards`,
+          `${API_URL}/cards`,
           formData,
           { headers: { Authorization: `Bearer ${token}` } }
         );
@@ -115,19 +125,29 @@ export default function AdminCardsPanel() {
     setEditingCard(card);
     setFormData({
       name: card.name,
+      nameEn: (card as any).nameEn || '',
       description: card.description,
       type: card.type,
       rarity: card.rarity,
       monsterType: card.monsterType,
       attribute: card.attribute,
+      race: (card as any).race || 'Warrior',
       level: card.level || 4,
+      rank: (card as any).rank,
+      linkRating: (card as any).linkRating,
       atk: card.atk || 0,
       def: card.def || 0,
+      pendulumScale: (card as any).pendulumScale,
+      pendulumEffect: (card as any).pendulumEffect || '',
+      spellType: (card as any).spellType || 'Normal',
+      trapType: (card as any).trapType || 'Normal',
       priceCoins: card.priceCoins || 0,
       priceCredits: card.priceCredits || 0,
       priceCash: card.priceCash || 0,
       isForSale: card.isForSale,
       cardImage: card.cardImage || '',
+      archetype: (card as any).archetype || '',
+      isBanned: (card as any).isBanned || false,
     });
     setShowForm(true);
   };
@@ -137,7 +157,7 @@ export default function AdminCardsPanel() {
 
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`${API_URL}/api/cards/${id}`, {
+      await axios.delete(`${API_URL}/cards/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setMessage({ type: 'success', text: '✅ Carta desativada com sucesso!' });
@@ -152,7 +172,7 @@ export default function AdminCardsPanel() {
 
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`${API_URL}/api/cards/${id}/hard`, {
+      await axios.delete(`${API_URL}/cards/${id}/hard`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setMessage({ type: 'success', text: '✅ Carta deletada permanentemente!' });
@@ -165,7 +185,7 @@ export default function AdminCardsPanel() {
   const handleActivate = async (id: string) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/api/cards/${id}/activate`, {}, {
+      await axios.post(`${API_URL}/cards/${id}/activate`, {}, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setMessage({ type: 'success', text: '✅ Carta reativada com sucesso!' });
@@ -178,19 +198,29 @@ export default function AdminCardsPanel() {
   const resetForm = () => {
     setFormData({
       name: '',
+      nameEn: '',
       description: '',
       type: 'Monster',
       rarity: 'Common',
       monsterType: 'Normal',
       attribute: 'DARK',
+      race: 'Warrior',
       level: 4,
+      rank: undefined,
+      linkRating: undefined,
       atk: 0,
       def: 0,
+      pendulumScale: undefined,
+      pendulumEffect: '',
+      spellType: 'Normal',
+      trapType: 'Normal',
       priceCoins: 0,
       priceCredits: 0,
       priceCash: 0,
       isForSale: true,
       cardImage: '',
+      archetype: '',
+      isBanned: false,
     });
     setEditingCard(null);
   };
@@ -211,8 +241,8 @@ export default function AdminCardsPanel() {
       <div className="bg-gradient-to-r from-purple-900 to-indigo-900 rounded-lg p-6 mb-8 shadow-2xl">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-4xl font-bold mb-2">🎴 Painel de Cartas</h1>
-            <p className="text-gray-300">Gerenciar todas as cartas do jogo</p>
+            <h1 className="text-4xl font-bold mb-2">🎴 Gerenciamento de Cartas</h1>
+            <p className="text-gray-300">Crie e gerencie todas as cartas do jogo</p>
           </div>
           <button
             onClick={() => {
@@ -244,53 +274,110 @@ export default function AdminCardsPanel() {
       {/* Formulário */}
       {showForm && (
         <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: 'auto' }}
-          className="bg-gray-800 rounded-lg p-6 mb-8"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gray-800 rounded-lg p-6 mb-8 max-h-[85vh] overflow-y-auto"
         >
           <h2 className="text-2xl font-bold mb-6">
             {editingCard ? '✏️ Editar Carta' : '➕ Nova Carta'}
           </h2>
           
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Nome e Descrição */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-bold mb-2">Nome da Carta *</label>
-                <input
-                  type="text"
+            {/* Informações Básicas */}
+            <div className="bg-gray-900/50 rounded-lg p-6 border border-gray-700">
+              <h3 className="text-lg font-bold mb-4 text-purple-400">📝 Informações Básicas</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-bold mb-2">Nome da Carta (PT) *</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 transition-colors"
+                    placeholder="Ex: Mago Negro"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-2">Nome em Inglês</label>
+                  <input
+                    type="text"
+                    value={formData.nameEn}
+                    onChange={(e) => setFormData({ ...formData, nameEn: e.target.value })}
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 transition-colors"
+                    placeholder="Ex: Dark Magician"
+                  />
+                </div>
+              </div>
+              
+              <div className="mb-4">
+                <label className="block text-sm font-bold mb-2">Descrição *</label>
+                <textarea
                   required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
-                  placeholder="Ex: Dark Magician"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 h-24 transition-colors"
+                  placeholder="Ex: The ultimate wizard in terms of attack and defense."
                 />
               </div>
-              <div>
-                <label className="block text-sm font-bold mb-2">URL da Imagem</label>
-                <input
-                  type="text"
-                  value={formData.cardImage}
-                  onChange={(e) => setFormData({ ...formData, cardImage: e.target.value })}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
-                  placeholder="/images/cards/dark-magician.webp"
-                />
-              </div>
-            </div>
 
-            <div>
-              <label className="block text-sm font-bold mb-2">Descrição *</label>
-              <textarea
-                required
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 h-24"
-                placeholder="Ex: The ultimate wizard in terms of attack and defense."
-              />
+              {/* Upload de Imagem */}
+              <div className="border-2 border-dashed border-gray-700 rounded-lg p-4 hover:border-purple-500 transition-colors">
+                <label className="block text-sm font-bold mb-3">🖼️ Imagem da Carta</label>
+                <div className="flex items-start gap-4">
+                  <div className="flex-1">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setFormData({ ...formData, cardImage: reader.result as string });
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="block w-full text-sm text-gray-400
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-lg file:border-0
+                        file:text-sm file:font-bold
+                        file:bg-purple-600 file:text-white
+                        hover:file:bg-purple-700 cursor-pointer"
+                    />
+                    <p className="text-xs text-gray-500 mt-2">
+                      ou cole uma URL de imagem no campo abaixo
+                    </p>
+                    <input
+                      type="text"
+                      value={formData.cardImage}
+                      onChange={(e) => setFormData({ ...formData, cardImage: e.target.value })}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 mt-2"
+                      placeholder="https://exemplo.com/carta.jpg"
+                    />
+                  </div>
+                  {formData.cardImage && (
+                    <div className="flex-shrink-0">
+                      <p className="text-xs text-gray-500 mb-2">Preview:</p>
+                      <img 
+                        src={formData.cardImage} 
+                        alt="Preview" 
+                        className="w-32 h-44 object-contain rounded-lg border-2 border-purple-500"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Tipo e Raridade */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-gray-900/50 rounded-lg p-6 border border-gray-700">
+              <h3 className="text-lg font-bold mb-4 text-purple-400">🎯 Tipo e Classificação</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-bold mb-2">Tipo *</label>
                 <select
@@ -352,93 +439,282 @@ export default function AdminCardsPanel() {
                   </div>
                 </>
               )}
+              </div>
             </div>
 
             {/* Stats de Monstro */}
             {formData.type === 'Monster' && (
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-bold mb-2">Level</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="12"
-                    value={formData.level}
-                    onChange={(e) => setFormData({ ...formData, level: Number(e.target.value) })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
-                  />
+              <div className="bg-gray-900/50 rounded-lg p-6 border border-gray-700">
+                <h3 className="text-lg font-bold mb-4 text-purple-400">⚔️ Atributos de Monstro</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Raça/Race *</label>
+                    <select
+                      value={formData.race || ''}
+                      onChange={(e) => setFormData({ ...formData, race: e.target.value })}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                    >
+                      <option value="Warrior">Warrior (Guerreiro)</option>
+                      <option value="Spellcaster">Spellcaster (Mago)</option>
+                      <option value="Dragon">Dragon (Dragão)</option>
+                      <option value="Zombie">Zombie (Zumbi)</option>
+                      <option value="Fiend">Fiend (Demônio)</option>
+                      <option value="Machine">Machine (Máquina)</option>
+                      <option value="Aqua">Aqua (Aquático)</option>
+                      <option value="Pyro">Pyro (Piro)</option>
+                      <option value="Rock">Rock (Rocha)</option>
+                      <option value="Winged Beast">Winged Beast (Besta Alada)</option>
+                      <option value="Plant">Plant (Planta)</option>
+                      <option value="Insect">Insect (Inseto)</option>
+                      <option value="Thunder">Thunder (Trovão)</option>
+                      <option value="Beast">Beast (Besta)</option>
+                      <option value="Beast-Warrior">Beast-Warrior (Besta-Guerreiro)</option>
+                      <option value="Dinosaur">Dinosaur (Dinossauro)</option>
+                      <option value="Fish">Fish (Peixe)</option>
+                      <option value="Sea Serpent">Sea Serpent (Serpente Marinha)</option>
+                      <option value="Reptile">Reptile (Réptil)</option>
+                      <option value="Psychic">Psychic (Psíquico)</option>
+                      <option value="Divine-Beast">Divine-Beast (Besta Divina)</option>
+                      <option value="Creator God">Creator God (Deus Criador)</option>
+                      <option value="Wyrm">Wyrm (Wyrm)</option>
+                      <option value="Cyberse">Cyberse (Ciberse)</option>
+                      <option value="Fairy">Fairy (Fada)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Level</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="12"
+                      value={formData.level}
+                      onChange={(e) => setFormData({ ...formData, level: Number(e.target.value) })}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Rank (Xyz)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="13"
+                      value={formData.rank || ''}
+                      onChange={(e) => setFormData({ ...formData, rank: Number(e.target.value) || undefined })}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                      placeholder="Apenas para Xyz"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Link Rating</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="8"
+                      value={formData.linkRating || ''}
+                      onChange={(e) => setFormData({ ...formData, linkRating: Number(e.target.value) || undefined })}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                      placeholder="Apenas para Link"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-bold mb-2">ATK</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={formData.atk}
-                    onChange={(e) => setFormData({ ...formData, atk: Number(e.target.value) })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
-                  />
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-bold mb-2">ATK</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={formData.atk}
+                      onChange={(e) => setFormData({ ...formData, atk: Number(e.target.value) })}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-2">DEF</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={formData.def}
+                      onChange={(e) => setFormData({ ...formData, def: Number(e.target.value) })}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Pendulum Scale</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="13"
+                      value={formData.pendulumScale || ''}
+                      onChange={(e) => setFormData({ ...formData, pendulumScale: Number(e.target.value) || undefined })}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                      placeholder="0-13 (Pêndulo)"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Arquétipo</label>
+                    <input
+                      type="text"
+                      value={formData.archetype}
+                      onChange={(e) => setFormData({ ...formData, archetype: e.target.value })}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                      placeholder="Ex: Blue-Eyes"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-bold mb-2">DEF</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={formData.def}
-                    onChange={(e) => setFormData({ ...formData, def: Number(e.target.value) })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
-                  />
-                </div>
+
+                {formData.pendulumScale !== undefined && formData.pendulumScale > 0 && (
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Pendulum Effect</label>
+                    <textarea
+                      value={formData.pendulumEffect}
+                      onChange={(e) => setFormData({ ...formData, pendulumEffect: e.target.value })}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 h-20"
+                      placeholder="Efeito de Pêndulo da carta..."
+                    />
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Preços */}
-            <div className="border-t border-gray-700 pt-6">
-              <h3 className="text-xl font-bold mb-4">💰 Preços</h3>
-              <div className="grid grid-cols-3 gap-4">
+            {/* Campos de Spell */}
+            {formData.type === 'Spell' && (
+              <div className="bg-gray-900/50 rounded-lg p-6 border border-gray-700">
+                <h3 className="text-lg font-bold mb-4 text-purple-400">✨ Atributos de Magia</h3>
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-bold mb-2">🪙 Moedas</label>
+                  <label className="block text-sm font-bold mb-2">Tipo de Magia</label>
+                  <select
+                    value={formData.spellType || 'Normal'}
+                    onChange={(e) => setFormData({ ...formData, spellType: e.target.value })}
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                  >
+                    <option value="Normal">Normal</option>
+                    <option value="Quick-Play">Quick-Play (Jogo Rápido)</option>
+                    <option value="Continuous">Continuous (Contínua)</option>
+                    <option value="Equip">Equip (Equipamento)</option>
+                    <option value="Field">Field (Campo)</option>
+                    <option value="Ritual">Ritual</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-2">Arquétipo</label>
+                  <input
+                    type="text"
+                    value={formData.archetype}
+                    onChange={(e) => setFormData({ ...formData, archetype: e.target.value })}
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                    placeholder="Ex: Dark Magician"
+                  />
+                </div>
+              </div>
+              </div>
+            )}
+
+            {/* Campos de Trap */}
+            {formData.type === 'Trap' && (
+              <div className="bg-gray-900/50 rounded-lg p-6 border border-gray-700">
+                <h3 className="text-lg font-bold mb-4 text-purple-400">🪤 Atributos de Armadilha</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold mb-2">Tipo de Armadilha</label>
+                  <select
+                    value={formData.trapType || 'Normal'}
+                    onChange={(e) => setFormData({ ...formData, trapType: e.target.value })}
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                  >
+                    <option value="Normal">Normal</option>
+                    <option value="Continuous">Continuous (Contínua)</option>
+                    <option value="Counter">Counter (Contra-Armadilha)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-2">Arquétipo</label>
+                  <input
+                    type="text"
+                    value={formData.archetype}
+                    onChange={(e) => setFormData({ ...formData, archetype: e.target.value })}
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
+                    placeholder="Ex: Solemn"
+                  />
+                </div>
+              </div>
+              </div>
+            )}
+
+            {/* Preços e Configurações */}
+            <div className="bg-gradient-to-br from-purple-900/50 to-blue-900/50 rounded-lg p-6 border border-purple-500/50">
+              <h3 className="text-xl font-bold mb-6 text-purple-300">💰 Preços e Disponibilidade</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                {/* Card Moedas */}
+                <div className="bg-gray-800/50 rounded-lg p-4 border-2 border-yellow-500/30 hover:border-yellow-500 transition-colors">
+                  <label className="flex items-center gap-2 text-sm font-bold mb-2 text-yellow-400">
+                    <span className="text-xl">🪙</span> Moedas
+                  </label>
                   <input
                     type="number"
                     min="0"
                     value={formData.priceCoins}
                     onChange={(e) => setFormData({ ...formData, priceCoins: Number(e.target.value) })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
-                    placeholder="5000"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-yellow-500 transition-colors"
+                    placeholder="Ex: 5000"
                   />
+                  <p className="text-xs text-gray-500 mt-2">Moeda do jogo</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-bold mb-2">💎 Créditos</label>
+
+                {/* Card Créditos */}
+                <div className="bg-gray-800/50 rounded-lg p-4 border-2 border-purple-500/30 hover:border-purple-500 transition-colors">
+                  <label className="flex items-center gap-2 text-sm font-bold mb-2 text-purple-400">
+                    <span className="text-xl">💎</span> Créditos
+                  </label>
                   <input
                     type="number"
                     min="0"
                     value={formData.priceCredits}
                     onChange={(e) => setFormData({ ...formData, priceCredits: Number(e.target.value) })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
-                    placeholder="100"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 transition-colors"
+                    placeholder="Ex: 100"
                   />
+                  <p className="text-xs text-gray-500 mt-2">Moeda premium</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-bold mb-2">💵 Cash (R$)</label>
+
+                {/* Card Cash */}
+                <div className="bg-gray-800/50 rounded-lg p-4 border-2 border-green-500/30 hover:border-green-500 transition-colors">
+                  <label className="flex items-center gap-2 text-sm font-bold mb-2 text-green-400">
+                    <span className="text-xl">💵</span> Cash (R$)
+                  </label>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
                     value={formData.priceCash}
                     onChange={(e) => setFormData({ ...formData, priceCash: Number(e.target.value) })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
-                    placeholder="4.99"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-green-500 transition-colors"
+                    placeholder="Ex: 4.99"
                   />
+                  <p className="text-xs text-gray-500 mt-2">Dinheiro real</p>
                 </div>
               </div>
-              <div className="mt-4">
-                <label className="flex items-center gap-2 cursor-pointer">
+
+              {/* Checkboxes */}
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-3 bg-gray-800/50 px-4 py-3 rounded-lg cursor-pointer hover:bg-gray-800 transition-colors border border-gray-700">
                   <input
                     type="checkbox"
                     checked={formData.isForSale}
                     onChange={(e) => setFormData({ ...formData, isForSale: e.target.checked })}
-                    className="w-5 h-5"
+                    className="w-5 h-5 accent-green-500"
                   />
-                  <span className="font-bold">Disponível na Loja</span>
+                  <span className="font-bold text-green-400">🛒 Disponível na Loja</span>
+                </label>
+                <label className="flex items-center gap-3 bg-gray-800/50 px-4 py-3 rounded-lg cursor-pointer hover:bg-gray-800 transition-colors border border-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={formData.isBanned}
+                    onChange={(e) => setFormData({ ...formData, isBanned: e.target.checked })}
+                    className="w-5 h-5 accent-red-500"
+                  />
+                  <span className="font-bold text-red-400">🚫 Carta Banida</span>
                 </label>
               </div>
             </div>

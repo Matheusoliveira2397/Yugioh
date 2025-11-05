@@ -20,6 +20,8 @@ import { DuelsModule } from './modules/duels/duels.module';
 import { ShopModule } from './modules/shop/shop.module';
 import { FriendsModule } from './modules/friends/friends.module';
 import { TournamentsModule } from './modules/tournaments/tournaments.module';
+import { NewsModule } from './modules/news/news.module';
+import { ArenaModule } from './modules/arena/arena.module';
 
 @Module({
   imports: [
@@ -78,6 +80,8 @@ import { TournamentsModule } from './modules/tournaments/tournaments.module';
     ShopModule,
     FriendsModule,
     TournamentsModule,
+    NewsModule,
+    ArenaModule,
   ],
 })
 export class AppModule {}

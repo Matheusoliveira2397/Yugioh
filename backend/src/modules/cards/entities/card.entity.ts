@@ -42,6 +42,49 @@ export enum MonsterType {
   LINK = 'Link',
 }
 
+export enum SpellType {
+  NORMAL = 'Normal',
+  CONTINUOUS = 'Continuous',
+  EQUIP = 'Equip',
+  FIELD = 'Field',
+  QUICK_PLAY = 'Quick-Play',
+  RITUAL = 'Ritual',
+}
+
+export enum TrapType {
+  NORMAL = 'Normal',
+  CONTINUOUS = 'Continuous',
+  COUNTER = 'Counter',
+}
+
+export enum MonsterRace {
+  WARRIOR = 'Warrior',
+  SPELLCASTER = 'Spellcaster',
+  FAIRY = 'Fairy',
+  FIEND = 'Fiend',
+  ZOMBIE = 'Zombie',
+  MACHINE = 'Machine',
+  AQUA = 'Aqua',
+  PYRO = 'Pyro',
+  ROCK = 'Rock',
+  WINGED_BEAST = 'Winged Beast',
+  PLANT = 'Plant',
+  INSECT = 'Insect',
+  THUNDER = 'Thunder',
+  DRAGON = 'Dragon',
+  BEAST = 'Beast',
+  BEAST_WARRIOR = 'Beast-Warrior',
+  DINOSAUR = 'Dinosaur',
+  FISH = 'Fish',
+  SEA_SERPENT = 'Sea Serpent',
+  REPTILE = 'Reptile',
+  PSYCHIC = 'Psychic',
+  DIVINE_BEAST = 'Divine-Beast',
+  CREATOR_GOD = 'Creator God',
+  WYRM = 'Wyrm',
+  CYBERSE = 'Cyberse',
+}
+
 @Entity('cards')
 export class Card {
   @PrimaryGeneratedColumn('uuid')
@@ -68,8 +111,14 @@ export class Card {
   @Column({ type: 'enum', enum: CardAttribute, nullable: true })
   attribute?: CardAttribute;
 
-  @Column({ nullable: true })
-  race?: string; // Warrior, Dragon, Spellcaster, etc.
+  @Column({ type: 'enum', enum: MonsterRace, nullable: true })
+  race?: MonsterRace;
+
+  @Column({ type: 'enum', enum: SpellType, nullable: true })
+  spellType?: SpellType;
+
+  @Column({ type: 'enum', enum: TrapType, nullable: true })
+  trapType?: TrapType;
 
   @Column({ type: 'int', nullable: true })
   level?: number;

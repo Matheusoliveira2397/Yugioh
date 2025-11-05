@@ -3,8 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DuelLog } from '../duels/entities/duel-log.entity';
-import { Duel } from '../duels/entities/duel.entity';
-import { ChatMessage } from '../chat/schemas/chat-message.schema';
+import { Duel, DuelStatus } from '../duels/entities/duel.entity';
+import { Message } from '../chat/schemas/message.schema';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 
@@ -21,8 +21,8 @@ export class DatabaseCleanupService {
     private duelLogRepository: Repository<DuelLog>,
     @InjectRepository(Duel)
     private duelRepository: Repository<Duel>,
-    @InjectModel(ChatMessage.name)
-    private chatMessageModel: Model<ChatMessage>,
+    @InjectModel(Message.name)
+    private chatMessageModel: Model<Message>,
   ) {}
 
   /**
@@ -73,7 +73,7 @@ export class DatabaseCleanupService {
     // Arquivar estatísticas importantes antes de deletar
     const oldDuels = await this.duelRepository.find({
       where: {
-        status: 'finished',
+        status: DuelStatus.FINISHED,
         updatedAt: LessThan(ninetyDaysAgo),
       },
     });
@@ -82,7 +82,7 @@ export class DatabaseCleanupService {
     // await this.archiveDuelStats(oldDuels);
 
     const result = await this.duelRepository.delete({
-      status: 'finished',
+      status: DuelStatus.FINISHED,
       updatedAt: LessThan(ninetyDaysAgo),
     });
 

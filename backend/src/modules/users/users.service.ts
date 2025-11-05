@@ -175,4 +175,57 @@ export class UsersService {
       };
     });
   }
+
+  async updateCoins(userId: string, amount: number): Promise<User> {
+    const user = await this.findById(userId);
+    user.coins = (user.coins || 0) + amount;
+    return this.usersRepository.save(user);
+  }
+
+  async getTop5Players(): Promise<any[]> {
+    // Busca a season ativa
+    const activeSeason = await this.seasonRepository.findOne({
+      where: { isActive: true },
+    });
+
+    if (!activeSeason) {
+      // Se não há season ativa, retorna top 5 por rating geral
+      const users = await this.usersRepository.find({
+        order: { rating: 'DESC' },
+        take: 5,
+        select: ['id', 'nickname', 'profileImage', 'rating', 'wins', 'losses', 'totalScore'],
+      });
+
+      return users.map((user, index) => ({
+        rank: index + 1,
+        id: user.id,
+        nickname: user.nickname,
+        profileImage: user.profileImage,
+        rating: user.rating,
+        wins: user.wins,
+        losses: user.losses,
+        score: user.totalScore,
+      }));
+    }
+
+    // Busca top 5 da season ativa
+    const rankings = await this.seasonRankingRepository.find({
+      where: { seasonId: activeSeason.id },
+      relations: ['user'],
+      order: { seasonScore: 'DESC' },
+      take: 5,
+    });
+
+    return rankings.map((ranking, index) => ({
+      rank: index + 1,
+      id: ranking.user.id,
+      nickname: ranking.user.nickname,
+      profileImage: ranking.user.profileImage,
+      rating: ranking.user.rating,
+      wins: ranking.wins,
+      losses: ranking.losses,
+      score: ranking.seasonScore,
+      division: ranking.division,
+    }));
+  }
 }
