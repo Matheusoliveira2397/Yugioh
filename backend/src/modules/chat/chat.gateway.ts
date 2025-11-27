@@ -22,7 +22,7 @@ export class ChatGateway implements OnGatewayConnection {
   constructor(private chatService: ChatService) {}
 
   handleConnection(client: Socket) {
-    console.log(`Chat client connected: ${client.id}`);
+    // Log removido para reduzir poluição de logs
   }
 
   @SubscribeMessage('joinChannel')
@@ -31,7 +31,6 @@ export class ChatGateway implements OnGatewayConnection {
     @MessageBody() data: { channel: string },
   ) {
     client.join(data.channel);
-    console.log(`Client ${client.id} joined channel ${data.channel}`);
   }
 
   @SubscribeMessage('leaveChannel')

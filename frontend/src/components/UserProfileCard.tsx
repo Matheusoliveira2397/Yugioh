@@ -6,6 +6,13 @@ import { Link } from 'react-router-dom';
 export const UserProfileCard: React.FC = () => {
   const user = useAuthStore((state) => state.user);
 
+  // Debug: Verificar dados do usuário
+  React.useEffect(() => {
+    console.log('👤 UserProfileCard - Dados do usuário:', user);
+    console.log('💎 Credits:', user?.credits);
+    console.log('💵 Cash:', user?.cash);
+  }, [user]);
+
   if (!user) return null;
 
   return (
@@ -20,7 +27,7 @@ export const UserProfileCard: React.FC = () => {
         <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 p-4 border-b border-slate-700/50">
           <div className="flex items-start gap-4">
             {/* Avatar */}
-            <Link to="/profile" className="group relative">
+            <Link to={`/profile/${user?.id || ''}`} className="group relative">
               <motion.div
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -32,7 +39,7 @@ export const UserProfileCard: React.FC = () => {
                     alt={user.nickname}
                     className="w-full h-full object-cover"
                     onError={(e) => {
-                      e.currentTarget.src = '/avatars/default.png';
+                      e.currentTarget.src = '/images/default.png';
                     }}
                   />
                 </div>
@@ -51,7 +58,9 @@ export const UserProfileCard: React.FC = () => {
 
             {/* Info do Usuário */}
             <div className="flex-1">
-              <h3 className="text-xl font-bold text-white mb-1">{user.nickname}</h3>
+              <h3 className="text-xl font-bold text-white mb-1">
+                {user.clanTag ? `|${user.clanTag}| ${user.nickname}` : user.nickname}
+              </h3>
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs text-slate-400">🏆 Divisão</span>
                 <span className="text-sm font-semibold text-cyan-400">Diamante</span>
@@ -82,17 +91,17 @@ export const UserProfileCard: React.FC = () => {
           {/* Recursos */}
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
-              <span className="text-2xl">🪙</span>
+              <span className="text-2xl">💎</span>
               <div>
-                <p className="text-yellow-400 font-bold text-lg">{user.gems.toLocaleString()}</p>
-                <p className="text-xs text-slate-400">Moedas</p>
+                <p className="text-purple-400 font-bold text-lg">{(user.credits || 0).toLocaleString()}</p>
+                <p className="text-xs text-slate-400">Créditos</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-2xl">💎</span>
+              <span className="text-2xl">�</span>
               <div>
-                <p className="text-cyan-400 font-bold text-lg">23</p>
-                <p className="text-xs text-slate-400">Gemas</p>
+                <p className="text-green-400 font-bold text-lg">R$ {(user.cash || 0).toFixed(2)}</p>
+                <p className="text-xs text-slate-400">Cash</p>
               </div>
             </div>
           </div>
@@ -125,9 +134,19 @@ export const UserProfileCard: React.FC = () => {
             </div>
             <div className="flex justify-between items-center">
               <span className="text-xs text-slate-400 flex items-center gap-2">
+                <span>📈</span> V/D (Geral)
+              </span>
+              <span className="text-sm font-bold text-white">
+                <span className="text-green-400">{user.winsGeral || 0}</span> / <span className="text-red-400">{user.lossesGeral || 0}</span>
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-slate-400 flex items-center gap-2">
                 <span>⚡</span> V/D (Season)
               </span>
-              <span className="text-sm font-bold text-white">{user.wins} / {user.losses}</span>
+              <span className="text-sm font-bold text-white">
+                <span className="text-green-400">{user.winsSeason || 0}</span> / <span className="text-red-400">{user.lossesSeason || 0}</span>
+              </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-xs text-slate-400 flex items-center gap-2">
@@ -139,7 +158,7 @@ export const UserProfileCard: React.FC = () => {
 
           {/* Botões de Ação */}
           <div className="flex gap-2">
-            <Link to="/profile" className="flex-1">
+            <Link to={`/profile/${user?.id || ''}`} className="flex-1">
               <button className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2.5 rounded-lg transition-colors">
                 Perfil
               </button>

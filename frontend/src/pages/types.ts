@@ -4,4 +4,4 @@ export type CardAttribute = 'DARK' | 'LIGHT' | 'WATER' | 'FIRE' | 'EARTH' | 'WIN
 
 export type CardRarity = 'Common' | 'Rare' | 'Super Rare' | 'Ultra Rare' | 'Secret Rare' | 'Legendary';
 
-export type MonsterType = 'Normal' | 'Effect' | 'Ritual' | 'Fusion' | 'Synchro' | 'Xyz' | 'Pendulum' | 'Link';
+export type MonsterType = 'Normal' | 'Effect' | 'Fusion';

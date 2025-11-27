@@ -7,6 +7,7 @@ import axios from 'axios';
 interface RankedPlayer {
   id: string;
   nickname: string;
+  clanTag?: string;
   profileImage: string;
   level: number;
   totalScore: number;
@@ -41,6 +42,10 @@ export default function RankingPage() {
       const response = await axios.get(endpoint, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      
+      console.log('📊 [RankingPage] Dados recebidos:', response.data);
+      console.log('📊 [RankingPage] Primeiro jogador:', response.data[0]);
+      console.log('📊 [RankingPage] clanTag do primeiro jogador:', response.data[0]?.clanTag);
       
       setPlayers(response.data);
     } catch (error) {
@@ -77,7 +82,7 @@ export default function RankingPage() {
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900/20 to-slate-900 p-8">
+    <div className="min-h-screen p-8 relative z-10">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <motion.div
@@ -182,12 +187,12 @@ export default function RankingPage() {
                               alt={player.nickname}
                               className="w-14 h-14 rounded-xl object-cover border-2 border-purple-500"
                               onError={(e) => {
-                                e.currentTarget.src = '/avatars/default.png';
+                                e.currentTarget.src = '/images/default.png';
                               }}
                             />
                             <div>
                               <p className="text-white font-bold text-lg flex items-center gap-2">
-                                {player.nickname}
+                                {player.clanTag ? `|${player.clanTag}| ${player.nickname}` : player.nickname}
                                 {isCurrentUser && (
                                   <span className="text-xs bg-purple-600 px-2 py-0.5 rounded">VOCÊ</span>
                                 )}
@@ -233,8 +238,8 @@ export default function RankingPage() {
                             <span className="text-red-400 font-bold">{player.losses || 0}</span>
                           </div>
                           <p className="text-xs text-slate-400 mt-1">
-                            {player.wins + player.losses > 0
-                              ? `${((player.wins / (player.wins + player.losses)) * 100).toFixed(1)}%`
+                            {(player.wins || 0) + (player.losses || 0) > 0
+                              ? `${(((player.wins || 0) / ((player.wins || 0) + (player.losses || 0))) * 100).toFixed(1)}%`
                               : '0%'}
                           </p>
                         </td>

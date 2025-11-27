@@ -7,7 +7,7 @@ import { UserCard } from './entities/user-card.entity';
 import { User } from '../users/entities/user.entity';
 import { PurchaseCardDto, PaymentMethod } from './dto/purchase-card.dto';
 
-@Injectable()
+// Mantém apenas UMA definição da classe ShopService
 export class ShopService {
   constructor(
     @InjectRepository(ShopItem)
@@ -68,23 +68,33 @@ export class ShopService {
     isFeatured?: boolean;
     isAvailable?: boolean;
   }): Promise<ShopItem[]> {
-    const query = this.shopItemRepository.createQueryBuilder('shopItem')
-      .leftJoinAndSelect('shopItem.card', 'card')
-      .where('shopItem.isAvailable = :isAvailable', { isAvailable: filters?.isAvailable ?? true });
+    try {
+      const query = this.shopItemRepository.createQueryBuilder('shopItem')
+        .leftJoinAndSelect('shopItem.card', 'card')
+        .where('shopItem.isAvailable = :isAvailable', { isAvailable: filters?.isAvailable ?? true });
 
-    if (filters?.currency) {
-      query.andWhere('shopItem.currency = :currency', { currency: filters.currency });
+      if (filters?.currency) {
+        query.andWhere('shopItem.currency = :currency', { currency: filters.currency });
+      }
+
+      if (filters?.isFeatured !== undefined) {
+        query.andWhere('shopItem.isFeatured = :isFeatured', { isFeatured: filters.isFeatured });
+      }
+
+      query.orderBy('shopItem.isFeatured', 'DESC')
+        .addOrderBy('card.rarity', 'DESC')
+        .addOrderBy('shopItem.createdAt', 'DESC')
+        .take(500); // Limite de 500 itens
+
+      return await Promise.race([
+        query.getMany(),
+        new Promise<ShopItem[]>((_, reject) => 
+          setTimeout(() => reject(new Error('Query timeout')), 1000)
+        )
+      ]).catch(() => []);
+    } catch (error) {
+      return [];
     }
-
-    if (filters?.isFeatured !== undefined) {
-      query.andWhere('shopItem.isFeatured = :isFeatured', { isFeatured: filters.isFeatured });
-    }
-
-    query.orderBy('shopItem.isFeatured', 'DESC')
-      .addOrderBy('card.rarity', 'DESC')
-      .addOrderBy('shopItem.createdAt', 'DESC');
-
-    return query.getMany();
   }
 
   // Buscar item específico
@@ -123,7 +133,8 @@ export class ShopService {
 
     if (shopItem) {
       // Atualizar preço baseado na raridade se não tiver preço customizado
-      if (!card.priceCoins && !card.priceCredits && !card.priceCash) {
+      // SISTEMA DE MOEDAS REMOVIDO - apenas Credits e Cash
+      if (!card.priceCredits && !card.priceCash) {
         shopItem.price = this.calculatePriceByRarity(card.rarity);
       }
       await this.shopItemRepository.save(shopItem);
@@ -133,13 +144,17 @@ export class ShopService {
 
   // ==================== SISTEMA DE COMPRA COMPLETO ====================
   
-  async purchaseCard(userId: string, purchaseDto: PurchaseCardDto): Promise<{
+  async purchaseCard(userId: number, purchaseDto: PurchaseCardDto): Promise<{
     success: boolean;
     message: string;
     card: Card;
     userCard: UserCard;
     remainingBalance: { coins?: number; credits?: number; cash?: number };
   }> {
+    console.log('🛒🛒🛒 SERVICE.purchaseCard() CHAMADO! 🛒🛒🛒');
+    console.log('UserId:', userId);
+    console.log('PurchaseDto:', purchaseDto);
+    
     // 1. BUSCAR CARTA
     const card = await this.cardRepository.findOne({
       where: { id: purchaseDto.cardId },
@@ -162,12 +177,22 @@ export class ShopService {
       throw new NotFoundException('Usuário não encontrado');
     }
 
+    console.log('💰 SALDO DO USUÁRIO NO BANCO:');
+    console.log('   - Credits:', user.credits);
+    console.log('   - Cash:', user.cash);
+    console.log('   - User Object:', JSON.stringify(user, null, 2));
+
     // 3. VERIFICAR PREÇO E SALDO
     const { price, canPurchase, missingAmount } = this.checkUserBalance(
       user,
       card,
       purchaseDto.paymentMethod
     );
+
+    console.log('🔍 RESULTADO DA VERIFICAÇÃO:');
+    console.log('   - Preço:', price);
+    console.log('   - Pode comprar?', canPurchase);
+    console.log('   - Falta:', missingAmount);
 
     if (!canPurchase) {
       throw new BadRequestException(
@@ -196,7 +221,6 @@ export class ShopService {
       card,
       userCard,
       remainingBalance: {
-        coins: user.coins,
         credits: user.credits,
         cash: user.cash,
       },
@@ -207,31 +231,32 @@ export class ShopService {
   private checkUserBalance(
     user: User,
     card: Card,
-    paymentMethod: PaymentMethod
+    paymentMethod: string
   ): { price: number; canPurchase: boolean; missingAmount: number } {
     let price = 0;
     let userBalance = 0;
 
     // Determinar preço e saldo baseado no método de pagamento
+    // SISTEMA DE MOEDAS REMOVIDO - apenas Credits e Cash
     switch (paymentMethod) {
-      case PaymentMethod.COINS:
-        price = card.priceCoins || 0;
-        userBalance = user.coins || 0;
-        break;
-      case PaymentMethod.CREDITS:
+      case 'coins':
+        // MOEDAS DESATIVADAS - retornar erro
+        throw new BadRequestException('Sistema de moedas foi desativado. Use Créditos ou Cash.');
+      case 'credits':
         price = card.priceCredits || 0;
         userBalance = user.credits || 0;
         break;
-      case PaymentMethod.CASH:
+      case 'cash':
         price = Number(card.priceCash) || 0;
         userBalance = user.cash || 0;
         break;
     }
 
-    // Verificar se a carta tem preço para este método
-    if (price === 0) {
+    // Verificar se a carta tem preço definido para este método
+    // Permite preço 0 (grátis), mas não permite undefined/null
+    if (price === undefined || price === null) {
       throw new BadRequestException(
-        `Esta carta não pode ser comprada com ${this.getCurrencyName(paymentMethod)}`
+        `Esta carta não tem preço definido para ${this.getCurrencyName(paymentMethod)}`
       );
     }
 
@@ -242,23 +267,22 @@ export class ShopService {
   }
 
   // ==================== DEDUZIR SALDO ====================
-  private deductBalance(user: User, amount: number, paymentMethod: PaymentMethod): void {
+  private deductBalance(user: User, amount: number, paymentMethod: string): void {
     switch (paymentMethod) {
-      case PaymentMethod.COINS:
-        user.coins -= amount;
-        break;
-      case PaymentMethod.CREDITS:
+      case 'credits':
         user.credits -= amount;
         break;
-      case PaymentMethod.CASH:
+      case 'cash':
         user.cash -= amount;
         break;
+      default:
+        throw new BadRequestException('Método de pagamento inválido');
     }
   }
 
   // ==================== ADICIONAR CARTA AO INVENTÁRIO ====================
   async addCardToUserInventory(
-    userId: string,
+    userId: number,
     cardId: string,
     acquiredBy: 'PURCHASE' | 'REWARD' | 'DROP' | 'GIFT' = 'PURCHASE'
   ): Promise<UserCard> {
@@ -285,16 +309,26 @@ export class ShopService {
   }
 
   // ==================== BUSCAR INVENTÁRIO DO USUÁRIO ====================
-  async getUserInventory(userId: string): Promise<UserCard[]> {
-    return this.userCardRepository.find({
-      where: { userId },
-      relations: ['card'],
-      order: { createdAt: 'DESC' },
-    });
+  async getUserInventory(userId: number): Promise<UserCard[]> {
+    try {
+      return await Promise.race([
+        this.userCardRepository.find({
+          where: { userId },
+          relations: ['card'],
+          order: { createdAt: 'DESC' },
+          take: 1000, // Limite de 1000 itens
+        }),
+        new Promise<UserCard[]>((_, reject) => 
+          setTimeout(() => reject(new Error('Query timeout')), 1000)
+        )
+      ]).catch(() => []);
+    } catch (error) {
+      return [];
+    }
   }
 
   // ==================== VERIFICAR SE USUÁRIO TEM CARTA ====================
-  async userHasCard(userId: string, cardId: string): Promise<boolean> {
+  async userHasCard(userId: number, cardId: string): Promise<boolean> {
     const userCard = await this.userCardRepository.findOne({
       where: { userId, cardId },
     });
@@ -302,31 +336,31 @@ export class ShopService {
   }
 
   // ==================== HELPERS ====================
-  private getCurrencyName(paymentMethod: PaymentMethod): string {
-    const names = {
-      [PaymentMethod.COINS]: 'moedas',
-      [PaymentMethod.CREDITS]: 'créditos',
-      [PaymentMethod.CASH]: 'cash',
+  private getCurrencyName(paymentMethod: string): string {
+    const names: Record<string, string> = {
+      'coins': 'moedas',
+      'credits': 'créditos',
+      'cash': 'cash',
     };
-    return names[paymentMethod];
+    return names[paymentMethod] || 'moeda desconhecida';
   }
 
-  private getBalance(user: User, paymentMethod: PaymentMethod): number {
+  private getBalance(user: User, paymentMethod: string): number {
     switch (paymentMethod) {
-      case PaymentMethod.COINS:
-        return user.coins || 0;
-      case PaymentMethod.CREDITS:
+      case 'credits':
         return user.credits || 0;
-      case PaymentMethod.CASH:
+      case 'cash':
         return user.cash || 0;
+      default:
+        return 0;
     }
   }
 
   // ==================== ADICIONAR SALDO (ADMIN) ====================
   async addUserBalance(
-    userId: string,
+    userId: number,
     amount: number,
-    currency: 'coins' | 'credits' | 'cash'
+    currency: 'credits' | 'cash'
   ): Promise<User> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     
@@ -335,9 +369,6 @@ export class ShopService {
     }
 
     switch (currency) {
-      case 'coins':
-        user.coins += amount;
-        break;
       case 'credits':
         user.credits += amount;
         break;

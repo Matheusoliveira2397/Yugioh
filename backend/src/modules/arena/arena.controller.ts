@@ -55,4 +55,17 @@ export class ArenaController {
   async getArenaStats(@Param('id') id: string) {
     return await this.arenaService.getArenaStats(id);
   }
+
+  @Get('ranking/:id')
+  async getArenaRankings(@Param('id') id: string) {
+    return await this.arenaService.getAllArenaRankings(id);
+  }
+
+  @Get('ranking/:id/division/:division')
+  async getArenaRankingByDivision(
+    @Param('id') id: string,
+    @Param('division') division: string,
+  ) {
+    return await this.arenaService.getArenaRankingByDivision(id, decodeURIComponent(division));
+  }
 }

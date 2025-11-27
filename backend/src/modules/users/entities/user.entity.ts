@@ -16,8 +16,8 @@ export enum UserRole {
 
 @Entity('users')
 export class User {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn()
+  id: number;
 
   @Column({ unique: true })
   nickname: string;
@@ -34,33 +34,27 @@ export class User {
   @Column({ type: 'enum', enum: UserRole, default: UserRole.PLAYER })
   role: UserRole;
 
-  @Column({ default: false })
-  emailVerified: boolean;
-
-  @Column({ nullable: true })
-  verificationToken: string;
+  @Column({ default: 0 })
+  winsGeral: number;
 
   @Column({ default: 0 })
-  wins: number;
+  lossesGeral: number;
 
   @Column({ default: 0 })
-  losses: number;
+  winsSeason: number;
+
+  @Column({ default: 0 })
+  lossesSeason: number;
 
   @Column({ default: 1000 })
   rating: number;
 
   // Sistema de Economia
   @Column({ type: 'int', default: 0 })
-  coins: number; // Moedas (grátis)
-
-  @Column({ type: 'int', default: 0 })
   credits: number; // Crédito (premium gratuito)
 
   @Column({ type: 'int', default: 0 })
   cash: number; // Cash (premium pago)
-
-  @Column({ default: 0 })
-  gems: number; // Mantido para compatibilidade (será migrado para coins)
 
   // Sistema de Níveis
   @Column({ type: 'int', default: 1 })
@@ -73,7 +67,7 @@ export class User {
   @Column({ type: 'int', default: 0 })
   totalScore: number; // Score geral acumulado de todas as seasons
 
-  @Column({ default: '/avatars/default.png', name: 'profileImage' })
+  @Column({ default: '/images/default.png', name: 'profileImage' })
   profileImage: string;
 
   @Column({ default: true })
@@ -84,7 +78,7 @@ export class User {
   isBanned: boolean;
 
   @Column({ type: 'text', nullable: true })
-  banReason: string;
+  banReason: string | null;
 
   @Column({ type: 'timestamp', nullable: true })
   lastLogin: Date;
@@ -97,6 +91,18 @@ export class User {
 
   @Column({ default: false })
   isEmailVerified: boolean;
+
+  // Sistema de Clã
+  @Column({ type: 'varchar', nullable: true })
+  clanTag: string | null; // Tag do clã (ex: "CLA")
+
+  // Biografia do jogador
+  @Column({ type: 'text', nullable: true })
+  biography: string | null;
+
+  // Classe do jogador (baseada em rating)
+  @Column({ type: 'varchar', nullable: true, default: 'Novato' })
+  playerClass: string; // Novato, Aprendiz, Veterano, Mestre, Lendário, etc.
 
   @OneToMany(() => Deck, (deck) => deck.user)
   decks: Deck[];

@@ -18,8 +18,17 @@ export class RegisterDto {
   @IsNotEmpty()
   email: string;
 
+  @IsEmail()
+  @IsNotEmpty()
+  confirmEmail: string;
+
   @IsString()
   @IsNotEmpty()
   @MinLength(6)
   password: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(6)
+  confirmPassword: string;
 }

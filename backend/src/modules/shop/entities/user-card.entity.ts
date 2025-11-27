@@ -15,8 +15,8 @@ export class UserCard {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
-  userId: string;
+  @Column({ type: 'int' })
+  userId: number;
 
   @Column()
   cardId: string;

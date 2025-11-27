@@ -12,6 +12,7 @@ export enum DuelActionType {
   DIRECT_ATTACK = 'DIRECT_ATTACK',
   CHANGE_POSITION = 'CHANGE_POSITION',
   END_TURN = 'END_TURN',
+  PHASE_CHANGE = 'PHASE_CHANGE',
   LIFE_CHANGE = 'LIFE_CHANGE',
   CARD_DESTROYED = 'CARD_DESTROYED',
   CARD_TO_GRAVEYARD = 'CARD_TO_GRAVEYARD',
@@ -28,12 +29,15 @@ export class DuelLog {
   @JoinColumn({ name: 'duel_id' })
   duel: Duel;
 
-  @Column({ type: 'uuid' })
+  @Column({ name: 'duel_id', type: 'uuid', insert: false, update: false })
   duelId: string;
 
-  @ManyToOne(() => User, { eager: true })
+  @ManyToOne(() => User, { eager: true, createForeignKeyConstraints: true })
   @JoinColumn({ name: 'user_id' })
   user: User;
+
+  // userId é apenas uma propriedade virtual para leitura, não é uma coluna real
+  // Use user.id para acessar o ID do usuário
 
   @Column({ type: 'enum', enum: DuelActionType })
   actionType: DuelActionType;

@@ -108,19 +108,19 @@ export default function HomePage() {
             <div className="flex gap-6 text-lg">
               <div>
                 <span className="text-gray-400">Vitórias:</span>{' '}
-                <span className="text-green-400 font-bold">{user?.wins || 0}</span>
+                <span className="text-green-400 font-bold">{user?.winsGeral || 0}</span>
               </div>
               <div>
                 <span className="text-gray-400">Derrotas:</span>{' '}
-                <span className="text-red-400 font-bold">{user?.losses || 0}</span>
+                <span className="text-red-400 font-bold">{user?.lossesGeral || 0}</span>
               </div>
               <div>
                 <span className="text-gray-400">Rating:</span>{' '}
                 <span className="text-yellow-400 font-bold">{user?.rating || 1000}</span>
               </div>
               <div>
-                <span className="text-gray-400">Gemas:</span>{' '}
-                <span className="text-blue-400 font-bold">💎 {user?.gems || 0}</span>
+                <span className="text-gray-400">Créditos:</span>{' '}
+                <span className="text-blue-400 font-bold">💎 {user?.credits || 0}</span>
               </div>
             </div>
           </div>
@@ -219,7 +219,7 @@ export default function HomePage() {
                         <div>
                           <p className="font-bold text-lg">{player.username}</p>
                           <p className="text-sm text-gray-300">
-                            {player.wins}V - {player.losses}D
+                            {player.wins || 0}V - {player.losses || 0}D
                           </p>
                         </div>
                       </div>

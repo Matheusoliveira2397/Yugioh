@@ -1,84 +1,213 @@
-import { useState, FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, FormEvent, useEffect, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
+interface ValidationState {
+  isValid: boolean | null;
+  message: string;
+  checking: boolean;
+}
+
 export default function RegisterPage() {
+  const navigate = useNavigate();
   const [nickname, setNickname] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+  const [confirmEmail, setConfirmEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const [nicknameValidation, setNicknameValidation] = useState<ValidationState>({
+    isValid: null,
+    message: '',
+    checking: false,
+  });
+  const [usernameValidation, setUsernameValidation] = useState<ValidationState>({
+    isValid: null,
+    message: '',
+    checking: false,
+  });
+  const [emailValidation, setEmailValidation] = useState<ValidationState>({
+    isValid: null,
+    message: '',
+    checking: false,
+  });
+
+  const nicknameTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const usernameTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const emailTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Validar nickname ao sair do campo
+  const handleNicknameBlur = async () => {
+    if (!nickname.trim()) {
+      setNicknameValidation({ isValid: null, message: '', checking: false });
+      return;
+    }
+
+    setNicknameValidation({ isValid: null, message: 'Verificando...', checking: true });
+    try {
+      const response = await axios.get(`${API_URL}/auth/check-nickname`, {
+        params: { nickname: nickname.trim() },
+      });
+      setNicknameValidation({
+        isValid: response.data.available,
+        message: response.data.message,
+        checking: false,
+      });
+    } catch (error: any) {
+      setNicknameValidation({
+        isValid: false,
+        message: error.response?.data?.message || 'Erro ao verificar nickname',
+        checking: false,
+      });
+    }
+  };
+
+  // Validar username ao sair do campo
+  const handleUsernameBlur = async () => {
+    if (!username.trim()) {
+      setUsernameValidation({ isValid: null, message: '', checking: false });
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      setUsernameValidation({
+        isValid: false,
+        message: 'Username deve conter apenas letras, números e underscore',
+        checking: false,
+      });
+      return;
+    }
+
+    setUsernameValidation({ isValid: null, message: 'Verificando...', checking: true });
+    try {
+      const response = await axios.get(`${API_URL}/auth/check-username`, {
+        params: { username: username.trim().toLowerCase() },
+      });
+      setUsernameValidation({
+        isValid: response.data.available,
+        message: response.data.message,
+        checking: false,
+      });
+    } catch (error: any) {
+      setUsernameValidation({
+        isValid: false,
+        message: error.response?.data?.message || 'Erro ao verificar username',
+        checking: false,
+      });
+    }
+  };
+
+  // Validar email ao sair do campo
+  const handleEmailBlur = async () => {
+    if (!email.trim()) {
+      setEmailValidation({ isValid: null, message: '', checking: false });
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEmailValidation({
+        isValid: false,
+        message: 'Email inválido',
+        checking: false,
+      });
+      return;
+    }
+
+    setEmailValidation({ isValid: null, message: 'Verificando...', checking: true });
+    try {
+      const response = await axios.get(`${API_URL}/auth/check-email`, {
+        params: { email: email.trim().toLowerCase() },
+      });
+      setEmailValidation({
+        isValid: response.data.available,
+        message: response.data.message,
+        checking: false,
+      });
+    } catch (error: any) {
+      setEmailValidation({
+        isValid: false,
+        message: error.response?.data?.message || 'Erro ao verificar email',
+        checking: false,
+      });
+    }
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
 
     // Validações
     if (!nickname.trim()) {
       setError('Nickname é obrigatório');
-      setLoading(false);
+      return;
+    }
+
+    if (nicknameValidation.isValid === false) {
+      setError('Por favor, escolha um nickname disponível');
       return;
     }
 
     if (!username.trim()) {
       setError('Nome de usuário é obrigatório');
-      setLoading(false);
       return;
     }
 
-    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-      setError('Nome de usuário deve conter apenas letras, números e underscore');
-      setLoading(false);
+    if (usernameValidation.isValid === false) {
+      setError('Por favor, escolha um username disponível');
       return;
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError('Email inválido');
-      setLoading(false);
+    if (!email.trim()) {
+      setError('Email é obrigatório');
+      return;
+    }
+
+    if (emailValidation.isValid === false) {
+      setError('Por favor, use um email disponível');
+      return;
+    }
+
+    if (email !== confirmEmail) {
+      setError('Os emails não coincidem');
       return;
     }
 
     if (password.length < 6) {
       setError('A senha deve ter pelo menos 6 caracteres');
-      setLoading(false);
       return;
     }
 
     if (password !== confirmPassword) {
       setError('As senhas não coincidem');
-      setLoading(false);
       return;
     }
 
+    setLoading(true);
     try {
       await axios.post(`${API_URL}/auth/register`, {
-        nickname,
-        username,
-        email,
+        nickname: nickname.trim(),
+        username: username.trim().toLowerCase(),
+        email: email.trim().toLowerCase(),
+        confirmEmail: confirmEmail.trim().toLowerCase(),
         password,
+        confirmPassword,
       });
 
       setSuccess(true);
-      setLoading(false);
+      setTimeout(() => {
+        navigate('/login');
+      }, 3000);
     } catch (err: any) {
       setLoading(false);
       if (err.response?.data?.message) {
-        if (err.response.data.message.includes('nickname')) {
-          setError('Este nickname já está em uso');
-        } else if (err.response.data.message.includes('username')) {
-          setError('Este nome de usuário já está em uso');
-        } else if (err.response.data.message.includes('email')) {
-          setError('Este email já está cadastrado');
-        } else {
-          setError(err.response.data.message);
-        }
+        setError(err.response.data.message);
       } else {
         setError('Erro ao registrar. Tente novamente.');
       }
@@ -87,11 +216,20 @@ export default function RegisterPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 via-purple-900 to-gray-900 px-4">
+      <div 
+        className="min-h-screen flex items-center justify-center px-4 relative"
+        style={{
+          backgroundImage: 'url(/images/backgroundLogin.jpg)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }}
+      >
+        <div className="absolute inset-0 bg-black bg-opacity-60 z-0"></div>
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="max-w-md w-full"
+          className="max-w-md w-full relative z-10"
         >
           <div className="bg-gray-800 rounded-lg shadow-2xl p-8 border border-green-500 text-center">
             <div className="text-6xl mb-4">✅</div>
@@ -99,10 +237,10 @@ export default function RegisterPage() {
               Cadastro Realizado!
             </h1>
             <p className="text-gray-300 mb-6">
-              Um email de confirmação foi enviado para <strong>{email}</strong>
+              Sua conta foi criada com sucesso!
             </p>
             <p className="text-gray-400 mb-8">
-              Por favor, verifique sua caixa de entrada e clique no link de confirmação para ativar sua conta.
+              Redirecionando para o login...
             </p>
             <Link
               to="/login"
@@ -117,11 +255,20 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 via-purple-900 to-gray-900 px-4">
+    <div 
+      className="min-h-screen flex items-center justify-center px-4 py-8 relative"
+      style={{
+        backgroundImage: 'url(/images/backgroundLogin.jpg)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+      }}
+    >
+      <div className="absolute inset-0 bg-black bg-opacity-60 z-0"></div>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full"
+        className="max-w-md w-full relative z-10"
       >
         <div className="bg-gray-800 rounded-lg shadow-2xl p-8 border border-purple-500">
           <h1 className="text-4xl font-bold text-center mb-2 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
@@ -130,8 +277,9 @@ export default function RegisterPage() {
           <p className="text-center text-gray-400 mb-8">Junte-se aos duelistas!</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Nickname */}
             <div>
-              <label htmlFor="nickname" className="block text-sm font-medium mb-2">
+              <label htmlFor="nickname" className="block text-sm font-medium mb-2 text-gray-200">
                 Nickname <span className="text-red-500">*</span>
               </label>
               <input
@@ -139,34 +287,77 @@ export default function RegisterPage() {
                 type="text"
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onBlur={handleNicknameBlur}
+                className={`w-full px-4 py-3 bg-gray-700 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                  nicknameValidation.isValid === true
+                    ? 'border-green-500'
+                    : nicknameValidation.isValid === false
+                    ? 'border-red-500'
+                    : 'border-gray-600'
+                }`}
                 placeholder="Como você quer ser chamado"
                 required
                 maxLength={30}
               />
-              <p className="text-xs text-gray-500 mt-1">Este será seu nome exibido no jogo</p>
+              {nicknameValidation.message && (
+                <p
+                  className={`text-xs mt-1 ${
+                    nicknameValidation.isValid === true
+                      ? 'text-green-400'
+                      : nicknameValidation.isValid === false
+                      ? 'text-red-400'
+                      : 'text-gray-400'
+                  }`}
+                >
+                  {nicknameValidation.checking ? '⏳ ' : nicknameValidation.isValid === true ? '✅ ' : '❌ '}
+                  {nicknameValidation.message}
+                </p>
+              )}
             </div>
 
+            {/* Username */}
             <div>
-              <label htmlFor="username" className="block text-sm font-medium mb-2">
-                Nome de Usuário <span className="text-red-500">*</span>
+              <label htmlFor="username" className="block text-sm font-medium mb-2 text-gray-200">
+                Username <span className="text-red-500">*</span>
               </label>
               <input
                 id="username"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value.toLowerCase())}
-                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onBlur={handleUsernameBlur}
+                className={`w-full px-4 py-3 bg-gray-700 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                  usernameValidation.isValid === true
+                    ? 'border-green-500'
+                    : usernameValidation.isValid === false
+                    ? 'border-red-500'
+                    : 'border-gray-600'
+                }`}
                 placeholder="usuario_unico"
                 required
                 maxLength={20}
                 pattern="[a-zA-Z0-9_]+"
               />
+              {usernameValidation.message && (
+                <p
+                  className={`text-xs mt-1 ${
+                    usernameValidation.isValid === true
+                      ? 'text-green-400'
+                      : usernameValidation.isValid === false
+                      ? 'text-red-400'
+                      : 'text-gray-400'
+                  }`}
+                >
+                  {usernameValidation.checking ? '⏳ ' : usernameValidation.isValid === true ? '✅ ' : '❌ '}
+                  {usernameValidation.message}
+                </p>
+              )}
               <p className="text-xs text-gray-500 mt-1">Apenas letras, números e underscore</p>
             </div>
 
+            {/* Email */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium mb-2">
+              <label htmlFor="email" className="block text-sm font-medium mb-2 text-gray-200">
                 Email <span className="text-red-500">*</span>
               </label>
               <input
@@ -174,14 +365,64 @@ export default function RegisterPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onBlur={handleEmailBlur}
+                className={`w-full px-4 py-3 bg-gray-700 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                  emailValidation.isValid === true
+                    ? 'border-green-500'
+                    : emailValidation.isValid === false
+                    ? 'border-red-500'
+                    : 'border-gray-600'
+                }`}
                 placeholder="seu@email.com"
                 required
               />
+              {emailValidation.message && (
+                <p
+                  className={`text-xs mt-1 ${
+                    emailValidation.isValid === true
+                      ? 'text-green-400'
+                      : emailValidation.isValid === false
+                      ? 'text-red-400'
+                      : 'text-gray-400'
+                  }`}
+                >
+                  {emailValidation.checking ? '⏳ ' : emailValidation.isValid === true ? '✅ ' : '❌ '}
+                  {emailValidation.message}
+                </p>
+              )}
             </div>
 
+            {/* Confirmar Email */}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium mb-2">
+              <label htmlFor="confirmEmail" className="block text-sm font-medium mb-2 text-gray-200">
+                Confirmar Email <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="confirmEmail"
+                type="email"
+                value={confirmEmail}
+                onChange={(e) => setConfirmEmail(e.target.value)}
+                className={`w-full px-4 py-3 bg-gray-700 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                  confirmEmail && email && confirmEmail !== email
+                    ? 'border-red-500'
+                    : confirmEmail && email && confirmEmail === email
+                    ? 'border-green-500'
+                    : 'border-gray-600'
+                }`}
+                placeholder="confirme@email.com"
+                required
+              />
+              {confirmEmail && email && confirmEmail !== email && (
+                <p className="text-xs text-red-400 mt-1">❌ Os emails não coincidem</p>
+              )}
+              {confirmEmail && email && confirmEmail === email && (
+                <p className="text-xs text-green-400 mt-1">✅ Emails coincidem</p>
+              )}
+            </div>
+
+            {/* Senha */}
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium mb-2 text-gray-200">
                 Senha <span className="text-red-500">*</span>
               </label>
               <input
@@ -195,12 +436,13 @@ export default function RegisterPage() {
                 minLength={6}
               />
               {password && password.length < 6 && (
-                <p className="text-xs text-red-400 mt-1">Senha muito curta</p>
+                <p className="text-xs text-red-400 mt-1">❌ Senha muito curta (mínimo 6 caracteres)</p>
               )}
             </div>
 
+            {/* Confirmar Senha */}
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium mb-2">
+              <label htmlFor="confirmPassword" className="block text-sm font-medium mb-2 text-gray-200">
                 Confirmar Senha <span className="text-red-500">*</span>
               </label>
               <input
@@ -208,16 +450,21 @@ export default function RegisterPage() {
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className={`w-full px-4 py-3 bg-gray-700 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                  confirmPassword && password !== confirmPassword
+                className={`w-full px-4 py-3 bg-gray-700 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                  confirmPassword && password && confirmPassword !== password
                     ? 'border-red-500'
+                    : confirmPassword && password && confirmPassword === password
+                    ? 'border-green-500'
                     : 'border-gray-600'
                 }`}
                 placeholder="Digite a senha novamente"
                 required
               />
-              {confirmPassword && password !== confirmPassword && (
-                <p className="text-xs text-red-400 mt-1">As senhas não coincidem</p>
+              {confirmPassword && password && confirmPassword !== password && (
+                <p className="text-xs text-red-400 mt-1">❌ As senhas não coincidem</p>
+              )}
+              {confirmPassword && password && confirmPassword === password && (
+                <p className="text-xs text-green-400 mt-1">✅ Senhas coincidem</p>
               )}
             </div>
 
@@ -234,7 +481,7 @@ export default function RegisterPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || nicknameValidation.isValid === false || usernameValidation.isValid === false || emailValidation.isValid === false}
               className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {loading ? (
@@ -243,7 +490,7 @@ export default function RegisterPage() {
                   <span>Cadastrando...</span>
                 </>
               ) : (
-                'Cadastrar'
+                'Criar Conta'
               )}
             </button>
           </form>

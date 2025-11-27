@@ -23,9 +23,9 @@ export class Season {
 
   @Column({ type: 'jsonb', nullable: true })
   prizes: {
-    first: { trophy: string; coins: number; credits: number };
-    second: { trophy: string; coins: number; credits: number };
-    third: { trophy: string; coins: number; credits: number };
+    first: { trophy: string; credits: number };
+    second: { trophy: string; credits: number };
+    third: { trophy: string; credits: number };
   };
 
   @OneToMany(() => SeasonRanking, ranking => ranking.season)

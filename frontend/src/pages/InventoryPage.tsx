@@ -8,6 +8,7 @@ interface InventoryCard {
   rarity: 'Common' | 'Rare' | 'Super Rare' | 'Ultra Rare' | 'Secret Rare';
   quantity: number;
   image?: string;
+  createdAt?: string;
 }
 
 export default function InventoryPage() {
@@ -104,6 +105,11 @@ export default function InventoryPage() {
                   <p className="font-bold text-white mb-1 truncate">{card.name}</p>
                   <p className="text-xs text-gray-200">{card.type}</p>
                   <p className="text-xs font-bold text-yellow-300 mt-1">{card.rarity}</p>
+                  {card.createdAt && (
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      📅 {new Date(card.createdAt).toLocaleDateString('pt-BR')}
+                    </p>
+                  )}
                 </div>
               </motion.div>
             ))}
@@ -130,8 +136,8 @@ export default function InventoryPage() {
             <p className="text-gray-400 text-sm">Armadilhas</p>
           </div>
           <div className="bg-gray-800 rounded-lg p-4 text-center">
-            <p className="text-3xl font-bold text-yellow-400">{user?.gems || 0}</p>
-            <p className="text-gray-400 text-sm">💎 Gemas</p>
+            <p className="text-3xl font-bold text-yellow-400">{user?.credits || 0}</p>
+            <p className="text-gray-400 text-sm">💎 Créditos</p>
           </div>
         </motion.div>
       </motion.div>

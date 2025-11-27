@@ -7,6 +7,7 @@ interface Friend {
   id: string;
   username: string;
   nickname: string;
+  clanTag?: string;
   profileImage: string;
   isOnline: boolean;
   level: number;
@@ -95,9 +96,14 @@ export default function FriendsPage() {
     }
   }, [selectedFriend]);
 
-  const fetchMessages = async (friendId: string) => {
+  const fetchMessages = async (friendId: string | number) => {
     try {
-      const response = await axios.get(`${API_URL}/messages/${friendId}`, {
+      const friendIdNum = typeof friendId === 'string' ? parseInt(friendId, 10) : Number(friendId);
+      if (isNaN(friendIdNum)) {
+        console.error('ID de amigo inválido:', friendId);
+        return;
+      }
+      const response = await axios.get(`${API_URL}/messages/${friendIdNum}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -144,10 +150,15 @@ export default function FriendsPage() {
     if (!messageInput.trim() || !selectedFriend) return;
 
     try {
+      const receiverId = typeof selectedFriend.id === 'string' ? parseInt(selectedFriend.id, 10) : Number(selectedFriend.id);
+      if (isNaN(receiverId)) {
+        console.error('ID de destinatário inválido:', selectedFriend.id);
+        return;
+      }
       const response = await axios.post(
         `${API_URL}/messages`,
         {
-          receiverId: selectedFriend.id,
+          receiverId: receiverId.toString(),
           content: messageInput
         },
         {
@@ -201,7 +212,7 @@ export default function FriendsPage() {
   const currentConversation = selectedFriend ? conversations.get(selectedFriend.id) : null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+    <div className="min-h-screen p-6 relative z-10">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <motion.div
@@ -276,7 +287,7 @@ export default function FriendsPage() {
                         <div className="flex items-center gap-3">
                           <div className="relative">
                             <img
-                              src={friend.profileImage || '/default-avatar.png'}
+                              src={friend.profileImage || '/images/default.png'}
                               alt={friend.username}
                               className="w-12 h-12 rounded-full border-2 border-purple-500"
                             />
@@ -285,7 +296,9 @@ export default function FriendsPage() {
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-white truncate">{friend.nickname}</p>
+                            <p className="font-semibold text-white truncate">
+                              {friend.clanTag ? `|${friend.clanTag}| ${friend.nickname}` : friend.nickname}
+                            </p>
                             <p className="text-sm text-gray-400 truncate">@{friend.username}</p>
                             <div className="flex items-center gap-2 text-xs text-gray-500">
                               <span>Nível {friend.level}</span>
@@ -315,7 +328,7 @@ export default function FriendsPage() {
                   <div className="p-4 border-b border-slate-700 flex items-center gap-3">
                     <div className="relative">
                       <img
-                        src={selectedFriend.profileImage || '/default-avatar.png'}
+                        src={selectedFriend.profileImage || '/images/default.png'}
                         alt={selectedFriend.username}
                         className="w-12 h-12 rounded-full border-2 border-purple-500"
                       />
@@ -324,7 +337,9 @@ export default function FriendsPage() {
                       )}
                     </div>
                     <div className="flex-1">
-                      <h3 className="font-semibold text-white">{selectedFriend.nickname}</h3>
+                      <h3 className="font-semibold text-white">
+                        {selectedFriend.clanTag ? `|${selectedFriend.clanTag}| ${selectedFriend.nickname}` : selectedFriend.nickname}
+                      </h3>
                       <p className="text-sm text-gray-400">
                         {selectedFriend.isOnline ? '🟢 Online' : '⚫ Offline'}
                       </p>

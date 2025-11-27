@@ -42,9 +42,9 @@ export class SeasonsService {
       endDate,
       isActive: true,
       prizes: {
-        first: { trophy: '🥇 Troféu Ouro', coins: 10000, credits: 500 },
-        second: { trophy: '🥈 Troféu Prata', coins: 5000, credits: 250 },
-        third: { trophy: '🥉 Troféu Bronze', coins: 2500, credits: 100 },
+        first: { trophy: '🥇 Troféu Ouro', credits: 500 },
+        second: { trophy: '🥈 Troféu Prata', credits: 250 },
+        third: { trophy: '🥉 Troféu Bronze', credits: 100 },
       }
     });
 
@@ -66,8 +66,42 @@ export class SeasonsService {
     return season;
   }
 
+  // Criar ranking inicial para um novo usuário
+  async createUserRanking(userId: number): Promise<SeasonRanking | null> {
+    try {
+      const season = await this.getActiveSeason();
+      
+      // Verificar se já existe ranking para este usuário nesta season
+      const existing = await this.rankingRepository.findOne({
+        where: { seasonId: season.id, userId }
+      });
+
+      if (existing) {
+        return existing;
+      }
+
+      // Criar novo ranking com valores iniciais
+      const ranking = this.rankingRepository.create({
+        seasonId: season.id,
+        userId,
+        seasonScore: 0,
+        wins: 0,
+        losses: 0,
+        division: Division.BRONZE,
+        divisionPoints: 0,
+        rank: 0
+      });
+
+      return await this.rankingRepository.save(ranking);
+    } catch (error) {
+      // Se não houver season ativa, retorna null (não é erro crítico)
+      console.warn('Não foi possível criar ranking da season para o usuário:', error.message);
+      return null;
+    }
+  }
+
   // Atualizar ranking de um usuário
-  async updateUserRanking(userId: string, scoreToAdd: number, win: boolean): Promise<SeasonRanking> {
+  async updateUserRanking(userId: number, scoreToAdd: number, win: boolean): Promise<SeasonRanking> {
     const season = await this.getActiveSeason();
     
     let ranking = await this.rankingRepository.findOne({
@@ -197,9 +231,8 @@ export class SeasonsService {
       ranking.trophy = prize.trophy;
       await this.rankingRepository.save(ranking);
 
-      // Adiciona moedas e créditos ao usuário
+      // Adiciona créditos ao usuário
       await this.userRepository.update(ranking.userId, {
-        coins: () => `"coins" + ${prize.coins}`,
         credits: () => `"credits" + ${prize.credits}`
       });
     }
@@ -215,7 +248,7 @@ export class SeasonsService {
   }
 
   // Buscar ranking de um usuário específico
-  async getUserRanking(userId: string, seasonId?: string): Promise<SeasonRanking> {
+  async getUserRanking(userId: number, seasonId?: string): Promise<SeasonRanking> {
     const season = seasonId 
       ? await this.seasonRepository.findOne({ where: { id: seasonId } })
       : await this.getActiveSeason();

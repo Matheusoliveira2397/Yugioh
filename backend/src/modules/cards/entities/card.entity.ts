@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
 export enum CardType {
@@ -88,13 +89,13 @@ export enum MonsterRace {
 @Entity('cards')
 export class Card {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id: string; // UUID interno para relações (mantido para compatibilidade)
+
+  @Column({ unique: true })
+  idCarta: string; // ID único da carta - IDENTIFICADOR PRINCIPAL usado pelo usuário
 
   @Column()
   name: string;
-
-  @Column({ nullable: true })
-  nameEn: string;
 
   @Column({ type: 'text', nullable: true })
   description: string;
@@ -120,6 +121,9 @@ export class Card {
   @Column({ type: 'enum', enum: TrapType, nullable: true })
   trapType?: TrapType;
 
+  @Column({ nullable: true })
+  archetype?: string; // Blue-Eyes, Dark Magician, Elemental HERO, etc.
+
   @Column({ type: 'int', nullable: true })
   level?: number;
 
@@ -127,56 +131,42 @@ export class Card {
   rank?: number; // Para Xyz
 
   @Column({ type: 'int', nullable: true })
-  linkRating?: number; // Para Link
-
-  @Column({ type: 'int', nullable: true })
   atk?: number;
 
   @Column({ type: 'int', nullable: true })
   def?: number;
 
-  @Column({ type: 'int', nullable: true })
-  pendulumScale?: number;
-
-  // Sistema de Efeitos (JSON flexível)
-  @Column({ type: 'jsonb', nullable: true })
-  effect?: {
-    type: 'continuous' | 'trigger' | 'ignition' | 'quick' | 'flip';
-    timing?: string[]; // ['summon', 'attack', 'end-phase']
-    condition?: string; // Condição para ativar
-    action: string; // 'draw', 'destroy', 'special-summon', etc.
-    target?: string; // 'opponent', 'self', 'all', etc.
-    params?: any; // Parâmetros específicos do efeito
-    cost?: any; // Custo para ativar
-  };
-
   @Column({ type: 'enum', enum: CardRarity, default: CardRarity.COMMON })
   rarity: CardRarity;
 
-  @Column({ type: 'int', default: 0 })
-  konamiId?: number; // ID oficial da Konami
-
   @Column({ default: true })
+  @Index()
   isActive: boolean;
 
   @Column({ default: false })
-  isLimited: boolean; // Carta limitada/banida
+  isBanned: boolean; // Carta banida (proibida em duelos)
 
   @Column({ type: 'int', default: 3 })
   maxCopiesInDeck: number; // Quantas cópias podem ter no deck
 
   // ==================== PREÇOS DA CARTA ====================
-  @Column({ type: 'int', nullable: true, default: null })
-  priceCoins?: number; // Preço em moedas (in-game currency)
+  // REMOVIDO: Sistema de moedas desativado - apenas Cash e Créditos
+  // @Column({ type: 'int', nullable: true, default: null })
+  // priceCoins?: number; // Preço em moedas (DESATIVADO)
 
   @Column({ type: 'int', nullable: true, default: null })
-  priceCredits?: number; // Preço em créditos (premium currency)
+  priceCredits?: number; // Preço em créditos (moeda premium)
 
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true, default: null })
-  priceCash?: number; // Preço em dinheiro real (R$, USD, etc)
+  priceCash?: number; // Preço em dinheiro real (R$)
 
   @Column({ default: false })
+  @Index()
   isForSale: boolean; // Se está disponível na loja
+
+  // Índice composto para queries da loja
+  @Index(['isActive', 'isForSale'])
+  @Index(['rarity', 'createdAt'])
 
   @CreateDateColumn()
   createdAt: Date;

@@ -11,13 +11,15 @@ export class EconomyController {
   @Get('balance')
   @UseGuards(JwtAuthGuard)
   async getBalance(@Request() req: ExpressRequest & { user: any }) {
-    return this.economyService.getUserBalance(req.user.id);
+    const userId = Number(req.user.id);
+    return this.economyService.getUserBalance(userId);
   }
 
   @Get('transactions')
   @UseGuards(JwtAuthGuard)
   async getTransactions(@Request() req: ExpressRequest & { user: any }, @Query('limit') limit?: number) {
-    return this.economyService.getTransactionHistory(req.user.id, limit || 50);
+    const userId = Number(req.user.id);
+    return this.economyService.getTransactionHistory(userId, limit || 50);
   }
 
   @Post('transfer')
@@ -31,9 +33,14 @@ export class EconomyController {
       description?: string;
     }
   ) {
+    const userId = Number(req.user.id);
+    const toUserId = parseInt(body.toUserId, 10);
+    if (isNaN(toUserId)) {
+      throw new Error('ID de destinatário inválido');
+    }
     await this.economyService.transferCurrency(
-      req.user.id,
-      body.toUserId,
+      userId,
+      toUserId,
       body.currencyType,
       body.amount,
       body.description
@@ -51,8 +58,12 @@ export class EconomyController {
       description?: string;
     }
   ) {
+    const userId = parseInt(body.userId, 10);
+    if (isNaN(userId)) {
+      throw new Error('ID de usuário inválido');
+    }
     return this.economyService.addCurrency(
-      body.userId,
+      userId,
       body.currencyType,
       body.amount,
       TransactionType.EARN,
@@ -70,8 +81,9 @@ export class EconomyController {
       description?: string;
     }
   ) {
+    const userId = Number(req.user.id);
     return this.economyService.removeCurrency(
-      req.user.id,
+      userId,
       body.currencyType,
       body.amount,
       TransactionType.SPEND,

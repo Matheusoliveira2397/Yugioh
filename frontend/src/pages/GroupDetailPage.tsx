@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import { useSocket } from '../hooks/useSocket';
 import axios from 'axios';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 interface Group {
   id: string;
@@ -10,6 +13,7 @@ interface Group {
   tag: string;
   description: string;
   logo: string;
+  banner?: string;
   totalScore: number;
   maxMembers: number;
   isPublic: boolean;
@@ -17,6 +21,7 @@ interface Group {
   leader: {
     id: string;
     nickname: string;
+    clanTag?: string;
   };
   createdAt: string;
 }
@@ -35,6 +40,7 @@ interface GroupMember {
     nickname: string;
     profileImage: string;
     level: number;
+    clanTag?: string;
   };
 }
 
@@ -44,9 +50,27 @@ export default function GroupDetailPage() {
   const { token, user } = useAuthStore();
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
-  const [activeTab, setActiveTab] = useState<'weekly' | 'season' | 'total'>('weekly');
+  const [activeTab, setActiveTab] = useState<'weekly' | 'season' | 'total' | 'chat'>('weekly');
   const [loading, setLoading] = useState(true);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [messageInput, setMessageInput] = useState('');
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    tag: '',
+    description: '',
+    isPublic: true,
+  });
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const [editError, setEditError] = useState('');
+
+  const { getSocket } = useSocket();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (id) {
@@ -55,9 +79,30 @@ export default function GroupDetailPage() {
     }
   }, [id]);
 
+  // Calcular se é membro
+  const userId = user?.id ? (typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id)) : null;
+  const leaderId = group?.leader?.id ? (typeof group.leader.id === 'string' ? parseInt(group.leader.id, 10) : Number(group.leader.id)) : null;
+  const isLeader = userId !== null && leaderId !== null && userId === leaderId;
+  const isMember = userId !== null && members.some(m => {
+    const memberId = m.user?.id ? (typeof m.user.id === 'string' ? parseInt(m.user.id, 10) : Number(m.user.id)) : null;
+    return memberId !== null && userId === memberId;
+  });
+
+  useEffect(() => {
+    if (id && isMember && activeTab === 'chat' && user?.id) {
+      fetchMessages();
+      const cleanup = setupWebSocket();
+      return cleanup;
+    }
+  }, [id, isMember, activeTab, user?.id, members]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
   const fetchGroupDetails = async () => {
     try {
-      const response = await axios.get(`http://localhost:3000/groups/${id}`, {
+      const response = await axios.get(`${API_URL}/groups/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setGroup(response.data);
@@ -71,7 +116,7 @@ export default function GroupDetailPage() {
 
   const fetchRanking = async (type: 'weekly' | 'season' | 'total') => {
     try {
-      const response = await axios.get(`http://localhost:3000/groups/${id}/ranking/${type}`, {
+      const response = await axios.get(`${API_URL}/groups/${id}/ranking/${type}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setMembers(response.data);
@@ -81,13 +126,122 @@ export default function GroupDetailPage() {
     }
   };
 
+  const fetchMessages = async () => {
+    if (!id || !isMember) return;
+    try {
+      setLoadingMessages(true);
+      const url = `${API_URL}/groups/messages/${id}`;
+      console.log('📥 [Frontend] Buscando mensagens:', { url, groupId: id });
+      const response = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setMessages(response.data || []);
+    } catch (error: any) {
+      console.error('Erro ao buscar mensagens:', error);
+      if (error.response?.status === 403) {
+        alert('Você não é membro deste clã');
+      }
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
+
+  const setupWebSocket = () => {
+    const socket = getSocket();
+    if (!socket || !id || !user?.id) return;
+
+    const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
+    socket.emit('joinGroupChat', { groupId: id, userId });
+
+    const messageHandler = (message: any) => {
+      setMessages((prev) => {
+        // Evitar duplicatas
+        if (prev.some(m => m.id === message.id)) {
+          return prev;
+        }
+        return [...prev, message];
+      });
+    };
+
+    socket.on('groupMessage', messageHandler);
+    socket.on('groupChatError', (error: any) => {
+      console.error('Erro no chat do clã:', error);
+      alert(error.message || 'Erro no chat do clã');
+    });
+
+    return () => {
+      socket.off('groupMessage', messageHandler);
+      socket.off('groupChatError');
+      socket.emit('leaveGroupChat', { groupId: id });
+    };
+  };
+
+  const handleSendMessage = async () => {
+    if (!messageInput.trim() || !id || !isMember) return;
+
+    const url = `${API_URL}/groups/messages/${id}`;
+    const body = { message: messageInput };
+    const headers = { Authorization: `Bearer ${token}` };
+    
+    console.log('📤 [Frontend] Enviando mensagem:', {
+      url,
+      body,
+      hasToken: !!token,
+      groupId: id,
+    });
+
+    try {
+      const response = await axios.post(url, body, { headers });
+
+      // Adicionar mensagem localmente (já será adicionada via WebSocket também)
+      setMessageInput('');
+
+      // Enviar via WebSocket para outros membros
+      const socket = getSocket();
+      if (socket) {
+        socket.emit('groupMessage', {
+          groupId: id,
+          message: response.data,
+        });
+      }
+    } catch (error: any) {
+      console.error('❌ [Frontend] Erro ao enviar mensagem:', error);
+      console.error('❌ [Frontend] URL tentada:', url);
+      console.error('❌ [Frontend] Status:', error.response?.status);
+      console.error('❌ [Frontend] Response data:', error.response?.data);
+      alert(error.response?.data?.message || 'Erro ao enviar mensagem');
+    }
+  };
+
   const handleLeaveGroup = async () => {
     if (!confirm('Tem certeza que deseja sair do grupo?')) return;
 
     try {
-      await axios.delete(`http://localhost:3000/groups/leave/${id}`, {
+      await axios.delete(`${API_URL}/groups/leave/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      
+      // Buscar dados atualizados do usuário após sair do grupo
+      try {
+        const userResponse = await axios.get(
+          `${API_URL}/users/me`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        
+        console.log('🔄 [leaveGroup] Dados do usuário recebidos:', userResponse.data);
+        if (userResponse.data) {
+          const updatedUser = { ...user, ...userResponse.data };
+          console.log('✅ [leaveGroup] Atualizando store com clanTag:', updatedUser.clanTag);
+          useAuthStore.setState({
+            user: updatedUser,
+          });
+        }
+      } catch (err) {
+        console.error('❌ Erro ao buscar dados do usuário:', err);
+      }
+      
       alert('Você saiu do grupo!');
       navigate('/groups');
     } catch (error: any) {
@@ -97,7 +251,7 @@ export default function GroupDetailPage() {
 
   const handleDeleteGroup = async () => {
     try {
-      await axios.delete(`http://localhost:3000/groups/${id}`, {
+      await axios.delete(`${API_URL}/groups/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       alert('Grupo excluído com sucesso!');
@@ -107,12 +261,75 @@ export default function GroupDetailPage() {
     }
   };
 
-  const isLeader = group?.leader.id === user?.id;
-  const isMember = members.some(m => m.user.id === user?.id);
+  const handleOpenEditModal = () => {
+    if (group) {
+      setEditFormData({
+        name: group.name,
+        tag: group.tag,
+        description: group.description || '',
+        isPublic: group.isPublic,
+      });
+      setLogoPreview(group.logo ? `${API_URL}${group.logo}` : null);
+      setBannerPreview(group.banner ? `${API_URL}${group.banner}` : null);
+      setLogoFile(null);
+      setBannerFile(null);
+      setEditError('');
+      setShowEditModal(true);
+    }
+  };
+
+  const handleUpdateGroup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEditError('');
+
+    // Validações
+    if (editFormData.name.length < 3) {
+      setEditError('Nome deve ter pelo menos 3 caracteres');
+      return;
+    }
+    if (editFormData.tag.length < 2 || editFormData.tag.length > 6) {
+      setEditError('Tag deve ter entre 2 e 6 caracteres');
+      return;
+    }
+
+    try {
+      const formDataToSend = new FormData();
+      formDataToSend.append('name', editFormData.name);
+      formDataToSend.append('tag', editFormData.tag.toUpperCase());
+      if (editFormData.description) {
+        formDataToSend.append('description', editFormData.description);
+      }
+      formDataToSend.append('isPublic', editFormData.isPublic.toString());
+      if (logoFile) {
+        formDataToSend.append('logo', logoFile);
+      }
+      if (bannerFile) {
+        formDataToSend.append('banner', bannerFile);
+      }
+
+      await axios.put(
+        `${API_URL}/groups/${id}`,
+        formDataToSend,
+        {
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+
+      // Recarregar dados do grupo
+      await fetchGroupDetails();
+      setShowEditModal(false);
+      alert('Grupo atualizado com sucesso!');
+    } catch (error: any) {
+      setEditError(error.response?.data?.message || 'Erro ao atualizar grupo');
+    }
+  };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900/20 to-slate-900 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center relative z-10">
         <div className="text-white text-2xl">Carregando...</div>
       </div>
     );
@@ -123,7 +340,7 @@ export default function GroupDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900/20 to-slate-900 p-8">
+    <div className="min-h-screen p-8 relative z-10">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <motion.div
@@ -163,7 +380,9 @@ export default function GroupDetailPage() {
                   </div>
                   <p className="text-slate-300">{group.description || 'Sem descrição'}</p>
                   <p className="text-slate-400 text-sm mt-2">
-                    👑 Líder: <span className="text-white font-semibold">{group.leader.nickname}</span>
+                    👑 Líder: <span className="text-white font-semibold">
+                      {group.leader.clanTag ? `|${group.leader.clanTag}| ${group.leader.nickname}` : group.leader.nickname}
+                    </span>
                   </p>
                 </div>
               </div>
@@ -179,12 +398,20 @@ export default function GroupDetailPage() {
                   </button>
                 )}
                 {isLeader && (
-                  <button
-                    onClick={() => setShowDeleteModal(true)}
-                    className="px-6 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors"
-                  >
-                    🗑️ Excluir Grupo
-                  </button>
+                  <>
+                    <button
+                      onClick={handleOpenEditModal}
+                      className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
+                    >
+                      ✏️ Editar Grupo
+                    </button>
+                    <button
+                      onClick={() => setShowDeleteModal(true)}
+                      className="px-6 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors"
+                    >
+                      🗑️ Excluir Grupo
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -214,7 +441,10 @@ export default function GroupDetailPage() {
             🏆 Ranking da Season
           </button>
           <button
-            onClick={() => fetchRanking('total')}
+            onClick={() => {
+              setActiveTab('total');
+              fetchRanking('total');
+            }}
             className={`px-6 py-3 rounded-xl font-bold transition-all ${
               activeTab === 'total'
                 ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
@@ -223,9 +453,22 @@ export default function GroupDetailPage() {
           >
             ⭐ Ranking Total
           </button>
+          {isMember && (
+            <button
+              onClick={() => setActiveTab('chat')}
+              className={`px-6 py-3 rounded-xl font-bold transition-all ${
+                activeTab === 'chat'
+                  ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
+                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+              }`}
+            >
+              💬 Chat do Clã
+            </button>
+          )}
         </div>
 
         {/* Ranking de Membros */}
+        {activeTab !== 'chat' && (
         <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl border border-slate-700 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -267,15 +510,17 @@ export default function GroupDetailPage() {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <img
-                            src={`http://localhost:3000${member.user.profileImage}`}
+                            src={`${API_URL}${member.user.profileImage}`}
                             alt={member.user.nickname}
                             className="w-10 h-10 rounded-lg object-cover"
                             onError={(e) => {
-                              e.currentTarget.src = '/avatars/default.png';
+                              e.currentTarget.src = '/images/default.png';
                             }}
                           />
                           <div>
-                            <p className="text-white font-semibold">{member.user.nickname}</p>
+                            <p className="text-white font-semibold">
+                              {member.user.clanTag ? `|${member.user.clanTag}| ${member.user.nickname}` : member.user.nickname}
+                            </p>
                             <p className="text-slate-400 text-sm">Nível {member.user.level || 0}</p>
                           </div>
                         </div>
@@ -312,7 +557,292 @@ export default function GroupDetailPage() {
             </table>
           </div>
         </div>
+        )}
+
+      {/* Chat do Clã */}
+      {activeTab === 'chat' && isMember && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-purple-500/50 shadow-2xl"
+        >
+          <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
+            💬 Chat do Clã
+          </h2>
+
+          {loadingMessages ? (
+            <div className="text-center py-8">
+              <div className="text-slate-400">Carregando mensagens...</div>
+            </div>
+          ) : (
+            <>
+              {/* Área de Mensagens */}
+              <div className="bg-slate-900/50 rounded-lg p-4 h-96 overflow-y-auto mb-4 border border-slate-700">
+                {messages.length === 0 ? (
+                  <div className="text-center text-slate-500 py-8">
+                    Nenhuma mensagem ainda. Seja o primeiro a falar!
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {messages.map((msg) => {
+                      const isOwnMessage = msg.user?.id === user?.id || msg.userId === user?.id;
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`flex gap-3 ${isOwnMessage ? 'flex-row-reverse' : ''}`}
+                        >
+                          <img
+                            src={msg.user?.profileImage ? `${API_URL}${msg.user.profileImage}` : '/images/default.png'}
+                            alt={msg.user?.nickname || 'Usuário'}
+                            className="w-10 h-10 rounded-full border-2 border-purple-500/50"
+                            onError={(e) => {
+                              e.currentTarget.src = '/images/default.png';
+                            }}
+                          />
+                          <div className={`flex-1 ${isOwnMessage ? 'text-right' : ''}`}>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-bold text-purple-400">
+                                {msg.user?.clanTag ? `|${msg.user.clanTag}| ` : ''}
+                                {msg.user?.nickname || msg.user?.username || 'Usuário'}
+                              </span>
+                              <span className="text-xs text-slate-500">
+                                {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                            </div>
+                            <div
+                              className={`inline-block px-4 py-2 rounded-lg ${
+                                isOwnMessage
+                                  ? 'bg-purple-600 text-white'
+                                  : 'bg-slate-700 text-slate-200'
+                              }`}
+                            >
+                              {msg.message}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div ref={messagesEndRef} />
+                  </div>
+                )}
+              </div>
+
+              {/* Input de Mensagem */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  placeholder="Digite sua mensagem..."
+                  className="flex-1 px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-purple-500 focus:outline-none"
+                  maxLength={500}
+                />
+                <button
+                  onClick={handleSendMessage}
+                  disabled={!messageInput.trim()}
+                  className="px-6 py-3 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Enviar
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                Apenas membros do clã podem ver e enviar mensagens
+              </p>
+            </>
+          )}
+        </motion.div>
+      )}
       </div>
+
+      {/* Modal de Edição */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-8 max-w-2xl w-full border border-purple-500/50 shadow-2xl my-8"
+          >
+            <h2 className="text-3xl font-bold text-white mb-6 flex items-center gap-3">
+              <span className="text-4xl">✏️</span>
+              Editar Grupo
+            </h2>
+
+            <form onSubmit={handleUpdateGroup} className="space-y-4">
+              {/* Nome do Grupo */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-2">
+                  Nome do Grupo
+                </label>
+                <input
+                  type="text"
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                  placeholder="Ex: Dragões Supremos"
+                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-purple-500 focus:outline-none"
+                  required
+                />
+              </div>
+
+              {/* Tag do Grupo */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-2">
+                  Tag (2-6 caracteres)
+                </label>
+                <input
+                  type="text"
+                  value={editFormData.tag}
+                  onChange={(e) => setEditFormData({ ...editFormData, tag: e.target.value.toUpperCase() })}
+                  placeholder="Ex: DRAG"
+                  maxLength={6}
+                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white uppercase focus:border-purple-500 focus:outline-none"
+                  required
+                />
+              </div>
+
+              {/* Descrição */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-2">
+                  Descrição (opcional)
+                </label>
+                <textarea
+                  value={editFormData.description}
+                  onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                  placeholder="Descreva seu grupo..."
+                  rows={3}
+                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-purple-500 focus:outline-none resize-none"
+                />
+              </div>
+
+              {/* Logo do Clã */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-2">
+                  Logo do Clã (opcional)
+                </label>
+                {logoPreview && (
+                  <div className="mb-3">
+                    <img 
+                      src={logoPreview} 
+                      alt="Preview do logo" 
+                      className="w-24 h-24 object-cover rounded-lg border-2 border-purple-500"
+                    />
+                  </div>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setLogoFile(file);
+                      setLogoPreview(URL.createObjectURL(file));
+                    }
+                  }}
+                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-purple-500 focus:outline-none file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-700"
+                />
+                <p className="text-slate-400 text-sm mt-1">Deixe em branco para manter o logo atual</p>
+              </div>
+
+              {/* Banner do Clã */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-2">
+                  Banner do Clã (opcional)
+                </label>
+                {bannerPreview && (
+                  <div className="mb-3">
+                    <img 
+                      src={bannerPreview} 
+                      alt="Preview do banner" 
+                      className="w-full h-32 object-cover rounded-lg border-2 border-purple-500"
+                    />
+                  </div>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setBannerFile(file);
+                      setBannerPreview(URL.createObjectURL(file));
+                    }
+                  }}
+                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-purple-500 focus:outline-none file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-700"
+                />
+                <p className="text-slate-400 text-sm mt-1">Deixe em branco para manter o banner atual</p>
+              </div>
+
+              {/* Tipo */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-2">
+                  Tipo do Grupo
+                </label>
+                <div className="flex gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setEditFormData({ ...editFormData, isPublic: true })}
+                    className={`flex-1 py-3 rounded-xl font-semibold transition-all ${
+                      editFormData.isPublic
+                        ? 'bg-green-600 text-white'
+                        : 'bg-slate-900 text-slate-400 border border-slate-700'
+                    }`}
+                  >
+                    🌍 Público
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditFormData({ ...editFormData, isPublic: false })}
+                    className={`flex-1 py-3 rounded-xl font-semibold transition-all ${
+                      !editFormData.isPublic
+                        ? 'bg-red-600 text-white'
+                        : 'bg-slate-900 text-slate-400 border border-slate-700'
+                    }`}
+                  >
+                    🔒 Privado
+                  </button>
+                </div>
+              </div>
+
+              {/* Erro */}
+              {editError && (
+                <div className="bg-red-500/20 border border-red-500 text-red-400 px-4 py-3 rounded-xl">
+                  {editError}
+                </div>
+              )}
+
+              {/* Botões */}
+              <div className="flex gap-4 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setEditError('');
+                    setLogoFile(null);
+                    setBannerFile(null);
+                  }}
+                  className="flex-1 py-3 bg-slate-700 text-white rounded-xl font-bold hover:bg-slate-600 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold hover:scale-105 transition-transform"
+                >
+                  Salvar Alterações
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
 
       {/* Modal de Confirmação de Exclusão */}
       {showDeleteModal && (

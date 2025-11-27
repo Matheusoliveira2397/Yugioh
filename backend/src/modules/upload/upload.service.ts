@@ -7,6 +7,7 @@ export class UploadService {
   // Caminho absoluto dentro do container - mesmo em produção compilada
   private readonly uploadPath = '/app/uploads/avatars';
   private readonly cardsPath = '/app/uploads/cards';
+  private readonly groupsPath = '/app/uploads/groups';
 
   constructor() {
     // Cria a pasta de uploads se não existir
@@ -17,6 +18,10 @@ export class UploadService {
     if (!fs.existsSync(this.cardsPath)) {
       fs.mkdirSync(this.cardsPath, { recursive: true });
       console.log('📁 Pasta de cartas criada:', this.cardsPath);
+    }
+    if (!fs.existsSync(this.groupsPath)) {
+      fs.mkdirSync(this.groupsPath, { recursive: true });
+      console.log('📁 Pasta de grupos criada:', this.groupsPath);
     }
   }
 
@@ -49,7 +54,7 @@ export class UploadService {
   async deleteAvatar(imageUrl: string): Promise<void> {
     try {
       // Se for avatar padrão, não deleta
-      if (imageUrl.includes('/avatars/default')) {
+      if (imageUrl.includes('/images/default')) {
         return;
       }
 
@@ -108,5 +113,57 @@ export class UploadService {
     } catch (error) {
       console.error('❌ Erro ao deletar imagem da carta:', error);
     }
+  }
+
+  async uploadGroupLogo(file: any, groupId: string): Promise<string> {
+    // Validações
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw new Error('Formato de imagem inválido. Use PNG, JPG ou WEBP.');
+    }
+
+    // Limite de tamanho: 5MB
+    if (file.size > 5 * 1024 * 1024) {
+      throw new Error('Imagem muito grande. Tamanho máximo: 5MB.');
+    }
+
+    // Gera nome único para o arquivo
+    const fileExtension = path.extname(file.originalname);
+    const fileName = `group_${groupId}_logo_${Date.now()}${fileExtension}`;
+    const filePath = path.join(this.groupsPath, fileName);
+
+    // Salva o arquivo
+    fs.writeFileSync(filePath, file.buffer);
+
+    console.log('✅ Logo do grupo salvo:', fileName);
+
+    // Retorna o caminho relativo (URL que será salva no banco)
+    return `/uploads/groups/${fileName}`;
+  }
+
+  async uploadGroupBanner(file: any, groupId: string): Promise<string> {
+    // Validações
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw new Error('Formato de imagem inválido. Use PNG, JPG ou WEBP.');
+    }
+
+    // Limite de tamanho: 10MB (banners podem ser maiores)
+    if (file.size > 10 * 1024 * 1024) {
+      throw new Error('Imagem muito grande. Tamanho máximo: 10MB.');
+    }
+
+    // Gera nome único para o arquivo
+    const fileExtension = path.extname(file.originalname);
+    const fileName = `group_${groupId}_banner_${Date.now()}${fileExtension}`;
+    const filePath = path.join(this.groupsPath, fileName);
+
+    // Salva o arquivo
+    fs.writeFileSync(filePath, file.buffer);
+
+    console.log('✅ Banner do grupo salvo:', fileName);
+
+    // Retorna o caminho relativo (URL que será salva no banco)
+    return `/uploads/groups/${fileName}`;
   }
 }

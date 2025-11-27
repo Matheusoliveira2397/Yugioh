@@ -30,8 +30,8 @@ export class SeasonRanking {
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @Column()
-  userId: string;
+  @Column({ type: 'int' })
+  userId: number;
 
   @Column({ type: 'int', default: 0 })
   seasonScore: number;

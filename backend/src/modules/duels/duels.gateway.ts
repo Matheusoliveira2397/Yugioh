@@ -4,304 +4,572 @@ import {
   SubscribeMessage,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   MessageBody,
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { JwtService } from '@nestjs/jwt';
+import { MatchmakingService } from './matchmaking.service';
 import { DuelsService } from './duels.service';
-import { DuelActionType } from './entities/duel-log.entity';
-import { UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { DuelQueueService } from './duel-queue.service';
+import { TurnPhase, DuelOrigin } from './entities/duel.entity';
 
 @WebSocketGateway({
   cors: {
     origin: '*',
+    credentials: true,
   },
+  transports: ['websocket', 'polling'],
+  pingTimeout: 300000,
+  pingInterval: 60000,
+  upgradeTimeout: 10000,
+  maxHttpBufferSize: 1e6,
+  allowEIO3: true,
+  connectTimeout: 45000,
 })
-export class DuelsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  private userSocketMap: Map<string, string> = new Map(); // userId -> socketId
+  // Map<userId, Map<clientInstanceId, socket>> - múltiplas conexões por usuário
+  private userSocketMap: Map<number, Map<string, Socket>> = new Map();
 
-  constructor(private duelsService: DuelsService) {}
+  constructor(
+    private jwtService: JwtService,
+    private matchmakingService: MatchmakingService,
+    private duelsService: DuelsService,
+    private duelQueueService: DuelQueueService,
+  ) {}
+
+  afterInit(server: Server) {
+    this.matchmakingService.setServer(server);
+    this.duelQueueService.setServer(server);
+    
+    // Middleware de autenticação
+    server.use(async (socket: Socket, next) => {
+      try {
+        const token = socket.handshake.auth?.token || 
+                     socket.handshake.headers?.authorization?.replace('Bearer ', '');
+        
+        if (!token) {
+          return next(new Error('Token não fornecido'));
+        }
+
+        const decoded = await this.jwtService.verifyAsync(token);
+        const userId = typeof decoded.sub === 'string' ? parseInt(decoded.sub, 10) : Number(decoded.sub);
+        
+        if (isNaN(userId)) {
+          return next(new Error('Token inválido: userId não encontrado'));
+        }
+
+        const clientInstanceId = socket.handshake.auth?.clientInstanceId || 
+                                 socket.handshake.query?.clientInstanceId as string ||
+                                 `fallback_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+
+        socket.data.userId = userId;
+        socket.data.clientInstanceId = clientInstanceId;
+        next();
+      } catch (error) {
+        next(new Error('Token inválido ou expirado'));
+      }
+    });
+  }
 
   handleConnection(client: Socket) {
-    console.log(`Cliente conectado: ${client.id}`);
+    try {
+      const userId = client.data.userId;
+      const clientInstanceId = client.data.clientInstanceId;
+      
+      if (!userId || !clientInstanceId) {
+        client.disconnect();
+        return;
+      }
+
+      // Criar Map de instâncias se não existir
+      if (!this.userSocketMap.has(userId)) {
+        this.userSocketMap.set(userId, new Map());
+      }
+      
+      const userInstances = this.userSocketMap.get(userId)!;
+      
+      // Limpar sockets desconectados
+      userInstances.forEach((socket, instanceId) => {
+        if (!socket || !socket.connected) {
+          userInstances.delete(instanceId);
+        }
+      });
+      
+      // Limite de conexões
+      if (userInstances.size >= 20) {
+        client.emit('connectionLimitReached', { 
+          message: 'Limite de conexões atingido. Feche outras abas.' 
+        });
+        client.disconnect(true);
+        return;
+      }
+      
+      // Substituir socket antigo se mesma instância
+      if (userInstances.has(clientInstanceId)) {
+        const existingSocket = userInstances.get(clientInstanceId);
+        if (existingSocket && existingSocket.connected) {
+          existingSocket.disconnect(true);
+        }
+      }
+      
+      // Adicionar nova conexão
+      userInstances.set(clientInstanceId, client);
+      client.join(`user_${userId}`);
+    } catch (error) {
+      console.error(`❌ Erro ao conectar:`, error);
+    }
   }
 
   handleDisconnect(client: Socket) {
-    console.log(`Cliente desconectado: ${client.id}`);
-    
-    // Remover da fila se estava procurando duelo
-    const userId = Array.from(this.userSocketMap.entries())
-      .find(([, socketId]) => socketId === client.id)?.[0];
-    
-    if (userId) {
-      this.duelsService.removeFromQueue(userId);
-      this.userSocketMap.delete(userId);
+    try {
+      const userId = client.data.userId;
+      const clientInstanceId = client.data.clientInstanceId;
+      
+      if (userId && clientInstanceId) {
+        const userInstances = this.userSocketMap.get(userId);
+        if (userInstances) {
+          userInstances.delete(clientInstanceId);
+          
+          if (userInstances.size === 0) {
+            this.userSocketMap.delete(userId);
+            this.matchmakingService.removeFromQueue(userId);
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Erro ao desconectar:`, error);
     }
   }
 
   @SubscribeMessage('searchDuel')
-  async handleSearchDuel(
-    @MessageBody() data: { userId: string },
+  handleSearchDuel(
+    @MessageBody() data: { userId: number },
     @ConnectedSocket() client: Socket,
   ) {
-    const { userId } = data;
-    
-    console.log(`Usuário ${userId} procurando duelo...`);
-    
-    // Mapear socket ID
-    this.userSocketMap.set(userId, client.id);
-    
-    // Adicionar na fila
-    this.duelsService.addToQueue(userId, client.id);
-    
-    // Notificar que entrou na fila
-    client.emit('searchingDuel', { 
-      message: 'Procurando oponente...',
-      queueSize: this.duelsService.getQueueSize()
-    });
-    
-    // Tentar encontrar oponente
-    const match = await this.duelsService.findOpponent(userId);
-    
-    if (match) {
-      const { opponent, duel } = match;
-      
-      // Notificar ambos os jogadores
-      const player1Socket = this.server.sockets.sockets.get(client.id);
-      const player2Socket = this.server.sockets.sockets.get(opponent.socketId);
-      
-      if (player1Socket) {
-        player1Socket.emit('duelFound', {
-          duelId: duel.id,
-          opponent: {
-            id: duel.player2.id,
-            username: duel.player2.username,
-            clanTag: (duel.player2 as any).clanTag || null,
-            level: (duel.player2 as any).level || 1,
-            avatar: (duel.player2 as any).avatar || null,
-          },
-          yourTurn: duel.currentTurn === 1,
-          lifePoints: duel.player1LifePoints,
-          opponentLifePoints: duel.player2LifePoints,
-        });
+    try {
+      const userId = client.data.userId || data.userId;
+      if (!userId) {
+        console.error(`❌ [handleSearchDuel] ID de usuário inválido`);
+        client.emit('duelError', { message: 'ID de usuário inválido' });
+        return;
       }
       
-      if (player2Socket) {
-        player2Socket.emit('duelFound', {
-          duelId: duel.id,
-          opponent: {
-            id: duel.player1.id,
-            username: duel.player1.username,
-            clanTag: (duel.player1 as any).clanTag || null,
-            level: (duel.player1 as any).level || 1,
-            avatar: (duel.player1 as any).avatar || null,
-          },
-          yourTurn: duel.currentTurn === 2,
-          lifePoints: duel.player2LifePoints,
-          opponentLifePoints: duel.player1LifePoints,
-        });
-      }
+      console.log(`🔍 [handleSearchDuel] Usuário ${userId} procurando duelo (Socket: ${client.id})`);
+      this.matchmakingService.addToQueue(userId, client.id);
+      client.join(`user_${userId}`);
+      client.emit('searchingDuel', { message: 'Procurando oponente...' });
+    } catch (error) {
+      console.error(`❌ [handleSearchDuel] Erro:`, error);
+      client.emit('duelError', { message: 'Erro ao processar busca' });
     }
   }
 
   @SubscribeMessage('cancelSearch')
   handleCancelSearch(
-    @MessageBody() data: { userId: string },
+    @MessageBody() data: { userId: number },
     @ConnectedSocket() client: Socket,
   ) {
-    const { userId } = data;
-    this.duelsService.removeFromQueue(userId);
-    this.userSocketMap.delete(userId);
-    
-    client.emit('searchCancelled', { message: 'Busca cancelada' });
+    try {
+      const userId = client.data.userId || data.userId;
+      this.matchmakingService.removeFromQueue(userId);
+      client.emit('searchCancelled');
+    } catch (error) {
+      // Ignorar erro
+    }
   }
 
-  @SubscribeMessage('duelAction')
-  async handleDuelAction(
-    @MessageBody() data: { duelId: string; userId: string; actionType: string; actionData?: any },
+  @SubscribeMessage('createDuelFromMatch')
+  async handleCreateDuelFromMatch(
+    @MessageBody() data: { player1Id: number; player2Id: number; origin?: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const { duelId, userId, actionType, actionData } = data;
-    
-    const duel = await this.duelsService.findDuelById(duelId);
-    if (!duel) return;
-    
-    // Criar log da ação
-    let message = '';
-    let actionTypeEnum: DuelActionType;
-    
-    switch (actionType) {
-      case 'DRAW_CARD':
-        message = `${userId === duel.player1.id ? duel.player1.username : duel.player2.username} comprou uma carta`;
-        actionTypeEnum = DuelActionType.DRAW_CARD;
-        break;
-      case 'SUMMON_MONSTER':
-        message = `${userId === duel.player1.id ? duel.player1.username : duel.player2.username} invocou ${actionData?.cardName}`;
-        actionTypeEnum = DuelActionType.SUMMON_MONSTER;
-        break;
-      case 'ATTACK':
-        message = `${userId === duel.player1.id ? duel.player1.username : duel.player2.username} atacou com ${actionData?.attackerName}`;
-        actionTypeEnum = DuelActionType.ATTACK;
-        break;
-      case 'END_TURN':
-        message = `${userId === duel.player1.id ? duel.player1.username : duel.player2.username} finalizou o turno`;
-        actionTypeEnum = DuelActionType.END_TURN;
-        break;
-      default:
+    try {
+      const { player1Id, player2Id, origin } = data;
+      const userId = client.data.userId;
+      
+      if (userId !== player1Id && userId !== player2Id) {
+        client.emit('duelError', { message: 'Você não é um dos jogadores deste match' });
         return;
-    }
-    
-    const log = await this.duelsService.createLog(duelId, userId, actionTypeEnum, message, actionData);
-    
-    // Notificar ambos os jogadores
-    this.server.to(duelId).emit('duelLog', {
-      log: {
-        id: log.id,
-        username: log.user.username,
-        actionType: log.actionType,
-        message: log.message,
-        createdAt: log.createdAt,
       }
-    });
-    
-    // Se foi ação que afeta o estado, notificar atualização
-    this.server.to(duelId).emit('duelStateUpdate', {
-      actionType,
-      actionData,
-    });
-  }
 
-  @SubscribeMessage('duelChat')
-  async handleDuelChat(
-    @MessageBody() data: { duelId: string; userId: string; message: string },
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { duelId, userId, message } = data;
-    
-    const duel = await this.duelsService.findDuelById(duelId);
-    if (!duel) {
-      console.log('Duelo não encontrado:', duelId);
-      return;
+      client.join(`user_${userId}`);
+      
+      // Determinar origem do duelo (CHAT, ARENA, TOURNAMENT, ou OTHER)
+      let duelOrigin = DuelOrigin.OTHER;
+      if (origin) {
+        const originUpper = origin.toUpperCase();
+        if (originUpper === 'CHAT') duelOrigin = DuelOrigin.CHAT;
+        else if (originUpper === 'ARENA') duelOrigin = DuelOrigin.ARENA;
+        else if (originUpper === 'TOURNAMENT') duelOrigin = DuelOrigin.TOURNAMENT;
+      }
+      
+      // Adicionar à fila (não bloqueia)
+      this.duelQueueService.enqueueDuelCreation(player1Id, player2Id, client.id, duelOrigin)
+        .catch((error) => {
+          client.emit('duelError', { message: 'Erro ao criar duelo' });
+        });
+    } catch (error) {
+      client.emit('duelError', { message: 'Erro ao processar criação de duelo' });
     }
-    
-    const player = userId === duel.player1.id ? duel.player1 : duel.player2;
-    const displayName = player.nickname || player.username;
-    
-    console.log(`💬 Chat do duelo ${duelId}: ${displayName} disse: ${message}`);
-    
-    // Enviar mensagem para todos na sala
-    this.server.to(duelId).emit('chatMessage', {
-      username: displayName,
-      message,
-      timestamp: new Date(),
-    });
   }
 
   @SubscribeMessage('joinDuelRoom')
-  handleJoinDuelRoom(
-    @MessageBody() data: { duelId: string },
+  async handleJoinDuelRoom(
+    @MessageBody() data: { duelId: number | string; userId?: number },
     @ConnectedSocket() client: Socket,
   ) {
-    const { duelId } = data;
-    client.join(duelId);
-    console.log(`Cliente ${client.id} entrou na sala do duelo ${duelId}`);
-  }
-
-  @SubscribeMessage('lifePointsChange')
-  async handleLifePointsChange(
-    @MessageBody() data: { duelId: string; userId: string; newLifePoints: number },
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { duelId, userId, newLifePoints } = data;
-    
-    const duel = await this.duelsService.findDuelById(duelId);
-    if (!duel) return;
-    
-    const player = userId === duel.player1.id ? 1 : 2;
-    await this.duelsService.updateLifePoints(duelId, player, newLifePoints);
-    
-    // Criar log
-    const username = player === 1 ? duel.player1.username : duel.player2.username;
-    await this.duelsService.createLog(
-      duelId,
-      userId,
-      DuelActionType.LIFE_CHANGE,
-      `${username} agora tem ${newLifePoints} pontos de vida`,
-      { oldLifePoints: player === 1 ? duel.player1LifePoints : duel.player2LifePoints, newLifePoints }
-    );
-    
-    // Notificar todos
-    this.server.to(duelId).emit('lifePointsUpdate', {
-      player,
-      newLifePoints,
-    });
-    
-    // Verificar vitória
-    if (newLifePoints <= 0) {
-      const winnerId = player === 1 ? duel.player2.id : duel.player1.id;
-      await this.duelsService.finishDuel(
-        duelId,
-        player === 1 ? 'PLAYER2_WIN' as any : 'PLAYER1_WIN' as any,
-        winnerId
-      );
+    try {
+      // Yield ao Event Loop ANTES de processar (prioriza HTTP)
+      await new Promise(resolve => setImmediate(resolve));
       
-      this.server.to(duelId).emit('duelEnd', {
-        winnerId,
-        reason: 'life_points',
+      // UUID pode ser string, não precisa converter para number
+      const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
+      const userId = data.userId || client.data.userId;
+
+      if (!duelId || !userId) {
+        client.emit('duelError', { message: 'Dados inválidos' });
+        return;
+      }
+
+      console.log(`🔍 [handleJoinDuelRoom] ==========================================`);
+      console.log(`🔍 [handleJoinDuelRoom] Buscando duelo: ${duelId} (tipo: ${typeof duelId})`);
+      console.log(`🔍 [handleJoinDuelRoom] UserId: ${userId} (tipo: ${typeof userId})`);
+      
+      // Buscar duelo (primeiro em memória, depois no banco)
+      let duel = this.duelsService.findDuelByIdLight(duelId);
+      console.log(`🔍 [handleJoinDuelRoom] Busca em memória: ${duel ? 'ENCONTRADO' : 'NÃO ENCONTRADO'}`);
+      
+      // Se não encontrou em memória, buscar no banco
+      if (!duel) {
+        console.log(`🔍 [handleJoinDuelRoom] Buscando no banco...`);
+        duel = await this.duelsService.findDuelByIdFromDatabase(duelId);
+        console.log(`🔍 [handleJoinDuelRoom] Busca no banco: ${duel ? 'ENCONTRADO' : 'NÃO ENCONTRADO'}`);
+      }
+      
+      // Retry simples se não encontrou
+      if (!duel) {
+        console.log(`🔍 [handleJoinDuelRoom] Retry após 100ms...`);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        duel = this.duelsService.findDuelByIdLight(duelId);
+        if (!duel) {
+          duel = await this.duelsService.findDuelByIdFromDatabase(duelId);
+        }
+        console.log(`🔍 [handleJoinDuelRoom] Após retry: ${duel ? 'ENCONTRADO' : 'NÃO ENCONTRADO'}`);
+      }
+
+      if (!duel) {
+        console.error(`❌ [handleJoinDuelRoom] Duelo ${duelId} NÃO encontrado após todas as tentativas!`);
+        client.emit('duelError', { message: 'Duelo não encontrado' });
+        return;
+      }
+      
+      console.log(`✅ [handleJoinDuelRoom] Duelo encontrado! ID: ${duel.id}`);
+
+      // Verificar permissão
+      const duelPlayer1Id = Number(duel.player1Id);
+      const duelPlayer2Id = Number(duel.player2Id);
+      const numericUserId = Number(userId);
+      
+      if (duelPlayer1Id !== numericUserId && duelPlayer2Id !== numericUserId) {
+        client.emit('duelError', { message: 'Você não é um dos jogadores deste duelo' });
+        return;
+      }
+
+      // Entrar nas rooms
+      client.join(`duel_${duelId}`);
+      client.join(`user_${userId}`);
+
+      // Yield antes de processar campos (prioriza HTTP)
+      await new Promise(resolve => setImmediate(resolve));
+
+      // Preparar dados (simplificado - sem remoção pesada de base64)
+      const isPlayer1 = duelPlayer1Id === numericUserId;
+      const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+      const opponentField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+
+      console.log(`📤 [handleJoinDuelRoom] Preparando dados do duelo...`);
+      console.log(`📤 [handleJoinDuelRoom] isPlayer1: ${isPlayer1}`);
+      console.log(`📤 [handleJoinDuelRoom] playerField existe: ${!!playerField}`);
+      console.log(`📤 [handleJoinDuelRoom] opponentField existe: ${!!opponentField}`);
+      
+      if (playerField) {
+        console.log(`📤 [handleJoinDuelRoom] playerField - Deck: ${playerField.deck?.length || 0} cartas, Hand: ${playerField.hand?.length || 0} cartas`);
+      }
+      if (opponentField) {
+        console.log(`📤 [handleJoinDuelRoom] opponentField - Deck: ${opponentField.deck?.length || 0} cartas, Hand: ${opponentField.hand?.length || 0} cartas`);
+      }
+
+      // Calcular tempo restante do turno
+      const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(duel);
+
+      // Enviar dados do duelo
+      const duelData = {
+        id: duel.id,
+        player1Id: duel.player1Id,
+        player2Id: duel.player2Id,
+        player1: (duel as any).player1,
+        player2: (duel as any).player2,
+        player1LifePoints: duel.player1LifePoints,
+        player2LifePoints: duel.player2LifePoints,
+        currentTurn: duel.currentTurn,
+        currentPhase: duel.currentPhase || 'DRAW',
+        status: duel.status,
+        duelTime: (duel as any).duelTime || 0,
+        turnTime: (duel as any).turnTime || 90,
+        turnTimeRemaining: turnTimeRemaining, // Tempo restante calculado
+        turnStartedAt: (duel as any).turnStartedAt, // Timestamp de quando o turno começou
+        player1Field: isPlayer1 ? playerField : opponentField,
+        player2Field: isPlayer1 ? opponentField : playerField,
+        createdAt: duel.createdAt,
+        updatedAt: duel.updatedAt,
+      };
+
+      console.log(`📤 [handleJoinDuelRoom] Enviando duelUpdate para cliente...`);
+      console.log(`📤 [handleJoinDuelRoom] DuelData:`, {
+        id: duelData.id,
+        player1Id: duelData.player1Id,
+        player2Id: duelData.player2Id,
+        currentTurn: duelData.currentTurn,
+        status: duelData.status,
+        hasPlayer1Field: !!duelData.player1Field,
+        hasPlayer2Field: !!duelData.player2Field,
       });
+
+      client.emit('duelUpdate', duelData);
+      console.log(`✅ [handleJoinDuelRoom] duelUpdate enviado com sucesso!`);
+      console.log(`✅ [handleJoinDuelRoom] ==========================================`);
+    } catch (error) {
+      console.error(`❌ [handleJoinDuelRoom] Erro:`, error);
+      client.emit('duelError', { message: 'Erro ao entrar na room do duelo' });
     }
   }
 
-  @SubscribeMessage('endTurn')
-  async handleEndTurn(
-    @MessageBody() data: { duelId: string; userId: string },
+  @SubscribeMessage('nextPhase')
+  async handleNextPhase(
+    @MessageBody() data: { duelId: number | string; userId?: number },
     @ConnectedSocket() client: Socket,
   ) {
-    const { duelId, userId } = data;
-    
-    console.log(`🔄 Finalizando turno no duelo ${duelId} pelo usuário ${userId}`);
-    
-    const duel = await this.duelsService.findDuelById(duelId);
-    if (!duel) {
-      console.log('❌ Duelo não encontrado');
-      return;
+    try {
+      // UUID pode ser string, não precisa converter para number
+      const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
+      const userId = data.userId || client.data.userId;
+
+      if (!duelId || !userId) {
+        client.emit('duelError', { message: 'Dados inválidos' });
+        return;
+      }
+
+      // Verificar se é o turno do jogador
+      const duel = this.duelsService.findDuelByIdLight(duelId);
+      if (!duel) {
+        client.emit('duelError', { message: 'Duelo não encontrado' });
+        return;
+      }
+
+      const numericUserId = Number(userId);
+      const isPlayer1 = duel.player1Id === numericUserId;
+      const isCurrentTurn = (isPlayer1 && duel.currentTurn === 1) || (!isPlayer1 && duel.currentTurn === 2);
+
+      if (!isCurrentTurn) {
+        client.emit('duelError', { message: 'Não é seu turno' });
+        return;
+      }
+
+      // Avançar fase
+      const updatedDuel = await this.duelsService.nextPhase(duelId);
+      if (!updatedDuel) {
+        client.emit('duelError', { message: 'Erro ao avançar fase' });
+        return;
+      }
+
+      // Preparar dados atualizados
+      const isPlayer1Updated = updatedDuel.player1Id === numericUserId;
+      const playerField = isPlayer1Updated ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
+      const opponentField = isPlayer1Updated ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
+
+      // Calcular tempo restante do turno
+      const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+
+      const duelData = {
+        id: updatedDuel.id,
+        player1Id: updatedDuel.player1Id,
+        player2Id: updatedDuel.player2Id,
+        player1: (updatedDuel as any).player1,
+        player2: (updatedDuel as any).player2,
+        player1LifePoints: updatedDuel.player1LifePoints,
+        player2LifePoints: updatedDuel.player2LifePoints,
+        currentTurn: updatedDuel.currentTurn,
+        currentPhase: updatedDuel.currentPhase || 'DRAW',
+        status: updatedDuel.status,
+        duelTime: (updatedDuel as any).duelTime || 0,
+        turnTime: (updatedDuel as any).turnTime || 90,
+        turnTimeRemaining: turnTimeRemaining, // Tempo restante calculado
+        turnStartedAt: (updatedDuel as any).turnStartedAt, // Timestamp de quando o turno começou
+        player1Field: isPlayer1Updated ? playerField : opponentField,
+        player2Field: isPlayer1Updated ? opponentField : playerField,
+        createdAt: updatedDuel.createdAt,
+        updatedAt: updatedDuel.updatedAt,
+      };
+
+      // Emitir atualização para todos na room do duelo
+      this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
+    } catch (error) {
+      console.error(`❌ [handleNextPhase] Erro:`, error);
+      client.emit('duelError', { message: 'Erro ao avançar fase' });
     }
-    
-    // Verificar se é o turno do jogador
-    const isPlayer1 = userId === duel.player1.id;
-    const currentPlayer = isPlayer1 ? 1 : 2;
-    
-    if (duel.currentTurn !== currentPlayer) {
-      console.log('❌ Não é o turno deste jogador');
-      client.emit('error', { message: 'Não é seu turno!' });
-      return;
+  }
+
+  @SubscribeMessage('timeExpired')
+  async handleTimeExpired(
+    @MessageBody() data: { duelId: number | string; userId?: number },
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      // UUID pode ser string, não precisa converter para number
+      const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
+      const userId = data.userId || client.data.userId;
+
+      if (!duelId || !userId) {
+        return;
+      }
+
+      // Notificar o oponente que o tempo expirou
+      const duel = this.duelsService.findDuelByIdLight(duelId);
+      if (!duel) {
+        return;
+      }
+
+      const numericUserId = Number(userId);
+      const isPlayer1 = duel.player1Id === numericUserId;
+      const opponentId = isPlayer1 ? duel.player2Id : duel.player1Id;
+
+      // Emitir evento para o oponente
+      this.server.to(`user_${opponentId}`).emit('timeExpired', { duelId });
+    } catch (error) {
+      console.error(`❌ [handleTimeExpired] Erro:`, error);
     }
+  }
+
+  @SubscribeMessage('stealTurn')
+  async handleStealTurn(
+    @MessageBody() data: { duelId: number | string; userId?: number },
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      // UUID pode ser string, não precisa converter para number
+      const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
+      const userId = data.userId || client.data.userId;
+
+      if (!duelId || !userId) {
+        client.emit('duelError', { message: 'Dados inválidos' });
+        return;
+      }
+
+      // Verificar se é o turno do oponente (não do jogador atual)
+      const duel = this.duelsService.findDuelByIdLight(duelId);
+      if (!duel) {
+        client.emit('duelError', { message: 'Duelo não encontrado' });
+        return;
+      }
+
+      const numericUserId = Number(userId);
+      const isPlayer1 = duel.player1Id === numericUserId;
+      const isCurrentTurn = (isPlayer1 && duel.currentTurn === 1) || (!isPlayer1 && duel.currentTurn === 2);
+
+      // Só pode roubar turno se NÃO for seu turno
+      if (isCurrentTurn) {
+        client.emit('duelError', { message: 'É seu turno, não pode roubar' });
+        return;
+      }
+
+      // Trocar turno (roubar o turno do oponente)
+      duel.currentTurn = duel.currentTurn === 1 ? 2 : 1;
+      duel.currentPhase = TurnPhase.DRAW; // Resetar para fase inicial
+      (duel as any).turnTime = 90; // Resetar tempo do turno
+      (duel as any).turnStartedAt = new Date(); // Resetar timestamp do turno
+
+      // Atualizar no banco de dados
+      await this.duelsService.updateDuelInDatabase(duelId, {
+        currentTurn: duel.currentTurn,
+        currentPhase: duel.currentPhase,
+        turnTime: 90,
+        turnStartedAt: new Date(),
+      } as any);
+
+      // Preparar dados atualizados
+      const isPlayer1Updated = duel.player1Id === numericUserId;
+      const playerField = isPlayer1Updated ? (duel as any).player1Field : (duel as any).player2Field;
+      const opponentField = isPlayer1Updated ? (duel as any).player2Field : (duel as any).player1Field;
+
+      // Calcular tempo restante do turno
+      const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(duel);
+
+      const duelData = {
+        id: duel.id,
+        player1Id: duel.player1Id,
+        player2Id: duel.player2Id,
+        player1: (duel as any).player1,
+        player2: (duel as any).player2,
+        player1LifePoints: duel.player1LifePoints,
+        player2LifePoints: duel.player2LifePoints,
+        currentTurn: duel.currentTurn,
+        currentPhase: duel.currentPhase || 'DRAW',
+        status: duel.status,
+        duelTime: (duel as any).duelTime || 0,
+        turnTime: (duel as any).turnTime || 90,
+        turnTimeRemaining: turnTimeRemaining, // Tempo restante calculado
+        turnStartedAt: (duel as any).turnStartedAt, // Timestamp de quando o turno começou
+        player1Field: isPlayer1Updated ? playerField : opponentField,
+        player2Field: isPlayer1Updated ? opponentField : playerField,
+        createdAt: duel.createdAt,
+        updatedAt: duel.updatedAt,
+      };
+
+      // Emitir atualização para todos na room do duelo
+      this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
+    } catch (error) {
+      console.error(`❌ [handleStealTurn] Erro:`, error);
+      client.emit('duelError', { message: 'Erro ao roubar turno' });
+    }
+  }
+
+  @SubscribeMessage('updateDuelTime')
+  async handleUpdateDuelTime(
+    @MessageBody() data: { duelId: number | string; timeInSeconds: number },
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      // UUID pode ser string, não precisa converter para number
+      const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
+      const timeInSeconds = data.timeInSeconds;
+
+      if (!duelId || timeInSeconds === undefined) {
+        return; // Silenciosamente ignorar se dados inválidos
+      }
+
+      // Atualizar tempo no banco de dados (assíncrono)
+      this.duelsService.updateDuelTime(duelId, timeInSeconds).catch((error) => {
+        console.error(`❌ [handleUpdateDuelTime] Erro ao atualizar tempo:`, error);
+      });
+    } catch (error) {
+      // Silenciosamente ignorar erros
+    }
+  }
+
+  // Helper para emitir para todas as abas de um usuário
+  private emitToUser(userId: number, event: string, data: any): void {
+    const userInstances = this.userSocketMap.get(userId);
+    if (!userInstances) return;
     
-    // Alternar turno
-    const newTurn = duel.currentTurn === 1 ? 2 : 1;
-    await this.duelsService.changeTurn(duelId, newTurn);
-    
-    // Criar log
-    const username = isPlayer1 ? duel.player1.username : duel.player2.username;
-    await this.duelsService.createLog(
-      duelId,
-      userId,
-      DuelActionType.END_TURN,
-      `${username} finalizou o turno`,
-      { previousTurn: currentPlayer, newTurn }
-    );
-    
-    console.log(`✅ Turno alterado de ${currentPlayer} para ${newTurn}`);
-    
-    // Notificar ambos os jogadores sobre a mudança de turno
-    this.server.to(duelId).emit('turnChanged', {
-      newTurn,
-      currentPlayerId: newTurn === 1 ? duel.player1.id : duel.player2.id,
-      turnTimeLimit: 90, // 90 segundos por turno
+    userInstances.forEach((socket) => {
+      if (socket && socket.connected) {
+        socket.emit(event, data);
+      }
     });
   }
 }

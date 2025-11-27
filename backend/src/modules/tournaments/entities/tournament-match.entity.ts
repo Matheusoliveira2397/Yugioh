@@ -43,23 +43,23 @@ export class TournamentMatch {
   @JoinColumn({ name: 'player1Id' })
   player1: User;
 
-  @Column({ nullable: true })
-  player1Id: string;
+  @Column({ type: 'int', nullable: true })
+  player1Id: number;
 
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'player2Id' })
   player2: User;
 
-  @Column({ nullable: true })
-  player2Id: string;
+  @Column({ type: 'int', nullable: true })
+  player2Id: number;
 
   // Vencedor
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'winnerId' })
   winner: User;
 
-  @Column({ nullable: true })
-  winnerId: string;
+  @Column({ type: 'int', nullable: true })
+  winnerId: number;
 
   @Column({ type: 'enum', enum: MatchStatus, default: MatchStatus.SCHEDULED })
   status: MatchStatus;

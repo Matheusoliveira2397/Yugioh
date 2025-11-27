@@ -1,10 +1,10 @@
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import * as crypto from 'crypto';
 import { UsersService } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
+import { SeasonsService } from '../seasons/seasons.service';
 
 @Injectable()
 export class AuthService {
@@ -12,6 +12,7 @@ export class AuthService {
     private usersService: UsersService,
     private jwtService: JwtService,
     private mailService: MailService,
+    private seasonsService: SeasonsService,
   ) {}
 
   async validateUser(username: string, password: string): Promise<any> {
@@ -35,21 +36,71 @@ export class AuthService {
   }
 
   async login(user: any) {
-    const payload = { username: user.username, sub: user.id, role: user.role };
+    // Garantir que sub seja number
+    const payload = { username: user.username, sub: Number(user.id), role: user.role };
+    
+    // Buscar dados completos do usuário incluindo clanTag atualizado
+    const fullUser = await this.usersService.findById(user.id);
+    
     return {
       access_token: this.jwtService.sign(payload),
       user: {
-        id: user.id,
-        nickname: user.nickname,
-        username: user.username,
-        email: user.email,
-        wins: user.wins,
-        losses: user.losses,
-        rating: user.rating,
-        gems: user.gems,
-        profileImage: user.profileImage || '/avatars/default.png',
-        role: user.role,
+        id: fullUser.id,
+        nickname: fullUser.nickname,
+        username: fullUser.username,
+        email: fullUser.email,
+        winsGeral: fullUser.winsGeral,
+        lossesGeral: fullUser.lossesGeral,
+        winsSeason: fullUser.winsSeason,
+        lossesSeason: fullUser.lossesSeason,
+        rating: fullUser.rating,
+        credits: fullUser.credits || 0,
+        cash: fullUser.cash || 0,
+        profileImage: fullUser.profileImage || '/images/default.png',
+        role: fullUser.role,
+        clanTag: fullUser.clanTag || null,
+        level: fullUser.level || 1,
+        experience: fullUser.experience || 0,
       },
+    };
+  }
+
+  async checkNickname(nickname: string) {
+    if (!nickname || nickname.trim().length === 0) {
+      return { available: false, message: 'Nickname não pode estar vazio' };
+    }
+    const existing = await this.usersService.findByNickname(nickname);
+    return {
+      available: !existing,
+      message: existing ? 'Este nickname já está em uso' : 'Nickname disponível',
+    };
+  }
+
+  async checkUsername(username: string) {
+    if (!username || username.trim().length === 0) {
+      return { available: false, message: 'Username não pode estar vazio' };
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      return { available: false, message: 'Username deve conter apenas letras, números e underscore' };
+    }
+    const existing = await this.usersService.findByUsername(username);
+    return {
+      available: !existing,
+      message: existing ? 'Este username já está em uso' : 'Username disponível',
+    };
+  }
+
+  async checkEmail(email: string) {
+    if (!email || email.trim().length === 0) {
+      return { available: false, message: 'Email não pode estar vazio' };
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return { available: false, message: 'Email inválido' };
+    }
+    const existing = await this.usersService.findByEmail(email);
+    return {
+      available: !existing,
+      message: existing ? 'Este email já está cadastrado' : 'Email disponível',
     };
   }
 
@@ -72,16 +123,51 @@ export class AuthService {
       throw new BadRequestException('Este email já está cadastrado');
     }
 
-    // Gerar token de verificação
-    const verificationToken = crypto.randomBytes(32).toString('hex');
+    // Verificar se email e confirmEmail coincidem
+    if (registerDto.email !== registerDto.confirmEmail) {
+      throw new BadRequestException('Os emails não coincidem');
+    }
+
+    // Verificar se senha e confirmPassword coincidem
+    if (registerDto.password !== registerDto.confirmPassword) {
+      throw new BadRequestException('As senhas não coincidem');
+    }
+
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
     
+    // Criar usuário com valores padrão
     const user = await this.usersService.create({
-      ...registerDto,
+      nickname: registerDto.nickname,
+      username: registerDto.username,
+      email: registerDto.email,
       password: hashedPassword,
-      verificationToken,
-      emailVerified: true, // Email já considerado verificado para testes
+      level: 1,
+      experience: 0,
+      totalScore: 0,
+      winsGeral: 0,
+      lossesGeral: 0,
+      winsSeason: 0,
+      lossesSeason: 0,
+      rating: 1000,
+      credits: 50,
+      cash: 50000,
+      profileImage: '/images/default.png',
+      clanTag: undefined,
+      biography: undefined,
+      playerClass: 'Novato',
+      isOnline: false,
+      isBanned: false,
+      banReason: undefined,
+      isEmailVerified: true,
     });
+
+    // Criar SeasonRanking para o usuário na season ativa
+    try {
+      await this.seasonsService.createUserRanking(user.id);
+    } catch (error) {
+      console.error('Erro ao criar ranking da season para o usuário:', error);
+      // Não falha o registro se não houver season ativa
+    }
 
     // Envio de email desabilitado temporariamente
     // try {
@@ -104,7 +190,7 @@ export class AuthService {
       throw new BadRequestException('Token de verificação inválido');
     }
 
-    if (user.emailVerified) {
+    if (user.isEmailVerified) {
       throw new BadRequestException('Email já foi verificado');
     }
 

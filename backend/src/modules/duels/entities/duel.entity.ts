@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, UpdateDateColumn, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, UpdateDateColumn, JoinColumn, Index } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 
 export enum DuelStatus {
@@ -15,49 +15,97 @@ export enum DuelResult {
   CANCELLED = 'CANCELLED'
 }
 
+export enum TurnPhase {
+  DRAW = 'DRAW',           // Fase de compras
+  STANDBY = 'STANDBY',     // Fase de apoio
+  MAIN1 = 'MAIN1',         // Fase principal 1
+  BATTLE = 'BATTLE',       // Fase de batalha
+  MAIN2 = 'MAIN2',         // Fase principal 2
+  END = 'END'              // Fase final
+}
+
+export enum DuelOrigin {
+  RANDOM = 'RANDOM',
+  CHAT = 'CHAT',
+  TOURNAMENT = 'TOURNAMENT',
+  ARENA = 'ARENA',
+  OTHER = 'OTHER'
+}
+
 @Entity('duels')
 export class Duel {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id: string; // ID UUID gerado pelo banco
 
-  @ManyToOne(() => User, { eager: true })
+  @Column({ name: 'player1_id', type: 'int' })
+  player1Id: number;
+
+  @ManyToOne(() => User, { eager: false, createForeignKeyConstraints: false })
   @JoinColumn({ name: 'player1_id' })
   player1: User;
 
-  @ManyToOne(() => User, { eager: true })
+  @Column({ name: 'player2_id', type: 'int' })
+  player2Id: number;
+
+  @ManyToOne(() => User, { eager: false, createForeignKeyConstraints: false })
   @JoinColumn({ name: 'player2_id' })
   player2: User;
+
+  @Column({ name: 'player1_nickname', type: 'varchar', length: 255, nullable: true })
+  player1Nickname: string | null;
+
+  @Column({ name: 'player2_nickname', type: 'varchar', length: 255, nullable: true })
+  player2Nickname: string | null;
 
   @Column({ type: 'enum', enum: DuelStatus, default: DuelStatus.WAITING })
   status: DuelStatus;
 
-  @Column({ type: 'int', default: 8000 })
+  @Column({ name: 'player1_life_points', type: 'int', default: 8000 })
   player1LifePoints: number;
 
-  @Column({ type: 'int', default: 8000 })
+  @Column({ name: 'player2_life_points', type: 'int', default: 8000 })
   player2LifePoints: number;
 
   @Column({ type: 'enum', enum: DuelResult, nullable: true })
   result: DuelResult;
 
-  @Column({ type: 'uuid', nullable: true })
-  winnerId: string | null;
+  @Column({ name: 'winner_id', type: 'int', nullable: true })
+  winnerId: number | null;
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ name: 'player1_field', type: 'jsonb', nullable: true })
   player1Field: any; // Estado do campo do jogador 1
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ name: 'player2_field', type: 'jsonb', nullable: true })
   player2Field: any; // Estado do campo do jogador 2
 
-  @Column({ type: 'int', default: 1 })
+  @Column({ name: 'current_turn', type: 'int', default: 1 })
   currentTurn: number; // 1 para player1, 2 para player2
 
-  @CreateDateColumn()
+  @Column({ name: 'current_phase', type: 'enum', enum: TurnPhase, default: TurnPhase.DRAW })
+  currentPhase: TurnPhase; // Fase atual do turno
+
+  @Column({ name: 'duel_time', type: 'int', default: 0 })
+  duelTime: number; // Tempo total do duelo em segundos
+
+  @Column({ name: 'turn_time', type: 'int', default: 90 })
+  turnTime: number; // Tempo do turno em segundos (igual para ambos os jogadores)
+
+  @Column({ name: 'turn_started_at', type: 'timestamp', nullable: true })
+  turnStartedAt: Date | null; // Timestamp de quando o turno atual começou
+
+  @Column({ name: 'origin', type: 'enum', enum: DuelOrigin, default: DuelOrigin.OTHER })
+  origin: DuelOrigin; // Origem do duelo (RANDOM, CHAT, TOURNAMENT, ARENA, etc.)
+
+  @Index(['player1Id', 'status'])
+  @Index(['player2Id', 'status'])
+  @Index(['status', 'updatedAt'])
+  @Index(['status']) // Índice adicional apenas para status (útil para queries rápidas)
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ name: 'finished_at', type: 'timestamp', nullable: true })
   finishedAt: Date;
 }

@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import axios from 'axios';
+import api from '../api/axios';
 import { CardType, CardAttribute, CardRarity, MonsterType } from './types';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+import CardImage from '../components/CardImage';
 
 interface Card {
   id: string;
@@ -22,7 +21,6 @@ interface Card {
   isForSale: boolean;
   isActive: boolean;
   cardImage?: string;
-  effect?: any;
   createdAt: string;
 }
 
@@ -37,7 +35,7 @@ export default function AdminCardsPanel() {
   // Form state
   const [formData, setFormData] = useState({
     name: '',
-    nameEn: '',
+    idCarta: '',
     description: '',
     type: 'Monster' as CardType,
     rarity: 'Common' as CardRarity,
@@ -45,21 +43,17 @@ export default function AdminCardsPanel() {
     attribute: 'DARK' as CardAttribute | undefined,
     race: 'Warrior' as string | undefined,
     level: 4,
-    rank: undefined as number | undefined,
-    linkRating: undefined as number | undefined,
     atk: 0,
     def: 0,
-    pendulumScale: undefined as number | undefined,
-    pendulumEffect: '',
     spellType: 'Normal' as string | undefined,
     trapType: 'Normal' as string | undefined,
-    priceCoins: 0,
     priceCredits: 0,
     priceCash: 0,
     isForSale: true,
     cardImage: '',
     archetype: '',
     isBanned: false,
+    maxCopiesInDeck: 3,
   });
 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -70,10 +64,7 @@ export default function AdminCardsPanel() {
 
   const loadCards = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/cards/admin/all`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await api.get('/cards/admin/all');
       setCards(response.data);
     } catch (error) {
       console.error('Erro ao carregar cartas:', error);
@@ -87,24 +78,119 @@ export default function AdminCardsPanel() {
     setLoading(true);
     setMessage(null);
 
+    // Validação do idCarta
+    if (!formData.idCarta || formData.idCarta.trim() === '') {
+      setMessage({ 
+        type: 'error', 
+        text: '❌ ID da carta (idCarta) é obrigatório!' 
+      });
+      setLoading(false);
+      return;
+    }
+
     try {
-      const token = localStorage.getItem('token');
-      
       if (editingCard) {
         // EDITAR
-        await axios.put(
-          `${API_URL}/cards/${editingCard.id}`,
-          formData,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        console.log('💾 Atualizando carta:', editingCard.id);
+        
+        // Limpar e validar dados antes de enviar
+        const cleanedFormData: any = {};
+        
+        // Campos obrigatórios
+        if (formData.idCarta) cleanedFormData.idCarta = String(formData.idCarta).trim();
+        if (formData.name) cleanedFormData.name = String(formData.name).trim();
+        if (formData.description !== undefined) cleanedFormData.description = String(formData.description || '').trim();
+        if (formData.type) cleanedFormData.type = formData.type;
+        if (formData.rarity) cleanedFormData.rarity = formData.rarity;
+        
+        // Campos opcionais - apenas se tiverem valor
+        if (formData.cardImage) cleanedFormData.cardImage = formData.cardImage;
+        
+        // Campos específicos de Monster
+        if (formData.type === 'Monster') {
+          if (formData.monsterType) cleanedFormData.monsterType = formData.monsterType;
+          if (formData.attribute) cleanedFormData.attribute = formData.attribute;
+          if (formData.race) cleanedFormData.race = formData.race;
+          if (formData.level !== undefined && formData.level !== null) {
+            cleanedFormData.level = parseInt(String(formData.level)) || null;
+          }
+          if (formData.rank !== undefined && formData.rank !== null) {
+            cleanedFormData.rank = parseInt(String(formData.rank)) || null;
+          }
+          if (formData.atk !== undefined && formData.atk !== null) {
+            cleanedFormData.atk = parseInt(String(formData.atk)) || null;
+          }
+          if (formData.def !== undefined && formData.def !== null) {
+            cleanedFormData.def = parseInt(String(formData.def)) || null;
+          }
+        }
+        
+        // Campos específicos de Spell
+        if (formData.type === 'Spell' && formData.spellType) {
+          cleanedFormData.spellType = formData.spellType;
+        }
+        
+        // Campos específicos de Trap
+        if (formData.type === 'Trap' && formData.trapType) {
+          cleanedFormData.trapType = formData.trapType;
+        }
+        
+        // Campos gerais opcionais
+        if (formData.archetype) cleanedFormData.archetype = String(formData.archetype).trim();
+        if (formData.isActive !== undefined) cleanedFormData.isActive = Boolean(formData.isActive);
+        if (formData.isBanned !== undefined) cleanedFormData.isBanned = Boolean(formData.isBanned);
+        if (formData.maxCopiesInDeck !== undefined && formData.maxCopiesInDeck !== null) {
+          cleanedFormData.maxCopiesInDeck = parseInt(String(formData.maxCopiesInDeck)) || 3;
+        }
+        if (formData.priceCredits !== undefined && formData.priceCredits !== null) {
+          cleanedFormData.priceCredits = parseInt(String(formData.priceCredits)) || null;
+        }
+        if (formData.priceCash !== undefined && formData.priceCash !== null) {
+          cleanedFormData.priceCash = parseFloat(String(formData.priceCash)) || null;
+        }
+        if (formData.isForSale !== undefined) cleanedFormData.isForSale = Boolean(formData.isForSale);
+        
+        // Limpar campos vazios (mas manter description, cardImage e archetype mesmo se vazios)
+        Object.keys(cleanedFormData).forEach(key => {
+          const value = cleanedFormData[key];
+          // Remover apenas se for undefined, null ou string vazia (exceto campos que podem ser vazios)
+          if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
+            // Manter description, cardImage e archetype mesmo se vazios (podem ser atualizados para vazio)
+            if (key !== 'description' && key !== 'cardImage' && key !== 'archetype') {
+              delete cleanedFormData[key];
+            } else if (value === '') {
+              // Para campos que podem ser vazios, manter como string vazia ou null
+              cleanedFormData[key] = key === 'description' ? '' : null;
+            }
+          }
+        });
+        
+        console.log('📤 Dados enviados (limpos e validados):', cleanedFormData);
+        const response = await api.put(`/cards/${editingCard.id}`, cleanedFormData);
+        console.log('✅ Resposta do servidor:', response.data);
         setMessage({ type: 'success', text: '✅ Carta atualizada com sucesso!' });
       } else {
         // CRIAR
-        await axios.post(
-          `${API_URL}/cards`,
-          formData,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        console.log('➕ Criando nova carta');
+        
+        // Limpar dados removendo campos que não existem mais
+        const cleanedFormData: any = {};
+        const allowedFields = [
+          'idCarta', 'name', 'description', 'cardImage', 'type', 'monsterType',
+          'attribute', 'race', 'spellType', 'trapType', 'archetype', 'level',
+          'rank', 'atk', 'def', 'rarity', 'isActive', 'isBanned', 'maxCopiesInDeck',
+          'priceCredits', 'priceCash', 'isForSale'
+        ];
+        
+        for (const key of allowedFields) {
+          if (formData[key as keyof typeof formData] !== undefined && formData[key as keyof typeof formData] !== null) {
+            cleanedFormData[key] = formData[key as keyof typeof formData];
+          }
+        }
+        
+        console.log('📤 Dados enviados (limpos):', cleanedFormData);
+        const response = await api.post('/cards', cleanedFormData);
+        console.log('✅ Resposta do servidor:', response.data);
         setMessage({ type: 'success', text: '✅ Carta criada com sucesso!' });
       }
 
@@ -112,9 +198,11 @@ export default function AdminCardsPanel() {
       loadCards();
       setShowForm(false);
     } catch (error: any) {
+      console.error('❌ Erro ao salvar carta:', error);
+      console.error('❌ Detalhes do erro:', error.response?.data);
       setMessage({ 
         type: 'error', 
-        text: `❌ Erro: ${error.response?.data?.message || 'Erro desconhecido'}` 
+        text: `❌ Erro: ${error.response?.data?.message || error.message || 'Erro desconhecido'}` 
       });
     } finally {
       setLoading(false);
@@ -122,33 +210,41 @@ export default function AdminCardsPanel() {
   };
 
   const handleEdit = (card: Card) => {
+    console.log('✏️ Editando carta:', card);
     setEditingCard(card);
-    setFormData({
-      name: card.name,
-      nameEn: (card as any).nameEn || '',
-      description: card.description,
-      type: card.type,
-      rarity: card.rarity,
-      monsterType: card.monsterType,
-      attribute: card.attribute,
+    
+    // Validar se idCarta existe, se não, gerar um baseado no nome
+    let idCarta = (card as any).idCarta || '';
+    if (!idCarta || idCarta.trim() === '') {
+      // Gerar ID baseado no nome da carta (remover espaços e caracteres especiais)
+      idCarta = card.name.replace(/[^a-zA-Z0-9]/g, '');
+      console.log('⚠️ idCarta não encontrado, gerando automaticamente:', idCarta);
+    }
+    
+    const formDataToSet = {
+      name: card.name || '',
+      idCarta: idCarta,
+      description: card.description || '',
+      type: card.type || 'Monster' as CardType,
+      rarity: card.rarity || 'Common' as CardRarity,
+      monsterType: card.monsterType || 'Normal' as MonsterType | undefined,
+      attribute: card.attribute || 'DARK' as CardAttribute | undefined,
       race: (card as any).race || 'Warrior',
-      level: card.level || 4,
-      rank: (card as any).rank,
-      linkRating: (card as any).linkRating,
-      atk: card.atk || 0,
-      def: card.def || 0,
-      pendulumScale: (card as any).pendulumScale,
-      pendulumEffect: (card as any).pendulumEffect || '',
+      level: card.level ?? 4,
+      atk: card.atk ?? 0,
+      def: card.def ?? 0,
       spellType: (card as any).spellType || 'Normal',
       trapType: (card as any).trapType || 'Normal',
-      priceCoins: card.priceCoins || 0,
-      priceCredits: card.priceCredits || 0,
-      priceCash: card.priceCash || 0,
-      isForSale: card.isForSale,
+      priceCredits: card.priceCredits ?? 0,
+      priceCash: card.priceCash ?? 0,
+      isForSale: card.isForSale ?? true,
       cardImage: card.cardImage || '',
       archetype: (card as any).archetype || '',
-      isBanned: (card as any).isBanned || false,
-    });
+      isBanned: (card as any).isBanned ?? false,
+      maxCopiesInDeck: (card as any).maxCopiesInDeck ?? 3,
+    };
+    console.log('📝 FormData preenchido:', formDataToSet);
+    setFormData(formDataToSet);
     setShowForm(true);
   };
 
@@ -156,14 +252,13 @@ export default function AdminCardsPanel() {
     if (!confirm('Deseja realmente desativar esta carta?')) return;
 
     try {
-      const token = localStorage.getItem('token');
-      await axios.delete(`${API_URL}/cards/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setMessage({ type: 'success', text: '✅ Carta desativada com sucesso!' });
+      const response = await api.delete(`/cards/${id}`);
+      setMessage({ type: 'success', text: response.data?.message || '✅ Carta desativada com sucesso!' });
       loadCards();
-    } catch (error) {
-      setMessage({ type: 'error', text: '❌ Erro ao desativar carta' });
+    } catch (error: any) {
+      console.error('❌ Erro ao desativar carta:', error);
+      const errorMessage = error.response?.data?.message || error.message || '❌ Erro ao desativar carta';
+      setMessage({ type: 'error', text: errorMessage });
     }
   };
 
@@ -171,23 +266,19 @@ export default function AdminCardsPanel() {
     if (!confirm('⚠️ ATENÇÃO! Isso vai DELETAR PERMANENTEMENTE a carta do banco de dados. Tem certeza?')) return;
 
     try {
-      const token = localStorage.getItem('token');
-      await axios.delete(`${API_URL}/cards/${id}/hard`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setMessage({ type: 'success', text: '✅ Carta deletada permanentemente!' });
+      const response = await api.delete(`/cards/${id}/hard`);
+      setMessage({ type: 'success', text: response.data?.message || '✅ Carta deletada permanentemente!' });
       loadCards();
-    } catch (error) {
-      setMessage({ type: 'error', text: '❌ Erro ao deletar carta' });
+    } catch (error: any) {
+      console.error('❌ Erro ao deletar carta:', error);
+      const errorMessage = error.response?.data?.message || error.message || '❌ Erro ao deletar carta';
+      setMessage({ type: 'error', text: errorMessage });
     }
   };
 
   const handleActivate = async (id: string) => {
     try {
-      const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/cards/${id}/activate`, {}, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await api.post(`/cards/${id}/activate`, {});
       setMessage({ type: 'success', text: '✅ Carta reativada com sucesso!' });
       loadCards();
     } catch (error) {
@@ -198,29 +289,25 @@ export default function AdminCardsPanel() {
   const resetForm = () => {
     setFormData({
       name: '',
-      nameEn: '',
+      idCarta: '',
       description: '',
-      type: 'Monster',
-      rarity: 'Common',
-      monsterType: 'Normal',
-      attribute: 'DARK',
+      type: 'Monster' as CardType,
+      rarity: 'Common' as CardRarity,
+      monsterType: 'Normal' as MonsterType | undefined,
+      attribute: 'DARK' as CardAttribute | undefined,
       race: 'Warrior',
       level: 4,
-      rank: undefined,
-      linkRating: undefined,
       atk: 0,
       def: 0,
-      pendulumScale: undefined,
-      pendulumEffect: '',
       spellType: 'Normal',
       trapType: 'Normal',
-      priceCoins: 0,
       priceCredits: 0,
       priceCash: 0,
       isForSale: true,
       cardImage: '',
       archetype: '',
       isBanned: false,
+      maxCopiesInDeck: 3,
     });
     setEditingCard(null);
   };
@@ -288,7 +375,7 @@ export default function AdminCardsPanel() {
               <h3 className="text-lg font-bold mb-4 text-purple-400">📝 Informações Básicas</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label className="block text-sm font-bold mb-2">Nome da Carta (PT) *</label>
+                  <label className="block text-sm font-bold mb-2">Nome da Carta *</label>
                   <input
                     type="text"
                     required
@@ -299,14 +386,18 @@ export default function AdminCardsPanel() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold mb-2">Nome em Inglês</label>
+                  <label className="block text-sm font-bold mb-2">🆔 ID Carta *</label>
                   <input
                     type="text"
-                    value={formData.nameEn}
-                    onChange={(e) => setFormData({ ...formData, nameEn: e.target.value })}
+                    required
+                    value={formData.idCarta}
+                    onChange={(e) => setFormData({ ...formData, idCarta: e.target.value })}
                     className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 transition-colors"
-                    placeholder="Ex: Dark Magician"
+                    placeholder="Ex: DM-001, DM-002 (para diferenciar versões)"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    ID único para diferenciar cartas com mesmo nome mas imagens diferentes
+                  </p>
                 </div>
               </div>
               
@@ -417,9 +508,6 @@ export default function AdminCardsPanel() {
                       <option value="Normal">Normal</option>
                       <option value="Effect">Effect</option>
                       <option value="Fusion">Fusion</option>
-                      <option value="Synchro">Synchro</option>
-                      <option value="Xyz">Xyz</option>
-                      <option value="Link">Link</option>
                     </select>
                   </div>
                   <div>
@@ -446,7 +534,7 @@ export default function AdminCardsPanel() {
             {formData.type === 'Monster' && (
               <div className="bg-gray-900/50 rounded-lg p-6 border border-gray-700">
                 <h3 className="text-lg font-bold mb-4 text-purple-400">⚔️ Atributos de Monstro</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
                   <div>
                     <label className="block text-sm font-bold mb-2">Raça/Race *</label>
                     <select
@@ -493,32 +581,18 @@ export default function AdminCardsPanel() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold mb-2">Rank (Xyz)</label>
+                    <label className="block text-sm font-bold mb-2">Arquétipo</label>
                     <input
-                      type="number"
-                      min="1"
-                      max="13"
-                      value={formData.rank || ''}
-                      onChange={(e) => setFormData({ ...formData, rank: Number(e.target.value) || undefined })}
+                      type="text"
+                      value={formData.archetype}
+                      onChange={(e) => setFormData({ ...formData, archetype: e.target.value })}
                       className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
-                      placeholder="Apenas para Xyz"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold mb-2">Link Rating</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="8"
-                      value={formData.linkRating || ''}
-                      onChange={(e) => setFormData({ ...formData, linkRating: Number(e.target.value) || undefined })}
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
-                      placeholder="Apenas para Link"
+                      placeholder="Ex: Blue-Eyes"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-bold mb-2">ATK</label>
                     <input
@@ -539,41 +613,7 @@ export default function AdminCardsPanel() {
                       className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-bold mb-2">Pendulum Scale</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="13"
-                      value={formData.pendulumScale || ''}
-                      onChange={(e) => setFormData({ ...formData, pendulumScale: Number(e.target.value) || undefined })}
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
-                      placeholder="0-13 (Pêndulo)"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold mb-2">Arquétipo</label>
-                    <input
-                      type="text"
-                      value={formData.archetype}
-                      onChange={(e) => setFormData({ ...formData, archetype: e.target.value })}
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
-                      placeholder="Ex: Blue-Eyes"
-                    />
-                  </div>
                 </div>
-
-                {formData.pendulumScale !== undefined && formData.pendulumScale > 0 && (
-                  <div>
-                    <label className="block text-sm font-bold mb-2">Pendulum Effect</label>
-                    <textarea
-                      value={formData.pendulumEffect}
-                      onChange={(e) => setFormData({ ...formData, pendulumEffect: e.target.value })}
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 h-20"
-                      placeholder="Efeito de Pêndulo da carta..."
-                    />
-                  </div>
-                )}
               </div>
             )}
 
@@ -645,23 +685,7 @@ export default function AdminCardsPanel() {
             {/* Preços e Configurações */}
             <div className="bg-gradient-to-br from-purple-900/50 to-blue-900/50 rounded-lg p-6 border border-purple-500/50">
               <h3 className="text-xl font-bold mb-6 text-purple-300">💰 Preços e Disponibilidade</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                {/* Card Moedas */}
-                <div className="bg-gray-800/50 rounded-lg p-4 border-2 border-yellow-500/30 hover:border-yellow-500 transition-colors">
-                  <label className="flex items-center gap-2 text-sm font-bold mb-2 text-yellow-400">
-                    <span className="text-xl">🪙</span> Moedas
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={formData.priceCoins}
-                    onChange={(e) => setFormData({ ...formData, priceCoins: Number(e.target.value) })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-yellow-500 transition-colors"
-                    placeholder="Ex: 5000"
-                  />
-                  <p className="text-xs text-gray-500 mt-2">Moeda do jogo</p>
-                </div>
-
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 {/* Card Créditos */}
                 <div className="bg-gray-800/50 rounded-lg p-4 border-2 border-purple-500/30 hover:border-purple-500 transition-colors">
                   <label className="flex items-center gap-2 text-sm font-bold mb-2 text-purple-400">
@@ -717,6 +741,26 @@ export default function AdminCardsPanel() {
                   <span className="font-bold text-red-400">🚫 Carta Banida</span>
                 </label>
               </div>
+              
+              {/* Máximo de Cópias no Deck */}
+              <div>
+                <label className="block text-sm font-bold mb-2">
+                  📊 Máximo de Cópias no Deck *
+                </label>
+                <select
+                  value={formData.maxCopiesInDeck}
+                  onChange={(e) => setFormData({ ...formData, maxCopiesInDeck: Number(e.target.value) })}
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 transition-colors"
+                >
+                  <option value="0">0 - Banida (não pode ter no deck)</option>
+                  <option value="1">1 - Limitada a 1 cópia</option>
+                  <option value="2">2 - Limitada a 2 cópias</option>
+                  <option value="3">3 - Máximo padrão (3 cópias)</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Define quantas cópias desta carta podem ser colocadas no deck. 0 = banida.
+                </p>
+              </div>
             </div>
 
             {/* Botões */}
@@ -766,78 +810,112 @@ export default function AdminCardsPanel() {
       {/* Listagem de Cartas */}
       {loading ? (
         <div className="text-center py-16">
-          <p className="text-2xl">⏳ Carregando...</p>
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mb-4"></div>
+          <p className="text-2xl text-gray-300">⏳ Carregando cartas...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredCards.map((card) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {filteredCards.map((card, index) => (
             <motion.div
               key={card.id}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className={`bg-gray-800 rounded-lg overflow-hidden shadow-xl border-2 ${
-                card.isActive ? 'border-green-500/30' : 'border-red-500/30'
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ delay: index * 0.05, duration: 0.3 }}
+              whileHover={{ y: -8, scale: 1.02 }}
+              className={`group relative bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 transition-all duration-300 ${
+                card.isActive 
+                  ? 'border-green-500/50 hover:border-green-400 hover:shadow-green-500/20' 
+                  : 'border-red-500/50 hover:border-red-400 hover:shadow-red-500/20'
               }`}
             >
-              {/* Preview da Carta */}
-              <div className={`h-48 flex items-center justify-center ${
-                card.isActive ? 'bg-gradient-to-br from-purple-900 to-blue-900' : 'bg-gray-700'
+              {/* Badge de Status */}
+              <div className={`absolute top-3 right-3 z-10 px-3 py-1 rounded-full text-xs font-bold shadow-lg ${
+                card.isActive 
+                  ? 'bg-green-500 text-white' 
+                  : 'bg-red-500 text-white'
               }`}>
-                {card.cardImage ? (
-                  <img 
-                    src={card.cardImage} 
-                    alt={card.name}
-                    className="h-full object-contain"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = '';
-                      (e.target as HTMLImageElement).style.display = 'none';
-                    }}
+                {card.isActive ? '✓ ATIVA' : '✗ INATIVA'}
+              </div>
+
+              {/* Preview da Carta */}
+              <div className="relative flex items-center justify-center p-4">
+                <div className="relative w-full aspect-[2/3] max-w-[180px] mx-auto">
+                  <CardImage
+                    card={card}
+                    className="w-full h-full object-cover rounded-lg shadow-xl transition-transform duration-300 group-hover:scale-105"
+                    fallback="/images/fundoCarta.webp"
                   />
-                ) : (
-                  <p className="text-6xl">
-                    {card.type === 'Monster' ? '👹' : card.type === 'Spell' ? '📜' : '🪤'}
-                  </p>
-                )}
+                  {/* Efeito de brilho */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 rounded-lg"></div>
+                </div>
               </div>
 
               {/* Info */}
-              <div className="p-4">
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <h3 className="text-xl font-bold">{card.name}</h3>
-                    <p className="text-sm text-yellow-400 font-bold">{card.rarity}</p>
+              <div className="p-5 bg-slate-900/50 backdrop-blur-sm">
+                {/* Nome e Raridade */}
+                <div className="mb-3">
+                  <h3 className="text-xl font-bold text-white mb-1 line-clamp-1 group-hover:text-purple-300 transition-colors">
+                    {card.name}
+                  </h3>
+                  {(card as any).idCarta && (
+                    <p className="text-xs text-gray-500 font-mono mb-1">ID: {(card as any).idCarta}</p>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-1 rounded text-xs font-bold ${
+                      card.rarity === 'Common' ? 'bg-gray-600 text-white' :
+                      card.rarity === 'Rare' ? 'bg-blue-600 text-white' :
+                      card.rarity === 'Super Rare' ? 'bg-purple-600 text-white' :
+                      card.rarity === 'Ultra Rare' ? 'bg-yellow-600 text-white' :
+                      card.rarity === 'Secret Rare' ? 'bg-gradient-to-r from-yellow-400 to-orange-500 text-white' :
+                      'bg-gray-600 text-white'
+                    }`}>
+                      {card.rarity}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {new Date(card.createdAt).toLocaleDateString('pt-BR')}
+                    </span>
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                    card.isActive ? 'bg-green-600' : 'bg-red-600'
-                  }`}>
-                    {card.isActive ? 'ATIVA' : 'INATIVA'}
-                  </span>
                 </div>
 
-                <p className="text-gray-400 text-sm mb-3 line-clamp-2">{card.description}</p>
+                {/* Descrição */}
+                <p className="text-gray-400 text-sm mb-4 line-clamp-2 min-h-[2.5rem]">
+                  {card.description || 'Sem descrição'}
+                </p>
 
-                {/* Stats */}
+                {/* Stats do Monstro */}
                 {card.type === 'Monster' && (
-                  <div className="flex gap-2 mb-3 text-sm">
-                    <span className="bg-gray-700 px-2 py-1 rounded">⭐ {card.level}</span>
-                    <span className="bg-red-900 px-2 py-1 rounded">⚔️ {card.atk}</span>
-                    <span className="bg-blue-900 px-2 py-1 rounded">🛡️ {card.def}</span>
+                  <div className="flex gap-2 mb-4">
+                    <div className="flex-1 bg-gradient-to-br from-yellow-900/50 to-yellow-800/50 px-3 py-2 rounded-lg text-center border border-yellow-700/50">
+                      <p className="text-xs text-yellow-300 mb-1">Nível</p>
+                      <p className="text-lg font-bold text-yellow-400">⭐ {card.level || 0}</p>
+                    </div>
+                    <div className="flex-1 bg-gradient-to-br from-red-900/50 to-red-800/50 px-3 py-2 rounded-lg text-center border border-red-700/50">
+                      <p className="text-xs text-red-300 mb-1">ATK</p>
+                      <p className="text-lg font-bold text-red-400">⚔️ {card.atk || 0}</p>
+                    </div>
+                    <div className="flex-1 bg-gradient-to-br from-blue-900/50 to-blue-800/50 px-3 py-2 rounded-lg text-center border border-blue-700/50">
+                      <p className="text-xs text-blue-300 mb-1">DEF</p>
+                      <p className="text-lg font-bold text-blue-400">🛡️ {card.def || 0}</p>
+                    </div>
                   </div>
                 )}
 
-                {/* Preços */}
-                <div className="flex gap-2 mb-3 text-sm flex-wrap">
-                  {card.priceCoins && card.priceCoins > 0 && (
-                    <span className="bg-yellow-900/30 px-2 py-1 rounded">🪙 {card.priceCoins}</span>
-                  )}
+                {/* Preços e Loja */}
+                <div className="flex gap-2 mb-4 flex-wrap">
                   {card.priceCredits && card.priceCredits > 0 && (
-                    <span className="bg-purple-900/30 px-2 py-1 rounded">💎 {card.priceCredits}</span>
+                    <span className="bg-gradient-to-r from-purple-600/30 to-purple-700/30 px-3 py-1.5 rounded-lg text-sm font-semibold border border-purple-500/30">
+                      💎 {card.priceCredits.toLocaleString()}
+                    </span>
                   )}
                   {card.priceCash && card.priceCash > 0 && (
-                    <span className="bg-green-900/30 px-2 py-1 rounded">💵 R$ {card.priceCash}</span>
+                    <span className="bg-gradient-to-r from-green-600/30 to-green-700/30 px-3 py-1.5 rounded-lg text-sm font-semibold border border-green-500/30">
+                      💵 R$ {card.priceCash.toLocaleString()}
+                    </span>
                   )}
                   {card.isForSale && (
-                    <span className="bg-green-600 px-2 py-1 rounded text-xs">🛒 NA LOJA</span>
+                    <span className="bg-gradient-to-r from-emerald-600 to-emerald-700 px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-lg">
+                      🛒 NA LOJA
+                    </span>
                   )}
                 </div>
 
@@ -845,28 +923,28 @@ export default function AdminCardsPanel() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleEdit(card)}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded-lg text-sm font-bold"
+                    className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 px-3 py-2.5 rounded-lg text-sm font-bold text-white transition-all duration-200 shadow-lg hover:shadow-blue-500/50"
                   >
                     ✏️ Editar
                   </button>
                   {card.isActive ? (
                     <button
                       onClick={() => handleDelete(card.id)}
-                      className="flex-1 bg-orange-600 hover:bg-orange-700 px-3 py-2 rounded-lg text-sm font-bold"
+                      className="flex-1 bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 px-3 py-2.5 rounded-lg text-sm font-bold text-white transition-all duration-200 shadow-lg hover:shadow-orange-500/50"
                     >
                       🔒 Desativar
                     </button>
                   ) : (
                     <button
                       onClick={() => handleActivate(card.id)}
-                      className="flex-1 bg-green-600 hover:bg-green-700 px-3 py-2 rounded-lg text-sm font-bold"
+                      className="flex-1 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 px-3 py-2.5 rounded-lg text-sm font-bold text-white transition-all duration-200 shadow-lg hover:shadow-green-500/50"
                     >
                       ✅ Ativar
                     </button>
                   )}
                   <button
                     onClick={() => handleHardDelete(card.id)}
-                    className="bg-red-600 hover:bg-red-700 px-3 py-2 rounded-lg text-sm font-bold"
+                    className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 px-3 py-2.5 rounded-lg text-sm font-bold text-white transition-all duration-200 shadow-lg hover:shadow-red-500/50"
                     title="Deletar permanentemente"
                   >
                     🗑️
@@ -879,11 +957,21 @@ export default function AdminCardsPanel() {
       )}
 
       {filteredCards.length === 0 && !loading && (
-        <div className="text-center py-16 bg-gray-800 rounded-lg">
-          <p className="text-6xl mb-4">📦</p>
-          <p className="text-2xl text-gray-400 mb-2">Nenhuma carta encontrada</p>
-          <p className="text-gray-500">Crie sua primeira carta clicando em "Nova Carta"</p>
-        </div>
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center py-20 bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border-2 border-slate-700"
+        >
+          <div className="text-8xl mb-6 animate-bounce">📦</div>
+          <p className="text-3xl font-bold text-gray-300 mb-3">Nenhuma carta encontrada</p>
+          <p className="text-gray-400 mb-6">Crie sua primeira carta clicando no botão "Nova Carta" acima</p>
+          <button
+            onClick={() => setShowForm(true)}
+            className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-bold rounded-lg transition-all duration-200 shadow-lg hover:shadow-purple-500/50"
+          >
+            ➕ Criar Primeira Carta
+          </button>
+        </motion.div>
       )}
     </div>
   );

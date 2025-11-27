@@ -1,15 +1,12 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../../api/axios';
 import { motion } from 'framer-motion';
-import { useAuthStore } from '../../stores/authStore';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 interface News {
   id: string;
   title: string;
   content: string;
-  author: { nickname: string };
+  author: { nickname: string; clanTag?: string };
   createdAt: string;
   image?: string;
   isPinned: boolean;
@@ -17,7 +14,6 @@ interface News {
 }
 
 export default function NewsManagement() {
-  const { token } = useAuthStore();
   const [news, setNews] = useState<News[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -37,8 +33,7 @@ export default function NewsManagement() {
   const fetchNews = async () => {
     try {
       setLoading(true);
-      const headers = { Authorization: `Bearer ${token}` };
-      const response = await axios.get(`${API_URL}/news`, { headers });
+      const response = await api.get('/news');
       setNews(response.data);
     } catch (error) {
       console.error('Erro ao buscar notícias:', error);
@@ -52,15 +47,13 @@ export default function NewsManagement() {
     e.preventDefault();
     
     try {
-      const headers = { Authorization: `Bearer ${token}` };
-      
       if (editingNews) {
         // Atualizar notícia existente
-        await axios.patch(`${API_URL}/news/${editingNews.id}`, formData, { headers });
+        await api.patch(`/news/${editingNews.id}`, formData);
         alert('Notícia atualizada com sucesso!');
       } else {
         // Criar nova notícia
-        await axios.post(`${API_URL}/news`, formData, { headers });
+        await api.post('/news', formData);
         alert('Notícia criada com sucesso!');
       }
 
@@ -89,8 +82,7 @@ export default function NewsManagement() {
     if (!confirm('Tem certeza que deseja deletar esta notícia?')) return;
 
     try {
-      const headers = { Authorization: `Bearer ${token}` };
-      await axios.delete(`${API_URL}/news/${id}`, { headers });
+      await api.delete(`/news/${id}`);
       alert('Notícia deletada com sucesso!');
       fetchNews();
     } catch (error) {
@@ -101,12 +93,7 @@ export default function NewsManagement() {
 
   const handleTogglePin = async (newsItem: News) => {
     try {
-      const headers = { Authorization: `Bearer ${token}` };
-      await axios.patch(
-        `${API_URL}/news/${newsItem.id}`,
-        { isPinned: !newsItem.isPinned },
-        { headers }
-      );
+      await api.patch(`/news/${newsItem.id}`, { isPinned: !newsItem.isPinned });
       fetchNews();
     } catch (error) {
       console.error('Erro ao fixar/desafixar notícia:', error);
@@ -116,12 +103,7 @@ export default function NewsManagement() {
 
   const handleToggleActive = async (newsItem: News) => {
     try {
-      const headers = { Authorization: `Bearer ${token}` };
-      await axios.patch(
-        `${API_URL}/news/${newsItem.id}`,
-        { isActive: !newsItem.isActive },
-        { headers }
-      );
+      await api.patch(`/news/${newsItem.id}`, { isActive: !newsItem.isActive });
       fetchNews();
     } catch (error) {
       console.error('Erro ao ativar/desativar notícia:', error);
@@ -247,7 +229,7 @@ export default function NewsManagement() {
                     <h3 className="text-2xl font-bold mb-2">{item.title}</h3>
                     <p className="text-gray-300 mb-2">{item.content}</p>
                     <div className="text-sm text-gray-500">
-                      Por: {item.author?.nickname || 'Admin'} •{' '}
+                      Por: {item.author?.clanTag ? `|${item.author.clanTag}| ${item.author?.nickname || 'Admin'}` : (item.author?.nickname || 'Admin')} •{' '}
                       {new Date(item.createdAt).toLocaleDateString('pt-BR')}
                     </div>
                   </div>

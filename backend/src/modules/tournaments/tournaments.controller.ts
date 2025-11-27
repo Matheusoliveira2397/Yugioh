@@ -31,7 +31,8 @@ export class TournamentsController {
   @Post()
   @UseGuards(AdminGuard)
   create(@Request() req: any, @Body() tournamentData: Partial<Tournament>) {
-    return this.tournamentsService.create(req.user.userId, tournamentData);
+    const userId = Number(req.user.id);
+    return this.tournamentsService.create(userId, tournamentData);
   }
 
   /**
@@ -39,7 +40,8 @@ export class TournamentsController {
    */
   @Post(':id/register')
   register(@Param('id') id: string, @Request() req: any) {
-    return this.tournamentsService.register(id, req.user.userId);
+    const userId = Number(req.user.id);
+    return this.tournamentsService.register(id, userId);
   }
 
   /**

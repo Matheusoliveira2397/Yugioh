@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, Query, ForbiddenException } from '@nestjs/common';
 import { NewsService } from './news.service';
 import { CreateNewsDto } from './dto/create-news.dto';
 import { UpdateNewsDto } from './dto/update-news.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { UserRole } from '../users/entities/user.entity';
 
 @Controller('news')
 export class NewsController {
@@ -11,11 +12,12 @@ export class NewsController {
   @UseGuards(JwtAuthGuard)
   @Post()
   create(@Body() createNewsDto: CreateNewsDto, @Request() req: any) {
-    const isAdmin = req.user.role === 'admin';
+    const isAdmin = req.user.role === UserRole.ADMIN || req.user.role === UserRole.MASTER;
     if (!isAdmin) {
-      throw new Error('Apenas administradores podem criar notícias');
+      throw new ForbiddenException('Apenas administradores podem criar notícias');
     }
-    return this.newsService.create(createNewsDto, req.user.id);
+    const userId = Number(req.user.id);
+    return this.newsService.create(createNewsDto, userId);
   }
 
   @Get()
@@ -41,14 +43,16 @@ export class NewsController {
     @Body() updateNewsDto: UpdateNewsDto,
     @Request() req: any,
   ) {
-    const isAdmin = req.user.role === 'admin';
-    return this.newsService.update(id, updateNewsDto, req.user.id, isAdmin);
+    const isAdmin = req.user.role === UserRole.ADMIN || req.user.role === UserRole.MASTER;
+    const userId = Number(req.user.id);
+    return this.newsService.update(id, updateNewsDto, userId, isAdmin);
   }
 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
   remove(@Param('id') id: string, @Request() req: any) {
-    const isAdmin = req.user.role === 'admin';
-    return this.newsService.remove(id, req.user.id, isAdmin);
+    const isAdmin = req.user.role === UserRole.ADMIN || req.user.role === UserRole.MASTER;
+    const userId = Number(req.user.id);
+    return this.newsService.remove(id, userId, isAdmin);
   }
 }

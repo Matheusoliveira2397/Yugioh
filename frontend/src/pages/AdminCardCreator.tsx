@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import axios from 'axios';
+import { useAuthStore } from '../stores/authStore';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 interface CardForm {
   // Básico
   name: string;
-  nameEn?: string;
   description: string;
   cardImage?: string;
   type: 'Monster' | 'Spell' | 'Trap';
@@ -18,11 +18,8 @@ interface CardForm {
   race?: 'Warrior' | 'Spellcaster' | 'Fairy' | 'Fiend' | 'Zombie' | 'Machine' | 'Aqua' | 'Pyro' | 'Rock' | 'Winged Beast' | 'Plant' | 'Insect' | 'Thunder' | 'Dragon' | 'Beast' | 'Beast-Warrior' | 'Dinosaur' | 'Fish' | 'Sea Serpent' | 'Reptile' | 'Psychic' | 'Divine-Beast' | 'Creator God' | 'Wyrm' | 'Cyberse';
   level?: number;
   rank?: number;
-  linkRating?: number;
   atk?: number;
   def?: number;
-  pendulumScale?: number;
-  pendulumEffect?: string;
   
   // Spell/Trap
   spellType?: 'Normal' | 'Continuous' | 'Equip' | 'Field' | 'Quick-Play' | 'Ritual';
@@ -40,7 +37,7 @@ interface CardForm {
   // Avançado
   archetype?: string;
   isBanned?: boolean;
-  isLimited?: boolean;
+  maxCopiesInDeck?: number;
 }
 
 interface EffectForm {
@@ -56,7 +53,7 @@ interface EffectForm {
 export default function AdminCardCreator() {
   const [step, setStep] = useState<'card' | 'effect'>('card');
   const [createdCardName, setCreatedCardName] = useState('');
-  
+
   // FORM - CRIAR CARTA
   const [cardForm, setCardForm] = useState<CardForm>({
     name: '',
@@ -64,6 +61,7 @@ export default function AdminCardCreator() {
     type: 'Monster',
     rarity: 'Common',
     isForSale: true,
+    maxCopiesInDeck: 3,
   });
 
   // FORM - ADICIONAR EFEITO
@@ -84,13 +82,32 @@ export default function AdminCardCreator() {
     setMessage(null);
 
     try {
-      const token = localStorage.getItem('token');
+      const currentToken = useAuthStore.getState().token;
+      console.log('🔑 Token sendo enviado:', currentToken ? 'Sim' : 'Não');
+      
+      // Limpar dados removendo campos que não existem mais
+      const cleanedCardForm: any = {};
+      const allowedFields = [
+        'idCarta', 'name', 'description', 'cardImage', 'type', 'monsterType',
+        'attribute', 'race', 'spellType', 'trapType', 'archetype', 'level',
+        'rank', 'atk', 'def', 'rarity', 'isActive', 'isBanned', 'maxCopiesInDeck',
+        'priceCredits', 'priceCash', 'isForSale'
+      ];
+      
+      for (const key of allowedFields) {
+        if (cardForm[key as keyof typeof cardForm] !== undefined && cardForm[key as keyof typeof cardForm] !== null) {
+          cleanedCardForm[key] = cardForm[key as keyof typeof cardForm];
+        }
+      }
+      
+      console.log('📤 [AdminCardCreator] Dados enviados (limpos):', cleanedCardForm);
+      
       const response = await axios.post(
         `${API_URL}/cards`,
-        cardForm,
+        cleanedCardForm,
         {
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${currentToken}`,
             'Content-Type': 'application/json',
           },
         }
@@ -121,13 +138,14 @@ export default function AdminCardCreator() {
     setMessage(null);
 
     try {
-      const token = localStorage.getItem('token');
+      const currentToken = useAuthStore.getState().token;
+      
       await axios.post(
         `${API_URL}/cards/effects/add`,
         effectForm,
         {
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${currentToken}`,
             'Content-Type': 'application/json',
           },
         }
@@ -144,6 +162,7 @@ export default function AdminCardCreator() {
           type: 'Monster',
           rarity: 'Common',
           isForSale: true,
+          maxCopiesInDeck: 3,
         });
         setEffectForm({
           cardName: '',
@@ -164,9 +183,10 @@ export default function AdminCardCreator() {
   // ==================== CARREGAR TEMPLATES ====================
   const loadTemplates = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const currentToken = useAuthStore.getState().token;
+      
       const response = await axios.get(`${API_URL}/cards/effects/templates`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${currentToken}` },
       });
       setTemplates(response.data);
     } catch (error) {
@@ -384,19 +404,7 @@ export default function AdminCardCreator() {
                 </div>
 
                 {/* Level/Rank/Link Rating */}
-                {cardForm.monsterType === 'Link' ? (
-                  <div>
-                    <label className="block text-sm font-bold mb-2">Link Rating</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="8"
-                      value={cardForm.linkRating || ''}
-                      onChange={(e) => setCardForm({ ...cardForm, linkRating: Number(e.target.value) })}
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
-                    />
-                  </div>
-                ) : cardForm.monsterType === 'Xyz' ? (
+                {cardForm.monsterType === 'Xyz' ? (
                   <div>
                     <label className="block text-sm font-bold mb-2">Rank</label>
                     <input
@@ -450,32 +458,6 @@ export default function AdminCardCreator() {
                   )}
                 </div>
 
-                {/* Pendulum */}
-                {cardForm.monsterType === 'Pendulum' && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-bold mb-2">Pendulum Scale</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="13"
-                        value={cardForm.pendulumScale || ''}
-                        onChange={(e) => setCardForm({ ...cardForm, pendulumScale: Number(e.target.value) })}
-                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-bold mb-2">Pendulum Effect</label>
-                      <input
-                        type="text"
-                        value={cardForm.pendulumEffect || ''}
-                        onChange={(e) => setCardForm({ ...cardForm, pendulumEffect: e.target.value })}
-                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
-                        placeholder="Pendulum effect text..."
-                      />
-                    </div>
-                  </div>
-                )}
               </>
             )}
 
@@ -532,36 +514,46 @@ export default function AdminCardCreator() {
                     placeholder="Ex: Blue-Eyes, Dark Magician"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-bold mb-2">Nome em Inglês</label>
-                  <input
-                    type="text"
-                    value={cardForm.nameEn || ''}
-                    onChange={(e) => setCardForm({ ...cardForm, nameEn: e.target.value })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
-                    placeholder="English name"
-                  />
-                </div>
               </div>
-              <div className="mt-4 flex gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={cardForm.isBanned || false}
-                    onChange={(e) => setCardForm({ ...cardForm, isBanned: e.target.checked })}
-                    className="w-5 h-5"
-                  />
-                  <span className="font-bold text-red-500">⛔ Banida</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={cardForm.isLimited || false}
-                    onChange={(e) => setCardForm({ ...cardForm, isLimited: e.target.checked })}
-                    className="w-5 h-5"
-                  />
-                  <span className="font-bold text-yellow-500">⚠️ Limitada</span>
-                </label>
+              <div className="mt-4 space-y-4">
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={cardForm.isBanned || false}
+                      onChange={(e) => setCardForm({ ...cardForm, isBanned: e.target.checked })}
+                      className="w-5 h-5"
+                    />
+                    <span className="font-bold text-red-500">⛔ Banida</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={cardForm.isLimited || false}
+                      onChange={(e) => setCardForm({ ...cardForm, isLimited: e.target.checked })}
+                      className="w-5 h-5"
+                    />
+                    <span className="font-bold text-yellow-500">⚠️ Limitada</span>
+                  </label>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-2">
+                    📊 Máximo de Cópias no Deck *
+                  </label>
+                  <select
+                    value={cardForm.maxCopiesInDeck ?? 3}
+                    onChange={(e) => setCardForm({ ...cardForm, maxCopiesInDeck: Number(e.target.value) })}
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="0">0 - Banida (não pode ter no deck)</option>
+                    <option value="1">1 - Limitada a 1 cópia</option>
+                    <option value="2">2 - Limitada a 2 cópias</option>
+                    <option value="3">3 - Máximo padrão (3 cópias)</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Define quantas cópias desta carta podem ser colocadas no deck. 0 = banida.
+                  </p>
+                </div>
               </div>
             </div>
 

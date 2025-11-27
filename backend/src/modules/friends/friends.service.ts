@@ -17,7 +17,7 @@ export class FriendsService {
   ) {}
 
   // Listar amigos de um usuário
-  async getFriends(userId: string) {
+  async getFriends(userId: number) {
     const friendships = await this.friendshipRepository.find({
       where: [
         { user: { id: userId }, status: FriendshipStatus.ACCEPTED },
@@ -43,7 +43,7 @@ export class FriendsService {
   }
 
   // Enviar solicitação de amizade
-  async sendFriendRequest(userId: string, friendUsername: string) {
+  async sendFriendRequest(userId: number, friendUsername: string) {
     const friend = await this.userRepository.findOne({
       where: { username: friendUsername },
     });
@@ -78,7 +78,7 @@ export class FriendsService {
   }
 
   // Aceitar solicitação de amizade
-  async acceptFriendRequest(friendshipId: string, userId: string) {
+  async acceptFriendRequest(friendshipId: string, userId: number) {
     const friendship = await this.friendshipRepository.findOne({
       where: { id: friendshipId },
       relations: ['user', 'friend'],
@@ -98,7 +98,7 @@ export class FriendsService {
   }
 
   // Rejeitar solicitação de amizade
-  async rejectFriendRequest(friendshipId: string, userId: string) {
+  async rejectFriendRequest(friendshipId: string, userId: number) {
     const friendship = await this.friendshipRepository.findOne({
       where: { id: friendshipId },
       relations: ['user', 'friend'],
@@ -117,7 +117,7 @@ export class FriendsService {
   }
 
   // Listar mensagens com um amigo
-  async getMessages(userId: string, friendId: string) {
+  async getMessages(userId: number, friendId: number) {
     return this.messageRepository.find({
       where: [
         { sender: { id: userId }, receiver: { id: friendId } },
@@ -129,7 +129,7 @@ export class FriendsService {
   }
 
   // Enviar mensagem privada
-  async sendMessage(senderId: string, receiverId: string, content: string) {
+  async sendMessage(senderId: number, receiverId: number, content: string) {
     // Verificar se são amigos
     const areFriends = await this.friendshipRepository.findOne({
       where: [
@@ -161,7 +161,7 @@ export class FriendsService {
   }
 
   // Marcar mensagens como lidas
-  async markAsRead(userId: string, friendId: string) {
+  async markAsRead(userId: number, friendId: number) {
     await this.messageRepository.update(
       {
         sender: { id: friendId },

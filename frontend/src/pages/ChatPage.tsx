@@ -6,6 +6,7 @@ import { useSocketStore } from '../stores/socketStore';
 interface Message {
   id: string;
   username: string;
+  clanTag?: string;
   content: string;
   timestamp: Date;
 }
@@ -89,7 +90,7 @@ export default function ChatPage() {
                   }`}
                 >
                   <p className="text-sm text-gray-400 mb-1">
-                    {msg.username}
+                    {msg.clanTag ? `|${msg.clanTag}| ${msg.username}` : msg.username}
                   </p>
                   <p className="text-white">{msg.content}</p>
                 </motion.div>

@@ -25,8 +25,8 @@ export class News {
   @JoinColumn({ name: 'authorId' })
   author: User;
 
-  @Column({ type: 'uuid' })
-  authorId: string;
+  @Column({ type: 'int' })
+  authorId: number;
 
   @CreateDateColumn()
   createdAt: Date;

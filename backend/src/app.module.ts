@@ -7,9 +7,6 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { DecksModule } from './modules/decks/decks.module';
 import { CardsModule } from './modules/cards/cards.module';
-import { DuelModule } from './modules/duel/duel.module';
-import { MatchmakingModule } from './modules/matchmaking/matchmaking.module';
-import { TournamentModule } from './modules/tournament/tournament.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { SeasonsModule } from './modules/seasons/seasons.module';
@@ -41,13 +38,23 @@ import { ArenaModule } from './modules/arena/arena.module';
         type: 'postgres',
         url: configService.get('DATABASE_URL'),
         autoLoadEntities: true,
-        synchronize: process.env.NODE_ENV === 'development',
-        logging: process.env.NODE_ENV === 'development',
+        synchronize: false,
+        logging: false,
+        extra: {
+          max: 100,
+          min: 20,
+          idleTimeoutMillis: 20000,
+          connectionTimeoutMillis: 10000,
+          statement_timeout: 5000,
+          maxUses: 7500,
+          keepAlive: true,
+          keepAliveInitialDelayMillis: 5000,
+          allowExitOnIdle: false,
+        },
       }),
       inject: [ConfigService],
     }),
 
-    // MongoDB - Chat e Logs
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
@@ -62,16 +69,12 @@ import { ArenaModule } from './modules/arena/arena.module';
       inject: [ConfigService],
     }),
 
-    // Módulos da aplicação
     RedisModule,
     AuthModule,
     UsersModule,
     CardsModule,
     DecksModule,
-    DuelModule,
     DuelsModule,
-    MatchmakingModule,
-    TournamentModule,
     ChatModule,
     SeasonsModule,
     GroupsModule,

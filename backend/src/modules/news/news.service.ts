@@ -12,7 +12,7 @@ export class NewsService {
     private newsRepository: Repository<News>,
   ) {}
 
-  async create(createNewsDto: CreateNewsDto, userId: string): Promise<News> {
+  async create(createNewsDto: CreateNewsDto, userId: number): Promise<News> {
     const news = this.newsRepository.create({
       ...createNewsDto,
       authorId: userId,
@@ -28,6 +28,47 @@ export class NewsService {
         createdAt: 'DESC',
       },
       relations: ['author'],
+      select: {
+        id: true,
+        title: true,
+        content: true,
+        image: true,
+        isActive: true,
+        isPinned: true,
+        authorId: true,
+        createdAt: true,
+        updatedAt: true,
+        author: {
+          id: true,
+          nickname: true,
+          username: true,
+          email: true,
+          role: true,
+          winsGeral: true,
+          lossesGeral: true,
+          winsSeason: true,
+          lossesSeason: true,
+          rating: true,
+          credits: true,
+          cash: true,
+          level: true,
+          experience: true,
+          totalScore: true,
+          profileImage: true,
+          isOnline: true,
+          isBanned: true,
+          banReason: true,
+          lastLogin: true,
+          lastIpAddress: true,
+          avatar: true,
+          isEmailVerified: true,
+          clanTag: true,
+          biography: true,
+          playerClass: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      },
       take: 50,
     });
   }
@@ -36,6 +77,47 @@ export class NewsService {
     const news = await this.newsRepository.findOne({
       where: { id },
       relations: ['author'],
+      select: {
+        id: true,
+        title: true,
+        content: true,
+        image: true,
+        isActive: true,
+        isPinned: true,
+        authorId: true,
+        createdAt: true,
+        updatedAt: true,
+        author: {
+          id: true,
+          nickname: true,
+          username: true,
+          email: true,
+          role: true,
+          winsGeral: true,
+          lossesGeral: true,
+          winsSeason: true,
+          lossesSeason: true,
+          rating: true,
+          credits: true,
+          cash: true,
+          level: true,
+          experience: true,
+          totalScore: true,
+          profileImage: true,
+          isOnline: true,
+          isBanned: true,
+          banReason: true,
+          lastLogin: true,
+          lastIpAddress: true,
+          avatar: true,
+          isEmailVerified: true,
+          clanTag: true,
+          biography: true,
+          playerClass: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      },
     });
 
     if (!news) {
@@ -45,7 +127,7 @@ export class NewsService {
     return news;
   }
 
-  async update(id: string, updateNewsDto: UpdateNewsDto, userId: string, isAdmin: boolean): Promise<News> {
+  async update(id: string, updateNewsDto: UpdateNewsDto, userId: number, isAdmin: boolean): Promise<News> {
     const news = await this.findOne(id);
 
     if (!isAdmin && news.authorId !== userId) {
@@ -56,7 +138,7 @@ export class NewsService {
     return await this.newsRepository.save(news);
   }
 
-  async remove(id: string, userId: string, isAdmin: boolean): Promise<void> {
+  async remove(id: string, userId: number, isAdmin: boolean): Promise<void> {
     const news = await this.findOne(id);
 
     if (!isAdmin && news.authorId !== userId) {
@@ -74,6 +156,47 @@ export class NewsService {
         createdAt: 'DESC',
       },
       relations: ['author'],
+      select: {
+        id: true,
+        title: true,
+        content: true,
+        image: true,
+        isActive: true,
+        isPinned: true,
+        authorId: true,
+        createdAt: true,
+        updatedAt: true,
+        author: {
+          id: true,
+          nickname: true,
+          username: true,
+          email: true,
+          role: true,
+          winsGeral: true,
+          lossesGeral: true,
+          winsSeason: true,
+          lossesSeason: true,
+          rating: true,
+          credits: true,
+          cash: true,
+          level: true,
+          experience: true,
+          totalScore: true,
+          profileImage: true,
+          isOnline: true,
+          isBanned: true,
+          banReason: true,
+          lastLogin: true,
+          lastIpAddress: true,
+          avatar: true,
+          isEmailVerified: true,
+          clanTag: true,
+          biography: true,
+          playerClass: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      },
       take: limit,
     });
   }

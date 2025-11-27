@@ -10,6 +10,7 @@ interface Group {
   tag: string;
   description: string;
   logo: string;
+  banner?: string;
   totalScore: number;
   maxMembers: number;
   isPublic: boolean;
@@ -21,7 +22,7 @@ export default function GroupsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [filterPublic, setFilterPublic] = useState<boolean | undefined>(undefined);
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
 
   // Form state
   const [formData, setFormData] = useState({
@@ -30,6 +31,10 @@ export default function GroupsPage() {
     description: '',
     isPublic: true,
   });
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
   const [formError, setFormError] = useState('');
 
   useEffect(() => {
@@ -66,20 +71,57 @@ export default function GroupsPage() {
     }
 
     try {
-      await axios.post(
+      const formDataToSend = new FormData();
+      formDataToSend.append('name', formData.name);
+      formDataToSend.append('tag', formData.tag.toUpperCase());
+      if (formData.description) {
+        formDataToSend.append('description', formData.description);
+      }
+      if (logoFile) {
+        formDataToSend.append('logo', logoFile);
+      }
+      if (bannerFile) {
+        formDataToSend.append('banner', bannerFile);
+      }
+
+      const response = await axios.post(
         'http://localhost:3000/groups/create',
+        formDataToSend,
         {
-          name: formData.name,
-          tag: formData.tag.toUpperCase(),
-          description: formData.description,
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data',
+          },
         }
       );
 
+      // Buscar dados atualizados do usuário após criar o grupo
+      try {
+        const userResponse = await axios.get(
+          `http://localhost:3000/users/me`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        
+        console.log('🔄 [createGroup] Dados do usuário recebidos:', userResponse.data);
+        if (userResponse.data) {
+          const updatedUser = { ...user, ...userResponse.data };
+          console.log('✅ [createGroup] Atualizando store com clanTag:', updatedUser.clanTag);
+          useAuthStore.setState({
+            user: updatedUser,
+          });
+        }
+      } catch (err) {
+        console.error('❌ Erro ao buscar dados do usuário:', err);
+      }
+
       // Resetar form e fechar modal
       setFormData({ name: '', tag: '', description: '', isPublic: true });
+      setLogoFile(null);
+      setBannerFile(null);
+      setLogoPreview(null);
+      setBannerPreview(null);
       setShowCreateModal(false);
       fetchGroups();
     } catch (error: any) {
@@ -96,6 +138,25 @@ export default function GroupsPage() {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
+      
+      // Buscar dados atualizados do usuário para pegar o clanTag atualizado
+      const userResponse = await axios.get(
+        `http://localhost:3000/users/me`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      
+      console.log('🔄 [joinGroup] Dados do usuário recebidos:', userResponse.data);
+      // Atualizar o usuário completo no store
+      if (userResponse.data) {
+        const updatedUser = { ...user, ...userResponse.data };
+        console.log('✅ [joinGroup] Atualizando store com clanTag:', updatedUser.clanTag);
+        useAuthStore.setState({
+          user: updatedUser,
+        });
+      }
+      
       alert('Você entrou no grupo!');
       fetchGroups();
     } catch (error: any) {
@@ -104,7 +165,7 @@ export default function GroupsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900/20 to-slate-900 p-8">
+    <div className="min-h-screen p-8 relative z-10">
       {/* Header */}
       <div className="max-w-7xl mx-auto mb-8">
         <motion.div
@@ -311,6 +372,62 @@ export default function GroupsPage() {
                 />
               </div>
 
+              {/* Logo do Clã */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-2">
+                  Logo do Clã (opcional)
+                </label>
+                {logoPreview && (
+                  <div className="mb-3">
+                    <img 
+                      src={logoPreview} 
+                      alt="Preview do logo" 
+                      className="w-24 h-24 object-cover rounded-lg border-2 border-purple-500"
+                    />
+                  </div>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setLogoFile(file);
+                      setLogoPreview(URL.createObjectURL(file));
+                    }
+                  }}
+                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-purple-500 focus:outline-none file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-700"
+                />
+              </div>
+
+              {/* Banner do Clã */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-2">
+                  Banner do Clã (opcional)
+                </label>
+                {bannerPreview && (
+                  <div className="mb-3">
+                    <img 
+                      src={bannerPreview} 
+                      alt="Preview do banner" 
+                      className="w-full h-32 object-cover rounded-lg border-2 border-purple-500"
+                    />
+                  </div>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setBannerFile(file);
+                      setBannerPreview(URL.createObjectURL(file));
+                    }
+                  }}
+                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-purple-500 focus:outline-none file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-700"
+                />
+              </div>
+
               {/* Tipo */}
               <div>
                 <label className="block text-slate-300 font-semibold mb-2">
@@ -357,6 +474,10 @@ export default function GroupsPage() {
                     setShowCreateModal(false);
                     setFormError('');
                     setFormData({ name: '', tag: '', description: '', isPublic: true });
+                    setLogoFile(null);
+                    setBannerFile(null);
+                    setLogoPreview(null);
+                    setBannerPreview(null);
                   }}
                   className="flex-1 py-3 bg-slate-700 text-white rounded-xl font-bold hover:bg-slate-600 transition-colors"
                 >

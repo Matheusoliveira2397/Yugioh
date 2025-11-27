@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsIn } from 'class-validator';
 
 export enum PaymentMethod {
   COINS = 'coins',
@@ -11,7 +11,8 @@ export class PurchaseCardDto {
   @IsNotEmpty()
   cardId: string;
 
-  @IsEnum(PaymentMethod)
+  @IsString()
   @IsNotEmpty()
-  paymentMethod: PaymentMethod; // coins, credits ou cash
+  @IsIn(['coins', 'credits', 'cash'])
+  paymentMethod: string; // coins, credits ou cash
 }

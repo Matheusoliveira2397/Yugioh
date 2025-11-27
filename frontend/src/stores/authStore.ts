@@ -1,23 +1,21 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+import api from '../api/axios';
 
 interface User {
-  id: string;
+  id: number | string; // Aceita number (novo) ou string (antigo para compatibilidade)
   nickname: string;
   username: string;
   email: string;
-  wins: number;
-  losses: number;
+  winsGeral: number;
+  lossesGeral: number;
+  winsSeason: number;
+  lossesSeason: number;
   rating: number;
-  gems: number;
   profileImage: string;
   role?: 'PLAYER' | 'ADMIN' | 'MASTER';
   level?: number;
   experience?: number;
-  coins?: number;
   avatar?: string;
   clanTag?: string;
   credits?: number;
@@ -40,6 +38,7 @@ interface AuthState {
   isAuthenticated: boolean;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
+  setUser: (user: User) => void;
   logout: () => void;
 }
 
@@ -52,7 +51,7 @@ export const useAuthStore = create<AuthState>()(
 
       login: async (username: string, password: string) => {
         try {
-          const response = await axios.post(`${API_URL}/auth/login`, {
+          const response = await api.post('/auth/login', {
             username,
             password,
           });
@@ -64,9 +63,6 @@ export const useAuthStore = create<AuthState>()(
             token: access_token,
             isAuthenticated: true,
           });
-
-          // Configurar token para requisições futuras
-          axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
         } catch (error) {
           console.error('Login error:', error);
           throw error;
@@ -75,7 +71,7 @@ export const useAuthStore = create<AuthState>()(
 
       register: async (username: string, email: string, password: string) => {
         try {
-          const response = await axios.post(`${API_URL}/auth/register`, {
+          const response = await api.post('/auth/register', {
             username,
             email,
             password,
@@ -88,12 +84,14 @@ export const useAuthStore = create<AuthState>()(
             token: access_token,
             isAuthenticated: true,
           });
-
-          axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
         } catch (error) {
           console.error('Register error:', error);
           throw error;
         }
+      },
+
+      setUser: (user: User) => {
+        set({ user });
       },
 
       logout: () => {
@@ -102,7 +100,6 @@ export const useAuthStore = create<AuthState>()(
           token: null,
           isAuthenticated: false,
         });
-        delete axios.defaults.headers.common['Authorization'];
       },
     }),
     {

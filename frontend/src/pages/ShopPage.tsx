@@ -1,272 +1,813 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
-import axios from 'axios';
+import api from '../api/axios';
+import CardImage from '../components/CardImage';
 
-interface ShopItem {
+interface Card {
   id: string;
   name: string;
   description: string;
-  price: number;
-  type: 'booster' | 'card' | 'cosmetic';
-  rarity?: string;
-  image?: string;
+  cardImage: string;
+  rarity: string;
+  type: string;
+  monsterType?: string;
+  attribute?: string;
+  race?: string;
+  atk?: number;
+  def?: number;
+  level?: number;
+  priceCredits?: number;
+  priceCash?: number;
+  isForSale: boolean;
+  stock?: number;
+  rating?: number;
+  reviews?: number;
+  createdAt?: string;
 }
 
-interface ShopCard {
+interface Playmat {
   id: string;
-  card: {
-    id: string;
-    name: string;
-    description: string;
-    cardImage: string;
-    rarity: string;
-    type: string;
-    atk?: number;
-    def?: number;
-  };
-  currency: string;
-  price: number;
-  discount: number;
-  isAvailable: boolean;
-  isFeatured: boolean;
+  name: string;
+  image: string;
+  priceCredits: number;
+  priceCash: number;
+  stock?: number;
 }
+
+interface Sleeve {
+  id: string;
+  name: string;
+  image: string;
+  priceCredits: number;
+  priceCash: number;
+  stock?: number;
+}
+
+type SortOption = 'name' | 'priceAsc' | 'priceDesc';
+type CardTypeFilter = 'Monster' | 'Spell' | 'Trap';
+type ShopCategory = 'cards' | 'playmats' | 'sleeves';
 
 export default function ShopPage() {
   const { user } = useAuthStore();
-  const [selectedTab, setSelectedTab] = useState<'boosters' | 'singles' | 'cosmetics'>('boosters');
-  const [shopCards, setShopCards] = useState<ShopCard[]>([]);
+  const [mode, setMode] = useState<'buy' | 'sell'>('buy');
+  const [category, setCategory] = useState<ShopCategory>('cards');
+  const [cards, setCards] = useState<Card[]>([]);
+  const [playmats, setPlaymats] = useState<Playmat[]>([]);
+  const [sleeves, setSleeves] = useState<Sleeve[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Filtros e busca
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<SortOption>('name');
+  const [priceMin, setPriceMin] = useState('');
+  const [priceMax, setPriceMax] = useState('');
+  const [typeFilters, setTypeFilters] = useState<CardTypeFilter[]>(['Monster', 'Spell', 'Trap']);
+  const [attributeFilters, setAttributeFilters] = useState<string[]>([]);
+  
+  // Paginação
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12;
 
-  // Buscar cartas da loja ao carregar a página
+  // Estado dos dropdowns
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+
+  // Buscar cartas da loja
   useEffect(() => {
-    const fetchShopCards = async () => {
+    let cancelled = false;
+    
+    const fetchCards = async () => {
       try {
         setLoading(true);
-        const response = await axios.get('http://localhost:3000/shop');
-        setShopCards(response.data);
-        console.log('📦 Cartas da loja carregadas:', response.data);
-      } catch (error) {
-        console.error('❌ Erro ao carregar cartas da loja:', error);
+        setError(null);
+        
+        const response = await Promise.race([
+          api.get('/cards/shop/for-sale', { timeout: 20000 }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout')), 20000)
+          )
+        ]) as any;
+        
+        if (cancelled) return;
+        
+        if (!Array.isArray(response.data)) {
+          throw new Error('Resposta da API não é um array');
+        }
+        
+        const cardsWithExtras = response.data.map((card: any) => ({
+          ...card,
+          stock: Math.floor(Math.random() * 250) + 1,
+        }));
+        
+        if (!cancelled) {
+          setCards(cardsWithExtras);
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          console.error('❌ Erro ao carregar cartas da loja:', error);
+          setError(error.response?.data?.message || error.message || 'Erro ao carregar cartas');
+          setCards([]);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
-    fetchShopCards();
-  }, []);
+    if (mode === 'buy' && category === 'cards') {
+      fetchCards();
+    }
+    
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, category]);
 
-  const boosters: ShopItem[] = [
-    {
-      id: '1',
-      name: 'Pacote Iniciante',
-      description: 'Contém 5 cartas aleatórias, perfeito para começar!',
-      price: 100,
-      type: 'booster'
-    },
-    {
-      id: '2',
-      name: 'Pacote Premium',
-      description: 'Contém 10 cartas com chance aumentada de raras',
-      price: 250,
-      type: 'booster'
-    },
-    {
-      id: '3',
-      name: 'Mega Pacote',
-      description: 'Contém 20 cartas com garantia de 1 Ultra Rare',
-      price: 500,
-      type: 'booster'
-    },
-  ];
+  // Mock data para playmats e sleeves (até implementar backend)
+  useEffect(() => {
+    if (category === 'playmats') {
+      setPlaymats([
+        { id: '1', name: 'Playmat Clássico', image: '/images/playmat1.jpg', priceCredits: 500, priceCash: 50, stock: 100 },
+        { id: '2', name: 'Playmat Épico', image: '/images/playmat2.jpg', priceCredits: 1000, priceCash: 100, stock: 50 },
+        { id: '3', name: 'Playmat Lendário', image: '/images/playmat3.jpg', priceCredits: 2500, priceCash: 250, stock: 25 },
+      ]);
+    } else if (category === 'sleeves') {
+      setSleeves([
+        { id: '1', name: 'Sleeve Básico', image: '/images/sleeve1.jpg', priceCredits: 200, priceCash: 20, stock: 200 },
+        { id: '2', name: 'Sleeve Premium', image: '/images/sleeve2.jpg', priceCredits: 500, priceCash: 50, stock: 100 },
+        { id: '3', name: 'Sleeve Exclusivo', image: '/images/sleeve3.jpg', priceCredits: 1500, priceCash: 150, stock: 50 },
+      ]);
+    }
+  }, [category]);
 
-  // Converter cartas da API para o formato ShopItem
-  const singles: ShopItem[] = shopCards.map(shopCard => ({
-    id: shopCard.id,
-    name: shopCard.card.name,
-    description: shopCard.card.description || 'Carta poderosa para seu deck',
-    price: shopCard.price,
-    type: 'card' as const,
-    rarity: shopCard.card.rarity,
-    image: shopCard.card.cardImage
-  }));
+  // Novos itens (últimas 8 cartas adicionadas ou featured)
+  const newItems = useMemo(() => {
+    return [...cards]
+      .sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      })
+      .slice(0, 8);
+  }, [cards]);
 
-  const cosmetics: ShopItem[] = [
-    {
-      id: '6',
-      name: 'Protetor de Cartas: Chamas',
-      description: 'Adicione efeito de fogo às suas cartas',
-      price: 300,
-      type: 'cosmetic'
-    },
-  ];
+  // Filtrar e ordenar cartas
+  const filteredAndSortedCards = useMemo(() => {
+    let filtered = [...cards];
 
+    if (searchTerm) {
+      filtered = filtered.filter(card =>
+        card.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        card.description?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    if (typeFilters.length > 0) {
+      filtered = filtered.filter(card => typeFilters.includes(card.type as CardTypeFilter));
+    }
+
+    if (attributeFilters.length > 0 && attributeFilters.length < 7) {
+      filtered = filtered.filter(card => 
+        card.attribute && attributeFilters.includes(card.attribute)
+      );
+    }
+
+    if (priceMin) {
+      const min = Number(priceMin);
+      filtered = filtered.filter(card => (card.priceCredits || 0) >= min);
+    }
+    if (priceMax) {
+      const max = Number(priceMax);
+      filtered = filtered.filter(card => (card.priceCredits || 0) <= max);
+    }
+
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'name':
+          return a.name.localeCompare(b.name);
+        case 'priceAsc':
+          return (a.priceCredits || 0) - (b.priceCredits || 0);
+        case 'priceDesc':
+          return (b.priceCredits || 0) - (a.priceCredits || 0);
+        default:
+          return 0;
+      }
+    });
+
+    return filtered;
+  }, [cards, searchTerm, sortBy, priceMin, priceMax, typeFilters, attributeFilters]);
+
+  // Paginação
   const getCurrentItems = () => {
-    switch (selectedTab) {
-      case 'boosters': return boosters;
-      case 'singles': return singles;
-      case 'cosmetics': return cosmetics;
-      default: return [];
+    if (category === 'cards') {
+      return filteredAndSortedCards;
+    } else if (category === 'playmats') {
+      return playmats;
+    } else {
+      return sleeves;
     }
   };
 
-  const handlePurchase = (item: ShopItem) => {
-    const userCoins = user?.coins || 0;
-    
-    if (!user || userCoins < item.price) {
-      alert('Moedas insuficientes!');
+  const currentItems = getCurrentItems();
+  const totalPages = Math.ceil(currentItems.length / itemsPerPage);
+  const paginatedItems = currentItems.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  // Toggle de filtros
+  const toggleTypeFilter = (type: CardTypeFilter) => {
+    setTypeFilters(prev =>
+      prev.includes(type)
+        ? prev.filter(t => t !== type)
+        : [...prev, type]
+    );
+  };
+
+  const toggleAttributeFilter = (attr: string) => {
+    setAttributeFilters(prev =>
+      prev.includes(attr)
+        ? prev.filter(a => a !== attr)
+        : [...prev, attr]
+    );
+  };
+
+  const handlePurchase = async (item: Card | Playmat | Sleeve) => {
+    if (!user) {
+      alert('Você precisa estar logado para comprar!');
       return;
     }
-    alert(`Você comprou: ${item.name}!\n(Sistema de compra será implementado)`);
+
+    const price = item.priceCredits || 0;
+    if ((user.credits || 0) < price) {
+      alert(`Créditos insuficientes! Você tem ${user.credits || 0} mas precisa de ${price}`);
+      return;
+    }
+
+    if (!confirm(`Confirmar compra?\n\n${'name' in item ? item.name : 'Item'}\n💰 ${price} Créditos`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      if (category === 'cards') {
+        const response = await api.post('/shop/purchase', {
+          cardId: item.id,
+          paymentMethod: 'credits',
+        });
+
+        const updatedUser = {
+          ...user,
+          credits: response.data.remainingBalance.credits,
+          cash: response.data.remainingBalance.cash,
+        };
+        
+        useAuthStore.getState().setUser(updatedUser);
+        alert(`✅ Compra realizada com sucesso!\n\n🎴 ${item.name} foi adicionada ao seu inventário!`);
+      } else {
+        // TODO: Implementar compra de playmats e sleeves
+        alert('Funcionalidade em desenvolvimento!');
+      }
+    } catch (error: any) {
+      alert(`❌ Erro: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        {/* Header */}
-        <div className="bg-gradient-to-r from-purple-900 to-pink-900 rounded-lg p-6 mb-8 shadow-2xl">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-4xl font-bold mb-2">🛒 Loja de Cartas</h1>
-              <p className="text-gray-300">Compre pacotes, cartas individuais e cosméticos</p>
-            </div>
-            <div className="text-right bg-gray-900 px-6 py-4 rounded-lg border-2 border-yellow-500">
-              <p className="text-gray-400 text-sm">Suas Moedas</p>
-              <p className="text-4xl font-bold text-yellow-400">🪙 {user?.coins || 0}</p>
-            </div>
-          </div>
-        </div>
+  const attributes = ['LIGHT', 'DARK', 'FIRE', 'WATER', 'EARTH', 'WIND', 'DIVINE'];
 
-        {/* Tabs */}
+  // Fechar dropdown ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.relative')) {
+        setOpenDropdown(null);
+      }
+    };
+
+    if (openDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [openDropdown]);
+
+  // Resetar página quando mudar categoria
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [category]);
+
+  return (
+    <div className="min-h-screen text-white py-6 bg-gradient-to-b from-gray-900 via-purple-900/20 to-gray-900">
+      <div className="max-w-7xl mx-auto px-4">
+        {/* Header */}
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <h1 className="text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-red-400">
+            🛒 Loja
+          </h1>
+          <p className="text-sm text-gray-300">Compre cartas, playmats e sleeves para personalizar seu deck</p>
+        </motion.div>
+
+        {/* Tabs para Comprar/Vender */}
         <div className="flex gap-2 mb-6">
           <button
-            onClick={() => setSelectedTab('boosters')}
-            className={`px-6 py-3 rounded-lg font-bold transition-all ${
-              selectedTab === 'boosters'
-                ? 'bg-purple-600 text-white shadow-lg'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            onClick={() => setMode('buy')}
+            className={`px-6 py-3 text-sm font-bold transition-all rounded-xl backdrop-blur-sm border-2 ${
+              mode === 'buy'
+                ? 'bg-gradient-to-r from-blue-600/80 to-blue-700/80 text-white border-blue-500/50 shadow-lg shadow-blue-500/30'
+                : 'bg-white/10 text-gray-300 hover:bg-white/20 border-white/20'
             }`}
           >
-            📦 Pacotes
+            🛒 Comprar
           </button>
           <button
-            onClick={() => setSelectedTab('singles')}
-            className={`px-6 py-3 rounded-lg font-bold transition-all ${
-              selectedTab === 'singles'
-                ? 'bg-blue-600 text-white shadow-lg'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            onClick={() => setMode('sell')}
+            className={`px-6 py-3 text-sm font-bold transition-all rounded-xl backdrop-blur-sm border-2 ${
+              mode === 'sell'
+                ? 'bg-gradient-to-r from-green-600/80 to-green-700/80 text-white border-green-500/50 shadow-lg shadow-green-500/30'
+                : 'bg-white/10 text-gray-300 hover:bg-white/20 border-white/20'
             }`}
           >
-            🎴 Cartas Individuais
-          </button>
-          <button
-            onClick={() => setSelectedTab('cosmetics')}
-            className={`px-6 py-3 rounded-lg font-bold transition-all ${
-              selectedTab === 'cosmetics'
-                ? 'bg-pink-600 text-white shadow-lg'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            ✨ Cosméticos
+            💰 Vender
           </button>
         </div>
 
-        {/* Loading State */}
-        {loading && selectedTab === 'singles' && (
-          <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
-            <p className="mt-4 text-gray-400">Carregando cartas da loja...</p>
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!loading && selectedTab === 'singles' && singles.length === 0 && (
-          <div className="text-center py-12 bg-gray-800 rounded-lg">
-            <p className="text-6xl mb-4">📭</p>
-            <p className="text-xl text-gray-400">Nenhuma carta disponível na loja no momento</p>
-            <p className="text-sm text-gray-500 mt-2">Novas cartas serão adicionadas em breve!</p>
-          </div>
-        )}
-
-        {/* Items Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {!loading && getCurrentItems().map((item, index) => (
-            <motion.div
-              key={item.id}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: index * 0.1 }}
-              className="bg-gray-800 rounded-lg overflow-hidden shadow-xl hover:shadow-2xl transition-all"
-            >
-              {/* Item Image */}
-              <div className="bg-gradient-to-br from-purple-900 to-blue-900 h-48 flex items-center justify-center">
-                {item.image ? (
-                  <img 
-                    src={item.image} 
-                    alt={item.name}
-                    className="h-full w-full object-contain p-4"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                      (e.target as HTMLImageElement).parentElement!.innerHTML = '<p class="text-8xl">🎴</p>';
-                    }}
-                  />
-                ) : (
-                  <p className="text-8xl">
-                    {item.type === 'booster' ? '📦' : item.type === 'card' ? '🎴' : '✨'}
-                  </p>
-                )}
-              </div>
-
-              {/* Item Info */}
-              <div className="p-4">
-                <h3 className="text-xl font-bold mb-2">{item.name}</h3>
-                {item.rarity && (
-                  <p className="text-sm text-yellow-400 font-bold mb-2">⭐ {item.rarity}</p>
-                )}
-                <p className="text-gray-400 text-sm mb-4">{item.description}</p>
-
-                <div className="flex justify-between items-center">
-                  <div className="text-2xl font-bold text-yellow-400">
-                    {item.type === 'card' ? `🪙 ${item.price}` : `💎 ${item.price}`}
+        {mode === 'buy' ? (
+          <>
+            {/* Seção: Novos Itens Adicionados */}
+            {newItems.length > 0 && category === 'cards' && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-8"
+              >
+                <div className="flex items-center gap-3 mb-4">
+                  <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-400">
+                    ✨ Novos Itens Adicionados
+                  </h2>
+                  <div className="flex-1 h-px bg-gradient-to-r from-yellow-400/50 to-transparent"></div>
+                </div>
+                <div className="bg-white/5 backdrop-blur-md rounded-2xl p-6 border border-white/10 shadow-2xl">
+                  <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
+                    {newItems.map((card, index) => (
+                      <motion.div
+                        key={card.id}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        whileHover={{ scale: 1.05, zIndex: 10 }}
+                        className="flex-shrink-0 w-32"
+                      >
+                        <div className="relative aspect-[2/3] mb-2 group cursor-pointer" onClick={() => handlePurchase(card)}>
+                          <CardImage
+                            card={card}
+                            className="w-full h-full object-cover rounded-xl shadow-lg group-hover:shadow-2xl transition-all"
+                            fallback="/images/fundoCarta.webp"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent rounded-xl opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="absolute bottom-2 left-2 right-2">
+                              <div className="text-xs font-bold text-white mb-1 truncate">{card.name}</div>
+                              <div className="flex items-center gap-1 bg-yellow-500/90 backdrop-blur-sm px-2 py-1 rounded">
+                                <span className="text-white text-xs">💰</span>
+                                <span className="text-xs font-bold text-white">{card.priceCredits || 0}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
                   </div>
-                  <button
-                    onClick={() => handlePurchase(item)}
-                    disabled={item.type === 'card' ? (user?.coins || 0) < item.price : (user?.gems || 0) < item.price}
-                    className={`px-6 py-2 rounded-lg font-bold transition-all ${
-                      (item.type === 'card' ? (user?.coins || 0) : (user?.gems || 0)) >= item.price
-                        ? 'bg-green-600 hover:bg-green-700 text-white'
-                        : 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                    }`}
-                  >
-                    {(item.type === 'card' ? (user?.coins || 0) : (user?.gems || 0)) >= item.price ? 'Comprar' : 'Insuficiente'}
-                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Abas de Categorias */}
+            <div className="mb-6">
+              <div className="flex gap-3 bg-white/5 backdrop-blur-md rounded-xl p-2 border border-white/10">
+                <button
+                  onClick={() => setCategory('cards')}
+                  className={`flex-1 px-6 py-3 text-sm font-bold transition-all rounded-lg ${
+                    category === 'cards'
+                      ? 'bg-gradient-to-r from-purple-600/80 to-pink-600/80 text-white shadow-lg'
+                      : 'text-gray-300 hover:bg-white/10'
+                  }`}
+                >
+                  🎴 Cartas
+                </button>
+                <button
+                  onClick={() => setCategory('playmats')}
+                  className={`flex-1 px-6 py-3 text-sm font-bold transition-all rounded-lg ${
+                    category === 'playmats'
+                      ? 'bg-gradient-to-r from-blue-600/80 to-cyan-600/80 text-white shadow-lg'
+                      : 'text-gray-300 hover:bg-white/10'
+                  }`}
+                >
+                  🎨 Playmats
+                </button>
+                <button
+                  onClick={() => setCategory('sleeves')}
+                  className={`flex-1 px-6 py-3 text-sm font-bold transition-all rounded-lg ${
+                    category === 'sleeves'
+                      ? 'bg-gradient-to-r from-green-600/80 to-emerald-600/80 text-white shadow-lg'
+                      : 'text-gray-300 hover:bg-white/10'
+                  }`}
+                >
+                  🎭 Sleeves
+                </button>
+              </div>
+            </div>
+
+            {/* Barra de pesquisa */}
+            {category === 'cards' && (
+              <div className="mb-6">
+                <input
+                  type="text"
+                  placeholder="🔍 Pesquisar..."
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full px-4 py-3 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl text-white placeholder-gray-300 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/30 transition-all shadow-lg"
+                />
+              </div>
+            )}
+
+            {/* Filtros (apenas para cartas) */}
+            {category === 'cards' && (
+              <div className="bg-white/5 backdrop-blur-md rounded-xl p-4 mb-6 border border-white/10 shadow-xl">
+                <div className="flex flex-wrap gap-4">
+                  {/* Ordenar por */}
+                  <div className="relative" onClick={(e) => e.stopPropagation()}>
+                    <button 
+                      onClick={() => setOpenDropdown(openDropdown === 'sort' ? null : 'sort')}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/20 rounded-lg text-white font-medium flex items-center gap-2 transition-all shadow-md"
+                    >
+                      <span>Ordenar: {sortBy === 'name' ? 'Nome' : sortBy === 'priceAsc' ? 'Preço ↑' : 'Preço ↓'}</span>
+                      <svg className={`w-4 h-4 transition-transform ${openDropdown === 'sort' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {openDropdown === 'sort' && (
+                      <div className="absolute top-full left-0 mt-2 w-48 bg-black/80 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl z-20">
+                        <div className="py-2">
+                          <button
+                            onClick={() => {
+                              setSortBy('name');
+                              setOpenDropdown(null);
+                            }}
+                            className={`w-full text-left px-4 py-2 hover:bg-white/10 transition-colors ${
+                              sortBy === 'name' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
+                            }`}
+                          >
+                            Nome
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSortBy('priceAsc');
+                              setOpenDropdown(null);
+                            }}
+                            className={`w-full text-left px-4 py-2 hover:bg-white/10 transition-colors ${
+                              sortBy === 'priceAsc' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
+                            }`}
+                          >
+                            Preço: Menor → Maior
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSortBy('priceDesc');
+                              setOpenDropdown(null);
+                            }}
+                            className={`w-full text-left px-4 py-2 hover:bg-white/10 transition-colors ${
+                              sortBy === 'priceDesc' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
+                            }`}
+                          >
+                            Preço: Maior → Menor
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Preço */}
+                  <div className="relative" onClick={(e) => e.stopPropagation()}>
+                    <button 
+                      onClick={() => setOpenDropdown(openDropdown === 'price' ? null : 'price')}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/20 rounded-lg text-white font-medium flex items-center gap-2 transition-all shadow-md"
+                    >
+                      <span>Preço {(priceMin || priceMax) ? `(${priceMin || '0'} - ${priceMax || '∞'})` : ''}</span>
+                      <svg className={`w-4 h-4 transition-transform ${openDropdown === 'price' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {openDropdown === 'price' && (
+                      <div className="absolute top-full left-0 mt-2 w-64 bg-black/80 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl z-20 p-4">
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-xs text-gray-300 mb-1">Preço Mínimo</label>
+                            <input
+                              type="number"
+                              placeholder="Min"
+                              value={priceMin}
+                              onChange={(e) => setPriceMin(e.target.value)}
+                              className="w-full px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded text-white text-sm focus:outline-none focus:border-purple-500/50"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-300 mb-1">Preço Máximo</label>
+                            <input
+                              type="number"
+                              placeholder="Max"
+                              value={priceMax}
+                              onChange={(e) => setPriceMax(e.target.value)}
+                              className="w-full px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded text-white text-sm focus:outline-none focus:border-purple-500/50"
+                            />
+                          </div>
+                          {(priceMin || priceMax) && (
+                            <button
+                              onClick={() => {
+                                setPriceMin('');
+                                setPriceMax('');
+                              }}
+                              className="w-full px-3 py-1 bg-purple-600/80 hover:bg-purple-600 rounded text-sm font-medium transition-colors backdrop-blur-sm"
+                            >
+                              Limpar
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tipo */}
+                  <div className="relative" onClick={(e) => e.stopPropagation()}>
+                    <button 
+                      onClick={() => setOpenDropdown(openDropdown === 'type' ? null : 'type')}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/20 rounded-lg text-white font-medium flex items-center gap-2 transition-all shadow-md"
+                    >
+                      <span>Tipo ({typeFilters.length})</span>
+                      <svg className={`w-4 h-4 transition-transform ${openDropdown === 'type' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {openDropdown === 'type' && (
+                      <div className="absolute top-full left-0 mt-2 w-48 bg-black/80 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl z-20 p-4">
+                        <div className="space-y-2">
+                          {(['Monster', 'Spell', 'Trap'] as CardTypeFilter[]).map(type => (
+                            <label key={type} className="flex items-center gap-2 cursor-pointer hover:bg-white/10 p-2 rounded transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={typeFilters.includes(type)}
+                                onChange={() => toggleTypeFilter(type)}
+                                className="w-4 h-4 text-purple-600 bg-white/10 border-white/20 rounded focus:ring-purple-500"
+                              />
+                              <span className="text-sm text-white">
+                                {type === 'Monster' ? 'Monstro' : type === 'Spell' ? 'Magia' : 'Armadilha'}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Atributo */}
+                  <div className="relative" onClick={(e) => e.stopPropagation()}>
+                    <button 
+                      onClick={() => setOpenDropdown(openDropdown === 'attribute' ? null : 'attribute')}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/20 rounded-lg text-white font-medium flex items-center gap-2 transition-all shadow-md"
+                    >
+                      <span>Atributo ({attributeFilters.length})</span>
+                      <svg className={`w-4 h-4 transition-transform ${openDropdown === 'attribute' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {openDropdown === 'attribute' && (
+                      <div className="absolute top-full left-0 mt-2 w-64 bg-black/80 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl z-20 p-4">
+                        <div className="grid grid-cols-2 gap-2">
+                          {attributes.map(attr => (
+                            <label key={attr} className="flex items-center gap-2 cursor-pointer hover:bg-white/10 p-2 rounded transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={attributeFilters.includes(attr)}
+                                onChange={() => toggleAttributeFilter(attr)}
+                                className="w-4 h-4 text-purple-600 bg-white/10 border-white/20 rounded focus:ring-purple-500"
+                              />
+                              <span className="text-sm text-white">{attr}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {attributeFilters.length > 0 && (
+                          <button
+                            onClick={() => setAttributeFilters([])}
+                            className="w-full mt-3 px-3 py-1 bg-purple-600/80 hover:bg-purple-600 rounded text-sm font-medium transition-colors backdrop-blur-sm"
+                          >
+                            Limpar
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </motion.div>
-          ))}
-        </div>
+            )}
 
-        {/* Info */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="mt-8 bg-gray-800 rounded-lg p-6"
-        >
-          <h3 className="text-xl font-bold mb-4">💡 Como Conseguir Moedas e Gemas</h3>
-          <ul className="space-y-2 text-gray-300">
-            <li>🪙 Vença duelos para ganhar moedas</li>
-            <li>💎 Complete missões diárias para gemas</li>
-            <li>🏆 Participe de torneios</li>
-            <li>📅 Faça login diário para recompensas</li>
-            <li>🎴 Use moedas para comprar cartas individuais</li>
-            <li>📦 Use gemas para comprar pacotes e cosméticos</li>
-          </ul>
-        </motion.div>
-      </motion.div>
+            {/* Grid de Itens */}
+            {loading ? (
+              <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
+                <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
+                <p className="mt-4 text-gray-200">Carregando...</p>
+              </div>
+            ) : error ? (
+              <div className="text-center py-12 bg-red-900/30 backdrop-blur-md border border-red-500/50 rounded-xl shadow-xl">
+                <p className="text-red-300">{error}</p>
+              </div>
+            ) : paginatedItems.length === 0 ? (
+              <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
+                <p className="text-gray-200 text-lg">Nenhum item encontrado</p>
+              </div>
+            ) : (
+              <div className="bg-transparent p-4 mb-6">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                  {paginatedItems.map((item, index) => {
+                    if (category === 'cards') {
+                      const card = item as Card;
+                      return (
+                        <motion.div
+                          key={card.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.05 }}
+                          whileHover={{ scale: 1.05, zIndex: 10 }}
+                          className="flex flex-col"
+                        >
+                          <div className="relative w-full aspect-[2/3] mb-3">
+                            <CardImage
+                              card={card}
+                              className="w-full h-full object-cover rounded-lg shadow-lg hover:shadow-xl transition-all cursor-pointer"
+                              fallback="/images/fundoCarta.webp"
+                              onClick={() => handlePurchase(card)}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <h3 className="text-xs font-bold text-white truncate" title={card.name}>
+                              {card.name}
+                            </h3>
+                            {card.type === 'Monster' && (
+                              <div className="flex gap-1 flex-wrap">
+                                <div className="bg-red-500/80 backdrop-blur-sm px-2 py-1 rounded text-[10px]">
+                                  <span className="text-white font-bold">ATK {card.atk || 0}</span>
+                                </div>
+                                <div className="bg-blue-500/80 backdrop-blur-sm px-2 py-1 rounded text-[10px]">
+                                  <span className="text-white font-bold">DEF {card.def || 0}</span>
+                                </div>
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between gap-1.5">
+                              <div className="flex items-center gap-1 bg-yellow-500/80 backdrop-blur-sm px-2 py-1 rounded flex-1">
+                                <span className="text-white text-xs">💰</span>
+                                <span className="text-xs font-bold text-white">{card.priceCredits || 0}</span>
+                              </div>
+                              <div className="flex items-center gap-1 bg-green-500/80 backdrop-blur-sm px-2 py-1 rounded">
+                                <span className="text-white text-xs">📦</span>
+                                <span className="text-xs font-bold text-white">{card.stock || 0}</span>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handlePurchase(card)}
+                              className="w-full mt-2 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded text-xs font-bold transition-all shadow-md hover:shadow-lg text-white"
+                            >
+                              🛒 Comprar
+                            </button>
+                          </div>
+                        </motion.div>
+                      );
+                    } else if (category === 'playmats') {
+                      const playmat = item as Playmat;
+                      return (
+                        <motion.div
+                          key={playmat.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.05 }}
+                          whileHover={{ scale: 1.05, zIndex: 10 }}
+                          className="flex flex-col bg-white/5 backdrop-blur-md rounded-xl p-4 border border-white/10"
+                        >
+                          <div className="relative w-full aspect-video mb-3 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-lg flex items-center justify-center">
+                            <span className="text-4xl">🎨</span>
+                          </div>
+                          <h3 className="text-sm font-bold text-white mb-2 truncate">{playmat.name}</h3>
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-1 bg-yellow-500/80 backdrop-blur-sm px-2 py-1 rounded">
+                              <span className="text-white text-xs">💰</span>
+                              <span className="text-xs font-bold text-white">{playmat.priceCredits}</span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handlePurchase(playmat)}
+                            className="w-full px-3 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 rounded text-xs font-bold transition-all shadow-md hover:shadow-lg text-white"
+                          >
+                            🛒 Comprar
+                          </button>
+                        </motion.div>
+                      );
+                    } else {
+                      const sleeve = item as Sleeve;
+                      return (
+                        <motion.div
+                          key={sleeve.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.05 }}
+                          whileHover={{ scale: 1.05, zIndex: 10 }}
+                          className="flex flex-col bg-white/5 backdrop-blur-md rounded-xl p-4 border border-white/10"
+                        >
+                          <div className="relative w-full aspect-[2/3] mb-3 bg-gradient-to-br from-green-500/20 to-emerald-500/20 rounded-lg flex items-center justify-center">
+                            <span className="text-4xl">🎭</span>
+                          </div>
+                          <h3 className="text-sm font-bold text-white mb-2 truncate">{sleeve.name}</h3>
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-1 bg-yellow-500/80 backdrop-blur-sm px-2 py-1 rounded">
+                              <span className="text-white text-xs">💰</span>
+                              <span className="text-xs font-bold text-white">{sleeve.priceCredits}</span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handlePurchase(sleeve)}
+                            className="w-full px-3 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded text-xs font-bold transition-all shadow-md hover:shadow-lg text-white"
+                          >
+                            🛒 Comprar
+                          </button>
+                        </motion.div>
+                      );
+                    }
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Paginação */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="px-4 py-2 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  &lt;
+                </button>
+                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                  const pageNum = i + 1;
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`px-4 py-2 rounded-lg backdrop-blur-sm transition-all ${
+                        currentPage === pageNum
+                          ? 'bg-purple-600/80 text-white shadow-lg'
+                          : 'bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+                {totalPages > 5 && (
+                  <>
+                    <span className="px-2 text-gray-300">...</span>
+                    <button
+                      onClick={() => setCurrentPage(totalPages)}
+                      className="px-4 py-2 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all"
+                    >
+                      {totalPages}
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  className="px-4 py-2 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  &gt;
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="bg-white/5 backdrop-blur-md rounded-xl p-12 border border-white/20 shadow-xl text-center">
+            <div className="text-6xl mb-4">💰</div>
+            <h2 className="text-2xl font-bold text-white mb-2">Vender Itens</h2>
+            <p className="text-gray-300 mb-6">Funcionalidade de venda em desenvolvimento</p>
+            <p className="text-sm text-gray-400">Em breve você poderá vender seus itens na loja!</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

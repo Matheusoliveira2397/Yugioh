@@ -26,8 +26,8 @@ export class GroupMember {
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @Column()
-  userId: string;
+  @Column({ type: 'int' })
+  userId: number;
 
   @Column({ type: 'enum', enum: GroupRole, default: GroupRole.MEMBER })
   role: GroupRole;

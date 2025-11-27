@@ -18,7 +18,12 @@ export class MessagesController {
 
   @Get(':friendId')
   async getMessages(@Request() req: any, @Param('friendId') friendId: string) {
-    return this.friendsService.getMessages(req.user.id, friendId);
+    const userId = Number(req.user.id);
+    const friendIdNum = parseInt(friendId, 10);
+    if (isNaN(friendIdNum)) {
+      throw new Error('ID de amigo inválido');
+    }
+    return this.friendsService.getMessages(userId, friendIdNum);
   }
 
   @Post()
@@ -26,15 +31,21 @@ export class MessagesController {
     @Request() req: any,
     @Body() body: { receiverId: string; content: string },
   ) {
-    return this.friendsService.sendMessage(
-      req.user.id,
-      body.receiverId,
-      body.content,
-    );
+    const userId = Number(req.user.id);
+    const receiverId = parseInt(body.receiverId, 10);
+    if (isNaN(receiverId)) {
+      throw new Error('ID de destinatário inválido');
+    }
+    return this.friendsService.sendMessage(userId, receiverId, body.content);
   }
 
   @Put(':friendId/read')
   async markAsRead(@Request() req: any, @Param('friendId') friendId: string) {
-    return this.friendsService.markAsRead(req.user.id, friendId);
+    const userId = Number(req.user.id);
+    const friendIdNum = parseInt(friendId, 10);
+    if (isNaN(friendIdNum)) {
+      throw new Error('ID de amigo inválido');
+    }
+    return this.friendsService.markAsRead(userId, friendIdNum);
   }
 }

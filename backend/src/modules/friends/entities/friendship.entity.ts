@@ -24,9 +24,15 @@ export class Friendship {
   @JoinColumn({ name: 'user_id' })
   user: User;
 
+  @Column({ type: 'int' })
+  userId: number;
+
   @ManyToOne(() => User, { eager: true })
   @JoinColumn({ name: 'friend_id' })
   friend: User;
+
+  @Column({ type: 'int' })
+  friendId: number;
 
   @Column({
     type: 'enum',

@@ -18,21 +18,25 @@ export class FriendsController {
 
   @Get()
   async getFriends(@Request() req: any) {
-    return this.friendsService.getFriends(req.user.id);
+    const userId = Number(req.user.id);
+    return this.friendsService.getFriends(userId);
   }
 
   @Post('request')
   async sendFriendRequest(@Request() req: any, @Body() body: { username: string }) {
-    return this.friendsService.sendFriendRequest(req.user.id, body.username);
+    const userId = Number(req.user.id);
+    return this.friendsService.sendFriendRequest(userId, body.username);
   }
 
   @Put(':id/accept')
   async acceptFriendRequest(@Request() req: any, @Param('id') id: string) {
-    return this.friendsService.acceptFriendRequest(id, req.user.id);
+    const userId = Number(req.user.id);
+    return this.friendsService.acceptFriendRequest(id, userId);
   }
 
   @Put(':id/reject')
   async rejectFriendRequest(@Request() req: any, @Param('id') id: string) {
-    return this.friendsService.rejectFriendRequest(id, req.user.id);
+    const userId = Number(req.user.id);
+    return this.friendsService.rejectFriendRequest(id, userId);
   }
 }

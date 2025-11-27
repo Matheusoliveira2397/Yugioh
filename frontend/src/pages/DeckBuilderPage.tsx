@@ -1,8 +1,11 @@
+
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 
 export default function DeckBuilderPage() {
+  const navigate = useNavigate();
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-gray-900 py-12 px-4">
+    <div className="min-h-screen py-12 px-4 relative z-10">
       <div className="max-w-6xl mx-auto">
         {/* Card Principal com Imagem */}
         <motion.div
@@ -65,7 +68,10 @@ export default function DeckBuilderPage() {
                   <span className="text-gray-400">Armadilhas:</span>
                   <span className="text-purple-400 font-bold">0</span>
                 </div>
-                <button className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 rounded-lg transition-colors">
+                <button
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 rounded-lg transition-colors"
+                  onClick={() => navigate('/deck-edit')}
+                >
                   Editar Deck
                 </button>
               </motion.div>

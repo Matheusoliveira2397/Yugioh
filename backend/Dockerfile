@@ -9,7 +9,7 @@ RUN apk add --no-cache python3 make g++
 COPY package*.json ./
 
 # Instalar dependências e recompilar bcrypt
-RUN npm install && npm rebuild bcrypt --build-from-source
+RUN npm install --legacy-peer-deps && npm rebuild bcrypt --build-from-source
 
 # Copiar código fonte
 COPY . .

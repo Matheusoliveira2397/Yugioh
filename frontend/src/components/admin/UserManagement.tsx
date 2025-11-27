@@ -12,10 +12,10 @@ interface User {
   email: string;
   role: string;
   rating: number;
-  wins: number;
-  losses: number;
-  gems: number;
-  coins: number;
+  winsGeral: number;
+  lossesGeral: number;
+  winsSeason: number;
+  lossesSeason: number;
   isOnline: boolean;
   lastIpAddress?: string;
   isBanned: boolean;
@@ -79,12 +79,17 @@ export default function UserManagement() {
     }
   };
 
-  const fetchUserDetails = async (userId: string) => {
+  const fetchUserDetails = async (userId: string | number) => {
     try {
+      const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : Number(userId);
+      if (isNaN(userIdNum)) {
+        console.error('ID de usuário inválido:', userId);
+        return;
+      }
       const headers = { Authorization: `Bearer ${token}` };
       const [detailsRes, ipRes] = await Promise.all([
-        axios.get(`${API_URL}/admin/users/${userId}`, { headers }),
-        axios.get(`${API_URL}/admin/users/${userId}/ip-history`, { headers }),
+        axios.get(`${API_URL}/admin/users/${userIdNum}`, { headers }),
+        axios.get(`${API_URL}/admin/users/${userIdNum}/ip-history`, { headers }),
       ]);
       setSelectedUser(detailsRes.data);
       setIpHistory(ipRes.data);
@@ -93,13 +98,18 @@ export default function UserManagement() {
     }
   };
 
-  const handleBanUser = async (userId: string) => {
+  const handleBanUser = async (userId: string | number) => {
     const reason = prompt('Motivo do banimento:');
     if (!reason) return;
 
     try {
+      const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : Number(userId);
+      if (isNaN(userIdNum)) {
+        console.error('ID de usuário inválido:', userId);
+        return;
+      }
       const headers = { Authorization: `Bearer ${token}` };
-      await axios.delete(`${API_URL}/admin/users/${userId}/ban`, {
+      await axios.delete(`${API_URL}/admin/users/${userIdNum}/ban`, {
         headers,
         data: { reason },
       });
@@ -111,10 +121,15 @@ export default function UserManagement() {
     }
   };
 
-  const handleUnbanUser = async (userId: string) => {
+  const handleUnbanUser = async (userId: string | number) => {
     try {
+      const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : Number(userId);
+      if (isNaN(userIdNum)) {
+        console.error('ID de usuário inválido:', userId);
+        return;
+      }
       const headers = { Authorization: `Bearer ${token}` };
-      await axios.put(`${API_URL}/admin/users/${userId}/unban`, {}, { headers });
+      await axios.put(`${API_URL}/admin/users/${userIdNum}/unban`, {}, { headers });
       alert('Usuário desbanido com sucesso!');
       fetchAllUsers();
     } catch (error) {
@@ -123,13 +138,18 @@ export default function UserManagement() {
     }
   };
 
-  const handlePromote = async (userId: string, role: 'ADMIN' | 'MASTER') => {
+  const handlePromote = async (userId: string | number, role: 'ADMIN' | 'MASTER') => {
     if (!confirm(`Promover usuário para ${role}?`)) return;
 
     try {
+      const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : Number(userId);
+      if (isNaN(userIdNum)) {
+        console.error('ID de usuário inválido:', userId);
+        return;
+      }
       const headers = { Authorization: `Bearer ${token}` };
       await axios.put(
-        `${API_URL}/admin/users/${userId}/promote/${role.toLowerCase()}`,
+        `${API_URL}/admin/users/${userIdNum}/promote/${role.toLowerCase()}`,
         {},
         { headers }
       );
@@ -141,12 +161,17 @@ export default function UserManagement() {
     }
   };
 
-  const handleDemote = async (userId: string) => {
+  const handleDemote = async (userId: string | number) => {
     if (!confirm('Rebaixar usuário para PLAYER?')) return;
 
     try {
+      const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : Number(userId);
+      if (isNaN(userIdNum)) {
+        console.error('ID de usuário inválido:', userId);
+        return;
+      }
       const headers = { Authorization: `Bearer ${token}` };
-      await axios.put(`${API_URL}/admin/users/${userId}/demote`, {}, { headers });
+      await axios.put(`${API_URL}/admin/users/${userIdNum}/demote`, {}, { headers });
       alert('Usuário rebaixado para PLAYER!');
       fetchAllUsers();
     } catch (error) {
@@ -206,7 +231,8 @@ export default function UserManagement() {
               <p><strong>Username:</strong> {selectedUser.username}</p>
               <p><strong>Role:</strong> <span className="text-yellow-400">{selectedUser.role}</span></p>
               <p><strong>Rating:</strong> {selectedUser.rating}</p>
-              <p><strong>Vitórias/Derrotas:</strong> {selectedUser.wins}/{selectedUser.losses}</p>
+              <p><strong>Vitórias/Derrotas (Geral):</strong> {selectedUser.winsGeral || 0}/{selectedUser.lossesGeral || 0}</p>
+              <p><strong>Vitórias/Derrotas (Season):</strong> {selectedUser.winsSeason || 0}/{selectedUser.lossesSeason || 0}</p>
               <p><strong>Último IP:</strong> <span className="text-blue-400">{selectedUser.lastIpAddress || 'N/A'}</span></p>
               <p><strong>Status:</strong> {selectedUser.isOnline ? '🟢 Online' : '⚫ Offline'}</p>
               {selectedUser.isBanned && (
@@ -276,7 +302,7 @@ export default function UserManagement() {
                       )}
                     </div>
                     <p className="text-sm text-gray-400">
-                      {user.email} • Rating: {user.rating} • {user.wins}V/{user.losses}D
+                      {user.email} • Rating: {user.rating} • {user.winsGeral || 0}V/{user.lossesGeral || 0}D
                     </p>
                     {user.lastIpAddress && (
                       <p className="text-sm text-blue-400 font-mono">

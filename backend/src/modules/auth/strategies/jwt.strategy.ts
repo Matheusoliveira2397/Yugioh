@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
@@ -6,6 +6,8 @@ import { UsersService } from '../../users/users.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  private readonly logger = new Logger(JwtStrategy.name);
+
   constructor(
     private configService: ConfigService,
     private usersService: UsersService,
@@ -18,10 +20,22 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    const user = await this.usersService.findById(payload.sub);
+    console.log('🔍 JWT Strategy validate - payload.sub:', payload.sub, 'tipo:', typeof payload.sub);
+    // Converter payload.sub para number (pode ser string de JWT antigo ou number novo)
+    const userId = typeof payload.sub === 'string' ? parseInt(payload.sub, 10) : Number(payload.sub);
+    console.log('🔍 JWT Strategy validate - userId convertido:', userId, 'tipo:', typeof userId);
+    if (isNaN(userId)) {
+      console.log('❌ JWT Strategy - userId é NaN!');
+      throw new UnauthorizedException('Invalid user ID');
+    }
+    const user = await this.usersService.findById(userId);
     if (!user) {
+      console.log('❌ JWT Strategy - usuário não encontrado com ID:', userId);
       throw new UnauthorizedException();
     }
-    return { id: user.id, username: user.username, email: user.email, role: user.role };
+    // Garantir que id seja sempre number
+    const userObj = { id: Number(user.id), username: user.username, email: user.email, role: user.role };
+    console.log('🔍 JWT Strategy validate - retornando user:', userObj);
+    return userObj;
   }
 }

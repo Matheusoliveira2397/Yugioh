@@ -12,7 +12,7 @@ export class AdminService {
     private redisService: RedisService,
   ) {}
 
-  async promoteToMaster(userId: string): Promise<User> {
+  async promoteToMaster(userId: number): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new Error('User not found');
@@ -21,7 +21,7 @@ export class AdminService {
     return this.usersRepository.save(user);
   }
 
-  async promoteToAdmin(userId: string): Promise<User> {
+  async promoteToAdmin(userId: number): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new Error('User not found');
@@ -30,7 +30,7 @@ export class AdminService {
     return this.usersRepository.save(user);
   }
 
-  async demoteToPlayer(userId: string): Promise<User> {
+  async demoteToPlayer(userId: number): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new Error('User not found');
@@ -48,8 +48,8 @@ export class AdminService {
       take: limit,
       order: { createdAt: 'DESC' },
       select: [
-        'id', 'username', 'email', 'role', 'rating', 'wins', 'losses',
-        'gems', 'coins', 'avatar', 'isOnline', 'lastIpAddress', 
+        'id', 'username', 'email', 'role', 'rating', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason',
+        'credits', 'cash', 'avatar', 'isOnline', 'lastIpAddress', 
         'isBanned', 'banReason', 'createdAt', 'lastLogin'
       ],
     });
@@ -78,7 +78,7 @@ export class AdminService {
     };
   }
 
-  async getUserDetails(userId: string) {
+  async getUserDetails(userId: number) {
     const user = await this.usersRepository.findOne({
       where: { id: userId },
     });
@@ -97,14 +97,14 @@ export class AdminService {
     };
   }
 
-  async getUserIpHistory(userId: string) {
+  async getUserIpHistory(userId: number) {
     const ipHistoryKey = `user:${userId}:ip_history`;
     const history = await this.redisService.getClient().lRange(ipHistoryKey, 0, 49);
 
     return history.map((entry: string) => JSON.parse(entry));
   }
 
-  async banUser(userId: string, reason?: string) {
+  async banUser(userId: number, reason?: string) {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     
     if (!user) {
@@ -125,7 +125,7 @@ export class AdminService {
     };
   }
 
-  async unbanUser(userId: string) {
+  async unbanUser(userId: number) {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     
     if (!user) {

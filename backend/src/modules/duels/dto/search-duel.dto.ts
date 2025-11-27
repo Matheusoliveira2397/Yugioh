@@ -1,14 +1,14 @@
-import { IsUUID } from 'class-validator';
+import { IsNumber } from 'class-validator';
 
 export class SearchDuelDto {
-  @IsUUID()
-  userId: string;
+  @IsNumber()
+  userId: number;
 }
 
 export class DuelFoundDto {
-  duelId: string;
+  duelId: number;
   opponent: {
-    id: string;
+    id: number;
     username: string;
     clanTag?: string;
     level: number;
@@ -18,12 +18,12 @@ export class DuelFoundDto {
 }
 
 export class DuelActionDto {
-  duelId: string;
+  duelId: number;
   actionType: string;
   data?: any;
 }
 
 export class DuelChatDto {
-  duelId: string;
+  duelId: number;
   message: string;
 }

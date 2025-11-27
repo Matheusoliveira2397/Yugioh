@@ -32,8 +32,8 @@ export class TournamentParticipant {
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @Column()
-  userId: string;
+  @Column({ type: 'int' })
+  userId: number;
 
   @Column({ type: 'enum', enum: ParticipantStatus, default: ParticipantStatus.REGISTERED })
   status: ParticipantStatus;

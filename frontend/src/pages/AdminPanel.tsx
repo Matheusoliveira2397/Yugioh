@@ -1,33 +1,45 @@
-import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
-import { Navigate } from 'react-router-dom';
-import CardManagement from '../components/admin/CardManagement';
-import UserManagement from '../components/admin/UserManagement';
-import SeasonManagement from '../components/admin/SeasonManagement';
-import NewsManagement from '../components/admin/NewsManagement';
-
-type TabType = 'cards' | 'users' | 'seasons' | 'economy' | 'news';
+import { Navigate, useNavigate } from 'react-router-dom';
 
 export default function AdminPanel() {
-  const [activeTab, setActiveTab] = useState<TabType>('cards');
   const { user } = useAuthStore();
+  const navigate = useNavigate();
 
   // Proteção: apenas ADMIN ou MASTER
   if (!user || (user.role !== 'ADMIN' && user.role !== 'MASTER')) {
     return <Navigate to="/" replace />;
   }
 
-  const tabs = [
-    { id: 'cards' as TabType, label: '🃏 Cartas', icon: '🎴' },
-    { id: 'users' as TabType, label: '👥 Usuários', icon: '👤' },
-    { id: 'news' as TabType, label: '📰 Notícias', icon: '📢' },
-    { id: 'seasons' as TabType, label: '📅 Seasons', icon: '🏆' },
-    { id: 'economy' as TabType, label: '💰 Economia', icon: '💵' },
+  const adminCards = [
+    { 
+      id: 'cards', 
+      label: 'Gerenciar Cartas', 
+      icon: '🎴',
+      description: 'Criar, editar e remover cartas do jogo',
+      route: '/admin/cartas',
+      color: 'from-purple-600 to-purple-800'
+    },
+    { 
+      id: 'players', 
+      label: 'Gerenciar Jogadores', 
+      icon: '👤',
+      description: 'Banir, desbanir e gerenciar usuários',
+      route: '/admin/players',
+      color: 'from-blue-600 to-blue-800'
+    },
+    { 
+      id: 'news', 
+      label: 'Gerenciar Notícias', 
+      icon: '📢',
+      description: 'Criar e editar notícias do sistema',
+      route: '/admin/news',
+      color: 'from-green-600 to-green-800'
+    },
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900/20 to-slate-900 p-8">
+    <div className="min-h-screen p-8 relative z-10">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <motion.div
@@ -54,43 +66,51 @@ export default function AdminPanel() {
           </div>
         </motion.div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+        {/* Cards de Administração */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {adminCards.map((card, index) => (
+            <motion.div
+              key={card.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1 }}
+              whileHover={{ scale: 1.05, y: -5 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => navigate(card.route)}
               className={`
-                flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all
-                ${activeTab === tab.id
-                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/50'
-                  : 'bg-slate-800/50 text-slate-400 hover:bg-slate-700/50'
-                }
+                bg-gradient-to-br ${card.color} 
+                rounded-xl p-8 cursor-pointer 
+                shadow-xl hover:shadow-2xl 
+                border border-white/10
+                transition-all duration-300
               `}
             >
-              <span className="text-2xl">{tab.icon}</span>
-              {tab.label}
-            </button>
+              <div className="text-center">
+                <div className="text-7xl mb-4">{card.icon}</div>
+                <h3 className="text-2xl font-bold text-white mb-2">
+                  {card.label}
+                </h3>
+                <p className="text-gray-200 text-sm">
+                  {card.description}
+                </p>
+              </div>
+            </motion.div>
           ))}
         </div>
 
-        {/* Content */}
+        {/* Botão Voltar */}
         <motion.div
-          key={activeTab}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-6 border border-slate-700"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.5 }}
+          className="mt-8 text-center"
         >
-          {activeTab === 'cards' && <CardManagement />}
-          {activeTab === 'users' && <UserManagement />}
-          {activeTab === 'news' && <NewsManagement />}
-          {activeTab === 'seasons' && <SeasonManagement />}
-          {activeTab === 'economy' && (
-            <div className="text-center text-slate-400 py-12">
-              <span className="text-6xl mb-4 block">🚧</span>
-              <p className="text-xl">Em desenvolvimento</p>
-            </div>
-          )}
+          <button
+            onClick={() => navigate('/')}
+            className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded-lg transition-all"
+          >
+            ← Voltar ao Início
+          </button>
         </motion.div>
       </div>
     </div>

@@ -6,6 +6,7 @@ import { Tournament, TournamentStatus, TournamentFormat } from './entities/tourn
 import { TournamentParticipant, ParticipantStatus } from './entities/tournament-participant.entity';
 import { TournamentMatch, MatchStatus } from './entities/tournament-match.entity';
 import { DuelsService } from '../duels/duels.service';
+import { DuelOrigin } from '../duels/entities/duel.entity';
 import { UsersService } from '../users/users.service';
 
 @Injectable()
@@ -128,12 +129,19 @@ export class TournamentsService {
         }
 
         // Criar duelo
+        // player1Id e player2Id já são numbers após a migração
         const duel = await this.duelsService.createDuel(
           match.player1Id,
           match.player2Id,
+          DuelOrigin.TOURNAMENT,
         );
 
-        match.duelId = duel.id;
+        if (!duel || !duel.id) {
+          this.logger.error(`Erro ao criar duelo para partida ${match.id}`);
+          continue;
+        }
+
+        match.duelId = duel.id!;
         match.status = MatchStatus.IN_PROGRESS;
         match.startedAt = new Date();
         await this.matchRepository.save(match);
@@ -183,7 +191,7 @@ export class TournamentsService {
   /**
    * Cria um novo torneio
    */
-  async create(userId: string, tournamentData: Partial<Tournament>) {
+  async create(userId: number, tournamentData: Partial<Tournament>) {
     const tournament = this.tournamentRepository.create({
       ...tournamentData,
       createdBy: userId,
@@ -196,7 +204,7 @@ export class TournamentsService {
   /**
    * Inscrever usuário no torneio
    */
-  async register(tournamentId: string, userId: string) {
+  async register(tournamentId: string, userId: number) {
     const tournament = await this.tournamentRepository.findOne({
       where: { id: tournamentId },
       relations: ['participants'],
@@ -223,13 +231,15 @@ export class TournamentsService {
       throw new BadRequestException('Você já está inscrito neste torneio');
     }
 
-    // Cobrar taxa de inscrição
+    // Cobrar taxa de inscrição (usando credits agora)
     if (tournament.entryFee > 0) {
       const user = await this.usersService.findById(userId);
-      if (user.coins < tournament.entryFee) {
-        throw new BadRequestException('Moedas insuficientes');
+      if ((user.credits || 0) < tournament.entryFee) {
+        throw new BadRequestException('Créditos insuficientes');
       }
-      await this.usersService.updateCoins(userId, -tournament.entryFee);
+      await this.usersService.update(userId, {
+        credits: (user.credits || 0) - tournament.entryFee
+      });
     }
 
     // Criar participante
@@ -401,8 +411,11 @@ export class TournamentsService {
    */
   private async distributePrizes(tournament: Tournament) {
     if (tournament.winnerId && tournament.prizeFirst > 0) {
-      await this.usersService.updateCoins(tournament.winnerId, tournament.prizeFirst);
-      this.logger.log(`💰 Prêmio de ${tournament.prizeFirst} moedas entregue ao vencedor`);
+      const user = await this.usersService.findById(tournament.winnerId);
+      await this.usersService.update(tournament.winnerId, {
+        credits: (user.credits || 0) + tournament.prizeFirst
+      });
+      this.logger.log(`💰 Prêmio de ${tournament.prizeFirst} créditos entregue ao vencedor`);
     }
     // TODO: Implementar prêmios para 2º e 3º lugares
   }

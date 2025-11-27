@@ -20,38 +20,66 @@ export class AdminController {
   }
 
   @Get('users/:id')
-  getUserDetails(@Param('id') userId: string) {
+  getUserDetails(@Param('id') id: string) {
+    const userId = parseInt(id, 10);
+    if (isNaN(userId)) {
+      throw new Error('ID inválido');
+    }
     return this.adminService.getUserDetails(userId);
   }
 
   @Get('users/:id/ip-history')
-  getUserIpHistory(@Param('id') userId: string) {
+  getUserIpHistory(@Param('id') id: string) {
+    const userId = parseInt(id, 10);
+    if (isNaN(userId)) {
+      throw new Error('ID inválido');
+    }
     return this.adminService.getUserIpHistory(userId);
   }
 
   @Delete('users/:id/ban')
-  banUser(@Param('id') userId: string, @Body() body: { reason?: string }) {
+  banUser(@Param('id') id: string, @Body() body: { reason?: string }) {
+    const userId = parseInt(id, 10);
+    if (isNaN(userId)) {
+      throw new Error('ID inválido');
+    }
     return this.adminService.banUser(userId, body.reason);
   }
 
   @Put('users/:id/unban')
-  unbanUser(@Param('id') userId: string) {
+  unbanUser(@Param('id') id: string) {
+    const userId = parseInt(id, 10);
+    if (isNaN(userId)) {
+      throw new Error('ID inválido');
+    }
     return this.adminService.unbanUser(userId);
   }
 
   // Promoções e Demissões
   @Put('users/:id/promote/master')
-  promoteToMaster(@Param('id') userId: string) {
+  promoteToMaster(@Param('id') id: string) {
+    const userId = parseInt(id, 10);
+    if (isNaN(userId)) {
+      throw new Error('ID inválido');
+    }
     return this.adminService.promoteToMaster(userId);
   }
 
   @Put('users/:id/promote/admin')
-  promoteToAdmin(@Param('id') userId: string) {
+  promoteToAdmin(@Param('id') id: string) {
+    const userId = parseInt(id, 10);
+    if (isNaN(userId)) {
+      throw new Error('ID inválido');
+    }
     return this.adminService.promoteToAdmin(userId);
   }
 
   @Put('users/:id/demote')
-  demoteToPlayer(@Param('id') userId: string) {
+  demoteToPlayer(@Param('id') id: string) {
+    const userId = parseInt(id, 10);
+    if (isNaN(userId)) {
+      throw new Error('ID inválido');
+    }
     return this.adminService.demoteToPlayer(userId);
   }
 

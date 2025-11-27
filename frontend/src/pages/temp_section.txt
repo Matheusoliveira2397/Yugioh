@@ -1,0 +1,29 @@
+﻿                    <p className="text-gray-400 text-xs mb-4 line-clamp-2 italic">
+                      {item.description}
+                    </p>
+
+                    {/* Divider */}
+                    <div className="border-t border-gray-700 mb-4"></div>
+
+                    {/* Price Section */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">PreÃ§o</p>
+                        <div className="text-2xl font-bold">
+                          {item.type === 'card' ? (
+                            <span className="text-purple-400 flex items-center gap-1">
+                              <span className="text-3xl">ðŸ’Ž</span> {item.price}
+                            </span>
+                          ) : (
+                            <span className="text-green-400 flex items-center gap-1">
+                              <span className="text-3xl">ï¿½</span> {item.price}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Stock Badge */}
+                      <div className="bg-green-500/20 border border-green-500/50 px-3 py-1 rounded-full">
+                        <p className="text-xs text-green-400 font-bold">âœ“ DisponÃ­vel</p>
+                      </div>
+                    </div>

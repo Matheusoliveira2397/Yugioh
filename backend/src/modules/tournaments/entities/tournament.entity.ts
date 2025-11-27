@@ -79,8 +79,8 @@ export class Tournament {
   @JoinColumn({ name: 'createdBy' })
   creator: User;
 
-  @Column()
-  createdBy: string;
+  @Column({ type: 'int' })
+  createdBy: number;
 
   // Taxa de inscrição
   @Column({ type: 'int', default: 0 })
@@ -112,8 +112,8 @@ export class Tournament {
   @JoinColumn({ name: 'winnerId' })
   winner: User;
 
-  @Column({ nullable: true })
-  winnerId: string;
+  @Column({ type: 'int', nullable: true })
+  winnerId: number;
 
   // Relações
   @OneToMany(() => TournamentParticipant, (participant) => participant.tournament)

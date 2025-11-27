@@ -56,6 +56,19 @@ services:
       retries: 5
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
 
+  # Adminer - Interface do Banco de Dados
+  adminer:
+    image: adminer:latest
+    container_name: yugioh-adminer
+    ports:
+      - "8080:8080"
+    networks:
+      - yugioh-network
+    depends_on:
+      - postgres
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+
   # Backend API
   backend:
     build:
@@ -85,7 +98,8 @@ services:
       - yugioh-network
     volumes:
       - uploads_data:/app/uploads
-    command: npm run start:prod
+      - ./backend/src:/app/src  # Sincronizar código fonte em desenvolvimento
+    command: npm run start:dev
 
   # Frontend
   frontend:
@@ -97,11 +111,14 @@ services:
       - "5173:5173"
     environment:
       VITE_API_URL: http://localhost:3000
-      VITE_WS_URL: ws://localhost:3000
+      VITE_WS_URL: http://localhost:3000
     depends_on:
       - backend
     networks:
       - yugioh-network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     command: npm run dev -- --host
 
   # Nginx - Load Balancer

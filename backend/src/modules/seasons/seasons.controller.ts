@@ -30,7 +30,11 @@ export class SeasonsController {
     @Param('userId') userId: string,
     @Query('seasonId') seasonId?: string
   ) {
-    return this.seasonsService.getUserRanking(userId, seasonId);
+    const userIdNum = parseInt(userId, 10);
+    if (isNaN(userIdNum)) {
+      throw new Error('ID de usuário inválido');
+    }
+    return this.seasonsService.getUserRanking(userIdNum, seasonId);
   }
 
   @Post('create')

@@ -19,8 +19,8 @@ export class Deck {
   @Column()
   name: string;
 
-  @Column()
-  userId: string;
+  @Column({ type: 'int' })
+  userId: number;
 
   @ManyToOne(() => User, (user) => user.decks)
   @JoinColumn({ name: 'userId' })

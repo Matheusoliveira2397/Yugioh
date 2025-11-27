@@ -7,40 +7,9 @@ import {
   IsBoolean, 
   IsNumber, 
   Min, 
-  Max,
-  IsObject,
-  ValidateNested
+  Max
 } from 'class-validator';
-import { Type } from 'class-transformer';
 import { CardType, CardAttribute, CardRarity, MonsterType, SpellType, TrapType, MonsterRace } from '../entities/card.entity';
-
-// DTO para Efeito da Carta
-export class CardEffectDto {
-  @IsEnum(['continuous', 'trigger', 'ignition', 'quick', 'flip'])
-  type: 'continuous' | 'trigger' | 'ignition' | 'quick' | 'flip';
-
-  @IsOptional()
-  @IsString({ each: true })
-  timing?: string[]; // ['summon', 'attack', 'end-phase']
-
-  @IsOptional()
-  @IsString()
-  condition?: string; // Condição para ativar
-
-  @IsString()
-  @IsNotEmpty()
-  action: string; // 'draw', 'destroy', 'special-summon', etc.
-
-  @IsOptional()
-  @IsString()
-  target?: string; // 'opponent', 'self', 'all', etc.
-
-  @IsOptional()
-  params?: any; // Parâmetros específicos do efeito
-
-  @IsOptional()
-  cost?: any; // Custo para ativar
-}
 
 export class CreateCardDto {
   // ==================== INFORMAÇÕES BÁSICAS ====================
@@ -48,9 +17,9 @@ export class CreateCardDto {
   @IsNotEmpty()
   name: string;
 
-  @IsOptional()
   @IsString()
-  nameEn?: string;
+  @IsNotEmpty()
+  idCarta: string; // ID único para diferenciar versões da mesma carta (ex: diferentes artes) - OBRIGATÓRIO
 
   @IsString()
   @IsNotEmpty()
@@ -85,6 +54,11 @@ export class CreateCardDto {
   @IsEnum(TrapType)
   trapType?: TrapType;
 
+  // ==================== ARQUÉTIPO ====================
+  @IsOptional()
+  @IsString()
+  archetype?: string;
+
   // ==================== ESTATÍSTICAS ====================
   @IsOptional()
   @IsInt()
@@ -100,12 +74,6 @@ export class CreateCardDto {
 
   @IsOptional()
   @IsInt()
-  @Min(1)
-  @Max(8)
-  linkRating?: number;
-
-  @IsOptional()
-  @IsInt()
   @Min(0)
   atk?: number;
 
@@ -114,26 +82,10 @@ export class CreateCardDto {
   @Min(0)
   def?: number;
 
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(13)
-  pendulumScale?: number;
-
-  // ==================== EFEITO ====================
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => CardEffectDto)
-  effect?: CardEffectDto;
-
   // ==================== RARIDADE E LIMITAÇÕES ====================
   @IsEnum(CardRarity)
   @IsNotEmpty()
   rarity: CardRarity;
-
-  @IsOptional()
-  @IsInt()
-  konamiId?: number;
 
   @IsOptional()
   @IsBoolean()
@@ -141,7 +93,7 @@ export class CreateCardDto {
 
   @IsOptional()
   @IsBoolean()
-  isLimited?: boolean;
+  isBanned?: boolean;
 
   @IsOptional()
   @IsInt()
@@ -150,15 +102,16 @@ export class CreateCardDto {
   maxCopiesInDeck?: number;
 
   // ==================== PREÇOS ====================
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  priceCoins?: number; // Preço em moedas
+  // REMOVIDO: Sistema de moedas foi desativado, apenas Cash e Créditos
+  // @IsOptional()
+  // @IsInt()
+  // @Min(0)
+  // priceCoins?: number; // Preço em moedas (DESATIVADO)
 
   @IsOptional()
   @IsInt()
   @Min(0)
-  priceCredits?: number; // Preço em créditos
+  priceCredits?: number; // Preço em créditos (moeda premium)
 
   @IsOptional()
   @IsNumber()

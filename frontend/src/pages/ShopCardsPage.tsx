@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
-import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+import { api } from '../api/axios';
+import CardImage from '../components/CardImage';
 
 interface Card {
   id: string;
@@ -19,13 +18,14 @@ interface Card {
   priceCredits?: number;
   priceCash?: number;
   isForSale: boolean;
+  createdAt?: string;
 }
 
 export default function ShopCardsPage() {
   const { user } = useAuthStore();
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCurrency, setSelectedCurrency] = useState<'coins' | 'credits' | 'cash'>('coins');
+  const [selectedCurrency, setSelectedCurrency] = useState<'credits' | 'cash'>('credits');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -34,7 +34,7 @@ export default function ShopCardsPage() {
 
   const loadCards = async () => {
     try {
-      const response = await axios.get(`${API_URL}/cards/shop/for-sale`);
+      const response = await api.get('/cards/shop/for-sale');
       setCards(response.data);
       console.log('🛒 Cartas na loja:', response.data);
     } catch (error) {
@@ -51,9 +51,7 @@ export default function ShopCardsPage() {
     }
 
     // Verificar se a carta tem preço para a moeda selecionada
-    const price = selectedCurrency === 'coins' 
-      ? card.priceCoins 
-      : selectedCurrency === 'credits' 
+    const price = selectedCurrency === 'credits' 
       ? card.priceCredits 
       : card.priceCash;
 
@@ -66,9 +64,7 @@ export default function ShopCardsPage() {
     }
 
     // Verificar saldo
-    const userBalance = selectedCurrency === 'coins' 
-      ? (user.coins || 0)
-      : selectedCurrency === 'credits'
+    const userBalance = selectedCurrency === 'credits'
       ? (user.credits || 0)
       : (user.cash || 0);
 
@@ -83,38 +79,45 @@ export default function ShopCardsPage() {
 
     // Comprar carta
     try {
-      const token = localStorage.getItem('token');
-      await axios.post(
-        `${API_URL}/shop/purchase`,
-        {
-          cardId: card.id,
-          paymentMethod: selectedCurrency,
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      setLoading(true);
+      const response = await api.post('/shop/purchase', {
+        cardId: card.id,
+        paymentMethod: selectedCurrency,
+      });
+
+      console.log('✅ Compra realizada:', response.data);
+
+      // Atualizar saldo do usuário no store
+      const updatedUser = {
+        ...user,
+        credits: response.data.remainingBalance?.credits ?? user.credits,
+        cash: response.data.remainingBalance?.cash ?? user.cash,
+      };
+      
+      useAuthStore.getState().setUser(updatedUser);
 
       setMessage({ 
         type: 'success', 
-        text: `✅ Carta "${card.name}" comprada com sucesso!` 
+        text: `✅ Carta "${card.name}" comprada com sucesso! A carta foi adicionada à sua maleta!` 
       });
 
-      // Atualizar saldo do usuário (recarregar página ou atualizar store)
+      // Limpar mensagem após 3 segundos
       setTimeout(() => {
-        window.location.reload();
-      }, 2000);
+        setMessage(null);
+      }, 3000);
     } catch (error: any) {
+      console.error('❌ Erro na compra:', error);
       setMessage({ 
         type: 'error', 
         text: `❌ Erro: ${error.response?.data?.message || 'Erro ao comprar carta'}` 
       });
+    } finally {
+      setLoading(false);
     }
   };
 
   const getCurrencyName = (currency: string) => {
     const names = {
-      coins: 'moedas',
       credits: 'créditos',
       cash: 'cash'
     };
@@ -134,18 +137,14 @@ export default function ShopCardsPage() {
   };
 
   const getPrice = (card: Card) => {
-    return selectedCurrency === 'coins' 
-      ? card.priceCoins 
-      : selectedCurrency === 'credits' 
+    return selectedCurrency === 'credits' 
       ? card.priceCredits 
       : card.priceCash;
   };
 
   const getUserBalance = () => {
     if (!user) return 0;
-    return selectedCurrency === 'coins' 
-      ? (user.coins || 0)
-      : selectedCurrency === 'credits'
+    return selectedCurrency === 'credits'
       ? (user.credits || 0)
       : (user.cash || 0);
   };
@@ -168,19 +167,15 @@ export default function ShopCardsPage() {
               <h1 className="text-4xl font-bold mb-2">🛒 Loja de Cartas</h1>
               <p className="text-gray-300">Compre cartas individuais para seu deck</p>
             </div>
-            <div className="text-right bg-gray-900 px-6 py-4 rounded-lg border-2 border-yellow-500">
-              <p className="text-gray-400 text-sm">Seu Saldo</p>
+            <div className="text-right bg-gradient-to-br from-gray-900 to-gray-800 px-6 py-4 rounded-lg border-2 border-purple-500/50 shadow-lg">
+              <p className="text-gray-400 text-sm mb-2">💰 Seu Saldo</p>
               <div className="flex gap-4 mt-2">
-                <div className="text-center">
-                  <p className="text-xl font-bold text-yellow-400">🪙 {user?.coins || 0}</p>
-                  <p className="text-xs text-gray-400">Moedas</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xl font-bold text-purple-400">💎 {user?.credits || 0}</p>
+                <div className="text-center bg-purple-900/30 px-4 py-2 rounded-lg border border-purple-500/30">
+                  <p className="text-2xl font-bold text-purple-400">💎 {user?.credits || 0}</p>
                   <p className="text-xs text-gray-400">Créditos</p>
                 </div>
-                <div className="text-center">
-                  <p className="text-xl font-bold text-green-400">💵 {user?.cash || 0}</p>
+                <div className="text-center bg-green-900/30 px-4 py-2 rounded-lg border border-green-500/30">
+                  <p className="text-2xl font-bold text-green-400">💵 R$ {user?.cash || 0}</p>
                   <p className="text-xs text-gray-400">Cash</p>
                 </div>
               </div>
@@ -204,36 +199,32 @@ export default function ShopCardsPage() {
         )}
 
         {/* Seletor de Moeda */}
-        <div className="flex gap-2 mb-6">
-          <button
-            onClick={() => setSelectedCurrency('coins')}
-            className={`px-6 py-3 rounded-lg font-bold transition-all ${
-              selectedCurrency === 'coins'
-                ? 'bg-yellow-600 text-white shadow-lg'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            🪙 Moedas
-          </button>
+        <div className="flex gap-3 mb-6">
           <button
             onClick={() => setSelectedCurrency('credits')}
-            className={`px-6 py-3 rounded-lg font-bold transition-all ${
+            className={`flex-1 px-6 py-4 rounded-xl font-bold transition-all duration-300 ${
               selectedCurrency === 'credits'
-                ? 'bg-purple-600 text-white shadow-lg'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-xl shadow-purple-500/50 scale-105'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border-2 border-gray-700 hover:border-purple-500/50'
             }`}
           >
-            💎 Créditos
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-2xl">💎</span>
+              <span>Créditos</span>
+            </div>
           </button>
           <button
             onClick={() => setSelectedCurrency('cash')}
-            className={`px-6 py-3 rounded-lg font-bold transition-all ${
+            className={`flex-1 px-6 py-4 rounded-xl font-bold transition-all duration-300 ${
               selectedCurrency === 'cash'
-                ? 'bg-green-600 text-white shadow-lg'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                ? 'bg-gradient-to-r from-green-600 to-green-700 text-white shadow-xl shadow-green-500/50 scale-105'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border-2 border-gray-700 hover:border-green-500/50'
             }`}
           >
-            💵 Cash
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-2xl">💵</span>
+              <span>Cash (R$)</span>
+            </div>
           </button>
         </div>
 
@@ -243,11 +234,10 @@ export default function ShopCardsPage() {
             <p className="text-2xl">⏳ Carregando cartas...</p>
           </div>
         ) : filteredCards.length === 0 ? (
-          <div className="text-center py-16 bg-gray-800 rounded-lg">
+          <div className="text-center py-16 bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl border-2 border-gray-700">
             <p className="text-6xl mb-4">📦</p>
             <p className="text-2xl text-gray-400 mb-2">Nenhuma carta disponível</p>
             <p className="text-gray-500">
-              {selectedCurrency === 'coins' && 'Nenhuma carta pode ser comprada com moedas'}
               {selectedCurrency === 'credits' && 'Nenhuma carta pode ser comprada com créditos'}
               {selectedCurrency === 'cash' && 'Nenhuma carta pode ser comprada com cash'}
             </p>
@@ -265,63 +255,142 @@ export default function ShopCardsPage() {
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: index * 0.05 }}
-                  className="bg-gray-800 rounded-lg overflow-hidden shadow-xl hover:shadow-2xl transition-all"
+                  className="group relative"
                 >
-                  {/* Card Image */}
-                  <div className={`bg-gradient-to-br ${getRarityColor(card.rarity)} h-64 flex items-center justify-center relative`}>
-                    {card.cardImage ? (
-                      <img 
-                        src={card.cardImage} 
-                        alt={card.name}
-                        className="h-full object-contain"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <p className="text-8xl">
-                        {card.type === 'Monster' ? '👹' : card.type === 'Spell' ? '📜' : '🪤'}
-                      </p>
-                    )}
-                    <div className="absolute top-2 right-2 bg-black/70 px-3 py-1 rounded-full">
-                      <p className="text-xs font-bold text-yellow-400">{card.rarity}</p>
+                  {/* Card Container com hover effect */}
+                  <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 hover:border-purple-500 transition-all duration-300 hover:scale-105 hover:shadow-purple-500/50">
+                    
+                    {/* Card Image com overlay */}
+                    <div className="relative h-72 overflow-hidden">
+                      <div className={`absolute inset-0 bg-gradient-to-br ${getRarityColor(card.rarity)} opacity-30`}></div>
+                      <div className="absolute inset-0 flex items-center justify-center p-4">
+                        <CardImage
+                          card={card}
+                          className="h-full object-contain drop-shadow-2xl group-hover:scale-110 transition-transform duration-300"
+                          fallback="linear-gradient(to bottom, #1e3a8a, #7c3aed, #dc2626)"
+                        />
+                      </div>
+                      
+                      {/* Rarity Badge */}
+                      <div className={`absolute top-3 right-3 bg-gradient-to-r ${getRarityColor(card.rarity)} px-3 py-1 rounded-full border-2 border-white/30 backdrop-blur-sm`}>
+                        <p className="text-xs font-bold text-white shadow-lg">{card.rarity}</p>
+                      </div>
+
+                      {/* Type Badge */}
+                      <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-sm px-3 py-1 rounded-full border border-white/20">
+                        <p className="text-xs font-bold text-white">
+                          {card.type === 'Monster' && '👹 Monster'}
+                          {card.type === 'Spell' && '✨ Spell'}
+                          {card.type === 'Trap' && '🪤 Trap'}
+                        </p>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Card Info */}
-                  <div className="p-4">
-                    <h3 className="text-xl font-bold mb-2">{card.name}</h3>
-                    <p className="text-gray-400 text-sm mb-3 line-clamp-2">{card.description}</p>
-
-                    {/* Stats */}
-                    {card.type === 'Monster' && (
-                      <div className="flex gap-2 mb-3">
-                        <span className="bg-gray-700 px-2 py-1 rounded text-xs">⭐ {card.level}</span>
-                        <span className="bg-red-900 px-2 py-1 rounded text-xs">⚔️ {card.atk}</span>
-                        <span className="bg-blue-900 px-2 py-1 rounded text-xs">🛡️ {card.def}</span>
+                    {/* Card Info Section */}
+                    <div className="p-5 bg-gradient-to-b from-gray-800 to-gray-900">
+                      {/* Card Name */}
+                      <h3 className="text-xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 line-clamp-1">
+                        {card.name}
+                      </h3>
+                      
+                      {/* Card Type & Level */}
+                      <div className="flex items-center gap-2 mb-3">
+                        {card.type === 'Monster' && card.level && (
+                          <div className="flex items-center gap-1 bg-gray-700/50 px-2 py-1 rounded-md border border-yellow-500/30">
+                            <span className="text-yellow-400">⭐</span>
+                            <span className="text-sm font-bold text-yellow-300">Level {card.level}</span>
+                          </div>
+                        )}
+                        <div className="flex-1"></div>
                       </div>
-                    )}
 
-                    {/* Preço e Botão */}
-                    <div className="flex justify-between items-center">
-                      <div className="text-2xl font-bold">
-                        {selectedCurrency === 'coins' && `🪙 ${price}`}
-                        {selectedCurrency === 'credits' && `💎 ${price}`}
-                        {selectedCurrency === 'cash' && `💵 R$ ${price}`}
+                      {/* Description */}
+                      <p className="text-gray-400 text-xs mb-4 line-clamp-2 italic">
+                        {card.description}
+                      </p>
+
+                      {/* Monster Stats */}
+                      {card.type === 'Monster' && (
+                        <div className="flex gap-2 mb-4">
+                          <div className="flex-1 bg-gradient-to-r from-red-900/50 to-red-800/50 border border-red-500/30 rounded-lg px-3 py-2">
+                            <p className="text-xs text-red-300 font-semibold">ATK</p>
+                            <p className="text-lg font-bold text-red-400">{card.atk || 0}</p>
+                          </div>
+                          <div className="flex-1 bg-gradient-to-r from-blue-900/50 to-blue-800/50 border border-blue-500/30 rounded-lg px-3 py-2">
+                            <p className="text-xs text-blue-300 font-semibold">DEF</p>
+                            <p className="text-lg font-bold text-blue-400">{card.def || 0}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Data de Criação */}
+                      {card.createdAt && (
+                        <div className="mb-3">
+                          <p className="text-xs text-gray-500 flex items-center gap-1">
+                            📅 Criada em: <span className="text-gray-400">{new Date(card.createdAt).toLocaleDateString('pt-BR')}</span>
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Divider */}
+                      <div className="border-t border-gray-700 mb-4"></div>
+
+                      {/* Price Section */}
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">Preço</p>
+                          <div className="text-2xl font-bold">
+                            {selectedCurrency === 'credits' && (
+                              <span className="text-purple-400 flex items-center gap-1">
+                                <span className="text-3xl">💎</span> {price}
+                              </span>
+                            )}
+                            {selectedCurrency === 'cash' && (
+                              <span className="text-green-400 flex items-center gap-1">
+                                <span className="text-3xl">💵</span> {price?.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {/* Stock Badge */}
+                        <div className="bg-green-500/20 border border-green-500/50 px-3 py-1 rounded-full">
+                          <p className="text-xs text-green-400 font-bold">✓ Em Estoque</p>
+                        </div>
                       </div>
+
+                      {/* Buy Button */}
                       <button
                         onClick={() => handlePurchase(card)}
-                        disabled={!user || !canAfford}
-                        className={`px-6 py-2 rounded-lg font-bold transition-all ${
-                          user && canAfford
-                            ? 'bg-green-600 hover:bg-green-700 text-white'
-                            : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                        disabled={!user || !canAfford || loading}
+                        className={`w-full py-3 rounded-lg font-bold transition-all duration-300 flex items-center justify-center gap-2 ${
+                          user && canAfford && !loading
+                            ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white shadow-lg hover:shadow-green-500/50 transform hover:-translate-y-1'
+                            : 'bg-gray-700 text-gray-500 cursor-not-allowed opacity-60'
                         }`}
                       >
-                        {!user ? 'Login' : canAfford ? 'Comprar' : 'Sem Saldo'}
+                        {!user ? (
+                          <>🔒 Faça Login</>
+                        ) : loading ? (
+                          <>⏳ Processando...</>
+                        ) : canAfford ? (
+                          <>🛒 Comprar Agora</>
+                        ) : (
+                          <>💰 Saldo Insuficiente</>
+                        )}
                       </button>
+
+                      {/* Balance Warning */}
+                      {user && !canAfford && (
+                        <p className="text-xs text-red-400 text-center mt-2">
+                          Faltam {selectedCurrency === 'credits' ? '💎' : '💵'} {((price || 0) - userBalance).toFixed(2)}
+                        </p>
+                      )}
                     </div>
                   </div>
+
+                  {/* Glow effect on hover */}
+                  <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl opacity-0 group-hover:opacity-20 blur transition-opacity duration-300 -z-10"></div>
                 </motion.div>
               );
             })}

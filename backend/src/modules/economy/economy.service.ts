@@ -15,7 +15,7 @@ export class EconomyService {
 
   // Adicionar moeda ao usuário
   async addCurrency(
-    userId: string,
+    userId: number,
     currencyType: CurrencyType,
     amount: number,
     type: TransactionType = TransactionType.EARN,
@@ -52,7 +52,7 @@ export class EconomyService {
 
   // Remover moeda do usuário
   async removeCurrency(
-    userId: string,
+    userId: number,
     currencyType: CurrencyType,
     amount: number,
     type: TransactionType = TransactionType.SPEND,
@@ -69,16 +69,27 @@ export class EconomyService {
     }
 
     // Verifica saldo
-    const currentBalance = user[currencyType];
+    let currentBalance = 0;
+    if (currencyType === CurrencyType.CREDITS) {
+      currentBalance = user.credits || 0;
+    } else if (currencyType === CurrencyType.CASH) {
+      currentBalance = user.cash || 0;
+    }
+    
     if (currentBalance < amount) {
       throw new BadRequestException(`Saldo insuficiente de ${currencyType}`);
     }
 
     // Atualiza saldo do usuário
-    const field = currencyType;
-    await this.userRepository.update(userId, {
-      [field]: () => `"${field}" - ${amount}`
-    });
+    if (currencyType === CurrencyType.CREDITS) {
+      await this.userRepository.update(userId, {
+        credits: () => `"credits" - ${amount}`
+      });
+    } else if (currencyType === CurrencyType.CASH) {
+      await this.userRepository.update(userId, {
+        cash: () => `"cash" - ${amount}`
+      });
+    }
 
     // Registra transação
     const transaction = this.transactionRepository.create({
@@ -94,13 +105,13 @@ export class EconomyService {
   }
 
   // Recompensar usuário por vitória
-  async rewardVictory(userId: string, scoreGained: number): Promise<void> {
+  async rewardVictory(userId: number, scoreGained: number): Promise<void> {
     const coinsReward = Math.floor(scoreGained * 10);
     const experienceReward = scoreGained * 5;
 
     await this.addCurrency(
       userId,
-      CurrencyType.COINS,
+      CurrencyType.CREDITS,
       coinsReward,
       TransactionType.REWARD,
       `Recompensa de vitória (+${scoreGained} score)`,
@@ -112,7 +123,7 @@ export class EconomyService {
   }
 
   // Sistema de XP e Level
-  async addExperience(userId: string, xp: number): Promise<void> {
+  async addExperience(userId: number, xp: number): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) return;
 
@@ -128,7 +139,7 @@ export class EconomyService {
       // Recompensa por level up
       await this.addCurrency(
         userId,
-        CurrencyType.COINS,
+        CurrencyType.CREDITS,
         newLevel * 100,
         TransactionType.REWARD,
         `Level Up! Nível ${newLevel}`,
@@ -148,7 +159,7 @@ export class EconomyService {
   }
 
   // Buscar histórico de transações
-  async getTransactionHistory(userId: string, limit: number = 50): Promise<Transaction[]> {
+  async getTransactionHistory(userId: number, limit: number = 50): Promise<Transaction[]> {
     return this.transactionRepository.find({
       where: { userId },
       order: { createdAt: 'DESC' },
@@ -157,8 +168,7 @@ export class EconomyService {
   }
 
   // Buscar saldo do usuário
-  async getUserBalance(userId: string): Promise<{
-    coins: number;
+  async getUserBalance(userId: number): Promise<{
     credits: number;
     cash: number;
     level: number;
@@ -171,7 +181,6 @@ export class EconomyService {
     }
 
     return {
-      coins: user.coins,
       credits: user.credits,
       cash: user.cash,
       level: user.level,
@@ -182,8 +191,8 @@ export class EconomyService {
 
   // Transferir moeda entre usuários
   async transferCurrency(
-    fromUserId: string,
-    toUserId: string,
+    fromUserId: number,
+    toUserId: number,
     currencyType: CurrencyType,
     amount: number,
     description?: string

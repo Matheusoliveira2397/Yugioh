@@ -11,20 +11,23 @@ export class Group {
   name: string;
 
   @Column({ type: 'text', nullable: true })
-  description: string;
+  description: string | null;
 
-  @Column({ nullable: true })
-  tag: string; // Sigla do grupo (ex: HLS)
+  @Column({ type: 'varchar', nullable: true })
+  tag: string | null; // Sigla do grupo (ex: HLS)
 
-  @Column({ nullable: true })
-  logo: string;
+  @Column({ type: 'varchar', nullable: true })
+  logo: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  banner: string | null;
 
   @ManyToOne(() => User, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'leaderId' })
   leader: User;
 
-  @Column()
-  leaderId: string;
+  @Column({ type: 'int' })
+  leaderId: number;
 
   @Column({ type: 'int', default: 0 })
   totalScore: number;

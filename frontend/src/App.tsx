@@ -5,6 +5,7 @@ import RegisterPage from './pages/RegisterPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import HomePage from './pages/NewHomePage';
 import DeckBuilderPage from './pages/DeckBuilderPage';
+import DeckEditPage from './pages/DeckEditPage';
 import DuelPage from './pages/DuelPage';
 import TournamentPage from './pages/TournamentPage';
 import ChatPage from './pages/ChatPage';
@@ -12,12 +13,21 @@ import RandomDuelPage from './pages/RandomDuelPage';
 import InventoryPage from './pages/InventoryPage';
 import FriendsPage from './pages/FriendsPage';
 import ShopPage from './pages/ShopPage';
+import ShopCardsPage from './pages/ShopCardsPage';
 import GroupsPage from './pages/GroupsPage';
 import GroupDetailPage from './pages/GroupDetailPage';
 import RankingPage from './pages/RankingPage';
 import { ProfilePage } from './pages/ProfilePage';
 import AdminPanel from './pages/AdminPanel';
+import AdminCardsPanel from './pages/AdminCardsPanel';
+import AdminPlayersPanel from './pages/AdminPlayersPanel';
+import AdminNewsPanel from './pages/AdminNewsPanel';
+import MissionsPage from './pages/MissionsPage';
+import DropsPage from './pages/DropsPage';
 import DuelArena from './pages/DuelArena';
+import ArenaPage from './pages/ArenaPage';
+import ActiveDuelsPage from './pages/ActiveDuelsPage';
+import FinishedDuelsPage from './pages/FinishedDuelsPage';
 import Layout from './components/Layout';
 
 function App() {
@@ -32,6 +42,19 @@ function App() {
         
         <Route
           path="/"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <HomePage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/home"
           element={
             isAuthenticated ? (
               <Layout>
@@ -57,11 +80,11 @@ function App() {
         />
         
         <Route
-          path="/duel/:duelId"
+          path="/deck-edit"
           element={
             isAuthenticated ? (
               <Layout>
-                <DuelPage />
+                <DeckEditPage />
               </Layout>
             ) : (
               <Navigate to="/login" />
@@ -108,9 +131,23 @@ function App() {
           }
         />
         
-        {/* Arena em nova aba - SEM Layout */}
+        {/* Arena de Desafios - Lista de Arenas */}
         <Route
-          path="/arena/:duelId"
+          path="/arena"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <ArenaPage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        {/* Duelo - SEM Layout (campo de duelo) */}
+        <Route
+          path="/duel/:duelId"
           element={
             isAuthenticated ? (
               <DuelArena />
@@ -152,6 +189,19 @@ function App() {
             isAuthenticated ? (
               <Layout>
                 <ShopPage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+        
+        <Route
+          path="/shop-cards"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <ShopCardsPage />
               </Layout>
             ) : (
               <Navigate to="/login" />
@@ -210,7 +260,33 @@ function App() {
             )
           }
         />
-        
+
+        <Route
+          path="/missions"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <MissionsPage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/drops"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <DropsPage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
         <Route
           path="/profile/:id"
           element={
@@ -230,6 +306,71 @@ function App() {
             isAuthenticated ? (
               <Layout>
                 <AdminPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/cartas"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminCardsPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/players"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminPlayersPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/news"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminNewsPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/active-duels"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <ActiveDuelsPage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/finished-duels"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <FinishedDuelsPage />
               </Layout>
             ) : (
               <Navigate to="/login" />

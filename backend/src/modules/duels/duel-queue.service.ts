@@ -1,0 +1,185 @@
+import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { DuelsService } from './duels.service';
+import { Server } from 'socket.io';
+import { DuelOrigin } from './entities/duel.entity';
+
+interface DuelCreationTask {
+  player1Id: number;
+  player2Id: number;
+  socketId: string;
+  origin?: DuelOrigin;
+  resolve: (duel: any) => void;
+  reject: (error: Error) => void;
+}
+
+@Injectable()
+export class DuelQueueService implements OnModuleInit, OnModuleDestroy {
+  private queue: DuelCreationTask[] = [];
+  private isProcessing = false;
+  private processingInterval: NodeJS.Timeout | null = null;
+  private server: Server | null = null;
+  private readonly PROCESSING_DELAY_MS = 2000; // 2 segundos
+
+  constructor(private duelsService: DuelsService) {}
+
+  onModuleInit() {
+    this.start();
+  }
+
+  onModuleDestroy() {
+    this.stop();
+  }
+
+  setServer(server: Server) {
+    this.server = server;
+  }
+
+  private start() {
+    if (this.processingInterval) return;
+
+    this.processingInterval = setInterval(() => {
+      // CRÍTICO: Verificar duelos ativos de forma não bloqueante
+      // Usar setImmediate para dar prioridade a HTTP antes de verificar
+      setImmediate(() => {
+        const activeDuels = this.duelsService.getActiveDuelsCount();
+        if (activeDuels > 0) {
+          // Parar o intervalo completamente e reiniciar quando não houver duelos
+          this.stop();
+          // Reiniciar após 10 segundos (quando duelos terminarem)
+          setTimeout(() => {
+            if (this.duelsService.getActiveDuelsCount() === 0 && this.queue.length > 0) {
+              this.start();
+            }
+          }, 10000);
+          return;
+        }
+        
+        // Yield ao Event Loop novamente (prioriza HTTP)
+        setImmediate(() => {
+          if (!this.isProcessing && this.queue.length > 0) {
+            this.processNext();
+          }
+        });
+      });
+    }, this.PROCESSING_DELAY_MS);
+  }
+
+  private stop() {
+    if (this.processingInterval) {
+      clearInterval(this.processingInterval);
+      this.processingInterval = null;
+    }
+  }
+
+  async enqueueDuelCreation(
+    player1Id: number,
+    player2Id: number,
+    socketId: string,
+    origin: DuelOrigin = DuelOrigin.OTHER,
+  ): Promise<any> {
+    return new Promise((resolve, reject) => {
+      this.queue.push({
+        player1Id,
+        player2Id,
+        socketId,
+        origin,
+        resolve,
+        reject,
+      });
+      
+      if (!this.processingInterval) {
+        this.start();
+      }
+    });
+  }
+
+  private async processNext() {
+    if (this.isProcessing || this.queue.length === 0) return;
+
+    this.isProcessing = true;
+    const task = this.queue.shift();
+
+    if (!task) {
+      this.isProcessing = false;
+      return;
+    }
+
+    try {
+      // Yield ao Event Loop ANTES de processar (prioriza HTTP)
+      await new Promise(resolve => setImmediate(resolve));
+
+      // Criar duelo
+      const duel = await this.duelsService.createDuel(task.player1Id, task.player2Id, task.origin || DuelOrigin.OTHER);
+
+      if (duel && duel.id && this.server) {
+        const duelIdStr = typeof duel.id === 'string' ? duel.id : String(duel.id);
+        
+        // Verificar se o duelo foi realmente salvo no banco
+        const isInDatabase = await this.duelsService.verifyDuelInDatabase(duelIdStr);
+        
+        if (!isInDatabase) {
+          console.error(`❌ [DuelQueueService] Duelo ${duelIdStr} não encontrado no banco!`);
+          task.reject(new Error('Duelo não foi salvo no banco'));
+          this.isProcessing = false;
+          return;
+        }
+        
+        // Yield antes de emitir (prioriza HTTP)
+        await new Promise(resolve => setImmediate(resolve));
+        
+          // Preparar dados simplificados
+          const duelCreatedDataPlayer1 = {
+            duelId: duelIdStr,
+          player1Id: task.player1Id,
+          player2Id: task.player2Id,
+          opponent: {
+            id: task.player2Id,
+            username: (duel as any).player2?.username || 'Unknown',
+            clanTag: (duel as any).player2?.clanTag || null,
+            level: (duel as any).player2?.level || 1,
+            avatar: (duel as any).player2?.avatar || null,
+          },
+          yourTurn: (duel as any).currentTurn === 1,
+          lifePoints: duel.player1LifePoints || 8000,
+          opponentLifePoints: duel.player2LifePoints || 8000,
+        };
+
+          const duelCreatedDataPlayer2 = {
+            duelId: duelIdStr,
+          player1Id: task.player1Id,
+          player2Id: task.player2Id,
+          opponent: {
+            id: task.player1Id,
+            username: (duel as any).player1?.username || 'Unknown',
+            clanTag: (duel as any).player1?.clanTag || null,
+            level: (duel as any).player1?.level || 1,
+            avatar: (duel as any).player1?.avatar || null,
+          },
+          yourTurn: (duel as any).currentTurn === 2,
+          lifePoints: duel.player2LifePoints || 8000,
+          opponentLifePoints: duel.player1LifePoints || 8000,
+        };
+
+          // Notificar ambos os jogadores
+        this.server.to(`user_${task.player1Id}`).emit('duelCreated', duelCreatedDataPlayer1);
+        this.server.to(`user_${task.player2Id}`).emit('duelCreated', duelCreatedDataPlayer2);
+        console.log(`✅ [DuelQueueService] Duelo ${duelIdStr} criado e notificado!`);
+        task.resolve(duel);
+      } else {
+        console.error(`❌ [DuelQueueService] Duelo retornou null ou server não disponível. Duel: ${duel ? 'existe' : 'null'}, Server: ${this.server ? 'existe' : 'null'}`);
+        task.reject(new Error('Erro ao criar duelo'));
+      }
+    } catch (error) {
+      console.error(`❌ [DuelQueueService] Erro ao processar criação de duelo:`, error);
+      console.error(`❌ [DuelQueueService] Tipo:`, error?.constructor?.name);
+      console.error(`❌ [DuelQueueService] Mensagem:`, error instanceof Error ? error.message : String(error));
+      console.error(`❌ [DuelQueueService] Stack:`, error instanceof Error ? error.stack : 'N/A');
+      task.reject(error as Error);
+    } finally {
+      // Yield antes de processar próxima tarefa (prioriza HTTP)
+      setImmediate(() => {
+        this.isProcessing = false;
+      });
+    }
+  }
+}
