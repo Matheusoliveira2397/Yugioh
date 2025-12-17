@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ShopItem, ShopItemCurrency } from './entities/shop-item.entity';
@@ -6,6 +6,8 @@ import { Card, CardRarity } from '../cards/entities/card.entity';
 import { UserCard } from './entities/user-card.entity';
 import { User } from '../users/entities/user.entity';
 import { PurchaseCardDto, PaymentMethod } from './dto/purchase-card.dto';
+import { EconomyService } from '../economy/economy.service';
+import { CurrencyType, TransactionType } from '../economy/entities/transaction.entity';
 
 // Mantém apenas UMA definição da classe ShopService
 export class ShopService {
@@ -18,6 +20,8 @@ export class ShopService {
     private userRepository: Repository<User>,
     @InjectRepository(Card)
     private cardRepository: Repository<Card>,
+    @Inject(EconomyService)
+    private economyService: EconomyService,
   ) {}
 
   // Adicionar carta automaticamente na loja quando for cadastrada
@@ -284,7 +288,8 @@ export class ShopService {
   async addCardToUserInventory(
     userId: number,
     cardId: string,
-    acquiredBy: 'PURCHASE' | 'REWARD' | 'DROP' | 'GIFT' = 'PURCHASE'
+    acquiredBy: 'PURCHASE' | 'REWARD' | 'DROP' | 'GIFT' = 'PURCHASE',
+    quantity: number = 1
   ): Promise<UserCard> {
     // Verificar se usuário já tem esta carta
     const existingUserCard = await this.userCardRepository.findOne({
@@ -293,7 +298,7 @@ export class ShopService {
 
     if (existingUserCard) {
       // Aumentar quantidade
-      existingUserCard.quantity += 1;
+      existingUserCard.quantity += quantity;
       return this.userCardRepository.save(existingUserCard);
     }
 
@@ -301,7 +306,7 @@ export class ShopService {
     const userCard = this.userCardRepository.create({
       userId,
       cardId,
-      quantity: 1,
+      quantity: quantity,
       acquiredBy,
     });
 
@@ -333,6 +338,105 @@ export class ShopService {
       where: { userId, cardId },
     });
     return !!userCard && userCard.quantity > 0;
+  }
+
+  // ==================== VENDER CARTA ====================
+  async sellCard(
+    userId: number,
+    cardId: string,
+    quantity: number = 1
+  ): Promise<{
+    success: boolean;
+    message: string;
+    creditsGained?: number;
+    cashGained?: number;
+    remainingQuantity?: number;
+  }> {
+    // Buscar a carta do usuário
+    const userCard = await this.userCardRepository.findOne({
+      where: { userId, cardId },
+      relations: ['card'],
+    });
+
+    if (!userCard || userCard.quantity < quantity) {
+      throw new BadRequestException(
+        `Você não possui ${quantity} cópia(s) desta carta`
+      );
+    }
+
+    const card = userCard.card;
+    if (!card) {
+      throw new NotFoundException('Carta não encontrada');
+    }
+
+    // Calcular preço de venda (metade do preço de compra)
+    const sellPriceCredits = card.priceCredits 
+      ? Math.floor(card.priceCredits / 2) 
+      : 0;
+    const sellPriceCash = card.priceCash 
+      ? Math.floor(card.priceCash / 2) 
+      : 0;
+
+    if (sellPriceCredits === 0 && sellPriceCash === 0) {
+      throw new BadRequestException('Esta carta não pode ser vendida (sem preço definido)');
+    }
+
+    // Remover carta do inventário
+    if (userCard.quantity === quantity) {
+      // Se vender todas as cópias, deletar do inventário
+      await this.userCardRepository.remove(userCard);
+    } else {
+      // Se vender apenas algumas, reduzir quantidade
+      userCard.quantity -= quantity;
+      await this.userCardRepository.save(userCard);
+    }
+
+    // Adicionar créditos/cash ao usuário
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('Usuário não encontrado');
+    }
+
+    if (sellPriceCredits > 0) {
+      user.credits = (user.credits || 0) + (sellPriceCredits * quantity);
+    }
+    if (sellPriceCash > 0) {
+      user.cash = (user.cash || 0) + (sellPriceCash * quantity);
+    }
+
+    await this.userRepository.save(user);
+
+    // Registrar transação
+    if (sellPriceCredits > 0) {
+      await this.economyService.addCurrency(
+        userId,
+        CurrencyType.CREDITS,
+        sellPriceCredits * quantity,
+        TransactionType.EARN,
+        `Venda de ${quantity} cópia(s) de ${card.name}`,
+        { cardId, cardName: card.name, quantity, type: 'CARD_SALE' }
+      );
+    }
+    if (sellPriceCash > 0) {
+      await this.economyService.addCurrency(
+        userId,
+        CurrencyType.CASH,
+        sellPriceCash * quantity,
+        TransactionType.EARN,
+        `Venda de ${quantity} cópia(s) de ${card.name}`,
+        { cardId, cardName: card.name, quantity, type: 'CARD_SALE' }
+      );
+    }
+
+    console.log(`💰 Usuário ${user.username} vendeu ${quantity} cópia(s) de ${card.name} por ${sellPriceCredits * quantity} créditos e ${sellPriceCash * quantity} cash`);
+
+    return {
+      success: true,
+      message: `Carta(s) vendida(s) com sucesso!`,
+      creditsGained: sellPriceCredits * quantity,
+      cashGained: sellPriceCash * quantity,
+      remainingQuantity: userCard.quantity - quantity >= 0 ? userCard.quantity - quantity : 0,
+    };
   }
 
   // ==================== HELPERS ====================

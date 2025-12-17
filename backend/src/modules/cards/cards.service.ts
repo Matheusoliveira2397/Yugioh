@@ -651,6 +651,7 @@ export class CardsService {
           },
           select: [
             'id',
+            'idCarta',
             'name',
             'description',
             'cardImage',
@@ -756,6 +757,17 @@ export class CardsService {
         isForSale: true,
       },
       order: { rarity: 'DESC', name: 'ASC' },
+    });
+  }
+
+  // ==================== ÚLTIMAS CARTAS CADASTRADAS (TODAS, NÃO APENAS À VENDA) ====================
+  async getLatestCards(limit: number = 10): Promise<Card[]> {
+    return this.cardsRepository.find({
+      where: { 
+        isActive: true,
+      },
+      order: { createdAt: 'DESC' },
+      take: limit,
     });
   }
 

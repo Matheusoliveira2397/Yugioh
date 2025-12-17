@@ -1,32 +1,68 @@
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
-
-interface InventoryCard {
-  id: string;
-  name: string;
-  type: string;
-  rarity: 'Common' | 'Rare' | 'Super Rare' | 'Ultra Rare' | 'Secret Rare';
-  quantity: number;
-  image?: string;
-  createdAt?: string;
-}
+import { useCosmeticsStore } from '../stores/cosmeticsStore';
+import api from '../api/axios';
 
 export default function InventoryPage() {
   const { user } = useAuthStore();
+  const {
+    ownedPlaymats,
+    ownedSkins,
+    equippedPlaymatId,
+    equippedSkinId,
+    equipPlaymat,
+    unequipPlaymat,
+    equipSkin,
+    unequipSkin,
+  } = useCosmeticsStore();
 
-  // Mock data - será substituído por dados reais da API
-  const cards: InventoryCard[] = [
-    { id: '1', name: 'Dark Magician', type: 'Monster', rarity: 'Ultra Rare', quantity: 3 },
-    { id: '2', name: 'Blue-Eyes White Dragon', type: 'Monster', rarity: 'Ultra Rare', quantity: 2 },
-  ];
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-  const getRarityColor = (rarity: string) => {
-    switch (rarity) {
-      case 'Secret Rare': return 'from-purple-600 to-pink-600';
-      case 'Ultra Rare': return 'from-yellow-600 to-amber-600';
-      case 'Super Rare': return 'from-blue-600 to-cyan-600';
-      case 'Rare': return 'from-green-600 to-emerald-600';
-      default: return 'from-gray-600 to-gray-700';
+  const handleTogglePlaymat = async (playmatId: string, imageSrc: string, isEquipped: boolean) => {
+    if (isEquipped) {
+      unequipPlaymat();
+      try {
+        await api.patch('/me/cosmetics', {
+          equippedPlaymatId: null,
+          equippedPlaymatImage: null,
+        });
+      } catch {
+        // Ignorar erro por enquanto, estado local já foi atualizado
+      }
+    } else {
+      equipPlaymat(playmatId);
+      try {
+        await api.patch('/me/cosmetics', {
+          equippedPlaymatId: playmatId,
+          equippedPlaymatImage: imageSrc,
+        });
+      } catch {
+        // Ignorar erro por enquanto
+      }
+    }
+  };
+
+  const handleToggleSkin = async (skinId: string, imageSrc: string, isEquipped: boolean) => {
+    if (isEquipped) {
+      unequipSkin();
+      try {
+        await api.patch('/me/cosmetics', {
+          equippedSkinId: null,
+          equippedSkinImage: null,
+        });
+      } catch {
+        // Ignorar erro
+      }
+    } else {
+      equipSkin(skinId);
+      try {
+        await api.patch('/me/cosmetics', {
+          equippedSkinId: skinId,
+          equippedSkinImage: imageSrc,
+        });
+      } catch {
+        // Ignorar erro
+      }
     }
   };
 
@@ -37,109 +73,186 @@ export default function InventoryPage() {
         animate={{ opacity: 1, y: 0 }}
       >
         {/* Header */}
-        <div className="bg-gradient-to-r from-green-900 to-emerald-900 rounded-lg p-6 mb-8 shadow-2xl">
+        <div className="rounded-lg p-6 mb-8 border border-green-500/30">
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-4xl font-bold mb-2">🎒 Inventário</h1>
-              <p className="text-gray-300">Gerencie suas cartas e itens</p>
+              <p className="text-gray-300">Gerencie suas cartas e cosméticos visuais</p>
             </div>
-            <div className="text-right bg-gray-900 px-6 py-4 rounded-lg">
-              <p className="text-gray-400 text-sm">Total de Cartas</p>
-              <p className="text-4xl font-bold text-green-400">{cards.reduce((acc, c) => acc + c.quantity, 0)}</p>
+            <div className="text-right px-6 py-4 rounded-lg border border-white/20">
+              <p className="text-gray-400 text-sm">💎 Créditos</p>
+              <p className="text-4xl font-bold text-green-400">{user?.credits || 0}</p>
             </div>
           </div>
         </div>
 
-        {/* Filtros */}
-        <div className="bg-gray-800 rounded-lg p-4 mb-6 flex gap-4">
-          <select className="bg-gray-900 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
-            <option>Todas as Cartas</option>
-            <option>Monstros</option>
-            <option>Magias</option>
-            <option>Armadilhas</option>
-          </select>
-          <select className="bg-gray-900 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
-            <option>Todas as Raridades</option>
-            <option>Common</option>
-            <option>Rare</option>
-            <option>Super Rare</option>
-            <option>Ultra Rare</option>
-            <option>Secret Rare</option>
-          </select>
-          <input
-            type="text"
-            placeholder="Buscar carta..."
-            className="flex-1 bg-gray-900 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-          />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Playmats */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl p-5 border border-blue-500/40"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-2xl font-bold text-blue-300 flex items-center gap-2">
+                  🎨 Playmats
+                </h2>
+                <p className="text-gray-400 text-sm">
+                  Tapetes usados como campo de duelo
+                </p>
+              </div>
+              {equippedPlaymatId && (
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-600/30 border border-blue-400 text-blue-100">
+                  1 equipado
+                </span>
+              )}
+            </div>
+
+            {ownedPlaymats.length === 0 ? (
+              <div className="text-center py-10 text-gray-400 rounded-lg border border-dashed border-blue-500/40">
+                <p className="text-3xl mb-2">🛒</p>
+                <p className="font-semibold">Você ainda não possui playmats</p>
+                <p className="text-xs mt-1">Compre playmats na loja para personalizar seu campo de duelo</p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                {ownedPlaymats.map((playmat) => {
+                  const isEquipped = equippedPlaymatId === playmat.id;
+                  const imageSrc = playmat.image
+                    ? (playmat.image.startsWith('http')
+                        ? playmat.image
+                        : `${API_URL}${playmat.image}`)
+                    : '';
+                  return (
+                    <div
+                      key={playmat.id}
+                      className={`flex gap-3 items-center rounded-lg border p-3 ${
+                        isEquipped ? 'border-blue-400 shadow-lg shadow-blue-500/40' : 'border-white/20'
+                      }`}
+                    >
+                      <div className="w-32 aspect-[21/9] rounded-lg overflow-hidden border border-blue-400/50 bg-gradient-to-br from-blue-500/30 via-cyan-500/20 to-purple-500/30">
+                        {imageSrc ? (
+                          <img
+                            src={imageSrc}
+                            alt={playmat.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-blue-100/80 text-3xl">
+                            🎨
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-bold text-white mb-1">{playmat.name}</p>
+                        <p className="text-xs text-gray-400">
+                          Usado como plano de fundo do campo de duelo
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleTogglePlaymat(playmat.id, imageSrc, isEquipped)}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                          isEquipped
+                            ? 'text-blue-200 border border-blue-400 hover:bg-white/10'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md'
+                        }`}
+                      >
+                        {isEquipped ? 'Desequipar' : 'Equipar'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </motion.div>
+
+          {/* Skins de cartas */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl p-5 border border-emerald-500/40"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-2xl font-bold text-emerald-300 flex items-center gap-2">
+                  🎭 Skins de cartas
+                </h2>
+                <p className="text-gray-400 text-sm">
+                  Verso personalizado das cartas
+                </p>
+              </div>
+              {equippedSkinId && (
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-600/30 border border-emerald-400 text-emerald-100">
+                  1 equipada
+                </span>
+              )}
+            </div>
+
+            {ownedSkins.length === 0 ? (
+              <div className="text-center py-10 text-gray-400 rounded-lg border border-dashed border-emerald-500/40">
+                <p className="text-3xl mb-2">🛒</p>
+                <p className="font-semibold">Você ainda não possui skins de cartas</p>
+                <p className="text-xs mt-1">Compre skins na loja para personalizar o verso das cartas</p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                {ownedSkins.map((skin) => {
+                  const isEquipped = equippedSkinId === skin.id;
+                  const imageSrc = skin.image
+                    ? (skin.image.startsWith('http')
+                        ? skin.image
+                        : `${API_URL}${skin.image}`)
+                    : '';
+                  return (
+                    <div
+                      key={skin.id}
+                      className={`flex gap-3 items-center rounded-lg border p-3 ${
+                        isEquipped ? 'border-emerald-400 shadow-lg shadow-emerald-500/40' : 'border-white/20'
+                      }`}
+                    >
+                      <div className="relative w-16 sm:w-20 aspect-[2/3] rounded-lg overflow-hidden border border-emerald-400/60 bg-gradient-to-br from-green-500/30 via-emerald-500/20 to-cyan-500/30">
+                        {imageSrc ? (
+                          <img
+                            src={imageSrc}
+                            alt={skin.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-emerald-100/80 text-3xl">
+                            🎭
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-bold text-white mb-1">{skin.name}</p>
+                        <p className="text-xs text-gray-400">
+                          Usada como fundo das cartas viradas para baixo
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleToggleSkin(skin.id, imageSrc, isEquipped)}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                          isEquipped
+                            ? 'text-emerald-200 border border-emerald-400 hover:bg-white/10'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md'
+                        }`}
+                      >
+                        {isEquipped ? 'Desequipar' : 'Equipar'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </motion.div>
         </div>
-
-        {/* Cards Grid */}
-        {cards.length === 0 ? (
-          <div className="text-center py-16 bg-gray-800 rounded-lg">
-            <p className="text-6xl mb-4">📦</p>
-            <p className="text-2xl text-gray-400 mb-2">Inventário Vazio</p>
-            <p className="text-gray-500">Visite a loja para comprar cartas!</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {cards.map((card, index) => (
-              <motion.div
-                key={card.id}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: index * 0.05 }}
-                className={`bg-gradient-to-br ${getRarityColor(card.rarity)} rounded-lg p-4 shadow-xl hover:scale-105 transition-transform cursor-pointer relative`}
-              >
-                {/* Quantidade */}
-                <div className="absolute top-2 right-2 bg-black bg-opacity-70 px-2 py-1 rounded-full">
-                  <p className="text-white font-bold text-sm">x{card.quantity}</p>
-                </div>
-
-                {/* Card Image Placeholder */}
-                <div className="bg-gray-900 rounded-lg mb-3 h-48 flex items-center justify-center">
-                  <p className="text-6xl">🎴</p>
-                </div>
-
-                {/* Card Info */}
-                <div>
-                  <p className="font-bold text-white mb-1 truncate">{card.name}</p>
-                  <p className="text-xs text-gray-200">{card.type}</p>
-                  <p className="text-xs font-bold text-yellow-300 mt-1">{card.rarity}</p>
-                  {card.createdAt && (
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      📅 {new Date(card.createdAt).toLocaleDateString('pt-BR')}
-                    </p>
-                  )}
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        )}
-
-        {/* Estatísticas */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="mt-8 grid grid-cols-1 md:grid-cols-4 gap-4"
-        >
-          <div className="bg-gray-800 rounded-lg p-4 text-center">
-            <p className="text-3xl font-bold text-blue-400">0</p>
-            <p className="text-gray-400 text-sm">Monstros</p>
-          </div>
-          <div className="bg-gray-800 rounded-lg p-4 text-center">
-            <p className="text-3xl font-bold text-purple-400">0</p>
-            <p className="text-gray-400 text-sm">Magias</p>
-          </div>
-          <div className="bg-gray-800 rounded-lg p-4 text-center">
-            <p className="text-3xl font-bold text-red-400">0</p>
-            <p className="text-gray-400 text-sm">Armadilhas</p>
-          </div>
-          <div className="bg-gray-800 rounded-lg p-4 text-center">
-            <p className="text-3xl font-bold text-yellow-400">{user?.credits || 0}</p>
-            <p className="text-gray-400 text-sm">💎 Créditos</p>
-          </div>
-        </motion.div>
       </motion.div>
     </div>
   );

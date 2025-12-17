@@ -24,14 +24,14 @@ export class Friendship {
   @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @Column({ type: 'int' })
+  @Column({ type: 'int', name: 'user_id' })
   userId: number;
 
   @ManyToOne(() => User, { eager: true })
   @JoinColumn({ name: 'friend_id' })
   friend: User;
 
-  @Column({ type: 'int' })
+  @Column({ type: 'int', name: 'friend_id' })
   friendId: number;
 
   @Column({

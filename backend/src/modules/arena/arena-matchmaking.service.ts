@@ -97,6 +97,7 @@ export class ArenaMatchmakingService {
     }
 
     // Filtrar oponentes da mesma divisão
+    // IMPORTANTE: Só encontrar oponentes que também estão procurando pela arena (mesma divisão)
     const availableOpponents = playerQueue.filter(p => {
       return p.userId !== userId && 
              p.division === currentPlayer!.division && 
@@ -137,7 +138,12 @@ export class ArenaMatchmakingService {
     this.matchingLock.delete(userId);
     this.matchingLock.delete(opponent.userId);
 
-    return { opponent, duel: null, player1Id: userId, player2Id: opponent.userId }; // Retornar null para duelo (será criado depois)
+    return { 
+      opponent, 
+      duel: null, 
+      player1Id: userId, 
+      player2Id: opponent.userId 
+    }; // Retornar null para duelo (será criado depois)
   }
 
   // Obter tamanho da fila de uma divisão

@@ -3,6 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { CardsService } from './cards.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
+import { Public } from '../../common/decorators/public.decorator';
 import { Card } from './entities/card.entity';
 import { UploadService } from '../upload/upload.service';
 import { CreateCardDto } from './dto/create-card.dto';
@@ -194,6 +195,7 @@ export class CardsController {
 
   // ==================== LOJA ====================
   
+  @Public()
   @Get('shop/for-sale')
   getCardsForSale() {
     return this.cardsService.getCardsForSale();

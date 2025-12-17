@@ -140,32 +140,61 @@ export default function RandomDuelPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="max-w-2xl w-full bg-slate-800/50 rounded-xl border border-purple-500/30 p-8 text-center">
+      <div className="max-w-4xl w-full text-center">
         {duelFound ? (
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
+            className="space-y-6"
           >
-            <h2 className="text-4xl font-bold text-green-400 mb-6">Duelo Encontrado!</h2>
-            <p className="text-slate-300 text-lg mb-6">
-              {duelFound.duelId ? (
-                <>
-                  Oponente: <span className="font-bold text-red-400">
-                    {duelFound.opponent?.clanTag ? `|${duelFound.opponent.clanTag}| ` : ''}
-                    {duelFound.opponent?.username || 'Oponente'}
-                  </span>
-                </>
-              ) : (
-                'Oponente encontrado! Clique para entrar na arena.'
-              )}
-            </p>
+            <div className="mb-8">
+              <motion.div
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+                className="w-24 h-24 mx-auto mb-6 bg-green-500/20 rounded-full flex items-center justify-center border-4 border-green-500"
+              >
+                <span className="text-5xl">⚔️</span>
+              </motion.div>
+              <h2 className="text-5xl font-bold text-green-400 mb-4 drop-shadow-lg">
+                Duelo Encontrado!
+              </h2>
+              <div className="mb-6">
+                <div className="flex flex-col items-center gap-4">
+                  {duelFound.opponent?.profileImage && (
+                    <div className="relative">
+                      <div className="absolute inset-0 bg-red-500 rounded-full blur-xl opacity-50"></div>
+                      <img 
+                        src={`http://localhost:3000${duelFound.opponent.profileImage}?t=${Date.now()}`}
+                        alt={duelFound.opponent?.username || 'Oponente'}
+                        className="relative w-24 h-24 rounded-full border-4 border-red-500 shadow-lg object-cover"
+                        onError={(e) => {
+                          e.currentTarget.src = '/images/default.png';
+                        }}
+                      />
+                    </div>
+                  )}
+                  <div className="text-center">
+                    <p className="text-white text-xl mb-2 font-semibold">Oponente:</p>
+                    <p className="text-3xl font-bold text-red-400 drop-shadow-lg">
+                      {duelFound.opponent?.clanTag ? `|${duelFound.opponent.clanTag}| ` : ''}
+                      {duelFound.opponent?.nickname || duelFound.opponent?.username || 'Oponente'}
+                    </p>
+                    {duelFound.opponent?.level && (
+                      <p className="text-white/80 mt-2 text-lg">Nível: {duelFound.opponent.level} ⭐</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
             {duelFound.duelId ? (
               // Se já tem duelId, mostrar apenas o link para abrir
-              <a
+              <motion.a
                 href={`/duel/${duelFound.duelId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="gradient blue-purple px-12 py-4 rounded-lg text-2xl font-bold cursor-pointer hover:opacity-90 transition-opacity inline-block"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 px-12 py-5 rounded-xl text-2xl font-bold cursor-pointer hover:shadow-lg hover:shadow-purple-500/50 transition-all inline-block text-white"
                 onClick={(e) => {
                   // CRÍTICO: SEMPRE prevenir comportamento padrão do link
                   e.preventDefault();
@@ -261,7 +290,7 @@ export default function RandomDuelPage() {
                 }}
               >
                 ⚔️ Abrir Duelo
-              </a>
+              </motion.a>
             ) : (
               // Se não tem duelId, criar o duelo primeiro (fallback para compatibilidade)
               <button 
@@ -521,33 +550,47 @@ export default function RandomDuelPage() {
           <motion.div
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
+            className="space-y-8"
           >
-            <div className="w-32 h-32 mx-auto mb-6">
+            <div className="relative w-40 h-40 mx-auto mb-8">
               <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
                 className="w-full h-full border-8 border-purple-500 border-t-transparent rounded-full"
               />
+              <motion.div
+                animate={{ scale: [1, 1.2, 1] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+                className="absolute inset-0 flex items-center justify-center"
+              >
+                <span className="text-6xl">⚔️</span>
+              </motion.div>
             </div>
-            <h2 className="text-3xl font-bold text-purple-400 mb-4">Procurando Oponente...</h2>
-            <motion.p
-              animate={{ opacity: [0.5, 1, 0.5] }}
-              transition={{ duration: 1.5, repeat: Infinity }}
-              className="text-slate-300 mb-8"
-            >
-              Aguarde enquanto buscamos um duelista digno...
-            </motion.p>
-            <button 
+            <div>
+              <h2 className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-4">
+                Procurando Oponente...
+              </h2>
+              <motion.p
+                animate={{ opacity: [0.5, 1, 0.5] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+                className="text-white/80 text-lg mb-8"
+              >
+                Aguarde enquanto buscamos um duelista digno...
+              </motion.p>
+            </div>
+            <motion.button 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={() => {
                 if (user?.id) {
                   const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
                   cancelSearch(userId);
                 }
               }}
-              className="gradient red-pink px-8 py-3 rounded-lg font-bold"
+              className="bg-gradient-to-r from-red-600 to-pink-600 px-8 py-3 rounded-xl font-bold text-white hover:shadow-lg hover:shadow-red-500/50 transition-all"
             >
               Cancelar Busca
-            </button>
+            </motion.button>
           </motion.div>
         ) : (
           <motion.div
@@ -555,45 +598,63 @@ export default function RandomDuelPage() {
             animate={{ opacity: 1, y: 0 }}
           >
             {/* Status Conexão */}
-            <div className="mb-6">
-              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${
-                isConnected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+            <div className="mb-8">
+              <div className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full backdrop-blur-sm border ${
+                isConnected ? 'bg-green-500/20 text-green-400 border-green-500/50' : 'bg-red-500/20 text-red-400 border-red-500/50'
               }`}>
-                <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'} animate-pulse`} />
-                {isConnected ? 'Conectado' : 'Desconectado'}
+                <motion.div 
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                  className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} 
+                />
+                <span className="font-semibold">{isConnected ? 'Conectado' : 'Desconectado'}</span>
               </div>
             </div>
 
-            <h1 className="text-5xl font-bold mb-4">
-              <span className="gradient-text blue-purple">🎲 Random Duel</span>
-            </h1>
-            <p className="text-slate-300 text-lg mb-8">
-              Encontre um oponente aleatório e prove seu valor!
-            </p>
+            <div className="mb-10">
+              <h1 className="text-6xl md:text-7xl font-bold mb-4">
+                <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                  🎲 Random Duel
+                </span>
+              </h1>
+              <p className="text-white/80 text-xl mb-2">
+                Encontre um oponente aleatório e prove seu valor!
+              </p>
+            </div>
 
             {/* Player Info */}
-            <div className="bg-slate-700/50 rounded-lg p-6 mb-8 inline-block">
-              <img 
-                src={user.avatar || '/images/default.png'} 
-                alt={user.username}
-                className="w-24 h-24 rounded-full border-4 border-purple-500 mx-auto mb-4"
-              />
-              <div className="text-2xl font-bold text-purple-400 mb-2">
-                {user.clanTag ? `|${user.clanTag}| ${user.nickname || user.username}` : (user.nickname || user.username)}
-              </div>
-              <div className="text-slate-400 mb-3">Nível {user.level || 1}</div>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between items-center gap-4">
-                  <span className="text-slate-400">V/D Season:</span>
-                  <span className="text-white font-bold">
-                    <span className="text-green-400">{user.winsSeason || 0}</span> / <span className="text-red-400">{user.lossesSeason || 0}</span>
-                  </span>
+            <div className="mb-8">
+              <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
+                <div className="relative">
+                  <div className="absolute inset-0 bg-purple-500 rounded-full blur-xl opacity-50"></div>
+                  <img 
+                    src={user.profileImage ? `http://localhost:3000${user.profileImage}?t=${Date.now()}` : '/images/default.png'} 
+                    alt={user.username}
+                    className="relative w-32 h-32 rounded-full border-4 border-purple-500 shadow-lg object-cover"
+                    onError={(e) => {
+                      e.currentTarget.src = '/images/default.png';
+                    }}
+                  />
                 </div>
-                <div className="flex justify-between items-center gap-4">
-                  <span className="text-slate-400">V/D Geral:</span>
-                  <span className="text-white font-bold">
-                    <span className="text-green-400">{user.winsGeral || 0}</span> / <span className="text-red-400">{user.lossesGeral || 0}</span>
-                  </span>
+                <div className="flex-1 text-center md:text-left">
+                  <div className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
+                    {user.clanTag ? `|${user.clanTag}| ${user.nickname || user.username}` : (user.nickname || user.username)}
+                  </div>
+                  <div className="text-white/70 mb-4 text-lg">Nível {user.level || 1} ⭐ Score: {user.totalScore?.toFixed(1) || 0}</div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="rounded-lg p-4">
+                      <div className="text-white/70 text-sm mb-1">V/D Season</div>
+                      <div className="text-xl font-bold">
+                        <span className="text-green-400">{user.winsSeason || 0}</span> / <span className="text-red-400">{user.lossesSeason || 0}</span>
+                      </div>
+                    </div>
+                    <div className="rounded-lg p-4">
+                      <div className="text-white/70 text-sm mb-1">V/D Geral</div>
+                      <div className="text-xl font-bold">
+                        <span className="text-green-400">{user.winsGeral || 0}</span> / <span className="text-red-400">{user.lossesGeral || 0}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -608,25 +669,32 @@ export default function RandomDuelPage() {
                 }
               }}
               disabled={!isConnected}
-              className="gradient red-orange px-12 py-4 rounded-lg text-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-gradient-to-r from-red-600 via-orange-600 to-red-600 px-12 py-5 rounded-xl text-2xl font-bold disabled:opacity-50 disabled:cursor-not-allowed text-white hover:shadow-lg hover:shadow-red-500/50 transition-all mb-8"
             >
               🎮 Procurar Duelo
             </motion.button>
 
             {/* Estatísticas */}
-            <div className="mt-8 pt-8 border-t border-slate-700">
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div>
-                  <div className="text-2xl font-bold text-blue-400">0</div>
-                  <div className="text-slate-400 text-sm">Vitórias</div>
+            <div className="mt-8 pt-8">
+              <div className="grid grid-cols-3 gap-6 text-center">
+                <div className="rounded-xl p-4">
+                  <div className="text-3xl font-bold text-blue-400 mb-1">{user.winsGeral || 0}</div>
+                  <div className="text-white/70 text-sm">Vitórias</div>
                 </div>
-                <div>
-                  <div className="text-2xl font-bold text-red-400">0</div>
-                  <div className="text-slate-400 text-sm">Derrotas</div>
+                <div className="rounded-xl p-4">
+                  <div className="text-3xl font-bold text-red-400 mb-1">{user.lossesGeral || 0}</div>
+                  <div className="text-white/70 text-sm">Derrotas</div>
                 </div>
-                <div>
-                  <div className="text-2xl font-bold text-purple-400">0%</div>
-                  <div className="text-slate-400 text-sm">Taxa</div>
+                <div className="rounded-xl p-4">
+                  <div className="text-3xl font-bold text-purple-400 mb-1">
+                    {(() => {
+                      const wins = user.winsGeral || 0;
+                      const losses = user.lossesGeral || 0;
+                      const total = wins + losses;
+                      return total > 0 ? Math.round((wins / total) * 100) : 0;
+                    })()}%
+                  </div>
+                  <div className="text-white/70 text-sm">Taxa de Vitória</div>
                 </div>
               </div>
             </div>

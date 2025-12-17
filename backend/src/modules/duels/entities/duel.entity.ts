@@ -81,6 +81,9 @@ export class Duel {
   @Column({ name: 'current_turn', type: 'int', default: 1 })
   currentTurn: number; // 1 para player1, 2 para player2
 
+  @Column({ name: 'turn_counter', type: 'int', default: 1 })
+  turnCounter: number; // Contador global de turnos (incrementa a cada turno, não alterna)
+
   @Column({ name: 'current_phase', type: 'enum', enum: TurnPhase, default: TurnPhase.DRAW })
   currentPhase: TurnPhase; // Fase atual do turno
 
@@ -108,4 +111,13 @@ export class Duel {
 
   @Column({ name: 'finished_at', type: 'timestamp', nullable: true })
   finishedAt: Date;
+
+  @Column({ name: 'pending_choice', type: 'jsonb', nullable: true })
+  pendingChoice: {
+    type: 'CONFISCATION' | 'GRACEFUL_CHARITY' | 'FORCEFUL_SENTRY' | 'MONSTER_REBORN' | 'CHANGE_OF_HEART' | 'BRAIN_CONTROL' | 'UNITED_WE_STAND' | 'MAGE_POWER' | 'MYSTICAL_SPACE_TYPHOON' | 'SNOWMAN_EATER' | 'CHAOS_SORCERER_SUMMON' | 'CHAOS_SORCERER_EFFECT';
+    userId: number;
+    turnWhenStarted: number;
+    phaseWhenStarted: string;
+    data: any; // Dados específicos do tipo de escolha (ex: opponentHand, playerHand, graveyards)
+  } | null;
 }

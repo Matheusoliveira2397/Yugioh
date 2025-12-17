@@ -19,7 +19,8 @@ interface Player {
   nickname: string;
   username: string;
   clanTag?: string;
-  rating: number;
+  totalScore?: number;
+  level?: number;
   wins: number;
   losses: number;
   profileImage?: string;
@@ -77,7 +78,8 @@ export default function LoginPage() {
           nickname: player.nickname || '',
           username: player.username || player.nickname || '',
           clanTag: player.clanTag || undefined,
-          rating: player.rating || player.score || 0,
+          totalScore: player.totalScore || player.score || 0,
+          level: player.level || 1,
           wins: player.wins || player.winsGeral || player.winsSeason || 0,
           losses: player.losses || player.lossesGeral || player.lossesSeason || 0,
           profileImage: player.profileImage || '/images/default.png',
@@ -374,8 +376,8 @@ export default function LoginPage() {
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="text-base font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">{player.rating}</p>
-                          <p className="text-xs text-gray-500">Rating</p>
+                          <p className="text-base font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">{player.level || 1}</p>
+                          <p className="text-xs text-gray-500">Nível</p>
                         </div>
                       </motion.div>
                     ))}

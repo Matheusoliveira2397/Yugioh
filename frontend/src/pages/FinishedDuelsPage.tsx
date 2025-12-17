@@ -145,14 +145,14 @@ export default function FinishedDuelsPage() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+      <div className="min-h-screen text-white flex items-center justify-center">
         <p className="text-xl">Você precisa estar logado para ver seus duelos</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-6">
+    <div className="min-h-screen text-white p-6">
       <div className="max-w-6xl mx-auto">
         <div className="mb-6 flex justify-between items-center">
           <div>
@@ -162,7 +162,7 @@ export default function FinishedDuelsPage() {
           <div className="flex gap-3">
             <button
               onClick={() => navigate('/active-duels')}
-              className="bg-gray-700 hover:bg-gray-600 text-white font-bold px-4 py-2 rounded-lg transition-colors"
+              className="hover:bg-white/10 border border-white/20 text-white font-bold px-4 py-2 rounded-lg transition-colors"
             >
               ⚔️ Ver Duelos Ativos
             </button>
@@ -184,7 +184,7 @@ export default function FinishedDuelsPage() {
             <p className="mt-4 text-gray-400">Carregando duelos...</p>
           </div>
         ) : duels.length === 0 ? (
-          <div className="text-center py-12 bg-gray-800 rounded-lg">
+          <div className="text-center py-12 rounded-lg border border-white/20">
             <p className="text-6xl mb-4">📋</p>
             <p className="text-xl text-gray-400">Você não tem duelos finalizados</p>
           </div>
@@ -200,8 +200,8 @@ export default function FinishedDuelsPage() {
               return (
                 <div
                   key={duel.id}
-                  className={`bg-gray-800 rounded-lg p-6 border-2 transition-all ${
-                    isSelected ? 'border-blue-500 bg-blue-900/20' : 'border-gray-700'
+                  className={`rounded-lg p-6 border-2 transition-all ${
+                    isSelected ? 'border-blue-500' : 'border-white/20'
                   }`}
                 >
                   <div className="flex justify-between items-start mb-4">
@@ -236,11 +236,11 @@ export default function FinishedDuelsPage() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div className="bg-gray-700 rounded p-3">
+                    <div className="rounded p-3 border border-white/20">
                       <p className="text-xs text-gray-400 mb-1">Sua Vida Final</p>
                       <p className="text-2xl font-bold text-green-400">{getMyLifePoints(duel)} LP</p>
                     </div>
-                    <div className="bg-gray-700 rounded p-3">
+                    <div className="rounded p-3 border border-white/20">
                       <p className="text-xs text-gray-400 mb-1">Vida do Oponente</p>
                       <p className="text-2xl font-bold text-red-400">{getOpponentLifePoints(duel)} LP</p>
                     </div>

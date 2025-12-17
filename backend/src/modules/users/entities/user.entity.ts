@@ -64,7 +64,7 @@ export class User {
   experience: number;
 
   // Sistema de Score
-  @Column({ type: 'int', default: 0 })
+  @Column({ type: 'decimal', precision: 10, scale: 1, default: 0, name: 'total_score' })
   totalScore: number; // Score geral acumulado de todas as seasons
 
   @Column({ default: '/images/default.png', name: 'profileImage' })
@@ -104,8 +104,29 @@ export class User {
   @Column({ type: 'varchar', nullable: true, default: 'Novato' })
   playerClass: string; // Novato, Aprendiz, Veterano, Mestre, Lendário, etc.
 
+  // Divisão do jogador (Bronze, Silver, Gold, Platinum, Diamond, Master, Legendary)
+  @Column({ type: 'varchar', nullable: true, default: 'Bronze' })
+  division: string;
+
   @OneToMany(() => Deck, (deck) => deck.user)
   decks: Deck[];
+
+  // Cosméticos equipados (playmat de campo e skin de carta)
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  equippedPlaymatId: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  equippedPlaymatImage: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  equippedSkinId: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  equippedSkinImage: string | null;
+
+  // Deck equipado (deck que será usado no duelo)
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  equippedDeckName: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

@@ -8,6 +8,7 @@ export class UploadService {
   private readonly uploadPath = '/app/uploads/avatars';
   private readonly cardsPath = '/app/uploads/cards';
   private readonly groupsPath = '/app/uploads/groups';
+  private readonly achievementsPath = '/app/uploads/achievements';
 
   constructor() {
     // Cria a pasta de uploads se não existir
@@ -22,6 +23,10 @@ export class UploadService {
     if (!fs.existsSync(this.groupsPath)) {
       fs.mkdirSync(this.groupsPath, { recursive: true });
       console.log('📁 Pasta de grupos criada:', this.groupsPath);
+    }
+    if (!fs.existsSync(this.achievementsPath)) {
+      fs.mkdirSync(this.achievementsPath, { recursive: true });
+      console.log('📁 Pasta de conquistas criada:', this.achievementsPath);
     }
   }
 
@@ -165,5 +170,32 @@ export class UploadService {
 
     // Retorna o caminho relativo (URL que será salva no banco)
     return `/uploads/groups/${fileName}`;
+  }
+
+  async uploadAchievementImage(file: any, achievementTitle: string): Promise<string> {
+    // Validações
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw new Error('Formato de imagem inválido. Use PNG, JPG ou WEBP.');
+    }
+
+    // Limite de tamanho: 5MB
+    if (file.size > 5 * 1024 * 1024) {
+      throw new Error('Imagem muito grande. Tamanho máximo: 5MB.');
+    }
+
+    // Gera nome único para o arquivo
+    const fileExtension = path.extname(file.originalname);
+    const sanitizedName = achievementTitle.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const fileName = `achievement_${sanitizedName}_${Date.now()}${fileExtension}`;
+    const filePath = path.join(this.achievementsPath, fileName);
+
+    // Salva o arquivo
+    fs.writeFileSync(filePath, file.buffer);
+
+    console.log('✅ Imagem de conquista salva:', fileName);
+
+    // Retorna o caminho relativo (URL que será salva no banco)
+    return `/uploads/achievements/${fileName}`;
   }
 }
