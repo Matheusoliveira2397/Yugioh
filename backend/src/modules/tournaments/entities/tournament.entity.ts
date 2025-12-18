@@ -107,10 +107,6 @@ export class Tournament {
   @Column({ type: 'int', default: 1 })
   currentRound: number;
 
-  // Banlist (lista de IDs de cartas proibidas)
-  @Column({ type: 'json', nullable: true })
-  banlist: string[]; // Array de card IDs (idCarta)
-
   // Vencedor
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'winnerId' })

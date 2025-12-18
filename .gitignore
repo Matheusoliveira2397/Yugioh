@@ -42,19 +42,3 @@ coverage/
 
 # Misc
 .cache/
-
-# Backups and temporary files
-*.backup
-*.dump
-*.log
-restore-*.log
-verify-*.log
-yugioh_backup*.sql
-yugioh_backup*.dump
-*_data.sql
-todos_dados.sql
-
-# Test files
-test-*.sql
-check-*.sql
-create-test-*.sql

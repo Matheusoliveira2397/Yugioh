@@ -19,11 +19,6 @@ import { FriendsModule } from './modules/friends/friends.module';
 import { TournamentsModule } from './modules/tournaments/tournaments.module';
 import { NewsModule } from './modules/news/news.module';
 import { ArenaModule } from './modules/arena/arena.module';
-import { CosmeticsModule } from './modules/cosmetics/cosmetics.module';
-import { InitialDecksModule } from './modules/initial-decks/initial-decks.module';
-import { LevelsModule } from './modules/levels/levels.module';
-import { APP_INTERCEPTOR } from '@nestjs/core';
-import { ActivityInterceptor } from './common/interceptors/activity.interceptor';
 
 @Module({
   imports: [
@@ -46,11 +41,9 @@ import { ActivityInterceptor } from './common/interceptors/activity.interceptor'
         synchronize: false,
         logging: false,
         extra: {
-          // Connection pool otimizado para produção
-          // Para milhares de players: aumentar max para 500
-          max: process.env.NODE_ENV === 'production' ? 500 : 100,
-          min: process.env.NODE_ENV === 'production' ? 50 : 20,
-          idleTimeoutMillis: 30000,
+          max: 100,
+          min: 20,
+          idleTimeoutMillis: 20000,
           connectionTimeoutMillis: 10000,
           statement_timeout: 5000,
           maxUses: 7500,
@@ -92,15 +85,6 @@ import { ActivityInterceptor } from './common/interceptors/activity.interceptor'
     TournamentsModule,
     NewsModule,
     ArenaModule,
-    CosmeticsModule,
-    InitialDecksModule,
-    LevelsModule,
-  ],
-  providers: [
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: ActivityInterceptor,
-    },
   ],
 })
 export class AppModule {}

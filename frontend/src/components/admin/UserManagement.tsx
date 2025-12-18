@@ -230,8 +230,7 @@ export default function UserManagement() {
               <p><strong>Email:</strong> {selectedUser.email}</p>
               <p><strong>Username:</strong> {selectedUser.username}</p>
               <p><strong>Role:</strong> <span className="text-yellow-400">{selectedUser.role}</span></p>
-              <p><strong>Nível:</strong> {selectedUser.level || 1}</p>
-              <p><strong>Score:</strong> {selectedUser.totalScore?.toFixed(1) || 0}</p>
+              <p><strong>Rating:</strong> {selectedUser.rating}</p>
               <p><strong>Vitórias/Derrotas (Geral):</strong> {selectedUser.winsGeral || 0}/{selectedUser.lossesGeral || 0}</p>
               <p><strong>Vitórias/Derrotas (Season):</strong> {selectedUser.winsSeason || 0}/{selectedUser.lossesSeason || 0}</p>
               <p><strong>Último IP:</strong> <span className="text-blue-400">{selectedUser.lastIpAddress || 'N/A'}</span></p>
@@ -303,7 +302,7 @@ export default function UserManagement() {
                       )}
                     </div>
                     <p className="text-sm text-gray-400">
-                      {user.email} • Nível: {user.level || 1} • Score: {user.totalScore?.toFixed(1) || 0} • {user.winsGeral || 0}V/{user.lossesGeral || 0}D
+                      {user.email} • Rating: {user.rating} • {user.winsGeral || 0}V/{user.lossesGeral || 0}D
                     </p>
                     {user.lastIpAddress && (
                       <p className="text-sm text-blue-400 font-mono">

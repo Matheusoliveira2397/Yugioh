@@ -2,7 +2,6 @@ import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { DuelsService } from './duels.service';
 import { Server } from 'socket.io';
 import { DuelOrigin } from './entities/duel.entity';
-import { logger } from '../../common/utils/logger.util';
 
 interface PlayerInQueue {
   userId: number;
@@ -98,9 +97,9 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     const alreadyInQueue = this.queue.find(p => p.userId === userId);
     if (!alreadyInQueue) {
       this.queue.push({ userId, socketId, joinedAt: new Date() });
-      logger.debug(`🔍 [Matchmaking] Usuário ${userId} adicionado à fila. Total na fila: ${this.queue.length}`);
+      console.log(`🔍 [Matchmaking] Usuário ${userId} adicionado à fila. Total na fila: ${this.queue.length}`);
     } else {
-      logger.debug(`⚠️ [Matchmaking] Usuário ${userId} já está na fila`);
+      console.log(`⚠️ [Matchmaking] Usuário ${userId} já está na fila`);
     }
   }
 
@@ -108,22 +107,18 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     this.queue = this.queue.filter(p => p.userId !== userId);
   }
 
-  isInQueue(userId: number): boolean {
-    return this.queue.some(p => p.userId === userId);
-  }
-
   private async processQueue() {
     if (this.isProcessing) {
-      logger.debug(`⏸️ [Matchmaking] Já está processando, ignorando...`);
+      console.log(`⏸️ [Matchmaking] Já está processando, ignorando...`);
       return;
     }
     
     if (this.queue.length < 2) {
-      logger.debug(`⏳ [Matchmaking] Fila tem apenas ${this.queue.length} jogador(es), aguardando mais...`);
+      console.log(`⏳ [Matchmaking] Fila tem apenas ${this.queue.length} jogador(es), aguardando mais...`);
       return;
     }
     
-    logger.debug(`🚀 [Matchmaking] Processando fila com ${this.queue.length} jogadores...`);
+    console.log(`🚀 [Matchmaking] Processando fila com ${this.queue.length} jogadores...`);
     this.isProcessing = true;
     
     // Yield ao Event Loop ANTES de processar (prioriza HTTP)
@@ -134,32 +129,22 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
       const player2 = this.queue[1];
 
       if (!player1 || !player2) {
-        logger.error(`❌ [Matchmaking] Player1 ou Player2 é null!`);
+        console.error(`❌ [Matchmaking] Player1 ou Player2 é null!`);
         this.isProcessing = false;
         return;
       }
 
-      // Verificar se ambos ainda estão na fila normal (não foram para a arena)
-      if (!this.isInQueue(player1.userId) || !this.isInQueue(player2.userId)) {
-        logger.debug(`⚠️ [Matchmaking] Um dos jogadores não está mais na fila normal, pulando match`);
-        // Remover da fila se ainda estiverem lá
-        this.removeFromQueue(player1.userId);
-        this.removeFromQueue(player2.userId);
-        this.isProcessing = false;
-        return;
-      }
-
-      logger.debug(`✅ [Matchmaking] Match encontrado! Player1: ${player1.userId}, Player2: ${player2.userId}`);
+      console.log(`✅ [Matchmaking] Match encontrado! Player1: ${player1.userId}, Player2: ${player2.userId}`);
       
       // Remover da fila
       this.removeFromQueue(player1.userId);
       this.removeFromQueue(player2.userId);
-      logger.debug(`🗑️ [Matchmaking] Jogadores removidos da fila. Fila restante: ${this.queue.length}`);
+      console.log(`🗑️ [Matchmaking] Jogadores removidos da fila. Fila restante: ${this.queue.length}`);
 
       // Criar duelo em background (não bloqueia)
       (async () => {
         try {
-          logger.debug(`🎮 [Matchmaking] Criando duelo para P1=${player1.userId} vs P2=${player2.userId}...`);
+          console.log(`🎮 [Matchmaking] Criando duelo para P1=${player1.userId} vs P2=${player2.userId}...`);
           const duel = await this.duelsService.createDuel(player1.userId, player2.userId, DuelOrigin.RANDOM);
           
           if (duel && duel.id) {
@@ -169,7 +154,7 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
             const isInDatabase = await this.duelsService.verifyDuelInDatabase(duelIdStr);
             
             if (!isInDatabase) {
-              logger.warn(`⚠️ [Matchmaking] Duelo ${duelIdStr} não encontrado no banco!`);
+              console.error(`❌ [Matchmaking] Duelo ${duelIdStr} não encontrado no banco!`);
               await new Promise(resolve => setTimeout(resolve, 500));
               const retryCheck = await this.duelsService.verifyDuelInDatabase(duelIdStr);
               
@@ -183,32 +168,12 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
               }
             }
             
-            // Buscar duelo completo do banco para garantir que temos os campos player1Field e player2Field
-            const fullDuel = await this.duelsService.findDuelByIdFromDatabase(duelIdStr);
-            if (!fullDuel) {
-              logger.error(`❌ [Matchmaking] Não foi possível buscar duelo completo do banco!`);
-              if (this.server) {
-                this.server.to(`user_${player1.userId}`).emit('duelError', { message: 'Erro ao buscar duelo completo' });
-                this.server.to(`user_${player2.userId}`).emit('duelError', { message: 'Erro ao buscar duelo completo' });
-              }
-              this.isProcessing = false;
-              return;
-            }
-            
-            // Preparar dados com player1Field e player2Field
-            const player1Field = (fullDuel as any).player1Field || {};
-            const player2Field = (fullDuel as any).player2Field || {};
-            
-            logger.debug(`📤 [Matchmaking] Preparando dados - player1Field: ${player1Field?.deck?.length || 0} cartas no deck`);
-            
             // Notificar ambos os jogadores
             const matchData1 = {
               duelId: duelIdStr,
               player1Id: player1.userId,
               player2Id: player2.userId,
               opponent: { id: player2.userId },
-              player1Field: player1Field, // SEMPRE do player1
-              player2Field: player2Field, // SEMPRE do player2
             };
             
             const matchData2 = {
@@ -216,35 +181,32 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
               player1Id: player1.userId,
               player2Id: player2.userId,
               opponent: { id: player1.userId },
-              player1Field: player1Field, // SEMPRE do player1
-              player2Field: player2Field, // SEMPRE do player2
             };
             
             if (this.server) {
               this.server.to(`user_${player1.userId}`).emit('duelFound', matchData1);
               this.server.to(`user_${player2.userId}`).emit('duelFound', matchData2);
-              logger.debug(`✅ [Matchmaking] Duelo ${duelIdStr} criado e notificado!`);
+              console.log(`✅ [Matchmaking] Duelo ${duelIdStr} criado e notificado!`);
             }
           } else {
-            logger.error(`❌ [Matchmaking] Duelo retornou null ou sem ID`);
+            console.error(`❌ [Matchmaking] Duelo retornou null ou sem ID`);
             if (this.server) {
               this.server.to(`user_${player1.userId}`).emit('duelError', { message: 'Erro ao criar duelo' });
               this.server.to(`user_${player2.userId}`).emit('duelError', { message: 'Erro ao criar duelo' });
             }
           }
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Erro ao criar duelo';
-          logger.error('❌ [Matchmaking] Erro ao criar duelo:', errorMessage);
+          console.error('❌ [Matchmaking] Erro ao criar duelo:', error instanceof Error ? error.message : String(error));
           if (this.server) {
-            this.server.to(`user_${player1.userId}`).emit('duelError', { message: errorMessage });
-            this.server.to(`user_${player2.userId}`).emit('duelError', { message: errorMessage });
+            this.server.to(`user_${player1.userId}`).emit('duelError', { message: 'Erro ao criar duelo' });
+            this.server.to(`user_${player2.userId}`).emit('duelError', { message: 'Erro ao criar duelo' });
           }
         } finally {
           this.isProcessing = false;
         }
       })();
     } catch (error) {
-      logger.error('❌ [Matchmaking] Erro:', error);
+      console.error('❌ [Matchmaking] Erro:', error);
       this.isProcessing = false;
     }
   }

@@ -15,16 +15,6 @@ interface Group {
   logo: string;
   banner?: string;
   totalScore: number;
-  seasonScore?: number;
-  level?: number;
-  totalCash?: number;
-  credits?: number;
-  totalWins?: number;
-  totalLosses?: number;
-  winsSeason?: number;
-  lossesSeason?: number;
-  totalAchievements?: number;
-  memberCount?: number;
   maxMembers: number;
   isPublic: boolean;
   isActive: boolean;
@@ -51,8 +41,6 @@ interface GroupMember {
     profileImage: string;
     level: number;
     clanTag?: string;
-    winsSeason?: number;
-    lossesSeason?: number;
   };
 }
 
@@ -62,7 +50,6 @@ export default function GroupDetailPage() {
   const { token, user } = useAuthStore();
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
-  const [achievements, setAchievements] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'weekly' | 'season' | 'total' | 'chat'>('weekly');
   const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState<any[]>([]);
@@ -89,22 +76,8 @@ export default function GroupDetailPage() {
     if (id) {
       fetchGroupDetails();
       fetchRanking('weekly');
-      fetchAchievements();
     }
   }, [id]);
-
-  const fetchAchievements = async () => {
-    if (!id) return;
-    try {
-      const response = await axios.get(`${API_URL}/groups/${id}/achievements`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setAchievements(response.data || []);
-    } catch (error) {
-      console.error('Erro ao buscar conquistas do grupo:', error);
-      setAchievements([]);
-    }
-  };
 
   // Calcular se é membro
   const userId = user?.id ? (typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id)) : null;
@@ -240,48 +213,6 @@ export default function GroupDetailPage() {
     }
   };
 
-  const handleJoinGroup = async () => {
-    if (!id) return;
-    
-    try {
-      await axios.post(
-        `${API_URL}/groups/join/${id}`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      
-      // Buscar dados atualizados do usuário após entrar no grupo
-      try {
-        const userResponse = await axios.get(
-          `${API_URL}/users/me`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        
-        console.log('🔄 [joinGroup] Dados do usuário recebidos:', userResponse.data);
-        if (userResponse.data) {
-          const updatedUser = { ...user, ...userResponse.data };
-          console.log('✅ [joinGroup] Atualizando store com clanTag:', updatedUser.clanTag);
-          useAuthStore.setState({
-            user: updatedUser,
-          });
-        }
-      } catch (err) {
-        console.error('❌ Erro ao buscar dados do usuário:', err);
-      }
-      
-      alert('Você entrou no clã!');
-      // Recarregar dados do grupo para atualizar a lista de membros
-      await fetchGroupDetails();
-      await fetchRanking(activeTab === 'chat' ? 'weekly' : activeTab);
-    } catch (error: any) {
-      alert(error.response?.data?.message || 'Erro ao entrar no clã');
-    }
-  };
-
   const handleLeaveGroup = async () => {
     if (!confirm('Tem certeza que deseja sair do grupo?')) return;
 
@@ -327,44 +258,6 @@ export default function GroupDetailPage() {
       navigate('/groups');
     } catch (error: any) {
       alert(error.response?.data?.message || 'Erro ao excluir grupo');
-    }
-  };
-
-  const handlePromoteMember = async (memberUserId: number, role: 'CO_LEADER' | 'ELDER') => {
-    if (!confirm(`Tem certeza que deseja promover este membro a ${role === 'CO_LEADER' ? 'Co-Líder' : 'Veterano'}?`)) {
-      return;
-    }
-
-    try {
-      await axios.post(
-        `${API_URL}/groups/${id}/promote/${memberUserId}`,
-        { role },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      alert('Membro promovido com sucesso!');
-      await fetchGroupDetails();
-      await fetchRanking(activeTab === 'chat' ? 'weekly' : activeTab);
-    } catch (error: any) {
-      alert(error.response?.data?.message || 'Erro ao promover membro');
-    }
-  };
-
-  const handleDemoteMember = async (memberUserId: number) => {
-    if (!confirm('Tem certeza que deseja rebaixar este membro a Membro?')) {
-      return;
-    }
-
-    try {
-      await axios.post(
-        `${API_URL}/groups/${id}/demote/${memberUserId}`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      alert('Membro rebaixado com sucesso!');
-      await fetchGroupDetails();
-      await fetchRanking(activeTab === 'chat' ? 'weekly' : activeTab);
-    } catch (error: any) {
-      alert(error.response?.data?.message || 'Erro ao rebaixar membro');
     }
   };
 
@@ -459,120 +352,17 @@ export default function GroupDetailPage() {
             ← Voltar para Grupos
           </Link>
 
-          <div className="relative rounded-2xl overflow-hidden border border-purple-500/50 shadow-2xl">
-            {/* Banner como background */}
-            {group.banner && (
-              <div className="absolute inset-0 z-0">
-                <img
-                  src={`${API_URL}${group.banner}`}
-                  alt={`Banner de ${group.name}`}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
-                <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/60 to-black/80"></div>
-              </div>
-            )}
-            
-            {/* Conteúdo sobre o banner */}
-            <div className={`relative z-10 p-8 ${group.banner ? '' : 'bg-slate-900/30'}`}>
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  {/* Logo e Nome do Grupo no topo */}
-                  <div className="flex items-center gap-4 mb-4">
-                    {/* Logo do Grupo */}
-                    {group.logo ? (
-                      <img 
-                        src={`${API_URL}${group.logo}`}
-                        alt={group.name}
-                        className="w-24 h-24 rounded-2xl object-cover border-2 border-purple-500 shadow-lg"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                          const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-                          if (fallback) fallback.style.display = 'flex';
-                        }}
-                      />
-                    ) : null}
-                    <div className={`w-24 h-24 bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl flex items-center justify-center text-4xl font-bold text-white shadow-lg ${group.logo ? 'hidden' : ''}`}>
-                      {group.tag}
-                    </div>
+          <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-8 border border-purple-500/50 shadow-2xl">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-6">
+                {/* Tag do Grupo */}
+                <div className="w-24 h-24 bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl flex items-center justify-center text-4xl font-bold text-white shadow-lg">
+                  {group.tag}
+                </div>
 
-                    {/* Nome do Grupo */}
-                    <div>
-                      <h1 className="text-4xl font-bold text-white">
-                        |{group.tag}| {group.name}
-                      </h1>
-                    </div>
-                  </div>
-
-                  {/* Info do Grupo */}
-                  <div>
-                  {/* Calcular winsSeason e lossesSeason a partir dos membros */}
-                  {(() => {
-                    const seasonWins = members.reduce((sum, member) => sum + (member.user?.winsSeason || 0), 0);
-                    const seasonLosses = members.reduce((sum, member) => sum + (member.user?.lossesSeason || 0), 0);
-                    return (
-                      <>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-                          <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
-                            <div className="text-xs text-slate-400 mb-1">Membros</div>
-                            <div className="text-white font-bold text-lg">
-                              {group.memberCount || members.length}/{group.maxMembers}
-                            </div>
-                          </div>
-                          <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
-                            <div className="text-xs text-slate-400 mb-1">Nível</div>
-                            <div className="text-purple-400 font-bold text-lg">
-                              {group.level || 1}
-                            </div>
-                          </div>
-                          <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
-                            <div className="text-xs text-slate-400 mb-1">Score Geral</div>
-                            <div className="text-yellow-400 font-bold text-lg">
-                              {group.totalScore?.toLocaleString() || 0}
-                            </div>
-                          </div>
-                          <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
-                            <div className="text-xs text-slate-400 mb-1">Score Season</div>
-                            <div className="text-blue-400 font-bold text-lg">
-                              {(group.seasonScore || 0).toLocaleString()}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-                          <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
-                            <div className="text-xs text-slate-400 mb-1">Crédito</div>
-                            <div className="text-green-400 font-bold text-lg">
-                              {(group.credits || group.totalCash || 0).toLocaleString()}
-                            </div>
-                          </div>
-                          <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
-                            <div className="text-xs text-slate-400 mb-1">V/D Season</div>
-                            <div className="text-white font-bold text-lg">
-                              <span className="text-green-400">{seasonWins}</span> / <span className="text-red-400">{seasonLosses}</span>
-                            </div>
-                          </div>
-                          <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
-                            <div className="text-xs text-slate-400 mb-1">V/D Geral</div>
-                            <div className="text-white font-bold text-lg">
-                              <span className="text-green-400">{group.totalWins || 0}</span> / <span className="text-red-400">{group.totalLosses || 0}</span>
-                            </div>
-                          </div>
-                          <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
-                            <div className="text-xs text-slate-400 mb-1">Fundado em</div>
-                            <div className="text-white font-bold text-sm">
-                              {group.createdAt ? new Date(group.createdAt).toLocaleDateString('pt-BR', {
-                                day: '2-digit',
-                                month: 'long',
-                                year: 'numeric'
-                              }) : 'N/A'}
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    );
-                  })()}
+                {/* Info do Grupo */}
+                <div>
+                  <h1 className="text-4xl font-bold text-white mb-2">{group.name}</h1>
                   <div className="flex items-center gap-4 mb-3">
                     <span className={`text-sm px-3 py-1 rounded ${
                       group.isPublic
@@ -581,13 +371,16 @@ export default function GroupDetailPage() {
                     }`}>
                       {group.isPublic ? '🌍 Público' : '🔒 Privado'}
                     </span>
-                    <span className="text-purple-400 font-bold">
-                      🏆 {group.totalAchievements || 0} Conquistas
+                    <span className="text-slate-400">
+                      👥 {members.length}/{group.maxMembers} membros
+                    </span>
+                    <span className="text-yellow-400 font-bold">
+                      🏆 {group.totalScore.toLocaleString()} pontos
                     </span>
                   </div>
                   <p className="text-slate-300">{group.description || 'Sem descrição'}</p>
                   <p className="text-slate-400 text-sm mt-2">
-                    👑 Fundador: <span className="text-white font-semibold">
+                    👑 Líder: <span className="text-white font-semibold">
                       {group.leader.clanTag ? `|${group.leader.clanTag}| ${group.leader.nickname}` : group.leader.nickname}
                     </span>
                   </p>
@@ -596,14 +389,6 @@ export default function GroupDetailPage() {
 
               {/* Ações */}
               <div className="flex gap-3">
-                {!isMember && !user?.group && !user?.clanTag && (
-                  <button
-                    onClick={handleJoinGroup}
-                    className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-bold hover:from-green-700 hover:to-emerald-700 transition-colors shadow-lg shadow-green-500/30"
-                  >
-                    ✨ Entrar no Clã
-                  </button>
-                )}
                 {isMember && !isLeader && (
                   <button
                     onClick={handleLeaveGroup}
@@ -616,91 +401,21 @@ export default function GroupDetailPage() {
                   <>
                     <button
                       onClick={handleOpenEditModal}
-                      className="p-3 text-white hover:text-blue-400 transition-colors flex items-center justify-center text-2xl"
-                      title="Editar Grupo"
+                      className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
                     >
-                      ⚙️
+                      ✏️ Editar Grupo
                     </button>
                     <button
                       onClick={() => setShowDeleteModal(true)}
-                      className="p-3 text-white hover:text-red-400 transition-colors flex items-center justify-center text-2xl"
-                      title="Excluir Grupo"
+                      className="px-6 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors"
                     >
-                      🗑️
+                      🗑️ Excluir Grupo
                     </button>
                   </>
                 )}
               </div>
-              </div>
             </div>
           </div>
-        </motion.div>
-
-        {/* Conquistas do Grupo */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-8 bg-slate-900/30  rounded-2xl p-8 border border-purple-500/50 shadow-2xl"
-        >
-          <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
-            🏆 Conquistas do Clã
-          </h2>
-          {achievements.length === 0 ? (
-            <p className="text-gray-400">Nenhuma conquista desbloqueada ainda.</p>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {achievements.map((achievement) => (
-                <div
-                  key={achievement.id}
-                  className="p-3 rounded-lg border border-white/20 hover:border-white/40 transition-colors bg-slate-900/30 flex flex-col items-center text-center"
-                >
-                  {/* Imagem da conquista - maior destaque */}
-                  {achievement.icon && (
-                    <img
-                      src={`${API_URL}${achievement.icon}`}
-                      alt={achievement.title}
-                      className="w-24 h-24 object-contain mb-2"
-                      onError={(e) => {
-                        e.currentTarget.src = '/images/default_achievement.png';
-                      }}
-                    />
-                  )}
-                  
-                  {/* Título da conquista */}
-                  <div className="text-white font-semibold text-xs mb-1 line-clamp-2">{achievement.title}</div>
-                  
-                  {/* Descrição da conquista */}
-                  {achievement.description && (
-                    <div className="text-xs text-slate-400 mb-2 line-clamp-2">{achievement.description}</div>
-                  )}
-                  
-                  {/* Informações do usuário que desbloqueou */}
-                  <div className="mt-auto pt-2 border-t border-white/10 w-full">
-                    <div className="flex items-center gap-1.5 justify-center mb-1">
-                      <img
-                        src={achievement.user?.profileImage ? `${API_URL}${achievement.user.profileImage}` : '/images/default.png'}
-                        alt={achievement.user?.nickname || 'Usuário'}
-                        className="w-5 h-5 rounded-full border border-purple-500/50 object-cover flex-shrink-0"
-                        onError={(e) => {
-                          e.currentTarget.src = '/images/default.png';
-                        }}
-                      />
-                      <p className="text-xs text-slate-300 truncate">
-                        {achievement.user?.clanTag ? `|${achievement.user.clanTag}| ` : ''}{achievement.user?.nickname || 'Usuário'}
-                      </p>
-                    </div>
-                    <p className="text-xs text-slate-500 text-center">
-                      {new Date(achievement.unlockedAt).toLocaleDateString('pt-BR', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric'
-                      })}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </motion.div>
 
         {/* Tabs de Ranking */}
@@ -710,7 +425,7 @@ export default function GroupDetailPage() {
             className={`px-6 py-3 rounded-xl font-bold transition-all ${
               activeTab === 'weekly'
                 ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
-                : 'bg-slate-900/30  text-slate-400 hover:bg-slate-900/50 border border-white/20'
+                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
             }`}
           >
             📅 Ranking Semanal
@@ -720,7 +435,7 @@ export default function GroupDetailPage() {
             className={`px-6 py-3 rounded-xl font-bold transition-all ${
               activeTab === 'season'
                 ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
-                : 'bg-slate-900/30  text-slate-400 hover:bg-slate-900/50 border border-white/20'
+                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
             }`}
           >
             🏆 Ranking da Season
@@ -733,7 +448,7 @@ export default function GroupDetailPage() {
             className={`px-6 py-3 rounded-xl font-bold transition-all ${
               activeTab === 'total'
                 ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
-                : 'bg-slate-900/30  text-slate-400 hover:bg-slate-900/50 border border-white/20'
+                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
             }`}
           >
             ⭐ Ranking Total
@@ -744,7 +459,7 @@ export default function GroupDetailPage() {
               className={`px-6 py-3 rounded-xl font-bold transition-all ${
                 activeTab === 'chat'
                   ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
-                  : 'bg-slate-900/30  text-slate-400 hover:bg-slate-900/50 border border-white/20'
+                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
               }`}
             >
               💬 Chat do Clã
@@ -754,10 +469,10 @@ export default function GroupDetailPage() {
 
         {/* Ranking de Membros */}
         {activeTab !== 'chat' && (
-        <div className="bg-slate-900/30  rounded-2xl border border-slate-700/50 overflow-hidden">
+        <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl border border-slate-700 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-slate-900/30 ">
+              <thead className="bg-slate-900/50">
                 <tr>
                   <th className="px-6 py-4 text-left text-slate-400 font-semibold">#</th>
                   <th className="px-6 py-4 text-left text-slate-400 font-semibold">Membro</th>
@@ -780,7 +495,7 @@ export default function GroupDetailPage() {
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.05 }}
-                      className="border-t border-slate-700/50 hover:bg-slate-900/30 transition-colors"
+                      className="border-t border-slate-700/50 hover:bg-slate-800/50 transition-colors"
                     >
                       <td className="px-6 py-4">
                         <span className={`text-2xl font-bold ${
@@ -811,50 +526,17 @@ export default function GroupDetailPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <span className={`px-3 py-1 rounded text-sm font-semibold ${
-                            member.role === 'LEADER' ? 'bg-yellow-500/20 text-yellow-400' :
-                            member.role === 'CO_LEADER' ? 'bg-orange-500/20 text-orange-400' :
-                            member.role === 'ELDER' ? 'bg-purple-500/20 text-purple-400' :
-                            'bg-slate-700/50 text-slate-300'
-                          }`}>
-                            {member.role === 'LEADER' ? '👑 Líder' :
-                             member.role === 'CO_LEADER' ? '⭐ Co-Líder' :
-                             member.role === 'ELDER' ? '💎 Veterano' :
-                             '👤 Membro'}
-                          </span>
-                          {isLeader && member.role !== 'LEADER' && (
-                            <div className="flex gap-1">
-                              {member.role !== 'CO_LEADER' && (
-                                <button
-                                  onClick={() => handlePromoteMember(member.user.id, 'CO_LEADER')}
-                                  className="px-2 py-1 bg-orange-600/20 hover:bg-orange-600/40 text-orange-400 rounded text-xs transition-colors"
-                                  title="Promover a Co-Líder"
-                                >
-                                  ⭐
-                                </button>
-                              )}
-                              {member.role !== 'ELDER' && member.role !== 'CO_LEADER' && (
-                                <button
-                                  onClick={() => handlePromoteMember(member.user.id, 'ELDER')}
-                                  className="px-2 py-1 bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 rounded text-xs transition-colors"
-                                  title="Promover a Veterano"
-                                >
-                                  💎
-                                </button>
-                              )}
-                              {(member.role === 'CO_LEADER' || member.role === 'ELDER') && (
-                                <button
-                                  onClick={() => handleDemoteMember(member.user.id)}
-                                  className="px-2 py-1 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded text-xs transition-colors"
-                                  title="Rebaixar a Membro"
-                                >
-                                  ⬇️
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                        <span className={`px-3 py-1 rounded text-sm font-semibold ${
+                          member.role === 'LEADER' ? 'bg-yellow-500/20 text-yellow-400' :
+                          member.role === 'CO_LEADER' ? 'bg-orange-500/20 text-orange-400' :
+                          member.role === 'ELDER' ? 'bg-purple-500/20 text-purple-400' :
+                          'bg-slate-700/50 text-slate-300'
+                        }`}>
+                          {member.role === 'LEADER' ? '👑 Líder' :
+                           member.role === 'CO_LEADER' ? '⭐ Co-Líder' :
+                           member.role === 'ELDER' ? '💎 Veterano' :
+                           '👤 Membro'}
+                        </span>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <span className="text-xl font-bold text-yellow-400">
@@ -882,7 +564,7 @@ export default function GroupDetailPage() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-slate-900/30  rounded-2xl p-6 border border-purple-500/50 shadow-2xl"
+          className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-purple-500/50 shadow-2xl"
         >
           <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
             💬 Chat do Clã
@@ -895,7 +577,7 @@ export default function GroupDetailPage() {
           ) : (
             <>
               {/* Área de Mensagens */}
-              <div className="bg-slate-900/30  rounded-lg p-4 h-96 overflow-y-auto mb-4 border border-slate-700/50">
+              <div className="bg-slate-900/50 rounded-lg p-4 h-96 overflow-y-auto mb-4 border border-slate-700">
                 {messages.length === 0 ? (
                   <div className="text-center text-slate-500 py-8">
                     Nenhuma mensagem ainda. Seja o primeiro a falar!
@@ -961,7 +643,7 @@ export default function GroupDetailPage() {
                     }
                   }}
                   placeholder="Digite sua mensagem..."
-                  className="flex-1 px-4 py-3 bg-slate-900/30  border border-slate-700/50 rounded-xl text-white focus:border-purple-500 focus:outline-none"
+                  className="flex-1 px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-purple-500 focus:outline-none"
                   maxLength={500}
                 />
                 <button
@@ -987,10 +669,10 @@ export default function GroupDetailPage() {
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-slate-900/80  rounded-2xl p-8 max-w-2xl w-full border border-purple-500/50 shadow-2xl my-8"
+            className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-8 max-w-2xl w-full border border-purple-500/50 shadow-2xl my-8"
           >
             <h2 className="text-3xl font-bold text-white mb-6 flex items-center gap-3">
-              <span className="text-4xl">⚙️</span>
+              <span className="text-4xl">✏️</span>
               Editar Grupo
             </h2>
 
@@ -1005,7 +687,7 @@ export default function GroupDetailPage() {
                   value={editFormData.name}
                   onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
                   placeholder="Ex: Dragões Supremos"
-                  className="w-full px-4 py-3 bg-slate-900/30  border border-slate-700/50 rounded-xl text-white focus:border-purple-500 focus:outline-none"
+                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-purple-500 focus:outline-none"
                   required
                 />
               </div>
@@ -1110,7 +792,7 @@ export default function GroupDetailPage() {
                     className={`flex-1 py-3 rounded-xl font-semibold transition-all ${
                       editFormData.isPublic
                         ? 'bg-green-600 text-white'
-                        : 'bg-slate-900/30  text-slate-400 border border-slate-700/50'
+                        : 'bg-slate-900 text-slate-400 border border-slate-700'
                     }`}
                   >
                     🌍 Público
@@ -1121,7 +803,7 @@ export default function GroupDetailPage() {
                     className={`flex-1 py-3 rounded-xl font-semibold transition-all ${
                       !editFormData.isPublic
                         ? 'bg-red-600 text-white'
-                        : 'bg-slate-900/30  text-slate-400 border border-slate-700/50'
+                        : 'bg-slate-900 text-slate-400 border border-slate-700'
                     }`}
                   >
                     🔒 Privado
@@ -1168,7 +850,7 @@ export default function GroupDetailPage() {
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-slate-900/80  rounded-2xl p-8 max-w-md w-full border border-red-500/50 shadow-2xl"
+            className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-8 max-w-md w-full border border-red-500/50 shadow-2xl"
           >
             <h2 className="text-3xl font-bold text-white mb-4 flex items-center gap-3">
               <span className="text-4xl">⚠️</span>

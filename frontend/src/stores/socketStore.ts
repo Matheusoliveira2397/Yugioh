@@ -11,7 +11,6 @@ interface SocketState {
   emit: (event: string, data: any) => void;
   on: (event: string, callback: (...args: any[]) => void) => void;
   off: (event: string) => void;
-  getSocket: () => Socket | null;
 }
 
 export const useSocketStore = create<SocketState>((set, get) => ({
@@ -119,10 +118,5 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         socket.off(event);
       }
     }
-  },
-
-  getSocket: () => {
-    const { socket } = get();
-    return socket;
   },
 }));

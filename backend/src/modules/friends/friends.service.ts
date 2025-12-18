@@ -1,10 +1,9 @@
-import { Injectable, Inject, forwardRef } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Friendship, FriendshipStatus } from './entities/friendship.entity';
 import { PrivateMessage } from './entities/private-message.entity';
 import { User } from '../users/entities/user.entity';
-import { FriendsGateway } from './friends.gateway';
 
 @Injectable()
 export class FriendsService {
@@ -15,16 +14,14 @@ export class FriendsService {
     private messageRepository: Repository<PrivateMessage>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
-    @Inject(forwardRef(() => FriendsGateway))
-    private friendsGateway: FriendsGateway,
   ) {}
 
   // Listar amigos de um usuário
   async getFriends(userId: number) {
     const friendships = await this.friendshipRepository.find({
       where: [
-        { userId: userId, status: FriendshipStatus.ACCEPTED },
-        { friendId: userId, status: FriendshipStatus.ACCEPTED },
+        { user: { id: userId }, status: FriendshipStatus.ACCEPTED },
+        { friend: { id: userId }, status: FriendshipStatus.ACCEPTED },
       ],
       relations: ['user', 'friend'],
     });
@@ -45,22 +42,11 @@ export class FriendsService {
     });
   }
 
-  // Enviar solicitação de amizade (por username ou userId)
-  async sendFriendRequest(userId: number, friendIdentifier: string | number) {
-    let friend: User | null = null;
-    
-    // Tentar encontrar por ID primeiro, depois por username
-    if (typeof friendIdentifier === 'number' || !isNaN(Number(friendIdentifier))) {
-      friend = await this.userRepository.findOne({
-        where: { id: Number(friendIdentifier) },
-      });
-    }
-    
-    if (!friend) {
-      friend = await this.userRepository.findOne({
-        where: { username: friendIdentifier.toString() },
-      });
-    }
+  // Enviar solicitação de amizade
+  async sendFriendRequest(userId: number, friendUsername: string) {
+    const friend = await this.userRepository.findOne({
+      where: { username: friendUsername },
+    });
 
     if (!friend) {
       throw new Error('Usuário não encontrado');
@@ -73,107 +59,22 @@ export class FriendsService {
     // Verificar se já existe amizade
     const existingFriendship = await this.friendshipRepository.findOne({
       where: [
-        { userId: userId, friendId: friend.id },
-        { userId: friend.id, friendId: userId },
+        { user: { id: userId }, friend: { id: friend.id } },
+        { user: { id: friend.id }, friend: { id: userId } },
       ],
-      relations: ['user', 'friend'],
     });
 
     if (existingFriendship) {
-      if (existingFriendship.status === FriendshipStatus.ACCEPTED) {
-        throw new Error('Vocês já são amigos');
-      } else if (existingFriendship.status === FriendshipStatus.PENDING) {
-        if (existingFriendship.user.id === userId) {
-          throw new Error('Você já enviou uma solicitação para este usuário');
-        } else {
-          throw new Error('Este usuário já enviou uma solicitação para você');
-        }
-      } else {
-        throw new Error('Solicitação já existe');
-      }
+      throw new Error('Solicitação já existe');
     }
 
     const friendship = this.friendshipRepository.create({
-      userId: userId,
-      friendId: friend.id,
+      user: { id: userId } as User,
+      friend: { id: friend.id } as User,
       status: FriendshipStatus.PENDING,
     });
 
     return this.friendshipRepository.save(friendship);
-  }
-
-  // Verificar status de amizade entre dois usuários
-  async getFriendshipStatus(userId: number, otherUserId: number) {
-    // Usar userId e friendId diretamente (colunas do banco) em vez de relações
-    const friendship = await this.friendshipRepository.findOne({
-      where: [
-        { userId: userId, friendId: otherUserId },
-        { userId: otherUserId, friendId: userId },
-      ],
-      relations: ['user', 'friend'],
-    });
-
-    if (!friendship) {
-      return { status: 'none', friendship: null };
-    }
-
-    // Determinar se o usuário atual enviou ou recebeu a solicitação
-    const isSender = friendship.userId === userId;
-    
-    return {
-      status: friendship.status,
-      friendship: {
-        id: friendship.id,
-        isSender,
-        otherUser: isSender ? friendship.friend : friendship.user,
-      },
-    };
-  }
-
-  // Listar solicitações pendentes (enviadas e recebidas)
-  async getPendingRequests(userId: number) {
-    const sentRequests = await this.friendshipRepository.find({
-      where: {
-        userId: userId,
-        status: FriendshipStatus.PENDING,
-      },
-      relations: ['friend'],
-    });
-
-    const receivedRequests = await this.friendshipRepository.find({
-      where: {
-        friendId: userId,
-        status: FriendshipStatus.PENDING,
-      },
-      relations: ['user'],
-    });
-
-    return {
-      sent: sentRequests.map(f => ({
-        id: f.id,
-        user: {
-          id: f.friend.id,
-          username: f.friend.username,
-          nickname: f.friend.nickname,
-          profileImage: f.friend.profileImage,
-          isOnline: f.friend.isOnline,
-          level: f.friend.level || 1,
-        },
-        createdAt: f.createdAt,
-      })),
-      received: receivedRequests.map(f => ({
-        id: f.id,
-        user: {
-          id: f.user.id,
-          username: f.user.username,
-          nickname: f.user.nickname,
-          profileImage: f.user.profileImage,
-          isOnline: f.user.isOnline,
-          level: f.user.level || 1,
-        },
-        createdAt: f.createdAt,
-      })),
-    };
   }
 
   // Aceitar solicitação de amizade
@@ -217,7 +118,7 @@ export class FriendsService {
 
   // Listar mensagens com um amigo
   async getMessages(userId: number, friendId: number) {
-    const messages = await this.messageRepository.find({
+    return this.messageRepository.find({
       where: [
         { sender: { id: userId }, receiver: { id: friendId } },
         { sender: { id: friendId }, receiver: { id: userId } },
@@ -225,16 +126,6 @@ export class FriendsService {
       relations: ['sender', 'receiver'],
       order: { createdAt: 'ASC' },
     });
-
-    // Formatar mensagens para o frontend
-    return messages.map(msg => ({
-      id: msg.id,
-      senderId: msg.sender.id.toString(),
-      receiverId: msg.receiver.id.toString(),
-      content: msg.content,
-      createdAt: msg.createdAt.toISOString(),
-      read: msg.read,
-    }));
   }
 
   // Enviar mensagem privada
@@ -243,13 +134,13 @@ export class FriendsService {
     const areFriends = await this.friendshipRepository.findOne({
       where: [
         {
-          userId: senderId,
-          friendId: receiverId,
+          user: { id: senderId },
+          friend: { id: receiverId },
           status: FriendshipStatus.ACCEPTED,
         },
         {
-          userId: receiverId,
-          friendId: senderId,
+          user: { id: receiverId },
+          friend: { id: senderId },
           status: FriendshipStatus.ACCEPTED,
         },
       ],
@@ -266,37 +157,7 @@ export class FriendsService {
       read: false,
     });
 
-    const savedMessage = await this.messageRepository.save(message);
-    
-    // Buscar informações do remetente para enviar via WebSocket
-    const sender = await this.userRepository.findOne({
-      where: { id: senderId },
-      select: ['id', 'username', 'nickname', 'clanTag', 'profileImage'],
-    });
-
-    // Formatar mensagem para o frontend
-    const messageData = {
-      id: savedMessage.id,
-      senderId: savedMessage.senderId.toString(),
-      receiverId: savedMessage.receiverId.toString(),
-      content: savedMessage.content,
-      createdAt: savedMessage.createdAt.toISOString(),
-      read: savedMessage.read,
-      username: sender?.username || 'Usuário',
-      nickname: sender?.nickname || sender?.username || 'Usuário',
-      clanTag: sender?.clanTag,
-      profileImage: sender?.profileImage,
-    };
-
-    // Emitir mensagem via WebSocket para o destinatário
-    try {
-      this.friendsGateway.emitPrivateMessage(receiverId, messageData);
-    } catch (error) {
-      console.error('Erro ao emitir mensagem via WebSocket:', error);
-      // Continuar mesmo se falhar o WebSocket
-    }
-    
-    return messageData;
+    return this.messageRepository.save(message);
   }
 
   // Marcar mensagens como lidas

@@ -5,11 +5,9 @@ import { DecksController } from './decks.controller';
 import { Deck } from './entities/deck.entity';
 import { DeckCard } from './entities/deck-card.entity';
 import { Card } from '../cards/entities/card.entity';
-import { UserCard } from '../shop/entities/user-card.entity';
-import { User } from '../users/entities/user.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Deck, DeckCard, Card, UserCard, User])],
+  imports: [TypeOrmModule.forFeature([Deck, DeckCard, Card])],
   controllers: [DecksController],
   providers: [DecksService],
   exports: [DecksService],

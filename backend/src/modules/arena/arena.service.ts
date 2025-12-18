@@ -1,12 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan, LessThan, Between, In } from 'typeorm';
+import { Repository, MoreThan, LessThan, Between } from 'typeorm';
 import { ChallengeArena } from './arena.entity';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Duel, DuelStatus, DuelResult } from '../duels/entities/duel.entity';
 import { User } from '../users/entities/user.entity';
-import { Group } from '../groups/entities/group.entity';
-import { GroupMember } from '../groups/entities/group-member.entity';
 
 @Injectable()
 export class ArenaService {
@@ -17,36 +15,15 @@ export class ArenaService {
     private duelRepository: Repository<Duel>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
-    @InjectRepository(Group)
-    private groupRepository: Repository<Group>,
-    @InjectRepository(GroupMember)
-    private groupMemberRepository: Repository<GroupMember>,
   ) {}
-
-  private levelRanges: Array<{ min: number; max: number; name: string }> = [
-    { min: 1, max: 1, name: 'Nível 1' },
-    { min: 2, max: 3, name: 'Nível 2-3' },
-    { min: 4, max: 5, name: 'Nível 4-5' },
-    { min: 6, max: 10, name: 'Nível 6-10' },
-    { min: 11, max: 999, name: 'Nível 11+' },
-  ];
 
   // Determinar divisão baseada no nível
   getLevelDivision(level: number): string {
-    for (const range of this.levelRanges) {
-      if (level >= range.min && level <= range.max) {
-        return range.name;
-      }
-    }
+    if (level <= 1) return 'Nível 1';
+    if (level <= 3) return 'Nível 2-3';
+    if (level <= 5) return 'Nível 4-5';
+    if (level <= 10) return 'Nível 6-10';
     return 'Nível 11+';
-  }
-
-  getLevelRanges(): Array<{ min: number; max: number; name: string }> {
-    return this.levelRanges;
-  }
-
-  updateLevelRanges(ranges: Array<{ min: number; max: number; name: string }>): void {
-    this.levelRanges = ranges;
   }
 
   async getCurrentArena(): Promise<ChallengeArena | null> {
@@ -204,7 +181,7 @@ export class ArenaService {
       }
 
       // Query ULTRA OTIMIZADA - sem eager loading, apenas campos essenciais
-      const duels: Duel[] = await Promise.race([
+      const duels = await Promise.race([
         this.duelRepository
           .createQueryBuilder('duel')
           .select([
@@ -224,7 +201,7 @@ export class ArenaService {
         new Promise<Duel[]>((_, reject) => 
           setTimeout(() => reject(new Error('Query timeout: getArenaRankingByDivision')), 3000)
         )
-      ]).catch(() => [] as Duel[]);
+      ]).catch(() => []);
 
       if (duels.length === 0) {
         return [];
@@ -237,7 +214,7 @@ export class ArenaService {
         playerIds.add(duel.player2Id);
       });
 
-      const players: User[] = await Promise.race([
+      const players = await Promise.race([
         this.userRepository.find({
           where: Array.from(playerIds).map(id => ({ id })),
           select: ['id', 'nickname', 'clanTag', 'profileImage', 'level']
@@ -245,7 +222,7 @@ export class ArenaService {
         new Promise<User[]>((_, reject) => 
           setTimeout(() => reject(new Error('Query timeout: find players')), 2000)
         )
-      ]).catch(() => [] as User[]);
+      ]).catch(() => []);
 
       const playerMap = new Map(players.map(p => [p.id, p]));
 
@@ -290,24 +267,6 @@ export class ArenaService {
         }
       }
 
-      // Buscar grupos dos jogadores para pegar as logos
-      const userIds = Array.from(playerScores.values())
-        .filter(data => data.user !== null)
-        .map(data => data.user!.id);
-      
-      const groupMembers = await this.groupMemberRepository.find({
-        where: { userId: In(userIds), isActive: true },
-        relations: ['group'],
-        select: ['userId', 'groupId']
-      });
-
-      const groupMap = new Map<number, string>();
-      for (const member of groupMembers) {
-        if (member.group && member.group.logo) {
-          groupMap.set(member.userId, member.group.logo);
-        }
-      }
-
       // Converter para array e ordenar por score
       const ranking = Array.from(playerScores.values())
         .filter(data => data.user !== null)
@@ -323,7 +282,6 @@ export class ArenaService {
           wins: data.wins,
           losses: data.losses,
           score: data.score,
-          groupLogo: groupMap.get(data.user!.id) || undefined,
         }));
 
       return ranking;
@@ -337,7 +295,7 @@ export class ArenaService {
   // Buscar todos os rankings por divisão de uma arena - OTIMIZADO
   async getAllArenaRankings(arenaId: string) {
     try {
-      const divisions = this.levelRanges.map(r => r.name);
+      const divisions = ['Nível 1', 'Nível 2-3', 'Nível 4-5', 'Nível 6-10', 'Nível 11+'];
       
       // Executar todas as queries em paralelo com timeout
       const rankingsPromises = divisions.map(division => 
@@ -371,63 +329,5 @@ export class ArenaService {
         'Nível 11+': []
       };
     }
-  }
-
-  // Admin methods
-  async getAllArenas(): Promise<ChallengeArena[]> {
-    return await this.arenaRepository.find({
-      order: { startTime: 'DESC' },
-      take: 100,
-    });
-  }
-
-  async getArenaById(id: string): Promise<ChallengeArena | null> {
-    return await this.arenaRepository.findOne({ where: { id } });
-  }
-
-  async createArenaAdmin(data: {
-    name: string;
-    description?: string;
-    startTime: Date;
-    endTime: Date;
-    scoreMultiplier?: number;
-    bonusGems?: number;
-    config?: any;
-  }): Promise<ChallengeArena> {
-    const arena = this.arenaRepository.create({
-      name: data.name,
-      description: data.description,
-      startTime: new Date(data.startTime),
-      endTime: new Date(data.endTime),
-      scoreMultiplier: data.scoreMultiplier || 1.5,
-      bonusGems: data.bonusGems || 50,
-      config: data.config || {},
-      isActive: true,
-      participants: 0,
-    });
-
-    return await this.arenaRepository.save(arena);
-  }
-
-  async updateArena(id: string, data: Partial<ChallengeArena>): Promise<ChallengeArena> {
-    const arena = await this.arenaRepository.findOne({ where: { id } });
-    if (!arena) {
-      throw new Error('Arena não encontrada');
-    }
-
-    // Preservar config existente e mesclar com nova config
-    if (data.config) {
-      data.config = { ...(arena.config || {}), ...data.config };
-    }
-
-    if (data.startTime) data.startTime = new Date(data.startTime);
-    if (data.endTime) data.endTime = new Date(data.endTime);
-
-    Object.assign(arena, data);
-    return await this.arenaRepository.save(arena);
-  }
-
-  async deleteArena(id: string): Promise<void> {
-    await this.arenaRepository.delete(id);
   }
 }

@@ -22,16 +22,6 @@ import AdminPanel from './pages/AdminPanel';
 import AdminCardsPanel from './pages/AdminCardsPanel';
 import AdminPlayersPanel from './pages/AdminPlayersPanel';
 import AdminNewsPanel from './pages/AdminNewsPanel';
-import AdminPlaymatsPanel from './pages/AdminPlaymatsPanel';
-import AdminSleevesPanel from './pages/AdminSleevesPanel';
-import AdminInitialDecksPanel from './pages/AdminInitialDecksPanel';
-import AdminTournamentsPanel from './pages/AdminTournamentsPanel';
-import AdminArenaPanel from './pages/AdminArenaPanel';
-import AdminSeasonsPanel from './pages/AdminSeasonsPanel';
-import AdminSiteTabsPanel from './pages/AdminSiteTabsPanel';
-import AdminMessagesPanel from './pages/AdminMessagesPanel';
-import AdminAchievementsPanel from './pages/AdminAchievementsPanel';
-import AdminDivisionsPanel from './pages/AdminDivisionsPanel';
 import MissionsPage from './pages/MissionsPage';
 import DropsPage from './pages/DropsPage';
 import DuelArena from './pages/DuelArena';
@@ -44,12 +34,7 @@ function App() {
   const { isAuthenticated } = useAuthStore();
 
   return (
-    <Router
-      future={{
-        v7_startTransition: true,
-        v7_relativeSplatPath: true,
-      }}
-    >
+    <Router>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
@@ -360,134 +345,6 @@ function App() {
             isAuthenticated ? (
               <Layout>
                 <AdminNewsPanel />
-              </Layout>
-            ) : (
-              <Navigate to="/login" />
-            )
-          }
-        />
-
-        <Route
-          path="/admin/playmats"
-          element={
-            isAuthenticated ? (
-              <Layout>
-                <AdminPlaymatsPanel />
-              </Layout>
-            ) : (
-              <Navigate to="/login" />
-            )
-          }
-        />
-
-        <Route
-          path="/admin/sleeves"
-          element={
-            isAuthenticated ? (
-              <Layout>
-                <AdminSleevesPanel />
-              </Layout>
-            ) : (
-              <Navigate to="/login" />
-            )
-          }
-        />
-
-        <Route
-          path="/admin/initial-decks"
-          element={
-            isAuthenticated ? (
-              <Layout>
-                <AdminInitialDecksPanel />
-              </Layout>
-            ) : (
-              <Navigate to="/login" />
-            )
-          }
-        />
-
-        <Route
-          path="/admin/tournaments"
-          element={
-            isAuthenticated ? (
-              <Layout>
-                <AdminTournamentsPanel />
-              </Layout>
-            ) : (
-              <Navigate to="/login" />
-            )
-          }
-        />
-
-        <Route
-          path="/admin/arena"
-          element={
-            isAuthenticated ? (
-              <Layout>
-                <AdminArenaPanel />
-              </Layout>
-            ) : (
-              <Navigate to="/login" />
-            )
-          }
-        />
-        
-        <Route
-          path="/admin/seasons"
-          element={
-            isAuthenticated ? (
-              <Layout>
-                <AdminSeasonsPanel />
-              </Layout>
-            ) : (
-              <Navigate to="/login" />
-            )
-          }
-        />
-
-        <Route
-          path="/admin/site-tabs"
-          element={
-            isAuthenticated ? (
-              <Layout>
-                <AdminSiteTabsPanel />
-              </Layout>
-            ) : (
-              <Navigate to="/login" />
-            )
-          }
-        />
-
-        <Route
-          path="/admin/messages"
-          element={
-            isAuthenticated ? (
-              <Layout>
-                <AdminMessagesPanel />
-              </Layout>
-            ) : (
-              <Navigate to="/login" />
-            )
-          }
-        />
-        <Route
-          path="/admin/achievements"
-          element={
-            isAuthenticated ? (
-              <Layout>
-                <AdminAchievementsPanel />
-              </Layout>
-            ) : (
-              <Navigate to="/login" />
-            )
-          }
-        />
-        <Route
-          path="/admin/divisions"
-          element={
-            isAuthenticated ? (
-              <Layout>
-                <AdminDivisionsPanel />
               </Layout>
             ) : (
               <Navigate to="/login" />

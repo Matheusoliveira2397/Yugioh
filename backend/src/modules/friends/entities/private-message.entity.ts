@@ -17,14 +17,14 @@ export class PrivateMessage {
   @JoinColumn({ name: 'sender_id' })
   sender: User;
 
-  @Column({ type: 'int', name: 'sender_id' })
+  @Column({ type: 'int' })
   senderId: number;
 
   @ManyToOne(() => User)
   @JoinColumn({ name: 'receiver_id' })
   receiver: User;
 
-  @Column({ type: 'int', name: 'receiver_id' })
+  @Column({ type: 'int' })
   receiverId: number;
 
   @Column('text')

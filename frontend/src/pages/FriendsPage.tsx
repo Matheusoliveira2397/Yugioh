@@ -1,19 +1,17 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
-import { useSocketStore } from '../stores/socketStore';
 import axios from 'axios';
 
 interface Friend {
-  id: number | string;
+  id: string;
   username: string;
   nickname: string;
   clanTag?: string;
-  profileImage: string | null;
+  profileImage: string;
   isOnline: boolean;
   level: number;
-  totalScore?: number;
-  rating?: number;
+  rating: number;
 }
 
 interface Message {
@@ -31,50 +29,58 @@ interface Conversation {
   unreadCount: number;
 }
 
-interface FriendRequest {
-  id: string;
-  user: Friend;
-  createdAt: string;
-}
-
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 export default function FriendsPage() {
   const { user, token } = useAuthStore();
-  const { connect, getSocket, isConnected } = useSocketStore();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [conversations, setConversations] = useState<Map<string, Conversation>>(new Map());
   const [messageInput, setMessageInput] = useState('');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'online' | 'all' | 'requests'>('online');
-  const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
-  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [activeTab, setActiveTab] = useState<'online' | 'all'>('online');
 
   // Buscar lista de amigos
   useEffect(() => {
     const fetchFriends = async () => {
-      if (!token) return;
       try {
         setLoading(true);
         const response = await axios.get(`${API_URL}/friends`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        // Garantir que os dados estão no formato correto
-        const friendsData = Array.isArray(response.data) ? response.data : [];
-        setFriends(friendsData.map((friend: any) => ({
-          id: friend.id,
-          username: friend.username,
-          nickname: friend.nickname,
-          clanTag: friend.clanTag,
-          profileImage: friend.profileImage || null,
-          isOnline: friend.isOnline || false,
-          level: friend.level || 1,
-          totalScore: friend.totalScore || friend.rating || 0,
-        })));
+        setFriends(response.data);
       } catch (error) {
         console.error('Erro ao carregar amigos:', error);
-        setFriends([]);
+        // Dados mockados para demonstração
+        setFriends([
+          {
+            id: '1',
+            username: 'Kaiba',
+            nickname: 'Seto Kaiba',
+            profileImage: '/avatars/kaiba.png',
+            isOnline: true,
+            level: 45,
+            rating: 2500
+          },
+          {
+            id: '2',
+            username: 'Joey',
+            nickname: 'Joey Wheeler',
+            profileImage: '/avatars/joey.png',
+            isOnline: true,
+            level: 38,
+            rating: 2100
+          },
+          {
+            id: '3',
+            username: 'Yugi',
+            nickname: 'Yugi Muto',
+            profileImage: '/avatars/yugi.png',
+            isOnline: false,
+            level: 50,
+            rating: 3000
+          },
+        ]);
       } finally {
         setLoading(false);
       }
@@ -83,180 +89,12 @@ export default function FriendsPage() {
     fetchFriends();
   }, [token]);
 
-  // Buscar solicitações pendentes
-  useEffect(() => {
-    const fetchPendingRequests = async () => {
-      if (!token) return;
-      try {
-        setLoadingRequests(true);
-        const response = await axios.get(`${API_URL}/friends/pending`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setPendingRequests(response.data.received || []);
-      } catch (error) {
-        console.error('Erro ao carregar solicitações:', error);
-        setPendingRequests([]);
-      } finally {
-        setLoadingRequests(false);
-      }
-    };
-
-    if (activeTab === 'requests') {
-      fetchPendingRequests();
-    }
-  }, [token, activeTab]);
-
-  const handleAcceptRequest = async (requestId: string) => {
-    if (!token) return;
-    try {
-      await axios.put(
-        `${API_URL}/friends/${requestId}/accept`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      // Remover da lista e recarregar amigos
-      setPendingRequests(prev => prev.filter(r => r.id !== requestId));
-      // Recarregar lista de amigos
-      const response = await axios.get(`${API_URL}/friends`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const friendsData = Array.isArray(response.data) ? response.data : [];
-      setFriends(friendsData.map((friend: any) => ({
-        id: friend.id,
-        username: friend.username,
-        nickname: friend.nickname,
-        clanTag: friend.clanTag,
-        profileImage: friend.profileImage || null,
-        isOnline: friend.isOnline || false,
-        level: friend.level || 1,
-        totalScore: friend.totalScore || friend.rating || 0,
-      })));
-    } catch (error) {
-      console.error('Erro ao aceitar solicitação:', error);
-      alert('Erro ao aceitar solicitação');
-    }
-  };
-
-  const handleRejectRequest = async (requestId: string) => {
-    if (!token) return;
-    try {
-      await axios.put(
-        `${API_URL}/friends/${requestId}/reject`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      // Remover da lista
-      setPendingRequests(prev => prev.filter(r => r.id !== requestId));
-    } catch (error) {
-      console.error('Erro ao rejeitar solicitação:', error);
-      alert('Erro ao rejeitar solicitação');
-    }
-  };
-
   // Buscar mensagens quando seleciona um amigo
   useEffect(() => {
     if (selectedFriend) {
       fetchMessages(selectedFriend.id);
-      // Disparar evento para remover notificações deste remetente
-      const event = new CustomEvent('messageViewed', { detail: { senderId: selectedFriend.id } });
-      window.dispatchEvent(event);
     }
   }, [selectedFriend]);
-
-  const currentConversation = selectedFriend ? conversations.get(selectedFriend.id) : null;
-
-  // Escutar mensagens em tempo real via WebSocket
-  useEffect(() => {
-    if (!user || !token) return;
-
-    // Conectar ao socket se não estiver conectado
-    if (!isConnected) {
-      connect(token);
-    }
-
-    const socket = getSocket();
-    if (!socket) return;
-
-    const currentUserId = typeof user.id === 'string' ? user.id : user.id.toString();
-
-    const handlePrivateMessage = (data: any) => {
-      const senderId = data.senderId || data.userId;
-      const receiverId = data.receiverId;
-      
-      // Verificar se a mensagem é para mim
-      if (receiverId !== currentUserId) return;
-
-      // Adicionar mensagem à conversa correspondente
-      setConversations(prev => {
-        const newMap = new Map(prev);
-        const friendId = senderId.toString();
-        const conversation = newMap.get(friendId);
-        
-        if (conversation) {
-          // Verificar se a mensagem já existe (evitar duplicatas)
-          if (!conversation.messages.some(m => m.id === data.id)) {
-            conversation.messages.push({
-              id: data.id,
-              senderId: senderId.toString(),
-              receiverId: receiverId.toString(),
-              content: data.content,
-              createdAt: data.createdAt || new Date().toISOString(),
-              read: data.read || false,
-            });
-          }
-        } else {
-          // Se não há conversa, buscar informações do amigo
-          const friend = friends.find(f => f.id.toString() === friendId);
-          if (friend) {
-            newMap.set(friendId, {
-              friend,
-              messages: [{
-                id: data.id,
-                senderId: senderId.toString(),
-                receiverId: receiverId.toString(),
-                content: data.content,
-                createdAt: data.createdAt || new Date().toISOString(),
-                read: data.read || false,
-              }],
-              unreadCount: 0,
-            });
-          }
-        }
-        
-        return newMap;
-      });
-
-      // Scroll automático se a conversa estiver aberta
-      if (selectedFriend && selectedFriend.id.toString() === senderId.toString()) {
-        // Disparar evento para remover notificações deste remetente quando a conversa estiver aberta
-        const event = new CustomEvent('messageViewed', { detail: { senderId: senderId } });
-        window.dispatchEvent(event);
-        
-        setTimeout(() => {
-          const container = document.getElementById('messages-container');
-          if (container) {
-            container.scrollTop = container.scrollHeight;
-          }
-        }, 100);
-      }
-    };
-
-    socket.on('privateMessage', handlePrivateMessage);
-
-    return () => {
-      socket.off('privateMessage', handlePrivateMessage);
-    };
-  }, [user, token, isConnected, connect, getSocket, friends, selectedFriend]);
-
-  // Scroll automático para a última mensagem
-  useEffect(() => {
-    if (selectedFriend && currentConversation) {
-      const container = document.getElementById('messages-container');
-      if (container) {
-        container.scrollTop = container.scrollHeight;
-      }
-    }
-  }, [currentConversation?.messages, selectedFriend]);
 
   const fetchMessages = async (friendId: string | number) => {
     try {
@@ -269,14 +107,9 @@ export default function FriendsPage() {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      // Remover duplicatas baseado no ID
-      const uniqueMessages = response.data.filter((msg: Message, index: number, self: Message[]) => 
-        index === self.findIndex((m: Message) => m.id === msg.id)
-      );
-      
       const conversation: Conversation = {
         friend: selectedFriend!,
-        messages: uniqueMessages,
+        messages: response.data,
         unreadCount: 0
       };
       
@@ -314,44 +147,19 @@ export default function FriendsPage() {
   };
 
   const sendMessage = async () => {
-    if (!messageInput.trim() || !selectedFriend || !user) return;
-
-    const messageContent = messageInput.trim();
-    const receiverId = typeof selectedFriend.id === 'string' ? parseInt(selectedFriend.id, 10) : Number(selectedFriend.id);
-    
-    if (isNaN(receiverId)) {
-      console.error('ID de destinatário inválido:', selectedFriend.id);
-      alert('Erro: ID de destinatário inválido');
-      return;
-    }
-
-    // Adicionar mensagem otimisticamente (antes da resposta do servidor)
-    const tempMessage: Message = {
-      id: `temp-${Date.now()}`,
-      senderId: typeof user.id === 'string' ? user.id : user.id.toString(),
-      receiverId: receiverId.toString(),
-      content: messageContent,
-      createdAt: new Date().toISOString(),
-      read: false
-    };
-
-    setConversations(prev => {
-      const newMap = new Map(prev);
-      const conversation = newMap.get(selectedFriend.id);
-      if (conversation) {
-        conversation.messages.push(tempMessage);
-      }
-      return newMap;
-    });
-
-    setMessageInput('');
+    if (!messageInput.trim() || !selectedFriend) return;
 
     try {
+      const receiverId = typeof selectedFriend.id === 'string' ? parseInt(selectedFriend.id, 10) : Number(selectedFriend.id);
+      if (isNaN(receiverId)) {
+        console.error('ID de destinatário inválido:', selectedFriend.id);
+        return;
+      }
       const response = await axios.post(
         `${API_URL}/messages`,
         {
           receiverId: receiverId.toString(),
-          content: messageContent
+          content: messageInput
         },
         {
           headers: { Authorization: `Bearer ${token}` }
@@ -360,48 +168,48 @@ export default function FriendsPage() {
 
       const newMessage: Message = response.data;
       
-      // Substituir mensagem temporária pela mensagem real do servidor
       setConversations(prev => {
         const newMap = new Map(prev);
         const conversation = newMap.get(selectedFriend.id);
         if (conversation) {
-          // Remover mensagem temporária
-          conversation.messages = conversation.messages.filter(m => m.id !== tempMessage.id);
-          // Verificar se a mensagem do servidor já existe (evitar duplicatas)
-          const existingIndex = conversation.messages.findIndex(m => m.id === newMessage.id);
-          if (existingIndex === -1) {
-            conversation.messages.push(newMessage);
-          } else {
-            // Se já existe, atualizar
-            conversation.messages[existingIndex] = newMessage;
-          }
-        }
-        return newMap;
-      });
-    } catch (error: any) {
-      console.error('Erro ao enviar mensagem:', error);
-      
-      // Remover mensagem temporária em caso de erro
-      setConversations(prev => {
-        const newMap = new Map(prev);
-        const conversation = newMap.get(selectedFriend.id);
-        if (conversation) {
-          conversation.messages = conversation.messages.filter(m => m.id !== tempMessage.id);
+          conversation.messages.push(newMessage);
         }
         return newMap;
       });
 
-      // Restaurar mensagem no input
-      setMessageInput(messageContent);
+      setMessageInput('');
+    } catch (error) {
+      console.error('Erro ao enviar mensagem:', error);
+      // Mock: adicionar mensagem localmente
+      if (!user) return;
       
-      const errorMessage = error.response?.data?.message || error.message || 'Erro ao enviar mensagem';
-      alert(`Erro: ${errorMessage}`);
+      const newMessage: Message = {
+        id: Date.now().toString(),
+        senderId: user.id,
+        receiverId: selectedFriend.id,
+        content: messageInput,
+        createdAt: new Date().toISOString(),
+        read: false
+      };
+
+      setConversations(prev => {
+        const newMap = new Map(prev);
+        const conversation = newMap.get(selectedFriend.id);
+        if (conversation) {
+          conversation.messages.push(newMessage);
+        }
+        return newMap;
+      });
+
+      setMessageInput('');
     }
   };
 
   const filteredFriends = friends.filter(friend => 
     activeTab === 'online' ? friend.isOnline : true
   );
+
+  const currentConversation = selectedFriend ? conversations.get(selectedFriend.id) : null;
 
   return (
     <div className="min-h-screen p-6 relative z-10">
@@ -425,12 +233,12 @@ export default function FriendsPage() {
             animate={{ opacity: 1, x: 0 }}
             className="lg:col-span-1"
           >
-            <div className="rounded-xl border border-purple-500/30 overflow-hidden">
+            <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl border border-purple-500/30 overflow-hidden">
               {/* Tabs */}
               <div className="flex border-b border-slate-700">
                 <button
                   onClick={() => setActiveTab('online')}
-                  className={`flex-1 py-3 px-4 font-semibold transition-colors text-xs ${
+                  className={`flex-1 py-3 px-4 font-semibold transition-colors ${
                     activeTab === 'online'
                       ? 'bg-green-600/20 text-green-400 border-b-2 border-green-400'
                       : 'text-gray-400 hover:text-white'
@@ -440,7 +248,7 @@ export default function FriendsPage() {
                 </button>
                 <button
                   onClick={() => setActiveTab('all')}
-                  className={`flex-1 py-3 px-4 font-semibold transition-colors text-xs ${
+                  className={`flex-1 py-3 px-4 font-semibold transition-colors ${
                     activeTab === 'all'
                       ? 'bg-purple-600/20 text-purple-400 border-b-2 border-purple-400'
                       : 'text-gray-400 hover:text-white'
@@ -448,83 +256,11 @@ export default function FriendsPage() {
                 >
                   📋 Todos ({friends.length})
                 </button>
-                <button
-                  onClick={() => setActiveTab('requests')}
-                  className={`flex-1 py-3 px-4 font-semibold transition-colors text-xs relative ${
-                    activeTab === 'requests'
-                      ? 'bg-yellow-600/20 text-yellow-400 border-b-2 border-yellow-400'
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  🔔 Solicitações
-                  {pendingRequests.length > 0 && (
-                    <span className="absolute top-1 right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                      {pendingRequests.length}
-                    </span>
-                  )}
-                </button>
               </div>
 
               {/* Lista */}
               <div className="max-h-[600px] overflow-y-auto">
-                {activeTab === 'requests' ? (
-                  loadingRequests ? (
-                    <div className="flex items-center justify-center py-12">
-                      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
-                    </div>
-                  ) : pendingRequests.length === 0 ? (
-                    <div className="text-center py-12 text-gray-400">
-                      <p className="text-4xl mb-2">📭</p>
-                      <p>Nenhuma solicitação pendente</p>
-                    </div>
-                  ) : (
-                    <AnimatePresence>
-                      {pendingRequests.map((request) => (
-                        <motion.div
-                          key={request.id}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="p-4 border-b border-slate-700/50"
-                        >
-                          <div className="flex items-center gap-3 mb-3">
-                            <img
-                              src={request.user.profileImage ? `${API_URL}${request.user.profileImage}` : '/images/default.png'}
-                              alt={request.user.username}
-                              className="w-12 h-12 rounded-full border-2 border-yellow-500 object-cover"
-                              onError={(e) => {
-                                e.currentTarget.src = '/images/default.png';
-                              }}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-white truncate">
-                                {request.user.clanTag ? `|${request.user.clanTag}| ${request.user.nickname}` : request.user.nickname}
-                              </p>
-                              <p className="text-sm text-gray-400 truncate">@{request.user.username}</p>
-                              <p className="text-xs text-gray-500">
-                                {new Date(request.createdAt).toLocaleDateString('pt-BR')}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => handleAcceptRequest(request.id)}
-                              className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors text-white font-semibold text-sm"
-                            >
-                              ✓ Aceitar
-                            </button>
-                            <button
-                              onClick={() => handleRejectRequest(request.id)}
-                              className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors text-white font-semibold text-sm"
-                            >
-                              ✕ Rejeitar
-                            </button>
-                          </div>
-                        </motion.div>
-                      ))}
-                    </AnimatePresence>
-                  )
-                ) : loading ? (
+                {loading ? (
                   <div className="flex items-center justify-center py-12">
                     <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
                   </div>
@@ -545,18 +281,15 @@ export default function FriendsPage() {
                         className={`p-4 border-b border-slate-700/50 cursor-pointer transition-colors ${
                           selectedFriend?.id === friend.id
                             ? 'bg-purple-600/20 border-l-4 border-l-purple-500'
-                            : 'hover:bg-white/10'
+                            : 'hover:bg-slate-700/30'
                         }`}
                       >
                         <div className="flex items-center gap-3">
                           <div className="relative">
                             <img
-                              src={friend.profileImage ? `${API_URL}${friend.profileImage}` : '/images/default.png'}
+                              src={friend.profileImage || '/images/default.png'}
                               alt={friend.username}
-                              className="w-12 h-12 rounded-full border-2 border-purple-500 object-cover"
-                              onError={(e) => {
-                                e.currentTarget.src = '/images/default.png';
-                              }}
+                              className="w-12 h-12 rounded-full border-2 border-purple-500"
                             />
                             {friend.isOnline && (
                               <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-slate-800"></div>
@@ -568,9 +301,9 @@ export default function FriendsPage() {
                             </p>
                             <p className="text-sm text-gray-400 truncate">@{friend.username}</p>
                             <div className="flex items-center gap-2 text-xs text-gray-500">
-                              <span>Nível {friend.level || 1}</span>
+                              <span>Nível {friend.level}</span>
                               <span>•</span>
-                              <span>Score: {friend.totalScore?.toFixed(1) || 0}</span>
+                              <span>{friend.rating} ⭐</span>
                             </div>
                           </div>
                         </div>
@@ -582,34 +315,22 @@ export default function FriendsPage() {
             </div>
           </motion.div>
 
-          {/* Chat ou Solicitações */}
+          {/* Chat */}
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             className="lg:col-span-2"
           >
-            {activeTab === 'requests' ? (
-              <div className="rounded-xl border border-purple-500/30 h-[600px] flex items-center justify-center">
-                <div className="text-center text-gray-400">
-                  <p className="text-6xl mb-4">🔔</p>
-                  <p className="text-xl">Gerencie suas solicitações de amizade</p>
-                  <p className="text-sm mt-2">Selecione uma solicitação na lista ao lado</p>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-purple-500/30 h-[600px] flex flex-col">
-                {selectedFriend ? (
+            <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl border border-purple-500/30 h-[600px] flex flex-col">
+              {selectedFriend ? (
                 <>
                   {/* Header do Chat */}
                   <div className="p-4 border-b border-slate-700 flex items-center gap-3">
                     <div className="relative">
                       <img
-                        src={selectedFriend.profileImage ? `${API_URL}${selectedFriend.profileImage}` : '/images/default.png'}
+                        src={selectedFriend.profileImage || '/images/default.png'}
                         alt={selectedFriend.username}
-                        className="w-12 h-12 rounded-full border-2 border-purple-500 object-cover"
-                        onError={(e) => {
-                          e.currentTarget.src = '/images/default.png';
-                        }}
+                        className="w-12 h-12 rounded-full border-2 border-purple-500"
                       />
                       {selectedFriend.isOnline && (
                         <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-slate-800"></div>
@@ -629,48 +350,34 @@ export default function FriendsPage() {
                   </div>
 
                   {/* Mensagens */}
-                  <div 
-                    id="messages-container"
-                    className="flex-1 overflow-y-auto p-4 space-y-4"
-                  >
-                    {currentConversation?.messages.length === 0 ? (
-                      <div className="flex items-center justify-center h-full text-gray-400">
-                        <div className="text-center">
-                          <p className="text-4xl mb-2">💬</p>
-                          <p>Nenhuma mensagem ainda</p>
-                          <p className="text-sm mt-1">Comece a conversar!</p>
-                        </div>
-                      </div>
-                    ) : (
-                      // Remover duplicatas antes de renderizar
-                      Array.from(new Map(currentConversation?.messages.map(msg => [msg.id, msg])).values()).map((message) => {
-                        const isMyMessage = message.senderId === (typeof user?.id === 'string' ? user.id : user?.id?.toString());
-                        return (
-                          <motion.div
-                            key={message.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className={`flex ${isMyMessage ? 'justify-end' : 'justify-start'}`}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    {currentConversation?.messages.map((message) => {
+                      const isMyMessage = message.senderId === user?.id;
+                      return (
+                        <motion.div
+                          key={message.id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className={`flex ${isMyMessage ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div
+                            className={`max-w-[70%] rounded-2xl px-4 py-2 ${
+                              isMyMessage
+                                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
+                                : 'bg-slate-700 text-white'
+                            }`}
                           >
-                            <div
-                              className={`max-w-[70%] rounded-2xl px-4 py-2 ${
-                                isMyMessage
-                                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
-                                  : 'bg-slate-700/50 border border-white/20 text-white'
-                              }`}
-                            >
-                              <p className="break-words">{message.content}</p>
-                              <p className={`text-xs mt-1 ${isMyMessage ? 'text-purple-200' : 'text-gray-400'}`}>
-                                {new Date(message.createdAt).toLocaleTimeString('pt-BR', {
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })}
-                              </p>
-                            </div>
-                          </motion.div>
-                        );
-                      })
-                    )}
+                            <p>{message.content}</p>
+                            <p className={`text-xs mt-1 ${isMyMessage ? 'text-purple-200' : 'text-gray-400'}`}>
+                              {new Date(message.createdAt).toLocaleTimeString('pt-BR', {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
                   </div>
 
                   {/* Input de Mensagem */}
@@ -682,7 +389,7 @@ export default function FriendsPage() {
                         onChange={(e) => setMessageInput(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
                         placeholder="Digite sua mensagem..."
-                        className="flex-1 px-4 py-3 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-purple-500"
+                        className="flex-1 px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-purple-500"
                       />
                       <button
                         onClick={sendMessage}
@@ -702,8 +409,7 @@ export default function FriendsPage() {
                   </div>
                 </div>
               )}
-              </div>
-            )}
+            </div>
           </motion.div>
         </div>
       </div>

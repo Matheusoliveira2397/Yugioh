@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Delete, Body, UseGuards, Request, Post, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Param, Delete, Body, UseGuards, Request } from '@nestjs/common';
 import { DuelsService } from './duels.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DuelStatus, TurnPhase } from './entities/duel.entity';
@@ -793,31 +793,6 @@ export class DuelsController {
       `);
       console.log('✅ [fix-database] Colunas verificadas/adicionadas');
       
-      // Adicionar coluna pending_choice se não existir
-      try {
-        const pendingChoiceExists = await repo.query(`
-          SELECT column_name 
-          FROM information_schema.columns 
-          WHERE table_name = 'duels' AND column_name = 'pending_choice'
-        `);
-        
-        if (pendingChoiceExists.length === 0) {
-          console.log('🔧 [fix-database] Adicionando coluna pending_choice...');
-          await repo.query(`
-            ALTER TABLE duels 
-            ADD COLUMN pending_choice JSONB NULL
-          `);
-          await repo.query(`
-            COMMENT ON COLUMN duels.pending_choice IS 'Stores pending choice state for card effects that require player input (Confiscation, GracefulCharity, ForcefulSentry). Format: {type, userId, turnWhenStarted, phaseWhenStarted, data}'
-          `);
-          console.log('✅ [fix-database] Coluna pending_choice adicionada');
-        } else {
-          console.log('✅ [fix-database] Coluna pending_choice já existe');
-        }
-      } catch (e: any) {
-        console.error('⚠️ [fix-database] Erro ao adicionar pending_choice:', e.message);
-      }
-      
       // 3. Garantir que id é SERIAL
       await repo.query(`
         DO $$
@@ -997,26 +972,6 @@ export class DuelsController {
     return this.duelsService.getUserDuels(userId);
   }
 
-  @Get('my-active-duel')
-  @UseGuards(JwtAuthGuard)
-  async getMyActiveDuel(@Request() req: any) {
-    try {
-      const userId = req.user.id;
-      const duel = await Promise.race([
-        this.duelsService.getActiveDuelForUser(userId),
-        new Promise<null>((resolve) => 
-          setTimeout(() => {
-            resolve(null);
-          }, 2000)
-        )
-      ]);
-      return duel ? { id: duel.id, status: duel.status, player1Id: duel.player1Id, player2Id: duel.player2Id } : null;
-    } catch (error) {
-      console.error(`[getMyActiveDuel] Erro:`, error);
-      return null;
-    }
-  }
-
   @Get('my-active-duels')
   @UseGuards(JwtAuthGuard)
   async getMyActiveDuels(@Request() req: any) {
@@ -1133,38 +1088,6 @@ export class DuelsController {
     return this.duelsService.deleteMultipleInactiveDuels(userId, validIds);
   }
 
-  @Post('test-create-duel-stress')
-  @UseGuards(JwtAuthGuard)
-  async testCreateDuelStress(@Request() req: any, @Body() body: { player2Id: number }) {
-    try {
-      const player1Id = req.user.id;
-      const player2Id = body.player2Id;
-      
-      if (!player2Id) {
-        throw new BadRequestException('player2Id é obrigatório');
-      }
-
-      if (player1Id === player2Id) {
-        throw new BadRequestException('Não é possível criar duelo contra si mesmo');
-      }
-
-      const duel = await this.duelsService.createDuel(player1Id, player2Id);
-      
-      if (!duel || !duel.id) {
-        throw new Error('Falha ao criar duelo');
-      }
-
-      return {
-        success: true,
-        duelId: duel.id,
-        player1Id,
-        player2Id
-      };
-    } catch (error) {
-      throw error;
-    }
-  }
-
   @Get('test-create-duel-direct')
   @UseGuards(JwtAuthGuard)
   async testCreateDuelDirect(@Request() req: any) {
@@ -1245,154 +1168,6 @@ export class DuelsController {
         message: 'Erro ao criar duelo',
         error: error?.message || String(error),
         stack: error?.stack,
-      };
-    }
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Get('history/my')
-  async getMyDuelHistory(
-    @Request() req: any,
-  ) {
-    try {
-      const userId = req.user.id;
-      const limit = parseInt(req.query.limit as string) || 50;
-      const offset = parseInt(req.query.offset as string) || 0;
-      
-      const result = await this.duelsService.getDuelHistory(userId, limit, offset);
-      return result;
-    } catch (error: any) {
-      console.error(`❌ [getMyDuelHistory] Erro:`, error);
-      return {
-        success: false,
-        message: error.message || 'Erro ao buscar histórico de duelos',
-        history: [],
-        total: 0,
-      };
-    }
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Get('history/user/:userId')
-  async getUserDuelHistory(
-    @Param('userId') userId: string,
-    @Request() req: any,
-  ) {
-    try {
-      console.log(`🔍 [getUserDuelHistory] Buscando histórico para userId: ${userId}`);
-      const userIdNum = parseInt(userId, 10);
-      if (isNaN(userIdNum)) {
-        console.error(`❌ [getUserDuelHistory] ID de usuário inválido: ${userId}`);
-        return {
-          success: false,
-          message: 'ID de usuário inválido',
-          history: [],
-          total: 0,
-        };
-      }
-      
-      const limit = parseInt(req.query.limit as string) || 50;
-      const offset = parseInt(req.query.offset as string) || 0;
-      
-      console.log(`🔍 [getUserDuelHistory] Parâmetros: limit=${limit}, offset=${offset}`);
-      const result = await this.duelsService.getDuelHistory(userIdNum, limit, offset);
-      console.log(`✅ [getUserDuelHistory] Retornando ${result.history.length} duelos (total: ${result.total})`);
-      return result;
-    } catch (error: any) {
-      console.error(`❌ [getUserDuelHistory] Erro:`, error);
-      console.error(`❌ [getUserDuelHistory] Stack:`, error.stack);
-      return {
-        success: false,
-        message: error.message || 'Erro ao buscar histórico de duelos',
-        history: [],
-        total: 0,
-      };
-    }
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Get('stats/my')
-  async getMyStats(
-    @Request() req: any,
-  ) {
-    try {
-      const userId = req.user.id;
-      const stats = await this.duelsService.getUserStats(userId);
-      return {
-        success: true,
-        ...stats,
-      };
-    } catch (error: any) {
-      console.error(`❌ [getMyStats] Erro:`, error);
-      return {
-        success: false,
-        message: error.message || 'Erro ao buscar estatísticas',
-      };
-    }
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Get('stats/:userId')
-  async getUserStats(
-    @Param('userId') userId: string,
-  ) {
-    try {
-      const userIdNum = parseInt(userId, 10);
-      if (isNaN(userIdNum)) {
-        return {
-          success: false,
-          message: 'ID de usuário inválido',
-        };
-      }
-      
-      const stats = await this.duelsService.getUserStats(userIdNum);
-      return {
-        success: true,
-        ...stats,
-      };
-    } catch (error: any) {
-      console.error(`❌ [getUserStats] Erro:`, error);
-      return {
-        success: false,
-        message: error.message || 'Erro ao buscar estatísticas',
-      };
-    }
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Get('direct-match/:opponentId')
-  async getDirectMatchStats(
-    @Param('opponentId') opponentId: string,
-    @Request() req: any,
-  ) {
-    try {
-      const currentUserId = Number(req.user.id);
-      const opponentIdNum = parseInt(opponentId, 10);
-      
-      if (isNaN(opponentIdNum)) {
-        return {
-          success: false,
-          message: 'ID de oponente inválido',
-        };
-      }
-
-      if (currentUserId === opponentIdNum) {
-        return {
-          success: false,
-          message: 'Não é possível ver confronto direto consigo mesmo',
-        };
-      }
-
-      const stats = await this.duelsService.getDirectMatchStats(currentUserId, opponentIdNum);
-      return {
-        success: true,
-        ...stats,
-      };
-    } catch (error: any) {
-      console.error(`❌ [getDirectMatchStats] Erro:`, error);
-      return {
-        success: false,
-        message: error.message || 'Erro ao buscar estatísticas de confronto direto',
       };
     }
   }

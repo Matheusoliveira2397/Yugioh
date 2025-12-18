@@ -1,7 +1,6 @@
-import { Controller, Get, Post, Put, Delete, Body, UseGuards, Request, Param } from '@nestjs/common';
+import { Controller, Get, Post, UseGuards, Request, Param } from '@nestjs/common';
 import { ArenaService } from './arena.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { AdminGuard } from '../auth/guards/admin.guard';
 
 @Controller('arena')
 export class ArenaController {
@@ -68,53 +67,5 @@ export class ArenaController {
     @Param('division') division: string,
   ) {
     return await this.arenaService.getArenaRankingByDivision(id, decodeURIComponent(division));
-  }
-
-  // Admin endpoints
-  @UseGuards(JwtAuthGuard, AdminGuard)
-  @Get('admin/all')
-  async getAllArenas() {
-    return await this.arenaService.getAllArenas();
-  }
-
-  @UseGuards(JwtAuthGuard, AdminGuard)
-  @Get('admin/:id')
-  async getArenaById(@Param('id') id: string) {
-    return await this.arenaService.getArenaById(id);
-  }
-
-  @UseGuards(JwtAuthGuard, AdminGuard)
-  @Post('admin/create')
-  async createArena(@Body() createArenaDto: any) {
-    return await this.arenaService.createArenaAdmin(createArenaDto);
-  }
-
-  @UseGuards(JwtAuthGuard, AdminGuard)
-  @Put('admin/:id')
-  async updateArena(@Param('id') id: string, @Body() updateArenaDto: any) {
-    return await this.arenaService.updateArena(id, updateArenaDto);
-  }
-
-  @UseGuards(JwtAuthGuard, AdminGuard)
-  @Delete('admin/:id')
-  async deleteArena(@Param('id') id: string) {
-    return await this.arenaService.deleteArena(id);
-  }
-
-  @Get('config/level-ranges')
-  async getLevelRanges() {
-    return await this.arenaService.getLevelRanges();
-  }
-
-  @UseGuards(JwtAuthGuard, AdminGuard)
-  @Get('admin/config/level-ranges')
-  async getLevelRangesAdmin() {
-    return await this.arenaService.getLevelRanges();
-  }
-
-  @UseGuards(JwtAuthGuard, AdminGuard)
-  @Put('admin/config/level-ranges')
-  async updateLevelRanges(@Body() levelRanges: Array<{ min: number; max: number; name: string }>) {
-    return await this.arenaService.updateLevelRanges(levelRanges);
   }
 }

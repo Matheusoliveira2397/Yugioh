@@ -7,11 +7,10 @@ import { Group } from './entities/group.entity';
 import { GroupMember } from './entities/group-member.entity';
 import { GroupMessage } from './entities/group-message.entity';
 import { User } from '../users/entities/user.entity';
-import { Achievement } from '../users/entities/achievement.entity';
 import { UploadModule } from '../upload/upload.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Group, GroupMember, GroupMessage, User, Achievement]), UploadModule],
+  imports: [TypeOrmModule.forFeature([Group, GroupMember, GroupMessage, User]), UploadModule],
   controllers: [GroupsController, GroupMessagesController],
   providers: [GroupsService],
   exports: [GroupsService],

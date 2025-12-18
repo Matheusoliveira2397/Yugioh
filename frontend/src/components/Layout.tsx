@@ -1,51 +1,131 @@
 import { ReactNode, useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
-import ActiveDuelBanner from './ActiveDuelBanner';
-import { UserProfileCard } from './UserProfileCard';
-import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-
-interface SiteTab {
-  key: string;
-  label: string;
-  route: string;
-  icon: string;
-  order: number;
-}
+import api from '../api/axios';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface LayoutProps {
   children: ReactNode;
 }
 
+interface ActiveDuel {
+  id: string;
+  player1: {
+    id: number;
+    nickname: string;
+    username: string;
+    clanTag?: string;
+  };
+  player2: {
+    id: number;
+    nickname: string;
+    username: string;
+    clanTag?: string;
+  };
+  player1LifePoints: number;
+  player2LifePoints: number;
+  currentTurn: number;
+  status: string;
+}
+
 export default function Layout({ children }: LayoutProps) {
-  const { refreshUser, isAuthenticated } = useAuthStore();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [activeTabs, setActiveTabs] = useState<SiteTab[]>([]);
-  const location = useLocation();
+  const { user, logout } = useAuthStore();
+  const navigate = useNavigate();
+  const [activeDuels, setActiveDuels] = useState<ActiveDuel[]>([]);
+  const [showNotification, setShowNotification] = useState(false);
+  const [checkingDuels, setCheckingDuels] = useState(false);
 
-  // Atualizar dados do usuário quando a página carregar
+  // Verificar duelos ativos - DESABILITADO TEMPORARIAMENTE para evitar travamentos
+  // TODO: Reabilitar quando o problema de performance for resolvido
   useEffect(() => {
-    if (isAuthenticated) {
-      refreshUser();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]); // refreshUser é estável, não precisa estar nas dependências
+    if (!user) return;
+    
+    // Desabilitado temporariamente - não verificar duelos ativos automaticamente
+    // O usuário pode verificar manualmente na página de duelos ativos
+    setActiveDuels([]);
+    setShowNotification(false);
+    
+    // Código comentado para referência futura:
+    /*
+    let isMounted = true;
+    let timeoutId: NodeJS.Timeout | null = null;
 
-  // Buscar abas ativas do site
-  useEffect(() => {
-    const fetchActiveTabs = async () => {
+    const checkActiveDuels = async () => {
       try {
-        const response = await axios.get(`${API_URL}/public/site-tabs/active`);
-        setActiveTabs(response.data);
-      } catch (error) {
-        console.error('Erro ao buscar abas ativas:', error);
-        setActiveTabs([]);
+        setCheckingDuels(true);
+        
+        // Timeout de segurança no frontend (20 segundos - aumentado para evitar problemas com WebSocket)
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Timeout')), 20000);
+        });
+
+        const response = await Promise.race([
+          api.get('/duels/my-active-duels', { timeout: 20000 }),
+          timeoutPromise
+        ]) as any;
+
+        if (timeoutId) clearTimeout(timeoutId);
+
+        if (!isMounted) return;
+
+        const duels = response?.data || [];
+        
+        if (Array.isArray(duels) && duels.length > 0) {
+          setActiveDuels(duels);
+          setShowNotification(true);
+        } else {
+          setActiveDuels([]);
+          setShowNotification(false);
+        }
+      } catch (error: any) {
+        if (timeoutId) clearTimeout(timeoutId);
+        if (!isMounted) return;
+        
+        // Silenciosamente falhar
+        console.warn('⚠️ Não foi possível verificar duelos ativos:', error?.message || error);
+        setActiveDuels([]);
+        setShowNotification(false);
+      } finally {
+        if (isMounted) {
+          setCheckingDuels(false);
+        }
       }
     };
-    fetchActiveTabs();
-  }, []);
+
+    // Verificar apenas uma vez após 5 segundos (delay maior)
+    setTimeout(() => {
+      if (isMounted) {
+        checkActiveDuels();
+      }
+    }, 5000);
+
+    return () => {
+      isMounted = false;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+    */
+  }, [user]);
+
+  const getOpponent = (duel: ActiveDuel) => {
+    if (!user) return null;
+    return duel.player1.id === user.id ? duel.player2 : duel.player1;
+  };
+
+  const isMyTurn = (duel: ActiveDuel) => {
+    if (!user) return false;
+    const isPlayer1 = duel.player1.id === user.id;
+    return (isPlayer1 && duel.currentTurn === 1) || (!isPlayer1 && duel.currentTurn === 2);
+  };
+
+  const getMyLifePoints = (duel: ActiveDuel) => {
+    if (!user) return 0;
+    return duel.player1.id === user.id ? duel.player1LifePoints : duel.player2LifePoints;
+  };
+
+  const getOpponentLifePoints = (duel: ActiveDuel) => {
+    if (!user) return 0;
+    return duel.player1.id === user.id ? duel.player2LifePoints : duel.player1LifePoints;
+  };
 
   return (
     <div className="min-h-screen bg-gray-900 relative">
@@ -59,187 +139,404 @@ export default function Layout({ children }: LayoutProps) {
       {/* Overlay escuro para melhorar legibilidade */}
       <div className="fixed inset-0 bg-black bg-opacity-60 z-0"></div>
       
-      {/* Botão Menu Mobile - Visível apenas em telas pequenas */}
-      <button
-        onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-        className="lg:hidden fixed top-4 right-4 z-50 bg-gradient-to-br from-purple-500/20 to-blue-500/20 backdrop-blur-sm p-3 rounded-lg border border-purple-500/50 shadow-lg"
-      >
-        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          {mobileMenuOpen ? (
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          ) : (
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+      {/* Card Lateral Direito - Perfil do Usuário */}
+      <aside className="fixed right-0 top-0 h-screen w-80 z-50 overflow-y-auto" style={{ backgroundColor: 'transparent' }}>
+        <div className="p-6" style={{ backgroundColor: 'transparent' }}>
+          {/* Header com Avatar */}
+          <div className="mb-6">
+            <div className="flex flex-col items-center gap-3 mb-4 relative">
+              <div className="flex flex-col items-center gap-2">
+                <Link to={`/profile/${user?.id || ''}`} className="group relative">
+                  <div className="w-28 h-28 rounded-xl overflow-hidden border-3 border-purple-500 shadow-lg shadow-purple-500/30 group-hover:scale-105 transition-transform">
+                    <img
+                      src={`http://localhost:3000${user?.profileImage}?t=${Date.now()}`}
+                      alt={user?.nickname}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.src = '/images/default.png';
+                      }}
+                    />
+                  </div>
+                  {/* Badge Online */}
+                  <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-500 rounded-full border-3 border-slate-900 shadow-lg">
+                    <div className="w-full h-full bg-green-400 rounded-full animate-ping opacity-75"></div>
+                  </div>
+                </Link>
+
+                <h3 className="text-xl font-bold text-white text-center">
+                  {user?.clanTag ? `|${user.clanTag}| ${user.nickname}` : user?.nickname}
+                </h3>
+              </div>
+
+              {/* Sino de notificação */}
+              <button className="absolute top-0 right-0 p-2 hover:bg-slate-700/50 rounded-lg transition-colors">
+                <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {/* Recursos */}
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            <div className="flex flex-col items-center">
+              <span className="text-3xl mb-1">💵</span>
+              <p className="text-green-400 font-bold text-xl">{(user?.cash || 0).toLocaleString()}</p>
+              <p className="text-xs text-slate-400">Cash</p>
+            </div>
+            <div className="flex flex-col items-center">
+              <span className="text-3xl mb-1">�</span>
+              <p className="text-cyan-400 font-bold text-xl">{(user?.credits || 0).toLocaleString()}</p>
+              <p className="text-xs text-slate-400">Crédito</p>
+            </div>
+          </div>
+
+          {/* Estatísticas Detalhadas */}
+          <div className="space-y-2.5 mb-6">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-slate-300 flex items-center gap-2">
+                <span>⭐</span> Nível
+              </span>
+              <span className="text-base font-bold text-white">{user?.level || 1}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-slate-300 flex items-center gap-2">
+                <span>📊</span> Score Season
+              </span>
+              <span className="text-base font-bold text-cyan-400">{user?.seasonScore?.toLocaleString() || 0}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-slate-300 flex items-center gap-2">
+                <span>🏆</span> Score Geral
+              </span>
+              <span className="text-base font-bold text-yellow-400">{user?.totalScore?.toLocaleString() || 0}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-slate-300 flex items-center gap-2">
+                <span>📈</span> Ranking Season
+              </span>
+              <span className="text-base font-bold text-purple-400">{user?.seasonRank || '-'}°</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-slate-300 flex items-center gap-2">
+                <span>🎖️</span> Ranking Geral
+              </span>
+              <span className="text-base font-bold text-orange-400">{user?.globalRank || '-'}°</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-slate-300 flex items-center gap-2">
+                <span>🏅</span> Divisão
+              </span>
+              <span className="text-base font-bold text-cyan-400">{user?.division || 'Bronze'}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-slate-300 flex items-center gap-2">
+                <span>📈</span> V/D (Geral)
+              </span>
+              <span className="text-base font-bold text-white">
+                <span className="text-green-400">{user?.winsGeral || 0}</span> / <span className="text-red-400">{user?.lossesGeral || 0}</span>
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-slate-300 flex items-center gap-2">
+                <span>⚡</span> V/D (Season)
+              </span>
+              <span className="text-base font-bold text-white">
+                <span className="text-green-400">{user?.winsSeason || 0}</span> / <span className="text-red-400">{user?.lossesSeason || 0}</span>
+              </span>
+            </div>
+            {user?.group && (
+              <Link to={`/groups/${user.group.id}`} className="flex justify-between items-center hover:bg-slate-700/30 -mx-2 px-2 py-1 rounded transition-colors">
+                <span className="text-sm text-slate-300 flex items-center gap-2">
+                  <span>👥</span> Clã
+                </span>
+                <span className="text-base font-bold text-cyan-400">[{user.group.tag}] {user.group.name}</span>
+              </Link>
+            )}
+          </div>
+
+          {/* Botões de Ação */}
+          <div className="flex gap-2 mb-4">
+            <Link to={`/profile/${user?.id || ''}`} className="flex-1">
+              <button className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-1.5 text-sm">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                Perfil
+              </button>
+            </Link>
+            <button 
+              onClick={logout}
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-1.5 text-sm"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Sair
+            </button>
+          </div>
+
+          {/* Botão Admin (apenas para ADMIN/MASTER) */}
+          {(user?.role === 'ADMIN' || user?.role === 'MASTER') && (
+            <Link to="/admin" className="block mb-4">
+              <button className="w-full bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-yellow-600 hover:to-orange-700 text-white font-bold py-3 rounded-lg transition-all shadow-lg hover:shadow-yellow-500/50 flex items-center justify-center gap-2">
+                <span className="text-xl">👑</span>
+                <span>Painel Admin</span>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
+            </Link>
           )}
-        </svg>
-      </button>
 
-      {/* Overlay Mobile Menu */}
-      {mobileMenuOpen && (
-        <div
-          className="lg:hidden fixed inset-0 bg-black/70 z-40"
-          onClick={() => setMobileMenuOpen(false)}
-        />
-      )}
-
-      {/* Menu Mobile - Visível apenas em telas pequenas */}
-      <aside className={`lg:hidden fixed right-0 top-0 h-screen w-80 z-50 overflow-y-auto bg-gradient-to-b from-purple-900/40 to-blue-900/40 backdrop-blur-md transform transition-transform duration-300 ${mobileMenuOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-        <div className="p-5 relative">
-          {/* Botão Fechar */}
-          <button 
-            onClick={() => setMobileMenuOpen(false)}
-            className="absolute top-4 right-4 p-1.5 hover:bg-purple-500/20 rounded-lg transition-colors z-10"
+          {/* Card Organize seu Deck */}
+          <Link 
+            to="/deck-builder"
+            className="block relative rounded-xl overflow-hidden group cursor-pointer shadow-lg hover:shadow-purple-500/50 transition-all duration-300 hover:scale-[1.02] mb-4"
           >
-            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-          <UserProfileCard onLinkClick={() => setMobileMenuOpen(false)} />
+            <img
+              src="/images/decks/deck.png"
+              alt="Organize seu deck"
+              className="w-full h-24 object-contain"
+            />
+            {/* Overlay com texto */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex flex-col justify-end p-3">
+              <h3 className="text-white font-bold text-sm">Organize seu deck</h3>
+              <p className="text-slate-300 text-xs">Crie e edite seus baralhos</p>
+            </div>
+            {/* Efeito hover */}
+            <div className="absolute inset-0 bg-purple-600/0 group-hover:bg-purple-600/20 transition-all duration-300"></div>
+          </Link>
+
+          {/* Card Inventário */}
+          <Link 
+            to="/inventory"
+            className="block relative rounded-xl overflow-hidden group cursor-pointer shadow-lg hover:shadow-teal-500/50 transition-all duration-300 hover:scale-[1.02]"
+          >
+            <img
+              src="/images/inventario.png"
+              alt="Inventário"
+              className="w-full h-24 object-contain"
+            />
+            {/* Overlay com texto */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex flex-col justify-end p-3">
+              <h3 className="text-white font-bold text-sm">Inventário</h3>
+              <p className="text-slate-300 text-xs">Gerencie suas cartas</p>
+            </div>
+            {/* Efeito hover */}
+            <div className="absolute inset-0 bg-teal-600/0 group-hover:bg-teal-600/20 transition-all duration-300"></div>
+          </Link>
+
+          {/* Card Amigos */}
+          <Link 
+            to="/friends"
+            className="block relative rounded-xl overflow-hidden group cursor-pointer shadow-lg hover:shadow-pink-500/50 transition-all duration-300 hover:scale-[1.02]"
+          >
+            <div className="w-full h-24 flex items-center justify-center">
+              <span className="text-6xl">👥</span>
+            </div>
+            {/* Overlay com texto */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex flex-col justify-end p-3">
+              <h3 className="text-white font-bold text-sm">Amigos</h3>
+              <p className="text-slate-300 text-xs">Chat e convites</p>
+            </div>
+            {/* Efeito hover */}
+            <div className="absolute inset-0 bg-pink-600/0 group-hover:bg-pink-600/20 transition-all duration-300"></div>
+          </Link>
         </div>
       </aside>
 
-      {/* Banner de Duelo Ativo */}
-      <ActiveDuelBanner />
+      {/* Notificação de Duelos Ativos */}
+      <AnimatePresence>
+        {showNotification && activeDuels.length > 0 && (
+          <motion.div
+            initial={{ y: -100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -100, opacity: 0 }}
+            className="fixed top-0 left-0 right-0 z-[100] bg-gradient-to-r from-red-600 to-red-700 text-white shadow-2xl"
+          >
+            <div className="max-w-7xl mx-auto px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="text-3xl animate-pulse">⚔️</div>
+                  <div>
+                    <h3 className="font-bold text-lg">
+                      {activeDuels.length === 1 
+                        ? 'Você tem 1 duelo ativo!' 
+                        : `Você tem ${activeDuels.length} duelos ativos!`}
+                    </h3>
+                    {activeDuels.length === 1 && (
+                      <p className="text-sm text-red-100">
+                        vs {getOpponent(activeDuels[0])?.clanTag ? `|${getOpponent(activeDuels[0])?.clanTag}| ` : ''}
+                        {getOpponent(activeDuels[0])?.nickname || getOpponent(activeDuels[0])?.username}
+                        {isMyTurn(activeDuels[0]) && ' - Seu Turno!'}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  {activeDuels.length === 1 ? (
+                    <>
+                      <div className="text-sm bg-red-800/50 px-3 py-1 rounded">
+                        <span className="text-green-300">Você: {getMyLifePoints(activeDuels[0])} LP</span>
+                        {' | '}
+                        <span className="text-red-300">Oponente: {getOpponentLifePoints(activeDuels[0])} LP</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          navigate(`/duel/${activeDuels[0].id}`);
+                          setShowNotification(false);
+                        }}
+                        className="bg-white text-red-600 hover:bg-gray-100 font-bold px-6 py-2 rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        <span>▶</span>
+                        Entrar no Duelo
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        navigate('/active-duels');
+                        setShowNotification(false);
+                      }}
+                      className="bg-white text-red-600 hover:bg-gray-100 font-bold px-6 py-2 rounded-lg transition-colors flex items-center gap-2"
+                    >
+                      <span>Ver Todos</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowNotification(false)}
+                    className="text-white hover:text-gray-200 transition-colors"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Container principal com flex para sidebar e conteúdo */}
-      <div className="relative z-10 flex">
-        {/* Conteúdo Principal */}
-        <div className="flex-1 relative z-10">
-        <nav id="main-nav" className="relative bg-gradient-to-b from-black/40 via-black/30 to-transparent backdrop-blur-sm border-b border-purple-500/20 shadow-lg">
-          <div className="w-full px-3 md:px-6">
-            <div className="flex items-center h-16 md:h-20 gap-2 md:gap-3 overflow-x-auto scrollbar-hide">
-              {/* Logo */}
-              <div className="flex items-center flex-shrink-0 mr-2">
+      {/* Conteúdo Principal */}
+      <div className="mr-80 relative z-10">
+        <nav className={`border-b-2 border-purple-600/50 relative ${showNotification && activeDuels.length > 0 ? 'mt-16' : ''}`}>
+          <div className="w-full pl-0 pr-4">
+            {/* Linha Principal - Todos os links na mesma linha */}
+            <div className="flex justify-between items-center h-16 gap-2 overflow-x-auto scrollbar-hide">
+              <div className="flex items-center gap-4 ml-0 flex-shrink-0">
                 <Link 
                   to="/" 
-                  className="hover:scale-110 transition-all duration-300 group relative"
+                  className="hover:scale-105 transition-transform"
                 >
-                  <div className="relative">
-                    <img 
-                      src="/images/yugioh.webp" 
-                      alt="Yu-Gi-Oh!" 
-                      className="h-12 md:h-16 object-contain drop-shadow-lg group-hover:drop-shadow-2xl transition-all"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-r from-purple-500/0 to-blue-500/0 group-hover:from-purple-500/20 group-hover:to-blue-500/20 rounded-lg transition-all duration-300"></div>
-                  </div>
+                  <img 
+                    src="/images/yugioh.webp" 
+                    alt="Yu-Gi-Oh!" 
+                    className="h-20 object-contain"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
                 </Link>
               </div>
               
-              {/* Separador visual */}
-              <div className="h-8 w-px bg-gradient-to-b from-transparent via-purple-500/30 to-transparent flex-shrink-0"></div>
+              <div className="flex items-center gap-1 flex-wrap justify-end flex-1">
+                <Link to="/" className="flex items-center gap-1 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition-all text-sm whitespace-nowrap">
+                  🏠 <span className="font-semibold">Home</span>
+                </Link>
+                
+                <Link to="/chat" className="flex items-center gap-1 px-3 py-2 rounded-lg text-gray-300 hover:bg-blue-700 hover:text-white transition-all text-sm whitespace-nowrap">
+                  💬 <span className="font-semibold">Chat</span>
+                </Link>
+              <Link 
+                to="/random-duel" 
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-300 hover:bg-red-700/80 hover:text-white transition-all text-sm whitespace-nowrap"
+              >
+                🎲 <span className="font-semibold">Random Duel</span>
+              </Link>
               
-              {/* Abas de navegação */}
-              <div className="flex items-center gap-1.5 md:gap-2 flex-nowrap flex-1 min-w-0">
-                {activeTabs.length > 0 ? (
-                  activeTabs.map((tab) => {
-                    const isActive = location.pathname === tab.route || 
-                                    (tab.route !== '/' && location.pathname.startsWith(tab.route));
-                    
-                    // Mapear cores baseado na rota
-                    const getColors = (route: string) => {
-                      if (route === '/') return { from: 'from-gray-600', to: 'to-gray-500', hoverFrom: 'hover:from-gray-700', hoverTo: 'hover:to-gray-600' };
-                      if (route === '/chat') return { from: 'from-blue-600', to: 'to-cyan-600', hoverFrom: 'hover:from-blue-700', hoverTo: 'hover:to-cyan-700' };
-                      if (route === '/random-duel') return { from: 'from-red-600', to: 'to-orange-600', hoverFrom: 'hover:from-red-700', hoverTo: 'hover:to-orange-700' };
-                      if (route === '/arena') return { from: 'from-red-700', to: 'to-pink-700', hoverFrom: 'hover:from-red-800', hoverTo: 'hover:to-pink-800' };
-                      if (route === '/tournaments') return { from: 'from-yellow-600', to: 'to-amber-600', hoverFrom: 'hover:from-yellow-700', hoverTo: 'hover:to-amber-700' };
-                      if (route === '/groups') return { from: 'from-cyan-600', to: 'to-teal-600', hoverFrom: 'hover:from-cyan-700', hoverTo: 'hover:to-teal-700' };
-                      if (route === '/ranking') return { from: 'from-orange-600', to: 'to-red-600', hoverFrom: 'hover:from-orange-700', hoverTo: 'hover:to-red-700' };
-                      if (route === '/missions') return { from: 'from-green-600', to: 'to-emerald-600', hoverFrom: 'hover:from-green-700', hoverTo: 'hover:to-emerald-700' };
-                      if (route === '/drops') return { from: 'from-indigo-600', to: 'to-purple-600', hoverFrom: 'hover:from-indigo-700', hoverTo: 'hover:to-purple-700' };
-                      if (route === '/shop') return { from: 'from-purple-600', to: 'to-pink-600', hoverFrom: 'hover:from-purple-700', hoverTo: 'hover:to-pink-700' };
-                      if (route === '/marketplace/accounts') return { from: 'from-pink-600', to: 'to-rose-600', hoverFrom: 'hover:from-pink-700', hoverTo: 'hover:to-rose-700' };
-                      if (route === '/marketplace/cards') return { from: 'from-rose-600', to: 'to-red-600', hoverFrom: 'hover:from-rose-700', hoverTo: 'hover:to-red-700' };
-                      return { from: 'from-gray-600', to: 'to-gray-500', hoverFrom: 'hover:from-gray-700', hoverTo: 'hover:to-gray-600' };
-                    };
-
-                    const colors = getColors(tab.route);
-
-                    return (
-                      <Link
-                        key={tab.key}
-                        to={tab.route}
-                        className={`group relative flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 rounded-lg md:rounded-xl text-sm md:text-base font-semibold whitespace-nowrap overflow-hidden flex-shrink-0 transition-all duration-300 ${
-                          isActive 
-                            ? `bg-gradient-to-r ${colors.from} ${colors.to} text-white shadow-lg border-2 scale-105` 
-                            : 'text-gray-300 hover:text-white border-2 border-transparent hover:border-white/20 hover:scale-105'
-                        }`}
-                      >
-                        {/* Background gradient para hover (quando não está ativo) */}
-                        {!isActive && (
-                          <div className={`absolute inset-0 bg-gradient-to-r ${colors.from}/0 ${colors.to}/0 ${colors.hoverFrom}/70 ${colors.hoverTo}/70 rounded-lg md:rounded-xl transition-all duration-300 opacity-0 group-hover:opacity-100`}></div>
-                        )}
-                        
-                        {/* Indicador de aba ativa */}
-                        {isActive && (
-                          <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${colors.from} ${colors.to} rounded-full shadow-lg`}></div>
-                        )}
-                        
-                        {/* Conteúdo */}
-                        <span className={`text-lg md:text-xl relative z-10 drop-shadow-lg ${isActive ? 'animate-pulse' : ''}`}>{tab.icon}</span>
-                        <span className="relative z-10 hidden sm:inline-block">{tab.label}</span>
-                      </Link>
-                    );
-                  })
-                ) : (
-                  // Fallback: mostrar todas as abas se não houver dados
-                  <>
-                    <Link 
-                      to="/" 
-                      className={`group relative flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 rounded-lg md:rounded-xl text-sm md:text-base font-semibold whitespace-nowrap overflow-hidden flex-shrink-0 transition-all duration-300 ${
-                        location.pathname === '/' 
-                          ? 'bg-gradient-to-r from-gray-600 to-gray-500 text-white shadow-lg border-2 border-gray-400/50 scale-105' 
-                          : 'text-gray-300 hover:text-white border-2 border-transparent hover:border-white/20 hover:scale-105'
-                      }`}
-                    >
-                      {location.pathname !== '/' && (
-                        <div className="absolute inset-0 bg-gradient-to-r from-gray-600/0 to-gray-500/0 hover:from-gray-700/70 hover:to-gray-600/70 rounded-lg md:rounded-xl transition-all duration-300 opacity-0 group-hover:opacity-100"></div>
-                      )}
-                      {location.pathname === '/' && (
-                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-gray-600 to-gray-500 rounded-full shadow-lg"></div>
-                      )}
-                      <span className="text-lg md:text-xl relative z-10 drop-shadow-lg">🏠</span>
-                      <span className="relative z-10 hidden sm:inline-block">Home</span>
-                    </Link>
-                    <Link 
-                      to="/chat" 
-                      className={`group relative flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 rounded-lg md:rounded-xl text-sm md:text-base font-semibold whitespace-nowrap overflow-hidden flex-shrink-0 transition-all duration-300 ${
-                        location.pathname === '/chat' 
-                          ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg border-2 border-blue-400/50 scale-105' 
-                          : 'text-gray-300 hover:text-white border-2 border-transparent hover:border-white/20 hover:scale-105'
-                      }`}
-                    >
-                      {location.pathname !== '/chat' && (
-                        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/0 to-cyan-600/0 hover:from-blue-700/70 hover:to-cyan-700/70 rounded-lg md:rounded-xl transition-all duration-300 opacity-0 group-hover:opacity-100"></div>
-                      )}
-                      {location.pathname === '/chat' && (
-                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-full shadow-lg"></div>
-                      )}
-                      <span className="text-lg md:text-xl relative z-10 drop-shadow-lg">💬</span>
-                      <span className="relative z-10 hidden sm:inline-block">Chat</span>
-                    </Link>
-                  </>
-                )}
-
+              <Link 
+                to="/arena" 
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-300 hover:bg-red-800/80 hover:text-white transition-all text-sm whitespace-nowrap"
+              >
+                ⚔️ <span className="font-semibold">Arena</span>
+              </Link>
+              
+              <Link 
+                to="/tournaments" 
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-300 hover:bg-yellow-700/80 hover:text-white transition-all text-sm whitespace-nowrap"
+              >
+                🏆 <span className="font-semibold">Torneios</span>
+              </Link>
+              
+              <Link 
+                to="/groups" 
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-300 hover:bg-cyan-700/80 hover:text-white transition-all text-sm whitespace-nowrap"
+              >
+                👥 <span className="font-semibold">Clãs</span>
+              </Link>
+              
+              <Link 
+                to="/ranking" 
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-300 hover:bg-orange-700/80 hover:text-white transition-all text-sm whitespace-nowrap"
+              >
+                📊 <span className="font-semibold">Ranking</span>
+              </Link>
+              
+              <Link 
+                to="/missions" 
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-300 hover:bg-green-700/80 hover:text-white transition-all text-sm whitespace-nowrap"
+              >
+                🎯 <span className="font-semibold">Missões</span>
+              </Link>
+              
+              <Link 
+                to="/drops" 
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-300 hover:bg-indigo-700/80 hover:text-white transition-all text-sm whitespace-nowrap"
+              >
+                � <span className="font-semibold">Drops</span>
+              </Link>
+              
+              <Link 
+                to="/shop" 
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-300 hover:bg-purple-700/80 hover:text-white transition-all text-sm whitespace-nowrap"
+              >
+                🛒 <span className="font-semibold">Loja</span>
+              </Link>
+              
+              <Link 
+                to="/marketplace/accounts" 
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-300 hover:bg-pink-700/80 hover:text-white transition-all text-sm whitespace-nowrap"
+              >
+                � <span className="font-semibold">Contas</span>
+              </Link>
+              
+              <Link 
+                to="/marketplace/cards" 
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-300 hover:bg-rose-700/80 hover:text-white transition-all text-sm whitespace-nowrap"
+              >
+                💳 <span className="font-semibold">Cartas</span>
+              </Link>
               </div>
             </div>
           </div>
         </nav>
         
         {/* Imagem Reliquia abaixo da linha */}
-        <div className="absolute left-0 top-16 md:top-20 mt-2 z-20 hidden sm:block">
+        <div className="absolute left-0 top-[66px] mt-2 z-20">
           <img 
             src="/images/reliquia.png" 
             alt="Relíquia" 
-            className="h-12 md:h-16 object-contain drop-shadow-lg"
+            className="h-16 object-contain"
             onError={(e) => {
               e.currentTarget.style.display = 'none';
             }}
           />
         </div>
 
-        <main className="pb-8 pl-1 sm:pl-2">{children}</main>
+        <main className="pb-8">{children}</main>
         
         {/* Footer */}
         <footer className="border-t border-gray-700/50 py-4 mt-auto">
@@ -247,14 +544,6 @@ export default function Layout({ children }: LayoutProps) {
             <p>© 2025 Yu-Gi-Oh! Duel Arena - Todos os direitos reservados</p>
           </div>
         </footer>
-        </div>
-
-        {/* Card Lateral Direito - Perfil do Usuário - Desktop */}
-        <aside className="sticky top-0 w-80 z-50 h-screen hidden lg:block self-start" style={{ backgroundColor: 'transparent' }}>
-          <div className="p-5 h-full overflow-y-auto custom-scrollbar" style={{ backgroundColor: 'transparent' }}>
-            <UserProfileCard />
-          </div>
-        </aside>
       </div>
     </div>
   );

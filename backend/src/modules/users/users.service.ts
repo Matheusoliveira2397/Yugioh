@@ -3,11 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, MoreThan } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User } from './entities/user.entity';
-import { SeasonRanking, Division } from '../seasons/entities/season-ranking.entity';
+import { SeasonRanking } from '../seasons/entities/season-ranking.entity';
 import { Season } from '../seasons/entities/season.entity';
 import { GroupMember } from '../groups/entities/group-member.entity';
 import { Group } from '../groups/entities/group.entity';
-import { LevelsService } from '../levels/levels.service';
 
 @Injectable()
 export class UsersService {
@@ -22,17 +21,7 @@ export class UsersService {
     private groupMemberRepository: Repository<GroupMember>,
     @InjectRepository(Group)
     private groupRepository: Repository<Group>,
-    private levelsService: LevelsService,
   ) {}
-
-  // Helper para normalizar profileImage (retorna null se for imagem padrão inexistente)
-  private normalizeProfileImage(profileImage: string | null | undefined): string | null {
-    if (!profileImage) return null;
-    if (profileImage.includes('/images/default') || profileImage.includes('/avatars/default')) {
-      return null;
-    }
-    return profileImage;
-  }
 
   async create(userData: Partial<User>): Promise<User> {
     const user = this.usersRepository.create(userData);
@@ -40,194 +29,34 @@ export class UsersService {
   }
 
   async findById(id: number): Promise<User> {
-    try {
-      const user = await this.usersRepository.findOne({ 
-        where: { id },
-        select: [
-          'id',
-          'nickname',
-          'username',
-          'email',
-          'password',
-          'role',
-          'winsGeral',
-          'lossesGeral',
-          'winsSeason',
-          'lossesSeason',
-          'rating',
-          'credits',
-          'cash',
-          'level',
-          'experience',
-          'totalScore',
-          'profileImage',
-          'isOnline',
-          'isBanned',
-          'banReason',
-          'lastLogin',
-          'lastIpAddress',
-          'avatar',
-          'isEmailVerified',
-          'clanTag',
-          'biography',
-          'playerClass',
-          'division', // Divisão da tabela users
-          'equippedPlaymatId',
-          'equippedPlaymatImage',
-          'equippedSkinId',
-          'equippedSkinImage',
-          'equippedDeckName',
-          'createdAt',
-          'updatedAt',
-        ]
-      });
-      if (!user) {
-        throw new NotFoundException('User not found');
-      }
-      return user;
-    } catch (error: any) {
-      // Se o erro for sobre coluna total_score não existir, tentar sem ela
-      if (error.message && error.message.includes('total_score')) {
-        console.warn(`⚠️ [findById] Coluna total_score não existe, buscando sem ela...`);
-        const user = await this.usersRepository.findOne({ 
-          where: { id },
-        });
-        if (!user) {
-          throw new NotFoundException('User not found');
-        }
-        // Adicionar totalScore como 0 se não existir
-        (user as any).totalScore = 0;
-        return user;
-      }
-      throw error;
+    const user = await this.usersRepository.findOne({ 
+      where: { id },
+      select: ['id', 'nickname', 'username', 'email', 'password', 'role', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason', 'rating', 'credits', 'cash', 'level', 'experience', 'totalScore', 'profileImage', 'isOnline', 'isBanned', 'banReason', 'lastLogin', 'lastIpAddress', 'avatar', 'isEmailVerified', 'clanTag', 'biography', 'playerClass', 'createdAt', 'updatedAt']
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
     }
+    return user;
   }
 
   async findByUsername(username: string): Promise<User | null> {
     return this.usersRepository.findOne({ 
       where: { username },
-      select: [
-        'id',
-        'nickname',
-        'username',
-        'email',
-        'password',
-        'role',
-        'winsGeral',
-        'lossesGeral',
-        'winsSeason',
-        'lossesSeason',
-        'rating',
-        'credits',
-        'cash',
-        'level',
-        'experience',
-        'totalScore',
-        'profileImage',
-        'isOnline',
-        'isBanned',
-        'banReason',
-        'lastLogin',
-        'lastIpAddress',
-        'avatar',
-        'isEmailVerified',
-        'clanTag',
-        'biography',
-        'playerClass',
-        'division', // Divisão da tabela users
-        'equippedPlaymatId',
-        'equippedPlaymatImage',
-        'equippedSkinId',
-        'equippedSkinImage',
-        'equippedDeckName',
-        'createdAt',
-        'updatedAt',
-      ]
+      select: ['id', 'nickname', 'username', 'email', 'password', 'role', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason', 'rating', 'credits', 'cash', 'level', 'experience', 'totalScore', 'profileImage', 'isOnline', 'isBanned', 'banReason', 'lastLogin', 'lastIpAddress', 'avatar', 'isEmailVerified', 'clanTag', 'biography', 'playerClass', 'createdAt', 'updatedAt']
     });
   }
 
   async findByEmail(email: string): Promise<User | null> {
     return this.usersRepository.findOne({ 
       where: { email },
-      select: [
-        'id',
-        'nickname',
-        'username',
-        'email',
-        'password',
-        'role',
-        'winsGeral',
-        'lossesGeral',
-        'winsSeason',
-        'lossesSeason',
-        'rating',
-        'credits',
-        'cash',
-        'level',
-        'experience',
-        'totalScore',
-        'profileImage',
-        'isOnline',
-        'isBanned',
-        'banReason',
-        'lastLogin',
-        'lastIpAddress',
-        'avatar',
-        'isEmailVerified',
-        'clanTag',
-        'biography',
-        'playerClass',
-        'division', // Divisão da tabela users
-        'equippedPlaymatId',
-        'equippedPlaymatImage',
-        'equippedSkinId',
-        'equippedSkinImage',
-        'equippedDeckName',
-        'createdAt',
-        'updatedAt',
-      ]
+      select: ['id', 'nickname', 'username', 'email', 'password', 'role', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason', 'rating', 'credits', 'cash', 'level', 'experience', 'totalScore', 'profileImage', 'isOnline', 'isBanned', 'banReason', 'lastLogin', 'lastIpAddress', 'avatar', 'isEmailVerified', 'clanTag', 'biography', 'playerClass', 'createdAt', 'updatedAt']
     });
   }
 
   async findByNickname(nickname: string): Promise<User | null> {
     return this.usersRepository.findOne({ 
       where: { nickname },
-      select: [
-        'id',
-        'nickname',
-        'username',
-        'email',
-        'password',
-        'role',
-        'winsGeral',
-        'lossesGeral',
-        'winsSeason',
-        'lossesSeason',
-        'rating',
-        'credits',
-        'cash',
-        'level',
-        'experience',
-        'totalScore',
-        'profileImage',
-        'isOnline',
-        'isBanned',
-        'banReason',
-        'lastLogin',
-        'lastIpAddress',
-        'avatar',
-        'isEmailVerified',
-        'clanTag',
-        'biography',
-        'playerClass',
-        'division', // Divisão da tabela users
-        'equippedPlaymatId',
-        'equippedPlaymatImage',
-        'equippedSkinId',
-        'equippedSkinImage',
-        'createdAt',
-        'updatedAt',
-      ]
+      select: ['id', 'nickname', 'username', 'email', 'password', 'role', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason', 'rating', 'credits', 'cash', 'level', 'experience', 'totalScore', 'profileImage', 'isOnline', 'isBanned', 'banReason', 'lastLogin', 'lastIpAddress', 'avatar', 'isEmailVerified', 'clanTag', 'biography', 'playerClass', 'createdAt', 'updatedAt']
     });
   }
 
@@ -244,159 +73,13 @@ export class UsersService {
 
   async findAll(): Promise<User[]> {
     return this.usersRepository.find({
-      select: ['id', 'username', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason', 'totalScore', 'level'],
-      order: { totalScore: 'DESC', level: 'DESC' },
+      select: ['id', 'username', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason', 'rating'],
+      order: { rating: 'DESC' },
     });
   }
 
   async update(userId: number, stats: Partial<User>): Promise<void> {
     await this.usersRepository.update(userId, stats);
-    
-    // Se totalScore foi atualizado, recalcular nível
-    if (stats.totalScore !== undefined) {
-      await this.updateUserLevel(userId, stats.totalScore);
-    }
-  }
-
-  /**
-   * Atualiza o nível do usuário baseado no totalScore
-   */
-  async updateUserLevel(userId: number, totalScore?: number): Promise<void> {
-    try {
-      // Se totalScore não foi fornecido, buscar do banco
-      if (totalScore === undefined) {
-        const user = await this.usersRepository.findOne({
-          where: { id: userId },
-          select: ['id', 'totalScore', 'level'],
-        });
-        if (!user) {
-          console.warn(`⚠️ [updateUserLevel] Usuário ${userId} não encontrado`);
-          return;
-        }
-        totalScore = parseFloat(String(user.totalScore || 0));
-      }
-
-      console.log(`🔍 [updateUserLevel] Calculando nível para usuário ${userId} com totalScore: ${totalScore}`);
-
-      // Calcular novo nível baseado no totalScore
-      const newLevel = await this.levelsService.calculateLevel(totalScore);
-      
-      console.log(`🔍 [updateUserLevel] Nível calculado: ${newLevel} para totalScore: ${totalScore}`);
-      
-      // Buscar nível atual do usuário
-      const user = await this.usersRepository.findOne({
-        where: { id: userId },
-        select: ['id', 'level'],
-      });
-
-      if (!user) {
-        console.warn(`⚠️ [updateUserLevel] Usuário ${userId} não encontrado após calcular nível`);
-        return;
-      }
-
-      const currentLevel = user.level || 1;
-      console.log(`🔍 [updateUserLevel] Nível atual do usuário: ${currentLevel}, novo nível: ${newLevel}`);
-
-      // Se o nível mudou, atualizar
-      if (currentLevel !== newLevel) {
-        // Usar SQL direto para garantir que a atualização funcione
-        try {
-          const updateResult = await this.usersRepository.query(
-            `UPDATE users SET level = $1 WHERE id = $2 RETURNING id, level`,
-            [newLevel, userId]
-          );
-          
-          if (updateResult && updateResult.length > 0) {
-            const updatedLevel = updateResult[0].level;
-            console.log(`📈 [updateUserLevel] ✅ Usuário ${userId} atualizado via SQL: nível ${currentLevel} -> ${updatedLevel} (totalScore: ${totalScore})`);
-            
-            // Verificar se realmente foi atualizado
-            const verifyUser = await this.usersRepository.findOne({
-              where: { id: userId },
-              select: ['id', 'level'],
-            });
-            
-            if (verifyUser && verifyUser.level === newLevel) {
-              console.log(`✅ [updateUserLevel] Verificação confirmada: nível ${newLevel} salvo no banco`);
-            } else {
-              console.error(`❌ [updateUserLevel] ERRO: Nível não foi salvo corretamente! Esperado: ${newLevel}, Encontrado: ${verifyUser?.level}`);
-            }
-          } else {
-            console.error(`❌ [updateUserLevel] Nenhuma linha foi atualizada para o usuário ${userId}`);
-            // Tentar método alternativo
-            await this.usersRepository.update(userId, { level: newLevel });
-          }
-        } catch (sqlError: any) {
-          console.error(`❌ [updateUserLevel] Erro ao atualizar via SQL:`, sqlError.message);
-          // Fallback para método TypeORM
-          try {
-            await this.usersRepository.update(userId, { level: newLevel });
-            console.log(`📈 [updateUserLevel] ✅ Atualizado via TypeORM fallback: nível ${currentLevel} -> ${newLevel}`);
-          } catch (ormError: any) {
-            console.error(`❌ [updateUserLevel] Erro ao atualizar via TypeORM:`, ormError.message);
-          }
-        }
-      } else {
-        console.log(`📊 [updateUserLevel] Nível do usuário ${userId} já está correto: ${currentLevel}`);
-      }
-    } catch (error: any) {
-      console.error(`❌ [updateUserLevel] Erro ao atualizar nível do usuário ${userId}:`, error.message);
-      console.error(`❌ [updateUserLevel] Stack:`, error.stack);
-      // Não falhar se houver erro na atualização de nível
-    }
-  }
-
-  async getUserById(userId: number): Promise<User | null> {
-    return this.usersRepository.findOne({ where: { id: userId } });
-  }
-
-  /**
-   * Recalcula o nível de todos os usuários baseado no totalScore
-   * Útil para migração ou correção de dados
-   */
-  async recalculateAllUsersLevels(): Promise<{ updated: number; errors: number }> {
-    let updated = 0;
-    let errors = 0;
-
-    try {
-      console.log('🔄 [recalculateAllUsersLevels] Iniciando recálculo de níveis para todos os usuários...');
-      
-      // Buscar todos os usuários com totalScore
-      const users = await this.usersRepository.find({
-        select: ['id', 'totalScore', 'level'],
-      });
-
-      console.log(`📊 [recalculateAllUsersLevels] Encontrados ${users.length} usuários para processar`);
-
-      for (const user of users) {
-        try {
-          const totalScore = parseFloat(String(user.totalScore || 0));
-          const currentLevel = user.level || 1;
-          
-          // Calcular novo nível
-          const newLevel = await this.levelsService.calculateLevel(totalScore);
-          
-          // Se o nível mudou, atualizar
-          if (currentLevel !== newLevel) {
-            await this.usersRepository.query(
-              `UPDATE users SET level = $1 WHERE id = $2`,
-              [newLevel, user.id]
-            );
-            updated++;
-            console.log(`✅ [recalculateAllUsersLevels] Usuário ${user.id}: nível ${currentLevel} -> ${newLevel} (totalScore: ${totalScore})`);
-          }
-        } catch (error: any) {
-          errors++;
-          console.error(`❌ [recalculateAllUsersLevels] Erro ao processar usuário ${user.id}:`, error.message);
-        }
-      }
-
-      console.log(`✅ [recalculateAllUsersLevels] Concluído: ${updated} atualizados, ${errors} erros`);
-      return { updated, errors };
-    } catch (error: any) {
-      console.error(`❌ [recalculateAllUsersLevels] Erro geral:`, error.message);
-      throw error;
-    }
   }
 
   async updateStats(userId: number, stats: Partial<User>): Promise<User> {
@@ -409,438 +92,45 @@ export class UsersService {
     return this.findById(userId);
   }
 
-  // Método auxiliar para processar rankings de uma season
-  private async processSeasonRankings(seasonId: string): Promise<any[]> {
-    console.log(`🔍 [processSeasonRankings] Processando rankings para season ${seasonId}`);
-    
-    // Buscar TODOS os usuários primeiro
-    const allUsers = await this.usersRepository
-      .createQueryBuilder('u')
-      .select('u.id', 'id')
-      .addSelect('u.nickname', 'nickname')
-      .addSelect('u.clanTag', 'clanTag')
-      .addSelect('u.profileImage', 'profileImage')
-      .addSelect('u.totalScore', 'totalScore')
-      .addSelect('u.winsSeason', 'winsSeason')
-      .addSelect('u.lossesSeason', 'lossesSeason')
-      .addSelect('u.level', 'level')
-      .getRawMany();
-
-    console.log(`📊 [processSeasonRankings] Total de usuários encontrados: ${allUsers.length}`);
-
-    if (allUsers.length === 0) {
-      console.warn('⚠️ [processSeasonRankings] Nenhum usuário encontrado no sistema!');
-      return [];
-    }
-
-    // Buscar rankings existentes da season
-    const existingRankings = await this.seasonRankingRepository
-      .createQueryBuilder('sr')
-      .select('sr.userId', 'userId')
-      .addSelect('sr.seasonScore', 'seasonScore')
-      .addSelect('sr.wins', 'wins')
-      .addSelect('sr.losses', 'losses')
-      .addSelect('sr.division', 'division')
-      .addSelect('sr.rank', 'rank')
-      .where('sr.seasonId = :seasonId', { seasonId })
-      .getRawMany();
-
-    // Criar mapa de rankings existentes
-    const rankingsMap = new Map(existingRankings.map(r => [r.userId, r]));
-
-    // Criar rankings para usuários que não têm
-    const usersWithoutRanking = allUsers.filter(u => !rankingsMap.has(u.id));
-    if (usersWithoutRanking.length > 0) {
-      console.log(`🔧 [processSeasonRankings] Criando rankings para ${usersWithoutRanking.length} usuários sem ranking...`);
-      
-      for (const user of usersWithoutRanking) {
-        try {
-          const newRanking = this.seasonRankingRepository.create({
-            seasonId: seasonId,
-            userId: user.id,
-            seasonScore: 0,
-            wins: 0,
-            losses: 0,
-            division: Division.BRONZE, // Todos começam no Bronze
-            divisionPoints: 0,
-            rank: 0
-          });
-          const savedRanking = await this.seasonRankingRepository.save(newRanking);
-          console.log(`✅ [processSeasonRankings] Ranking criado para usuário ${user.id} (${user.nickname}) - divisão: ${savedRanking.division}`);
-          
-          // Adicionar ao mapa
-          rankingsMap.set(user.id, {
-            userId: user.id,
-            seasonScore: 0,
-            wins: 0,
-            losses: 0,
-            division: Division.BRONZE,
-            rank: 0
-          });
-        } catch (error: any) {
-          console.error(`❌ [processSeasonRankings] Erro ao criar ranking para usuário ${user.id}:`, error.message);
-          console.error('❌ [processSeasonRankings] Stack trace:', error.stack);
-        }
-      }
-    } else {
-      console.log('✅ [processSeasonRankings] Todos os usuários já têm ranking');
-    }
-
-    // Buscar rankings atualizados (incluindo os recém-criados)
-    const seasonRankings = await this.seasonRankingRepository
-      .createQueryBuilder('sr')
-      .select('sr.userId', 'userId')
-      .addSelect('sr.seasonScore', 'seasonScore')
-      .addSelect('sr.wins', 'wins')
-      .addSelect('sr.losses', 'losses')
-      .addSelect('sr.division', 'division')
-      .addSelect('sr.rank', 'rank')
-      .where('sr.seasonId = :seasonId', { seasonId })
-      .orderBy('sr.seasonScore', 'DESC')
-      .addOrderBy('sr.wins', 'DESC')
-      .getRawMany();
-    
-    console.log(`📊 [processSeasonRankings] Rankings encontrados após criação: ${seasonRankings.length}`);
-    if (seasonRankings.length > 0) {
-      const sampleRankings = seasonRankings.slice(0, 5).map(sr => ({
-        userId: sr.userId,
-        division: sr.division,
-        seasonScore: sr.seasonScore
-      }));
-      console.log(`📊 [processSeasonRankings] Amostra de rankings:`, sampleRankings);
-    }
-
-    // Buscar dados dos usuários que têm ranking
-    const seasonUserIds = seasonRankings.map(sr => sr.userId);
-    console.log(`📊 [processSeasonRankings] Buscando dados de ${seasonUserIds.length} usuários com ranking...`);
-    
-    if (seasonUserIds.length === 0) {
-      console.warn('⚠️ [processSeasonRankings] Nenhum userId encontrado nos rankings!');
-      return [];
-    }
-    
-    const users = await this.usersRepository
-      .createQueryBuilder('u')
-      .select('u.id', 'id')
-      .addSelect('u.nickname', 'nickname')
-      .addSelect('u.clanTag', 'clanTag')
-      .addSelect('u.profileImage', 'profileImage')
-      .addSelect('u.totalScore', 'totalScore')
-      .addSelect('u.winsSeason', 'winsSeason')
-      .addSelect('u.lossesSeason', 'lossesSeason')
-      .addSelect('u.level', 'level')
-      .addSelect('u.division', 'division') // Incluir division da tabela users
-      .where('u.id IN (:...userIds)', { userIds: seasonUserIds })
-      .getRawMany();
-
-    console.log(`📊 [processSeasonRankings] Dados de ${users.length} usuários encontrados`);
-    
-    if (users.length === 0) {
-      console.warn('⚠️ [processSeasonRankings] Nenhum usuário encontrado para os rankings!');
-      return [];
-    }
-
-    // Mapear usuários (query builder com alias retorna campos pelo nome do alias)
-    const userMap = new Map(users.map(u => [u.id, {
-      id: u.id,
-      nickname: u.nickname,
-      clanTag: u.clanTag,
-      profileImage: u.profileImage,
-      totalScore: u.totalScore || 0,
-      winsSeason: u.winsSeason || 0,
-      lossesSeason: u.lossesSeason || 0,
-      level: u.level || 1,
-      division: u.division || 'Bronze', // Division da tabela users
-    }]));
-    
-    // Função auxiliar para calcular divisão baseada no score
-    const calculateDivision = (score: number): string => {
-      // Por enquanto, todos começam no Bronze
-      // Futuramente, pode ser calculado baseado no score
-      return 'Bronze';
-      // Código futuro para calcular divisão:
-      // if (score >= 5000) return 'Legendary';
-      // if (score >= 4000) return 'Master';
-      // if (score >= 3000) return 'Diamond';
-      // if (score >= 2000) return 'Platinum';
-      // if (score >= 1000) return 'Gold';
-      // if (score >= 500) return 'Silver';
-      // return 'Bronze';
-    };
-    
-    const combinedRankings = seasonRankings.map((sr) => {
-      const user = userMap.get(sr.userId);
-      if (!user) return null;
-      
-      // Usar divisão da tabela users (user.division) em vez da season_rankings
-      let division = user.division;
-      if (!division || division === null || division === undefined || division === '') {
-        // Se não tiver divisão no user, usar Bronze como padrão
-        division = 'Bronze';
-      } else {
-        // Normalizar divisão (garantir formato correto)
-        division = String(division).trim();
-        // Converter para formato padrão
-        const divisionUpper = division.toUpperCase();
-        if (divisionUpper === 'BRONZE') division = 'Bronze';
-        else if (divisionUpper === 'SILVER') division = 'Silver';
-        else if (divisionUpper === 'GOLD') division = 'Gold';
-        else if (divisionUpper === 'PLATINUM') division = 'Platinum';
-        else if (divisionUpper === 'DIAMOND') division = 'Diamond';
-        else if (divisionUpper === 'MASTER') division = 'Master';
-        else if (divisionUpper === 'LEGENDARY') division = 'Legendary';
-        else if (divisionUpper === 'PRATA') division = 'Silver';
-        else if (divisionUpper === 'OURO') division = 'Gold';
-        else if (divisionUpper === 'DIAMANTE') division = 'Diamond';
-        else if (divisionUpper === 'MESTRE') division = 'Master';
-        else if (divisionUpper === 'DESAFIANTE') division = 'Legendary';
-        // Se não reconhecer, manter como está ou usar Bronze
-        if (!['Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond', 'Master', 'Legendary'].includes(division)) {
-          division = 'Bronze';
-        }
-      }
-      
-      return {
-        userId: sr.userId,
-        user: {
-          id: user.id,
-          nickname: user.nickname,
-          clanTag: user.clanTag,
-          profileImage: this.normalizeProfileImage(user.profileImage),
-          totalScore: user.totalScore,
-          level: user.level,
-        },
-        seasonScore: sr.seasonScore || 0,
-        wins: sr.wins || 0,
-        losses: sr.losses || 0,
-        division: division,
-        rank: sr.rank || 0,
-      };
-    }).filter(r => r !== null);
-
-    // Recalcular ranks
-    let currentRank = 1;
-    let previousScore = -1;
-    combinedRankings.forEach((ranking) => {
-      if (ranking.seasonScore !== previousScore) {
-        currentRank = combinedRankings.filter(r => r.seasonScore > ranking.seasonScore).length + 1;
-        previousScore = ranking.seasonScore;
-      }
-      ranking.rank = currentRank;
-    });
-
-    // Buscar grupos
-    const rankingUserIds = combinedRankings.map(r => r.userId);
-    let groupMap = new Map();
-    if (rankingUserIds.length > 0) {
-      try {
-        const groupMembers = await this.groupMemberRepository
-          .createQueryBuilder('gm')
-          .select('gm.userId', 'userId')
-          .addSelect('gm.groupId', 'groupId')
-          .where('gm.userId IN (:...userIds)', { userIds: rankingUserIds })
-          .andWhere('gm.isActive = :isActive', { isActive: true })
-          .getRawMany();
-        
-        const groupIds = [...new Set(groupMembers.map(gm => gm.groupId))];
-        if (groupIds.length > 0) {
-          const groups = await this.groupRepository
-            .createQueryBuilder('g')
-            .select('g.id', 'id')
-            .addSelect('g.name', 'name')
-            .addSelect('g.tag', 'tag')
-            .addSelect('g.logo', 'logo')
-            .addSelect('g.isActive', 'isActive')
-            .where('g.id IN (:...groupIds)', { groupIds })
-            .andWhere('g.isActive = :isActive', { isActive: true })
-            .getRawMany();
-          
-          const groupsMap = new Map(groups.map(g => [g.id, { id: g.id, name: g.name, tag: g.tag, logo: g.logo, isActive: g.isActive }]));
-          groupMembers.forEach(gm => {
-            const group = groupsMap.get(gm.groupId);
-            if (group) {
-              groupMap.set(gm.userId, group);
-            }
-          });
-        }
-      } catch (error) {
-        console.error('❌ [processSeasonRankings] Erro ao carregar grupos:', error);
-      }
-    }
-
-    // Formatar resultado
-    const result = combinedRankings.map((ranking) => {
-      const group = groupMap.get(ranking.userId);
-      const clanTag = ranking.user.clanTag || (group && group.isActive ? group.tag : null);
-      
-      // Garantir que a divisão sempre tenha um valor (já foi calculada acima)
-      const division = ranking.division || 'Bronze';
-      
-      console.log(`🔍 [processSeasonRankings] Jogador ${ranking.user.nickname}: division=${division}, seasonScore=${ranking.seasonScore}`);
-      
-      return {
-        id: String(ranking.user.id),
-        nickname: ranking.user.nickname,
-        clanTag: clanTag,
-        profileImage: this.normalizeProfileImage(ranking.user.profileImage),
-        seasonScore: ranking.seasonScore,
-        totalScore: ranking.user.totalScore,
-        wins: ranking.wins,
-        losses: ranking.losses,
-        division: division,
-        seasonRank: ranking.rank,
-        level: ranking.user.level,
-        group: group || null,
-      };
-    });
-    
-    console.log(`✅ [processSeasonRankings] Retornando ${result.length} rankings com divisões`);
-    if (result.length > 0) {
-      const divisions = result.map(r => r.division).filter((d, i, arr) => arr.indexOf(d) === i);
-      console.log(`📊 [processSeasonRankings] Divisões únicas encontradas:`, divisions);
-      
-      // Contar por divisão
-      const divisionCounts: { [key: string]: number } = {};
-      result.forEach(r => {
-        const div = r.division || 'Bronze';
-        divisionCounts[div] = (divisionCounts[div] || 0) + 1;
-      });
-      console.log(`📊 [processSeasonRankings] Contagem por divisão:`, divisionCounts);
-      
-      // Mostrar primeiros 5 jogadores
-      console.log(`📊 [processSeasonRankings] Primeiros 5 jogadores:`, result.slice(0, 5).map(r => ({
-        nickname: r.nickname,
-        division: r.division,
-        seasonScore: r.seasonScore
-      })));
-    } else {
-      console.warn('⚠️ [processSeasonRankings] NENHUM resultado retornado!');
-    }
-    
-    return result;
-  }
-
   async getSeasonRanking(): Promise<any[]> {
-    try {
-      console.log('🔍 [getSeasonRanking] Iniciando busca de ranking da season...');
-      
-      // Busca a season ativa
-      const activeSeasonRaw = await this.seasonRepository
-        .createQueryBuilder('s')
-        .select('s.id', 'id')
-        .select('s.name', 'name')
-        .select('s.isActive', 'isActive')
-        .where('s.isActive = :isActive', { isActive: true })
-        .getRawOne();
-      
-      const activeSeason = activeSeasonRaw ? { id: activeSeasonRaw.id, name: activeSeasonRaw.name, isActive: activeSeasonRaw.isActive } : null;
+    // Busca a season ativa
+    const activeSeason = await this.seasonRepository.findOne({
+      where: { isActive: true },
+    });
 
-      console.log('🔍 [getSeasonRanking] Season ativa encontrada:', activeSeason);
-
-      let seasonToUse = activeSeason;
-
-      // Se não há season ativa, buscar a mais recente
-      if (!activeSeason || !activeSeason.id) {
-        console.warn('⚠️ [getSeasonRanking] Nenhuma season ativa encontrada. Buscando season mais recente...');
-        
-        const latestSeasonRaw = await this.seasonRepository
-          .createQueryBuilder('s')
-          .select('s.id', 'id')
-          .select('s.name', 'name')
-          .select('s.isActive', 'isActive')
-          .orderBy('s.createdAt', 'DESC')
-          .limit(1)
-          .getRawOne();
-        
-        if (latestSeasonRaw) {
-          seasonToUse = { id: latestSeasonRaw.id, name: latestSeasonRaw.name, isActive: latestSeasonRaw.isActive };
-          console.log('🔍 [getSeasonRanking] Usando season mais recente:', seasonToUse);
-        } else {
-          console.warn('⚠️ [getSeasonRanking] Nenhuma season encontrada no banco. Criando season temporária...');
-          
-          // Criar uma season temporária se não houver nenhuma
-          try {
-            const newSeason = this.seasonRepository.create({
-              name: 'Season Temporária',
-              isActive: true,
-              startDate: new Date(),
-              endDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) // 90 dias
-            });
-            const savedSeason = await this.seasonRepository.save(newSeason);
-            seasonToUse = { id: savedSeason.id, name: savedSeason.name, isActive: savedSeason.isActive };
-            console.log('✅ [getSeasonRanking] Season temporária criada:', seasonToUse);
-          } catch (error: any) {
-            console.error('❌ [getSeasonRanking] Erro ao criar season temporária:', error.message);
-            // Mesmo sem season, vamos tentar retornar os usuários
-            console.warn('⚠️ [getSeasonRanking] Tentando retornar usuários sem season...');
-            return await this.getUsersWithoutSeason();
-          }
-        }
-      }
-
-      if (!seasonToUse || !seasonToUse.id) {
-        console.warn('⚠️ [getSeasonRanking] Nenhuma season disponível. Retornando usuários sem season...');
-        return await this.getUsersWithoutSeason();
-      }
-
-      // Processar rankings da season (cria rankings para usuários que não têm)
-      let result = await this.processSeasonRankings(seasonToUse.id);
-      console.log(`✅ [getSeasonRanking] Retornando ${result.length} jogadores no ranking da season ${seasonToUse.id}`);
-      
-      // Se não retornou nenhum resultado, verificar se há usuários e retornar fallback
-      if (result.length === 0) {
-        console.warn('⚠️ [getSeasonRanking] Nenhum jogador retornado. Verificando se há usuários no sistema...');
-        const userCount = await this.usersRepository.count();
-        console.log(`📊 [getSeasonRanking] Total de usuários no sistema: ${userCount}`);
-        
-        // Se há usuários mas nenhum resultado, retornar usuários básicos
-        if (userCount > 0) {
-          console.warn('⚠️ [getSeasonRanking] Há usuários no sistema mas nenhum ranking retornado. Retornando usuários básicos...');
-          result = await this.getUsersWithoutSeason();
-          console.log(`✅ [getSeasonRanking] Fallback retornou ${result.length} jogadores`);
-        }
-      }
-
-      console.log(`✅ [getSeasonRanking] Retornando ${result.length} jogadores para o frontend`);
-      return result;
-    } catch (error) {
-      console.error('❌ [getSeasonRanking] Erro ao buscar ranking da season:', error);
-      console.error('❌ [getSeasonRanking] Stack:', error.stack);
-      // Em caso de erro, tentar retornar usuários básicos
-      try {
-        return await this.getUsersWithoutSeason();
-      } catch (fallbackError) {
-        console.error('❌ [getSeasonRanking] Erro no fallback:', fallbackError);
-        return [];
-      }
-    }
-  }
-
-  // Método auxiliar para retornar usuários mesmo sem season
-  private async getUsersWithoutSeason(): Promise<any[]> {
-    console.log('🔍 [getUsersWithoutSeason] Buscando usuários sem season...');
-    
-    const users = await this.usersRepository
-      .createQueryBuilder('u')
-      .select('u.id', 'id')
-      .addSelect('u.nickname', 'nickname')
-      .addSelect('u.clanTag', 'clanTag')
-      .addSelect('u.profileImage', 'profileImage')
-      .addSelect('u.totalScore', 'totalScore')
-      .addSelect('u.winsSeason', 'winsSeason')
-      .addSelect('u.lossesSeason', 'lossesSeason')
-      .addSelect('u.level', 'level')
-      .orderBy('u.totalScore', 'DESC')
-      .addOrderBy('u.level', 'DESC')
-      .getRawMany();
-
-    if (users.length === 0) {
-      console.warn('⚠️ [getUsersWithoutSeason] Nenhum usuário encontrado');
+    if (!activeSeason) {
       return [];
     }
 
-    // Buscar grupos
-    const userIds = users.map(u => u.id);
+    // Busca os rankings da season ativa
+    const rankings = await this.seasonRankingRepository.find({
+      where: { seasonId: activeSeason.id },
+      relations: ['user'],
+      select: {
+        id: true,
+        seasonId: true,
+        userId: true,
+        seasonScore: true,
+        wins: true,
+        losses: true,
+        rank: true,
+        division: true,
+        trophy: true,
+        user: {
+          id: true,
+          nickname: true,
+          clanTag: true,
+          profileImage: true,
+          totalScore: true,
+          level: true,
+        },
+      },
+      order: { seasonScore: 'DESC' },
+      take: 100,
+    });
+
+    // Busca os grupos dos usuários - usar QueryBuilder para evitar problemas
+    const userIds = rankings.map(r => r.userId);
     let groupMap = new Map();
     
     if (userIds.length > 0) {
@@ -850,7 +140,6 @@ export class UsersService {
           .select('gm.userId', 'userId')
           .addSelect('gm.groupId', 'groupId')
           .where('gm.userId IN (:...userIds)', { userIds })
-          .andWhere('gm.isActive = :isActive', { isActive: true })
           .getRawMany();
         
         const groupIds = [...new Set(groupMembers.map(gm => gm.groupId))];
@@ -860,13 +149,12 @@ export class UsersService {
             .select('g.id', 'id')
             .addSelect('g.name', 'name')
             .addSelect('g.tag', 'tag')
-            .addSelect('g.logo', 'logo')
             .addSelect('g.isActive', 'isActive')
             .where('g.id IN (:...groupIds)', { groupIds })
             .andWhere('g.isActive = :isActive', { isActive: true })
             .getRawMany();
           
-          const groupsMap = new Map(groups.map(g => [g.id, { id: g.id, name: g.name, tag: g.tag, logo: g.logo, isActive: g.isActive }]));
+          const groupsMap = new Map(groups.map(g => [g.id, { id: g.id, name: g.name, tag: g.tag, isActive: g.isActive }]));
           groupMembers.forEach(gm => {
             const group = groupsMap.get(gm.groupId);
             if (group) {
@@ -875,50 +163,43 @@ export class UsersService {
           });
         }
       } catch (error) {
-        console.error('❌ [getUsersWithoutSeason] Erro ao carregar grupos:', error);
+        console.error('❌ [getSeasonRanking] Erro ao carregar grupos:', error);
+        groupMap = new Map();
       }
     }
 
-    // Formatar resultado similar ao ranking da season
-    const result = users.map((user, index) => {
-      const group = groupMap.get(user.id);
-      const clanTag = user.clanTag || (group && group.isActive ? group.tag : null);
-      
+    // Formata os dados para o frontend
+    return rankings.map(ranking => {
+      const group = groupMap.get(ranking.userId);
+      const clanTag = ranking.user.clanTag || (group && group.isActive ? group.tag : null);
+      console.log(`🔍 [getSeasonRanking] User ${ranking.user.id} (${ranking.user.nickname}): clanTag=${ranking.user.clanTag}, groupTag=${group?.tag}, finalClanTag=${clanTag}`);
       return {
-        id: String(user.id),
-        nickname: user.nickname,
+        id: String(ranking.user.id),
+        nickname: ranking.user.nickname,
         clanTag: clanTag,
-        profileImage: this.normalizeProfileImage(user.profileImage),
-        seasonScore: 0,
-        totalScore: user.totalScore || 0,
-        wins: user.winsSeason || 0,
-        losses: user.lossesSeason || 0,
-        division: 'Bronze', // Todos começam no Bronze
-        seasonRank: index + 1,
-        level: user.level || 1,
+        profileImage: ranking.user.profileImage,
+        seasonScore: ranking.seasonScore,
+        totalScore: ranking.user.totalScore,
+        wins: ranking.wins,
+        losses: ranking.losses,
+        division: ranking.division,
+        seasonRank: ranking.rank,
         group: group || null,
       };
     });
-
-    console.log(`✅ [getUsersWithoutSeason] Retornando ${result.length} usuários`);
-    return result;
   }
 
   async getGeneralRanking(): Promise<any[]> {
     const users = await this.usersRepository.find({
-      select: ['id', 'nickname', 'clanTag', 'profileImage', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason', 'totalScore', 'level'],
-      order: { totalScore: 'DESC', level: 'DESC' }, // Ordenar primeiro por totalScore, depois por level
+      select: ['id', 'nickname', 'clanTag', 'profileImage', 'rating', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason', 'totalScore', 'level'],
+      order: { rating: 'DESC' },
       take: 100,
     });
 
-    // Busca os dados da season ativa para cada usuário (usar QueryBuilder para evitar erro se divisionPrizes não existir)
-    const activeSeasonRaw = await this.seasonRepository
-      .createQueryBuilder('s')
-      .select('s.id', 'id')
-      .where('s.isActive = :isActive', { isActive: true })
-      .getRawOne();
-    
-    const activeSeason = activeSeasonRaw ? { id: activeSeasonRaw.id } : null;
+    // Busca os dados da season ativa para cada usuário
+    const activeSeason = await this.seasonRepository.findOne({
+      where: { isActive: true },
+    });
 
     // Busca os grupos dos usuários - usar QueryBuilder para evitar problemas
     const userIds = users.map(u => u.id);
@@ -940,13 +221,12 @@ export class UsersService {
             .select('g.id', 'id')
             .addSelect('g.name', 'name')
             .addSelect('g.tag', 'tag')
-            .addSelect('g.logo', 'logo')
             .addSelect('g.isActive', 'isActive')
             .where('g.id IN (:...groupIds)', { groupIds })
             .andWhere('g.isActive = :isActive', { isActive: true })
             .getRawMany();
           
-          const groupsMap = new Map(groups.map(g => [g.id, { id: g.id, name: g.name, tag: g.tag, logo: g.logo, isActive: g.isActive }]));
+          const groupsMap = new Map(groups.map(g => [g.id, { id: g.id, name: g.name, tag: g.tag, isActive: g.isActive }]));
           groupMembers.forEach(gm => {
             const group = groupsMap.get(gm.groupId);
             if (group) {
@@ -961,48 +241,19 @@ export class UsersService {
     }
 
     if (!activeSeason) {
-      // Ordenar por totalScore (descendente), depois por level (descendente)
-      const sortedUsers = [...users].sort((a, b) => {
-        const scoreA = a.totalScore || 0;
-        const scoreB = b.totalScore || 0;
-        if (scoreB !== scoreA) {
-          return scoreB - scoreA; // Ordenar por totalScore primeiro
-        }
-        return (b.level || 1) - (a.level || 1); // Se totalScore igual, ordenar por level
-      });
-
-      return sortedUsers.map((user, index) => {
-        const group = groupMap.get(user.id);
-        return {
-          id: String(user.id),
-          nickname: user.nickname,
-          clanTag: user.clanTag || (group && group.isActive ? group.tag : null),
-          profileImage: this.normalizeProfileImage(user.profileImage),
-          seasonScore: 0,
-          totalScore: user.totalScore || 0,
-          wins: user.winsSeason,
-          losses: user.lossesSeason,
-          division: 'Bronze',
-          globalRank: index + 1, // Rank baseado na posição ordenada por totalScore
-          group: group || null,
-        };
-      });
-    }
-
-    if (!activeSeason || !activeSeason.id) {
       return users.map(user => {
         const group = groupMap.get(user.id);
         return {
           id: String(user.id),
           nickname: user.nickname,
           clanTag: user.clanTag || (group && group.isActive ? group.tag : null),
-          profileImage: this.normalizeProfileImage(user.profileImage),
+          profileImage: user.profileImage,
+          rating: user.rating,
           seasonScore: 0,
-          totalScore: user.totalScore || 0,
+          totalScore: user.totalScore,
           wins: user.winsSeason,
           losses: user.lossesSeason,
           division: 'Bronze',
-          globalRank: 0,
           group: group || null,
         };
       });
@@ -1025,6 +276,7 @@ export class UsersService {
           nickname: true,
           clanTag: true,
           profileImage: true,
+          rating: true,
           totalScore: true,
           level: true,
         },
@@ -1033,33 +285,23 @@ export class UsersService {
 
     const rankingMap = new Map(rankings.map(r => [r.userId, r]));
 
-    // Ordenar por totalScore (descendente), depois por level (descendente)
-    const sortedUsers = [...users].sort((a, b) => {
-      const scoreA = a.totalScore || 0;
-      const scoreB = b.totalScore || 0;
-      if (scoreB !== scoreA) {
-        return scoreB - scoreA; // Ordenar por totalScore primeiro
-      }
-      return (b.level || 1) - (a.level || 1); // Se totalScore igual, ordenar por level
-    });
-
-    return sortedUsers.map((user, index) => {
+    return users.map(user => {
       const seasonRanking = rankingMap.get(user.id);
       const group = groupMap.get(user.id);
       const clanTag = user.clanTag || (group && group.isActive ? group.tag : null);
-      console.log(`🔍 [getGeneralRanking] User ${user.id} (${user.nickname}): clanTag=${user.clanTag}, groupTag=${group?.tag}, finalClanTag=${clanTag}, totalScore=${user.totalScore}`);
+      console.log(`🔍 [getGeneralRanking] User ${user.id} (${user.nickname}): clanTag=${user.clanTag}, groupTag=${group?.tag}, finalClanTag=${clanTag}`);
       return {
         id: String(user.id),
         nickname: user.nickname,
         clanTag: clanTag,
         profileImage: user.profileImage,
+        rating: user.rating,
         seasonScore: seasonRanking?.seasonScore || 0,
-        totalScore: user.totalScore || 0,
-        level: user.level || 1,
+        totalScore: user.totalScore,
         wins: seasonRanking?.wins || user.winsSeason,
         losses: seasonRanking?.losses || user.lossesSeason,
-        division: user.division || null, // Divisão da tabela users (verdadeira) - dinâmica
-        globalRank: index + 1, // Rank baseado na posição ordenada por totalScore
+        division: seasonRanking?.division || 'Bronze',
+        globalRank: 0, // Será calculado no frontend baseado na posição
         group: group || null,
       };
     });
@@ -1068,31 +310,24 @@ export class UsersService {
   // Método removido - sistema de coins foi desativado
 
   async getTop5Players(): Promise<any[]> {
-    // Busca a season ativa (usar QueryBuilder para evitar erro se divisionPrizes não existir)
-    const activeSeasonRaw = await this.seasonRepository
-      .createQueryBuilder('s')
-      .select('s.id', 'id')
-      .select('s.name', 'name')
-      .select('s.isActive', 'isActive')
-      .where('s.isActive = :isActive', { isActive: true })
-      .getRawOne();
-    
-    const activeSeason = activeSeasonRaw ? { id: activeSeasonRaw.id, name: activeSeasonRaw.name, isActive: activeSeasonRaw.isActive } : null;
+    // Busca a season ativa
+    const activeSeason = await this.seasonRepository.findOne({
+      where: { isActive: true },
+    });
 
     if (!activeSeason) {
-      // Se não há season ativa, retorna top 5 por totalScore e level - usar QueryBuilder para evitar JOINs
+      // Se não há season ativa, retorna top 5 por rating geral - usar QueryBuilder para evitar JOINs
       const users = await this.usersRepository
         .createQueryBuilder('u')
         .select('u.id', 'id')
         .addSelect('u.nickname', 'nickname')
         .addSelect('u.clanTag', 'clanTag')
         .addSelect('u.profileImage', 'profileImage')
+        .addSelect('u.rating', 'rating')
         .addSelect('u.winsGeral', 'winsGeral')
         .addSelect('u.lossesGeral', 'lossesGeral')
         .addSelect('u.totalScore', 'totalScore')
-        .addSelect('u.level', 'level')
-        .orderBy('u.totalScore', 'DESC')
-        .addOrderBy('u.level', 'DESC')
+        .orderBy('u.rating', 'DESC')
         .limit(5)
         .getRawMany();
 
@@ -1147,93 +382,38 @@ export class UsersService {
           id: String(user.id),
           nickname: user.nickname,
           clanTag: user.clanTag || (group && group.isActive ? group.tag : null),
-          profileImage: this.normalizeProfileImage(user.profileImage),
+          profileImage: user.profileImage,
+          rating: user.rating,
           wins: user.winsGeral,
           losses: user.lossesGeral,
-          score: user.totalScore || 0,
-          level: user.level || 1,
+          score: user.totalScore,
         };
       });
     }
 
-    // Busca top 5 da season ativa - incluir usuários com e sem registro de season ranking
-    // Primeiro, buscar todos os usuários ordenados por totalScore e level
-    const allUsers = await this.usersRepository
-      .createQueryBuilder('u')
-      .select('u.id', 'id')
-      .addSelect('u.nickname', 'nickname')
-      .addSelect('u.clanTag', 'clanTag')
-      .addSelect('u.profileImage', 'profileImage')
-      .addSelect('u.totalScore', 'totalScore')
-      .addSelect('u.winsGeral', 'winsGeral')
-      .addSelect('u.lossesGeral', 'lossesGeral')
-      .addSelect('u.level', 'level')
-      .orderBy('u.totalScore', 'DESC')
-      .addOrderBy('u.level', 'DESC')
+    // Busca top 5 da season ativa - usar QueryBuilder para evitar JOINs automáticos
+    const rankings = await this.seasonRankingRepository
+      .createQueryBuilder('sr')
+      .innerJoin('sr.user', 'u')
+      .select('sr.id', 'id')
+      .addSelect('sr.seasonId', 'seasonId')
+      .addSelect('sr.userId', 'userId')
+      .addSelect('sr.seasonScore', 'seasonScore')
+      .addSelect('sr.wins', 'wins')
+      .addSelect('sr.losses', 'losses')
+      .addSelect('sr.rank', 'rank')
+      .addSelect('sr.division', 'division')
+      .addSelect('u.id', 'user_id')
+      .addSelect('u.nickname', 'user_nickname')
+      .addSelect('u.clanTag', 'user_clanTag')
+      .addSelect('u.profileImage', 'user_profileImage')
+      .addSelect('u.rating', 'user_rating')
+      .addSelect('u.totalScore', 'user_totalScore')
+      .addSelect('u.level', 'user_level')
+      .where('sr.seasonId = :seasonId', { seasonId: activeSeason.id })
+      .orderBy('sr.seasonScore', 'DESC')
       .limit(5)
       .getRawMany();
-
-    // Buscar rankings da season para os usuários encontrados
-    if (!activeSeason || !activeSeason.id) {
-      // Se não há season ativa, retornar top 5 por totalScore e level
-      return allUsers.map((user, index) => {
-        return {
-          rank: index + 1,
-          id: String(user.id),
-          nickname: user.nickname,
-          clanTag: user.clanTag,
-          profileImage: this.normalizeProfileImage(user.profileImage),
-          wins: user.winsGeral,
-          losses: user.lossesGeral,
-          score: user.totalScore || 0,
-          level: user.level || 1,
-        };
-      });
-    }
-
-    const allUserIds = allUsers.map(u => u.id);
-    const seasonRankings = await this.seasonRankingRepository
-      .createQueryBuilder('sr')
-      .where('sr.seasonId = :seasonId', { seasonId: activeSeason.id })
-      .andWhere('sr.userId IN (:...userIds)', { userIds: allUserIds })
-      .getMany();
-
-    // Criar mapa de userId -> seasonRanking
-    const rankingMap = new Map(seasonRankings.map(sr => [sr.userId, sr]));
-
-    // Combinar dados: usar season ranking se existir, senão usar dados gerais
-    const rankings = allUsers.map((user) => {
-      const seasonRanking = rankingMap.get(user.id);
-      return {
-        id: null,
-        seasonId: activeSeason?.id || null,
-        userId: user.id,
-        seasonScore: seasonRanking ? seasonRanking.seasonScore : 0,
-        wins: seasonRanking ? seasonRanking.wins : (user.winsGeral || 0),
-        losses: seasonRanking ? seasonRanking.losses : (user.lossesGeral || 0),
-        rank: 0,
-        division: user.division || null, // Divisão da tabela users (verdadeira) - dinâmica
-        user_id: user.id,
-        user_nickname: user.nickname,
-        user_clanTag: user.clanTag,
-        user_profileImage: this.normalizeProfileImage(user.profileImage),
-        user_totalScore: user.totalScore,
-        user_level: user.level,
-        user_winsGeral: user.winsGeral || 0,
-        user_lossesGeral: user.lossesGeral || 0,
-      };
-    });
-
-    // Ordenar por seasonScore (ou totalScore se não tiver season ranking)
-    rankings.sort((a, b) => {
-      const scoreA = a.seasonScore > 0 ? a.seasonScore : (a.user_totalScore || 0);
-      const scoreB = b.seasonScore > 0 ? b.seasonScore : (b.user_totalScore || 0);
-      if (scoreB !== scoreA) {
-        return scoreB - scoreA;
-      }
-      // Desempate por level
-      return (b.user_level || 1) - (a.user_level || 1);
-    });
 
     // Busca os grupos dos usuários - carregar separadamente para evitar problemas
     const userIds = rankings.map(r => r.userId);
@@ -1282,183 +462,70 @@ export class UsersService {
     return rankings.map((ranking, index) => {
       const group = groupMap.get(ranking.userId);
       const clanTag = ranking.user_clanTag || (group && group.isActive ? group.tag : null);
-      
-      console.log(`🔍 [getTop5Players] User ${ranking.user_id} (${ranking.user_nickname}): clanTag=${ranking.user_clanTag}, groupTag=${group?.tag}, finalClanTag=${clanTag}, seasonScore=${ranking.seasonScore}, wins=${ranking.wins}, losses=${ranking.losses}`);
-      
+      console.log(`🔍 [getTop5Players] User ${ranking.user_id} (${ranking.user_nickname}): clanTag=${ranking.user_clanTag}, groupTag=${group?.tag}, finalClanTag=${clanTag}`);
       return {
         rank: index + 1,
         id: String(ranking.user_id),
         nickname: ranking.user_nickname,
         clanTag: clanTag,
-        profileImage: this.normalizeProfileImage(ranking.user_profileImage),
+        profileImage: ranking.user_profileImage,
+        rating: ranking.user_rating,
         wins: ranking.wins,
         losses: ranking.losses,
-        score: ranking.seasonScore > 0 ? ranking.seasonScore : (ranking.user_totalScore || 0),
-        level: ranking.user_level || 1,
+        score: ranking.seasonScore,
         division: ranking.division,
       };
     });
   }
 
-  // Calcular classe do jogador baseada no score e nível
-  calculatePlayerClass(totalScore: number, level: number): string {
-    // Classe baseada em nível e score combinados
-    const scoreLevel = (totalScore || 0) + (level || 1) * 100;
-    
-    if (scoreLevel >= 5000 || level >= 50) return 'Lendário';
-    if (scoreLevel >= 3000 || level >= 30) return 'Mestre';
-    if (scoreLevel >= 2000 || level >= 20) return 'Veterano';
-    if (scoreLevel >= 1000 || level >= 10) return 'Aprendiz';
-    if (scoreLevel >= 500 || level >= 5) return 'Novato';
+  // Calcular classe do jogador baseada no rating
+  calculatePlayerClass(rating: number): string {
+    if (rating >= 3000) return 'Lendário';
+    if (rating >= 2500) return 'Mestre';
+    if (rating >= 2000) return 'Veterano';
+    if (rating >= 1500) return 'Aprendiz';
+    if (rating >= 1000) return 'Novato';
     return 'Iniciante';
   }
 
   // Obter perfil completo do usuário com rankings
   async getFullProfile(userId: number): Promise<any> {
-    // Buscar usuário com division explicitamente
-    const user = await this.usersRepository.findOne({ 
-      where: { id: userId },
-      select: [
-        'id',
-        'nickname',
-        'username',
-        'email',
-        'password',
-        'role',
-        'winsGeral',
-        'lossesGeral',
-        'winsSeason',
-        'lossesSeason',
-        'rating',
-        'credits',
-        'cash',
-        'level',
-        'experience',
-        'totalScore',
-        'profileImage',
-        'isOnline',
-        'isBanned',
-        'banReason',
-        'lastLogin',
-        'lastIpAddress',
-        'avatar',
-        'isEmailVerified',
-        'clanTag',
-        'biography',
-        'playerClass',
-        'division', // Divisão da tabela users - CRÍTICO
-        'equippedPlaymatId',
-        'equippedPlaymatImage',
-        'equippedSkinId',
-        'equippedSkinImage',
-        'equippedDeckName',
-        'createdAt',
-        'updatedAt',
-      ]
+    const user = await this.findById(userId);
+    
+    // Buscar season ativa
+    const activeSeason = await this.seasonRepository.findOne({
+      where: { isActive: true },
     });
-    
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-    
-    // Log para debug - verificar se division está sendo retornado
-    console.log(`🔍 [getFullProfile] User ${userId} - division do banco:`, user.division);
-    
-    // Buscar season ativa (usar QueryBuilder para evitar erro se divisionPrizes não existir)
-    const activeSeasonRaw = await this.seasonRepository
-      .createQueryBuilder('s')
-      .select('s.id', 'id')
-      .where('s.isActive = :isActive', { isActive: true })
-      .getRawOne();
-    
-    const activeSeason = activeSeasonRaw ? { id: activeSeasonRaw.id } : null;
 
     let seasonRanking = null;
-    let seasonRank: number | null = null;
-    let generalRank: number | null = null;
+    let seasonRank = 0;
+    let generalRank = 0;
 
-    if (activeSeason && activeSeason.id) {
+    if (activeSeason) {
       seasonRanking = await this.seasonRankingRepository.findOne({
         where: { userId, seasonId: activeSeason.id },
       });
 
-      if (seasonRanking && activeSeason.id) {
-        // Usar o rank salvo se disponível, caso contrário calcular dinamicamente
-        if (seasonRanking.rank && seasonRanking.rank > 0) {
-          seasonRank = seasonRanking.rank;
-          console.log(`📊 [getFullProfile] User ${userId} - seasonRank do banco: ${seasonRank}`);
-        } else {
-          // Calcular rank na season - contar usuários com score maior
-          const countBetter = await this.seasonRankingRepository.count({
-            where: {
-              seasonId: activeSeason.id,
-              seasonScore: MoreThan(seasonRanking.seasonScore),
-            },
-          });
-          seasonRank = countBetter + 1;
-          console.log(`📊 [getFullProfile] User ${userId} - seasonRank calculado: ${seasonRank} (${countBetter} melhores)`);
-        }
-      } else {
-        // Se não tem season ranking, calcular posição baseado em todos os usuários com season ranking
-        const totalWithRanking = await this.seasonRankingRepository.count({
-          where: { seasonId: activeSeason.id }
+      if (seasonRanking) {
+        // Calcular rank na season
+        const countBetter = await this.seasonRankingRepository.count({
+          where: {
+            seasonId: activeSeason.id,
+            seasonScore: MoreThan(seasonRanking.seasonScore),
+          },
         });
-        seasonRank = totalWithRanking + 1; // Posição após todos que têm ranking
-        console.log(`📊 [getFullProfile] User ${userId} - sem season ranking, posição: ${seasonRank} (total com ranking: ${totalWithRanking})`);
+        seasonRank = countBetter + 1;
       }
-    } else {
-      console.log(`📊 [getFullProfile] User ${userId} - sem season ativa`);
     }
 
-    // Calcular rank geral baseado em totalScore (depois level como desempate)
-    const userTotalScore = parseFloat(String(user.totalScore || 0));
-    
-    // Recalcular e atualizar nível baseado no totalScore atual ANTES de calcular ranking
-    await this.updateUserLevel(userId, userTotalScore);
-    
-    // Buscar nível atualizado após recálculo
-    const updatedUser = await this.usersRepository.findOne({
-      where: { id: userId },
-      select: ['id', 'level'],
+    // Calcular rank geral
+    const countBetterGeneral = await this.usersRepository.count({
+      where: { rating: MoreThan(user.rating) },
     });
-    const userLevel = updatedUser?.level || user.level || 1;
-    
-    // Atualizar o objeto user com o nível atualizado
-    user.level = userLevel;
-    
-    // Contar usuários com totalScore maior OU (totalScore igual E level maior)
-    // Excluir o próprio usuário da contagem
-    try {
-      const countBetterGeneral = await this.usersRepository
-        .createQueryBuilder('u')
-        .where('u.id != :userId', { userId })
-        .andWhere(
-          '(CAST(u.totalScore AS DECIMAL) > :totalScore OR (CAST(u.totalScore AS DECIMAL) = :totalScore AND u.level > :level))',
-          { 
-            totalScore: userTotalScore, 
-            level: userLevel 
-          }
-        )
-        .getCount();
-      
-      generalRank = countBetterGeneral + 1;
-      
-      // Log para debug
-      console.log(`📊 [getFullProfile] User ${userId} - totalScore: ${userTotalScore}, level: ${userLevel}, generalRank: ${generalRank}`);
-    } catch (error: any) {
-      console.error('❌ [getFullProfile] Erro ao calcular ranking geral:', error.message);
-      // Em caso de erro, calcular de forma mais simples
-      const allUsers = await this.usersRepository.find({
-        select: ['id', 'totalScore', 'level'],
-        order: { totalScore: 'DESC', level: 'DESC' }
-      });
-      
-      const userIndex = allUsers.findIndex(u => u.id === userId);
-      generalRank = userIndex >= 0 ? userIndex + 1 : null;
-    }
+    generalRank = countBetterGeneral + 1;
 
-    // Calcular classe baseada em score e nível
-    const playerClass = this.calculatePlayerClass(userTotalScore, userLevel);
+    // Calcular classe
+    const playerClass = this.calculatePlayerClass(user.rating);
 
     // Atualizar classe do usuário se necessário
     if (user.playerClass !== playerClass) {
@@ -1468,7 +535,6 @@ export class UsersService {
 
     // Buscar clã do usuário e validar se realmente está em um grupo ativo
     let clanTag = null;
-    let userGroup = null;
     try {
       const groupMember = await this.groupMemberRepository
         .createQueryBuilder('gm')
@@ -1483,7 +549,6 @@ export class UsersService {
           .select('g.id', 'id')
           .addSelect('g.name', 'name')
           .addSelect('g.tag', 'tag')
-          .addSelect('g.logo', 'logo')
           .addSelect('g.isActive', 'isActive')
           .where('g.id = :groupId', { groupId: groupMember.groupId })
           .andWhere('g.isActive = :isActive', { isActive: true })
@@ -1491,12 +556,6 @@ export class UsersService {
         
         if (group && group.isActive) {
           clanTag = group.tag ?? null;
-          userGroup = {
-            id: group.id,
-            name: group.name,
-            tag: group.tag,
-            logo: group.logo,
-          };
           // Atualizar clanTag do usuário se estiver diferente
           if (user.clanTag !== clanTag) {
             await this.usersRepository.update(userId, { clanTag });
@@ -1523,66 +582,18 @@ export class UsersService {
     // Formatar nick com clã
     const displayNick = clanTag ? `|${clanTag}| ${user.nickname}` : user.nickname;
 
-    // Usar divisão do próprio usuário (da tabela users) - sempre dinâmica, não fixa
-    // Buscar division diretamente do banco se não vier no objeto
-    let division = user.division;
-    
-    // Se division não veio no objeto, buscar diretamente do banco
-    if (!division || division === undefined || division === null) {
-      try {
-        const userWithDivision = await this.usersRepository
-          .createQueryBuilder('u')
-          .select('u.division', 'division')
-          .where('u.id = :id', { id: userId })
-          .getRawOne();
-        
-        if (userWithDivision && userWithDivision.division) {
-          division = userWithDivision.division;
-          console.log(`🔍 [getFullProfile] Division buscada diretamente do banco:`, division);
-        }
-      } catch (error) {
-        console.error(`❌ [getFullProfile] Erro ao buscar division do banco:`, error);
-      }
-    }
-    
-    // Normalizar divisão para garantir formato correto (se existir)
-    if (division) {
-      const divUpper = division.toUpperCase();
-      if (divUpper === 'BRONZE') division = 'Bronze';
-      else if (divUpper === 'SILVER') division = 'Silver';
-      else if (divUpper === 'GOLD') division = 'Gold';
-      else if (divUpper === 'PLATINUM') division = 'Platinum';
-      else if (divUpper === 'DIAMOND') division = 'Diamond';
-      else if (divUpper === 'MASTER') division = 'Master';
-      else if (divUpper === 'LEGENDARY') division = 'Legendary';
-    }
-    
-    console.log(`✅ [getFullProfile] Division final para user ${userId}:`, division);
-
     return {
       ...user,
-      level: userLevel, // Garantir que o nível atualizado seja retornado
-      profileImage: this.normalizeProfileImage(user.profileImage),
       displayNick,
       playerClass,
-      lastIpAddress: user.lastIpAddress || null,
-      isOnline: user.isOnline || false,
-      group: userGroup,
-      division: division || null, // Divisão no nível raiz para fácil acesso (da tabela users) - sempre dinâmica
       seasonRanking: seasonRanking ? {
         seasonScore: seasonRanking.seasonScore,
         wins: seasonRanking.wins,
         losses: seasonRanking.losses,
+        division: seasonRanking.division,
         rank: seasonRank,
-      } : {
-        seasonScore: 0,
-        wins: 0,
-        losses: 0,
-        rank: seasonRank,
-      },
-      seasonRank: seasonRank,
-      generalRank: generalRank,
-      globalRank: generalRank, // Alias para compatibilidade
+      } : null,
+      generalRank,
     };
   }
 
@@ -1661,147 +672,5 @@ export class UsersService {
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     await this.usersRepository.update(userId, { password: hashedPassword });
     return this.findById(userId);
-  }
-
-  // Atualizar cosméticos equipados (playmat e skin de carta)
-  async updateCosmetics(
-    userId: number,
-    cosmetics: {
-      equippedPlaymatId?: string | null;
-      equippedPlaymatImage?: string | null;
-      equippedSkinId?: string | null;
-      equippedSkinImage?: string | null;
-      equippedDeckName?: string | null;
-    },
-  ): Promise<User> {
-    const updates: Partial<User> = {};
-
-    if (cosmetics.equippedPlaymatId !== undefined) {
-      updates.equippedPlaymatId = cosmetics.equippedPlaymatId;
-      // Se playmatId foi limpo, também limpar imagem
-      if (!cosmetics.equippedPlaymatId) {
-        updates.equippedPlaymatImage = null;
-      }
-    }
-    if (cosmetics.equippedPlaymatImage !== undefined) {
-      updates.equippedPlaymatImage = cosmetics.equippedPlaymatImage;
-    }
-
-    if (cosmetics.equippedSkinId !== undefined) {
-      updates.equippedSkinId = cosmetics.equippedSkinId;
-      if (!cosmetics.equippedSkinId) {
-        updates.equippedSkinImage = null;
-      }
-    }
-    if (cosmetics.equippedSkinImage !== undefined) {
-      updates.equippedSkinImage = cosmetics.equippedSkinImage;
-    }
-
-    if (cosmetics.equippedDeckName !== undefined) {
-      console.log(`🔍 [updateCosmetics] Atualizando equippedDeckName para: "${cosmetics.equippedDeckName}"`);
-      updates.equippedDeckName = cosmetics.equippedDeckName;
-    }
-
-    if (Object.keys(updates).length === 0) {
-      return this.findById(userId);
-    }
-
-    console.log(`🔍 [updateCosmetics] Atualizando usuário ${userId} com:`, JSON.stringify(updates, null, 2));
-    await this.usersRepository.update(userId, updates);
-    const updatedUser = await this.findById(userId);
-    console.log(`🔍 [updateCosmetics] Usuário atualizado. equippedDeckName agora é: "${(updatedUser as any).equippedDeckName || 'null/undefined'}"`);
-    return updatedUser;
-  }
-
-  async updateOnlineStatus(userId: number, isOnline: boolean): Promise<void> {
-    try {
-      const result = await this.usersRepository.update(userId, { isOnline });
-      if (result.affected === 0) {
-        console.warn(`⚠️ [updateOnlineStatus] Nenhuma linha afetada ao atualizar status do usuário ${userId} para ${isOnline}. Usuário pode não existir.`);
-      } else {
-        console.log(`✅ [updateOnlineStatus] Status do usuário ${userId} atualizado para ${isOnline ? 'online' : 'offline'}`);
-      }
-    } catch (error) {
-      console.error(`❌ [updateOnlineStatus] Erro ao atualizar status do usuário ${userId}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Limpa usuários que estão marcados como online mas não têm conexões ativas
-   * Deve ser chamado periodicamente para manter consistência
-   * @param activeUserIds - Array de IDs de usuários que realmente têm conexões ativas
-   */
-  async cleanupStaleOnlineUsers(activeUserIds: number[] = []): Promise<number> {
-    try {
-      // Primeiro, garantir que usuários banidos não fiquem online
-      const bannedOnlineUsers = await this.usersRepository.find({
-        where: { isOnline: true, isBanned: true },
-        select: ['id'],
-      });
-
-      let cleanedCount = 0;
-
-      if (bannedOnlineUsers.length > 0) {
-        await this.usersRepository.update(
-          { id: In(bannedOnlineUsers.map(u => u.id)) },
-          { isOnline: false }
-        );
-        cleanedCount += bannedOnlineUsers.length;
-      }
-
-      // Se temos a lista de usuários ativos, marcar os outros como offline
-      if (activeUserIds.length > 0) {
-        const allOnlineUsers = await this.usersRepository.find({
-          where: { isOnline: true, isBanned: false },
-          select: ['id'],
-        });
-
-        const staleUsers = allOnlineUsers.filter(u => !activeUserIds.includes(u.id));
-        
-        if (staleUsers.length > 0) {
-          await this.usersRepository.update(
-            { id: In(staleUsers.map(u => u.id)) },
-            { isOnline: false }
-          );
-          cleanedCount += staleUsers.length;
-        }
-      }
-
-      return cleanedCount;
-    } catch (error) {
-      console.error('❌ [cleanupStaleOnlineUsers] Erro ao limpar usuários online obsoletos:', error);
-      return 0;
-    }
-  }
-
-  async updateLastLogin(userId: number, ipAddress: string): Promise<void> {
-    console.log(`🔄 [updateLastLogin] Atualizando último login do usuário ${userId} com IP: ${ipAddress}`);
-    const result = await this.usersRepository.update(userId, {
-      lastLogin: new Date(),
-      lastIpAddress: ipAddress,
-      isOnline: true, // Marcar como online ao fazer login
-    });
-    console.log(`✅ [updateLastLogin] Último login atualizado e usuário marcado como online. Linhas afetadas: ${result.affected || 0}`);
-  }
-
-  /**
-   * Atualiza a última atividade do usuário e marca como online
-   * Chamado sempre que o usuário faz uma requisição autenticada
-   */
-  async updateLastActivity(userId: number): Promise<void> {
-    try {
-      await this.usersRepository.update(userId, {
-        lastLogin: new Date(), // Usar lastLogin como timestamp de última atividade
-        isOnline: true,
-      });
-    } catch (error) {
-      // Log apenas em caso de erro crítico
-      if (error instanceof Error && error.message.includes('does not exist')) {
-        // Usuário não existe, ignorar silenciosamente
-        return;
-      }
-      throw error;
-    }
   }
 }

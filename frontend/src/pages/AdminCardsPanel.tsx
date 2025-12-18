@@ -31,9 +31,6 @@ export default function AdminCardsPanel() {
   const [editingCard, setEditingCard] = useState<Card | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('active');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string>('');
-  const [selectedCard, setSelectedCard] = useState<Card | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -92,34 +89,6 @@ export default function AdminCardsPanel() {
     }
 
     try {
-      let imagePath = formData.cardImage;
-
-      // Se houver uma nova imagem selecionada, fazer upload primeiro
-      if (selectedImageFile) {
-        try {
-          const imageFormData = new FormData();
-          imageFormData.append('cardImage', selectedImageFile);
-          imageFormData.append('cardName', formData.name || formData.idCarta || 'card');
-
-          const uploadResponse = await api.post('/cards/upload-image', imageFormData, {
-            headers: {
-              'Content-Type': 'multipart/form-data',
-            },
-          });
-          
-          imagePath = uploadResponse.data.imagePath;
-          console.log('✅ Imagem enviada com sucesso:', imagePath);
-        } catch (uploadError: any) {
-          console.error('❌ Erro ao fazer upload da imagem:', uploadError);
-          setMessage({ 
-            type: 'error', 
-            text: `❌ Erro ao fazer upload da imagem: ${uploadError.response?.data?.message || uploadError.message || 'Erro desconhecido'}` 
-          });
-          setLoading(false);
-          return;
-        }
-      }
-
       if (editingCard) {
         // EDITAR
         console.log('💾 Atualizando carta:', editingCard.id);
@@ -135,7 +104,7 @@ export default function AdminCardsPanel() {
         if (formData.rarity) cleanedFormData.rarity = formData.rarity;
         
         // Campos opcionais - apenas se tiverem valor
-        if (imagePath) cleanedFormData.cardImage = imagePath;
+        if (formData.cardImage) cleanedFormData.cardImage = formData.cardImage;
         
         // Campos específicos de Monster
         if (formData.type === 'Monster') {
@@ -214,14 +183,7 @@ export default function AdminCardsPanel() {
         ];
         
         for (const key of allowedFields) {
-          if (key === 'cardImage') {
-            // Usar imagePath se houver upload, senão usar o valor do formData
-            if (imagePath) {
-              cleanedFormData[key] = imagePath;
-            } else if (formData[key as keyof typeof formData]) {
-              cleanedFormData[key] = formData[key as keyof typeof formData];
-            }
-          } else if (formData[key as keyof typeof formData] !== undefined && formData[key as keyof typeof formData] !== null) {
+          if (formData[key as keyof typeof formData] !== undefined && formData[key as keyof typeof formData] !== null) {
             cleanedFormData[key] = formData[key as keyof typeof formData];
           }
         }
@@ -235,8 +197,6 @@ export default function AdminCardsPanel() {
       resetForm();
       loadCards();
       setShowForm(false);
-      setSelectedImageFile(null);
-      setImagePreview('');
     } catch (error: any) {
       console.error('❌ Erro ao salvar carta:', error);
       console.error('❌ Detalhes do erro:', error.response?.data);
@@ -285,8 +245,6 @@ export default function AdminCardsPanel() {
     };
     console.log('📝 FormData preenchido:', formDataToSet);
     setFormData(formDataToSet);
-    setSelectedImageFile(null);
-    setImagePreview('');
     setShowForm(true);
   };
 
@@ -352,8 +310,6 @@ export default function AdminCardsPanel() {
       maxCopiesInDeck: 3,
     });
     setEditingCard(null);
-    setSelectedImageFile(null);
-    setImagePreview('');
   };
 
   const filteredCards = cards
@@ -402,74 +358,64 @@ export default function AdminCardsPanel() {
         </motion.div>
       )}
 
-      {/* Modal de Formulário */}
+      {/* Formulário */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            className="bg-gray-800 rounded-lg p-4 w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl border-2 border-purple-500/50"
-          >
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">
-              {editingCard ? '✏️ Editar Carta' : '➕ Nova Carta'}
-            </h2>
-            <button
-              onClick={() => {
-                resetForm();
-                setShowForm(false);
-              }}
-              className="text-gray-400 hover:text-white text-xl font-bold transition-colors"
-            >
-              ✕
-            </button>
-          </div>
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gray-800 rounded-lg p-6 mb-8 max-h-[85vh] overflow-y-auto"
+        >
+          <h2 className="text-2xl font-bold mb-6">
+            {editingCard ? '✏️ Editar Carta' : '➕ Nova Carta'}
+          </h2>
           
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-6">
             {/* Informações Básicas */}
-            <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700">
-              <h3 className="text-sm font-bold mb-3 text-purple-400">📝 Informações Básicas</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+            <div className="bg-gray-900/50 rounded-lg p-6 border border-gray-700">
+              <h3 className="text-lg font-bold mb-4 text-purple-400">📝 Informações Básicas</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label className="block text-xs font-bold mb-1">Nome da Carta *</label>
+                  <label className="block text-sm font-bold mb-2">Nome da Carta *</label>
                   <input
                     type="text"
                     required
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500 transition-colors"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 transition-colors"
                     placeholder="Ex: Mago Negro"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold mb-1">🆔 ID Carta *</label>
+                  <label className="block text-sm font-bold mb-2">🆔 ID Carta *</label>
                   <input
                     type="text"
                     required
                     value={formData.idCarta}
                     onChange={(e) => setFormData({ ...formData, idCarta: e.target.value })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500 transition-colors"
-                    placeholder="Ex: DM-001"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 transition-colors"
+                    placeholder="Ex: DM-001, DM-002 (para diferenciar versões)"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    ID único para diferenciar cartas com mesmo nome mas imagens diferentes
+                  </p>
                 </div>
               </div>
               
-              <div className="mb-3">
-                <label className="block text-xs font-bold mb-1">Descrição *</label>
+              <div className="mb-4">
+                <label className="block text-sm font-bold mb-2">Descrição *</label>
                 <textarea
                   required
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500 h-20 transition-colors"
-                  placeholder="Ex: The ultimate wizard..."
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 h-24 transition-colors"
+                  placeholder="Ex: The ultimate wizard in terms of attack and defense."
                 />
               </div>
 
               {/* Upload de Imagem */}
-              <div className="border-2 border-dashed border-gray-700 rounded p-3 hover:border-purple-500 transition-colors">
-                <label className="block text-xs font-bold mb-2">🖼️ Imagem da Carta</label>
-                <div className="flex items-start gap-3">
+              <div className="border-2 border-dashed border-gray-700 rounded-lg p-4 hover:border-purple-500 transition-colors">
+                <label className="block text-sm font-bold mb-3">🖼️ Imagem da Carta</label>
+                <div className="flex items-start gap-4">
                   <div className="flex-1">
                     <input
                       type="file"
@@ -477,42 +423,38 @@ export default function AdminCardsPanel() {
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file) {
-                          setSelectedImageFile(file);
                           const reader = new FileReader();
                           reader.onloadend = () => {
-                            setImagePreview(reader.result as string);
+                            setFormData({ ...formData, cardImage: reader.result as string });
                           };
                           reader.readAsDataURL(file);
-                          setFormData({ ...formData, cardImage: '' });
                         }
                       }}
-                      className="block w-full text-xs text-gray-400
-                        file:mr-2 file:py-1 file:px-3
-                        file:rounded file:border-0
-                        file:text-xs file:font-bold
+                      className="block w-full text-sm text-gray-400
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-lg file:border-0
+                        file:text-sm file:font-bold
                         file:bg-purple-600 file:text-white
                         hover:file:bg-purple-700 cursor-pointer"
                     />
+                    <p className="text-xs text-gray-500 mt-2">
+                      ou cole uma URL de imagem no campo abaixo
+                    </p>
                     <input
                       type="text"
                       value={formData.cardImage}
-                      onChange={(e) => {
-                        setFormData({ ...formData, cardImage: e.target.value });
-                        if (e.target.value) {
-                          setSelectedImageFile(null);
-                          setImagePreview('');
-                        }
-                      }}
-                      className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-purple-500 mt-2"
-                      placeholder="URL da imagem..."
+                      onChange={(e) => setFormData({ ...formData, cardImage: e.target.value })}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 mt-2"
+                      placeholder="https://exemplo.com/carta.jpg"
                     />
                   </div>
-                  {(imagePreview || formData.cardImage) && (
+                  {formData.cardImage && (
                     <div className="flex-shrink-0">
+                      <p className="text-xs text-gray-500 mb-2">Preview:</p>
                       <img 
-                        src={imagePreview || formData.cardImage} 
+                        src={formData.cardImage} 
                         alt="Preview" 
-                        className="w-24 h-32 object-contain rounded border-2 border-purple-500"
+                        className="w-32 h-44 object-contain rounded-lg border-2 border-purple-500"
                         onError={(e) => {
                           (e.target as HTMLImageElement).style.display = 'none';
                         }}
@@ -524,15 +466,15 @@ export default function AdminCardsPanel() {
             </div>
 
             {/* Tipo e Raridade */}
-            <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700">
-              <h3 className="text-sm font-bold mb-3 text-purple-400">🎯 Tipo e Classificação</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-gray-900/50 rounded-lg p-6 border border-gray-700">
+              <h3 className="text-lg font-bold mb-4 text-purple-400">🎯 Tipo e Classificação</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
-                <label className="block text-xs font-bold mb-1">Tipo *</label>
+                <label className="block text-sm font-bold mb-2">Tipo *</label>
                 <select
                   value={formData.type}
                   onChange={(e) => setFormData({ ...formData, type: e.target.value as CardType })}
-                  className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500"
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
                 >
                   <option value="Monster">Monster</option>
                   <option value="Spell">Spell</option>
@@ -540,11 +482,11 @@ export default function AdminCardsPanel() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold mb-1">Raridade *</label>
+                <label className="block text-sm font-bold mb-2">Raridade *</label>
                 <select
                   value={formData.rarity}
                   onChange={(e) => setFormData({ ...formData, rarity: e.target.value as CardRarity })}
-                  className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500"
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
                 >
                   <option value="Common">Common</option>
                   <option value="Rare">Rare</option>
@@ -557,11 +499,11 @@ export default function AdminCardsPanel() {
               {formData.type === 'Monster' && (
                 <>
                   <div>
-                    <label className="block text-xs font-bold mb-1">Tipo de Monstro</label>
+                    <label className="block text-sm font-bold mb-2">Tipo de Monstro</label>
                     <select
                       value={formData.monsterType || ''}
                       onChange={(e) => setFormData({ ...formData, monsterType: e.target.value as MonsterType })}
-                      className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm"
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
                     >
                       <option value="Normal">Normal</option>
                       <option value="Effect">Effect</option>
@@ -569,11 +511,11 @@ export default function AdminCardsPanel() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold mb-1">Atributo</label>
+                    <label className="block text-sm font-bold mb-2">Atributo</label>
                     <select
                       value={formData.attribute || ''}
                       onChange={(e) => setFormData({ ...formData, attribute: e.target.value as CardAttribute })}
-                      className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm"
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
                     >
                       <option value="DARK">DARK</option>
                       <option value="LIGHT">LIGHT</option>
@@ -590,85 +532,85 @@ export default function AdminCardsPanel() {
 
             {/* Stats de Monstro */}
             {formData.type === 'Monster' && (
-              <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700">
-                <h3 className="text-sm font-bold mb-3 text-purple-400">⚔️ Atributos de Monstro</h3>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
+              <div className="bg-gray-900/50 rounded-lg p-6 border border-gray-700">
+                <h3 className="text-lg font-bold mb-4 text-purple-400">⚔️ Atributos de Monstro</h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
                   <div>
-                    <label className="block text-xs font-bold mb-1">Raça/Race *</label>
+                    <label className="block text-sm font-bold mb-2">Raça/Race *</label>
                     <select
                       value={formData.race || ''}
                       onChange={(e) => setFormData({ ...formData, race: e.target.value })}
-                      className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm"
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
                     >
-                      <option value="Warrior">Warrior</option>
-                      <option value="Spellcaster">Spellcaster</option>
-                      <option value="Dragon">Dragon</option>
-                      <option value="Zombie">Zombie</option>
-                      <option value="Fiend">Fiend</option>
-                      <option value="Machine">Machine</option>
-                      <option value="Aqua">Aqua</option>
-                      <option value="Pyro">Pyro</option>
-                      <option value="Rock">Rock</option>
-                      <option value="Winged Beast">Winged Beast</option>
-                      <option value="Plant">Plant</option>
-                      <option value="Insect">Insect</option>
-                      <option value="Thunder">Thunder</option>
-                      <option value="Beast">Beast</option>
-                      <option value="Beast-Warrior">Beast-Warrior</option>
-                      <option value="Dinosaur">Dinosaur</option>
-                      <option value="Fish">Fish</option>
-                      <option value="Sea Serpent">Sea Serpent</option>
-                      <option value="Reptile">Reptile</option>
-                      <option value="Psychic">Psychic</option>
-                      <option value="Divine-Beast">Divine-Beast</option>
-                      <option value="Creator God">Creator God</option>
-                      <option value="Wyrm">Wyrm</option>
-                      <option value="Cyberse">Cyberse</option>
-                      <option value="Fairy">Fairy</option>
+                      <option value="Warrior">Warrior (Guerreiro)</option>
+                      <option value="Spellcaster">Spellcaster (Mago)</option>
+                      <option value="Dragon">Dragon (Dragão)</option>
+                      <option value="Zombie">Zombie (Zumbi)</option>
+                      <option value="Fiend">Fiend (Demônio)</option>
+                      <option value="Machine">Machine (Máquina)</option>
+                      <option value="Aqua">Aqua (Aquático)</option>
+                      <option value="Pyro">Pyro (Piro)</option>
+                      <option value="Rock">Rock (Rocha)</option>
+                      <option value="Winged Beast">Winged Beast (Besta Alada)</option>
+                      <option value="Plant">Plant (Planta)</option>
+                      <option value="Insect">Insect (Inseto)</option>
+                      <option value="Thunder">Thunder (Trovão)</option>
+                      <option value="Beast">Beast (Besta)</option>
+                      <option value="Beast-Warrior">Beast-Warrior (Besta-Guerreiro)</option>
+                      <option value="Dinosaur">Dinosaur (Dinossauro)</option>
+                      <option value="Fish">Fish (Peixe)</option>
+                      <option value="Sea Serpent">Sea Serpent (Serpente Marinha)</option>
+                      <option value="Reptile">Reptile (Réptil)</option>
+                      <option value="Psychic">Psychic (Psíquico)</option>
+                      <option value="Divine-Beast">Divine-Beast (Besta Divina)</option>
+                      <option value="Creator God">Creator God (Deus Criador)</option>
+                      <option value="Wyrm">Wyrm (Wyrm)</option>
+                      <option value="Cyberse">Cyberse (Ciberse)</option>
+                      <option value="Fairy">Fairy (Fada)</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold mb-1">Level</label>
+                    <label className="block text-sm font-bold mb-2">Level</label>
                     <input
                       type="number"
                       min="1"
                       max="12"
                       value={formData.level}
                       onChange={(e) => setFormData({ ...formData, level: Number(e.target.value) })}
-                      className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm"
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold mb-1">Arquétipo</label>
+                    <label className="block text-sm font-bold mb-2">Arquétipo</label>
                     <input
                       type="text"
                       value={formData.archetype}
                       onChange={(e) => setFormData({ ...formData, archetype: e.target.value })}
-                      className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm"
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
                       placeholder="Ex: Blue-Eyes"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold mb-1">ATK</label>
+                    <label className="block text-sm font-bold mb-2">ATK</label>
                     <input
                       type="number"
                       min="0"
                       value={formData.atk}
                       onChange={(e) => setFormData({ ...formData, atk: Number(e.target.value) })}
-                      className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm"
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold mb-1">DEF</label>
+                    <label className="block text-sm font-bold mb-2">DEF</label>
                     <input
                       type="number"
                       min="0"
                       value={formData.def}
                       onChange={(e) => setFormData({ ...formData, def: Number(e.target.value) })}
-                      className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm"
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
                     />
                   </div>
                 </div>
@@ -677,31 +619,31 @@ export default function AdminCardsPanel() {
 
             {/* Campos de Spell */}
             {formData.type === 'Spell' && (
-              <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700">
-                <h3 className="text-sm font-bold mb-3 text-purple-400">✨ Atributos de Magia</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="bg-gray-900/50 rounded-lg p-6 border border-gray-700">
+                <h3 className="text-lg font-bold mb-4 text-purple-400">✨ Atributos de Magia</h3>
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold mb-1">Tipo de Magia</label>
+                  <label className="block text-sm font-bold mb-2">Tipo de Magia</label>
                   <select
                     value={formData.spellType || 'Normal'}
                     onChange={(e) => setFormData({ ...formData, spellType: e.target.value })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
                   >
                     <option value="Normal">Normal</option>
-                    <option value="Quick-Play">Quick-Play</option>
-                    <option value="Continuous">Continuous</option>
-                    <option value="Equip">Equip</option>
-                    <option value="Field">Field</option>
+                    <option value="Quick-Play">Quick-Play (Jogo Rápido)</option>
+                    <option value="Continuous">Continuous (Contínua)</option>
+                    <option value="Equip">Equip (Equipamento)</option>
+                    <option value="Field">Field (Campo)</option>
                     <option value="Ritual">Ritual</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold mb-1">Arquétipo</label>
+                  <label className="block text-sm font-bold mb-2">Arquétipo</label>
                   <input
                     type="text"
                     value={formData.archetype}
                     onChange={(e) => setFormData({ ...formData, archetype: e.target.value })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
                     placeholder="Ex: Dark Magician"
                   />
                 </div>
@@ -711,28 +653,28 @@ export default function AdminCardsPanel() {
 
             {/* Campos de Trap */}
             {formData.type === 'Trap' && (
-              <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700">
-                <h3 className="text-sm font-bold mb-3 text-purple-400">🪤 Atributos de Armadilha</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="bg-gray-900/50 rounded-lg p-6 border border-gray-700">
+                <h3 className="text-lg font-bold mb-4 text-purple-400">🪤 Atributos de Armadilha</h3>
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold mb-1">Tipo de Armadilha</label>
+                  <label className="block text-sm font-bold mb-2">Tipo de Armadilha</label>
                   <select
                     value={formData.trapType || 'Normal'}
                     onChange={(e) => setFormData({ ...formData, trapType: e.target.value })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
                   >
                     <option value="Normal">Normal</option>
-                    <option value="Continuous">Continuous</option>
-                    <option value="Counter">Counter</option>
+                    <option value="Continuous">Continuous (Contínua)</option>
+                    <option value="Counter">Counter (Contra-Armadilha)</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold mb-1">Arquétipo</label>
+                  <label className="block text-sm font-bold mb-2">Arquétipo</label>
                   <input
                     type="text"
                     value={formData.archetype}
                     onChange={(e) => setFormData({ ...formData, archetype: e.target.value })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2"
                     placeholder="Ex: Solemn"
                   />
                 </div>
@@ -741,28 +683,29 @@ export default function AdminCardsPanel() {
             )}
 
             {/* Preços e Configurações */}
-            <div className="bg-gradient-to-br from-purple-900/50 to-blue-900/50 rounded-lg p-4 border border-purple-500/50">
-              <h3 className="text-sm font-bold mb-4 text-purple-300">💰 Preços e Disponibilidade</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+            <div className="bg-gradient-to-br from-purple-900/50 to-blue-900/50 rounded-lg p-6 border border-purple-500/50">
+              <h3 className="text-xl font-bold mb-6 text-purple-300">💰 Preços e Disponibilidade</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 {/* Card Créditos */}
-                <div className="bg-gray-800/50 rounded-lg p-3 border-2 border-purple-500/30 hover:border-purple-500 transition-colors">
-                  <label className="flex items-center gap-2 text-xs font-bold mb-1 text-purple-400">
-                    <span>💎</span> Créditos
+                <div className="bg-gray-800/50 rounded-lg p-4 border-2 border-purple-500/30 hover:border-purple-500 transition-colors">
+                  <label className="flex items-center gap-2 text-sm font-bold mb-2 text-purple-400">
+                    <span className="text-xl">💎</span> Créditos
                   </label>
                   <input
                     type="number"
                     min="0"
                     value={formData.priceCredits}
                     onChange={(e) => setFormData({ ...formData, priceCredits: Number(e.target.value) })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500 transition-colors"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 transition-colors"
                     placeholder="Ex: 100"
                   />
+                  <p className="text-xs text-gray-500 mt-2">Moeda premium</p>
                 </div>
 
                 {/* Card Cash */}
-                <div className="bg-gray-800/50 rounded-lg p-3 border-2 border-green-500/30 hover:border-green-500 transition-colors">
-                  <label className="flex items-center gap-2 text-xs font-bold mb-1 text-green-400">
-                    <span>💵</span> Cash (R$)
+                <div className="bg-gray-800/50 rounded-lg p-4 border-2 border-green-500/30 hover:border-green-500 transition-colors">
+                  <label className="flex items-center gap-2 text-sm font-bold mb-2 text-green-400">
+                    <span className="text-xl">💵</span> Cash (R$)
                   </label>
                   <input
                     type="number"
@@ -770,75 +713,78 @@ export default function AdminCardsPanel() {
                     min="0"
                     value={formData.priceCash}
                     onChange={(e) => setFormData({ ...formData, priceCash: Number(e.target.value) })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-green-500 transition-colors"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-green-500 transition-colors"
                     placeholder="Ex: 4.99"
                   />
+                  <p className="text-xs text-gray-500 mt-2">Dinheiro real</p>
                 </div>
               </div>
 
               {/* Checkboxes */}
-              <div className="flex flex-wrap gap-3 mb-3">
-                <label className="flex items-center gap-2 bg-gray-800/50 px-3 py-2 rounded cursor-pointer hover:bg-gray-800 transition-colors border border-gray-700">
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-3 bg-gray-800/50 px-4 py-3 rounded-lg cursor-pointer hover:bg-gray-800 transition-colors border border-gray-700">
                   <input
                     type="checkbox"
                     checked={formData.isForSale}
                     onChange={(e) => setFormData({ ...formData, isForSale: e.target.checked })}
-                    className="w-4 h-4 accent-green-500"
+                    className="w-5 h-5 accent-green-500"
                   />
-                  <span className="text-xs font-bold text-green-400">🛒 Na Loja</span>
+                  <span className="font-bold text-green-400">🛒 Disponível na Loja</span>
                 </label>
-                <label className="flex items-center gap-2 bg-gray-800/50 px-3 py-2 rounded cursor-pointer hover:bg-gray-800 transition-colors border border-gray-700">
+                <label className="flex items-center gap-3 bg-gray-800/50 px-4 py-3 rounded-lg cursor-pointer hover:bg-gray-800 transition-colors border border-gray-700">
                   <input
                     type="checkbox"
                     checked={formData.isBanned}
                     onChange={(e) => setFormData({ ...formData, isBanned: e.target.checked })}
-                    className="w-4 h-4 accent-red-500"
+                    className="w-5 h-5 accent-red-500"
                   />
-                  <span className="text-xs font-bold text-red-400">🚫 Banida</span>
+                  <span className="font-bold text-red-400">🚫 Carta Banida</span>
                 </label>
               </div>
               
               {/* Máximo de Cópias no Deck */}
               <div>
-                <label className="block text-xs font-bold mb-1">
+                <label className="block text-sm font-bold mb-2">
                   📊 Máximo de Cópias no Deck *
                 </label>
                 <select
                   value={formData.maxCopiesInDeck}
                   onChange={(e) => setFormData({ ...formData, maxCopiesInDeck: Number(e.target.value) })}
-                  className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500 transition-colors"
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 transition-colors"
                 >
-                  <option value="0">0 - Banida</option>
-                  <option value="1">1 - Limitada</option>
-                  <option value="2">2 - Semi-limitada</option>
-                  <option value="3">3 - Ilimitada</option>
+                  <option value="0">0 - Banida (não pode ter no deck)</option>
+                  <option value="1">1 - Limitada a 1 cópia</option>
+                  <option value="2">2 - Limitada a 2 cópias</option>
+                  <option value="3">3 - Máximo padrão (3 cópias)</option>
                 </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Define quantas cópias desta carta podem ser colocadas no deck. 0 = banida.
+                </p>
               </div>
             </div>
 
             {/* Botões */}
-            <div className="flex gap-3">
+            <div className="flex gap-4">
               <button
                 type="button"
                 onClick={() => {
                   resetForm();
                   setShowForm(false);
                 }}
-                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 rounded text-sm"
+                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-lg"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 rounded text-sm disabled:opacity-50"
+                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg disabled:opacity-50"
               >
-                {loading ? 'Salvando...' : editingCard ? '💾 Atualizar' : '✨ Criar'}
+                {loading ? 'Salvando...' : editingCard ? '💾 Atualizar Carta' : '✨ Criar Carta'}
               </button>
             </div>
           </form>
-          </motion.div>
-        </div>
+        </motion.div>
       )}
 
       {/* Filtros */}
@@ -868,249 +814,145 @@ export default function AdminCardsPanel() {
           <p className="text-2xl text-gray-300">⏳ Carregando cartas...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {filteredCards.map((card, index) => (
             <motion.div
               key={card.id}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: index * 0.02, duration: 0.2 }}
-              whileHover={{ scale: 1.05, zIndex: 10 }}
-              onClick={() => setSelectedCard(card)}
-              className={`group relative bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg overflow-hidden shadow-lg border-2 transition-all duration-200 cursor-pointer ${
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ delay: index * 0.05, duration: 0.3 }}
+              whileHover={{ y: -8, scale: 1.02 }}
+              className={`group relative bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 transition-all duration-300 ${
                 card.isActive 
-                  ? 'border-green-500/50 hover:border-green-400' 
-                  : 'border-red-500/50 hover:border-red-400'
+                  ? 'border-green-500/50 hover:border-green-400 hover:shadow-green-500/20' 
+                  : 'border-red-500/50 hover:border-red-400 hover:shadow-red-500/20'
               }`}
             >
               {/* Badge de Status */}
-              <div className={`absolute top-1 right-1 z-10 w-3 h-3 rounded-full shadow-lg ${
+              <div className={`absolute top-3 right-3 z-10 px-3 py-1 rounded-full text-xs font-bold shadow-lg ${
                 card.isActive 
-                  ? 'bg-green-500' 
-                  : 'bg-red-500'
-              }`} title={card.isActive ? 'Ativa' : 'Inativa'} />
+                  ? 'bg-green-500 text-white' 
+                  : 'bg-red-500 text-white'
+              }`}>
+                {card.isActive ? '✓ ATIVA' : '✗ INATIVA'}
+              </div>
 
-              {/* Preview da Carta - Menor */}
-              <div className="relative flex items-center justify-center p-2">
-                <div className="relative w-full aspect-[2/3]">
+              {/* Preview da Carta */}
+              <div className="relative flex items-center justify-center p-4">
+                <div className="relative w-full aspect-[2/3] max-w-[180px] mx-auto">
                   <CardImage
                     card={card}
-                    className="w-full h-full object-cover rounded transition-transform duration-200 group-hover:scale-110"
+                    className="w-full h-full object-cover rounded-lg shadow-xl transition-transform duration-300 group-hover:scale-105"
                     fallback="/images/fundoCarta.webp"
                   />
+                  {/* Efeito de brilho */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 rounded-lg"></div>
                 </div>
               </div>
 
-              {/* Nome - Apenas */}
-              <div className="p-2 bg-slate-900/80 backdrop-blur-sm">
-                <h3 className="text-xs font-bold text-white text-center line-clamp-2 min-h-[2rem] group-hover:text-purple-300 transition-colors">
-                  {card.name}
-                </h3>
+              {/* Info */}
+              <div className="p-5 bg-slate-900/50 backdrop-blur-sm">
+                {/* Nome e Raridade */}
+                <div className="mb-3">
+                  <h3 className="text-xl font-bold text-white mb-1 line-clamp-1 group-hover:text-purple-300 transition-colors">
+                    {card.name}
+                  </h3>
+                  {(card as any).idCarta && (
+                    <p className="text-xs text-gray-500 font-mono mb-1">ID: {(card as any).idCarta}</p>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-1 rounded text-xs font-bold ${
+                      card.rarity === 'Common' ? 'bg-gray-600 text-white' :
+                      card.rarity === 'Rare' ? 'bg-blue-600 text-white' :
+                      card.rarity === 'Super Rare' ? 'bg-purple-600 text-white' :
+                      card.rarity === 'Ultra Rare' ? 'bg-yellow-600 text-white' :
+                      card.rarity === 'Secret Rare' ? 'bg-gradient-to-r from-yellow-400 to-orange-500 text-white' :
+                      'bg-gray-600 text-white'
+                    }`}>
+                      {card.rarity}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {new Date(card.createdAt).toLocaleDateString('pt-BR')}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Descrição */}
+                <p className="text-gray-400 text-sm mb-4 line-clamp-2 min-h-[2.5rem]">
+                  {card.description || 'Sem descrição'}
+                </p>
+
+                {/* Stats do Monstro */}
+                {card.type === 'Monster' && (
+                  <div className="flex gap-2 mb-4">
+                    <div className="flex-1 bg-gradient-to-br from-yellow-900/50 to-yellow-800/50 px-3 py-2 rounded-lg text-center border border-yellow-700/50">
+                      <p className="text-xs text-yellow-300 mb-1">Nível</p>
+                      <p className="text-lg font-bold text-yellow-400">⭐ {card.level || 0}</p>
+                    </div>
+                    <div className="flex-1 bg-gradient-to-br from-red-900/50 to-red-800/50 px-3 py-2 rounded-lg text-center border border-red-700/50">
+                      <p className="text-xs text-red-300 mb-1">ATK</p>
+                      <p className="text-lg font-bold text-red-400">⚔️ {card.atk || 0}</p>
+                    </div>
+                    <div className="flex-1 bg-gradient-to-br from-blue-900/50 to-blue-800/50 px-3 py-2 rounded-lg text-center border border-blue-700/50">
+                      <p className="text-xs text-blue-300 mb-1">DEF</p>
+                      <p className="text-lg font-bold text-blue-400">🛡️ {card.def || 0}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Preços e Loja */}
+                <div className="flex gap-2 mb-4 flex-wrap">
+                  {card.priceCredits && card.priceCredits > 0 && (
+                    <span className="bg-gradient-to-r from-purple-600/30 to-purple-700/30 px-3 py-1.5 rounded-lg text-sm font-semibold border border-purple-500/30">
+                      💎 {card.priceCredits.toLocaleString()}
+                    </span>
+                  )}
+                  {card.priceCash && card.priceCash > 0 && (
+                    <span className="bg-gradient-to-r from-green-600/30 to-green-700/30 px-3 py-1.5 rounded-lg text-sm font-semibold border border-green-500/30">
+                      💵 R$ {card.priceCash.toLocaleString()}
+                    </span>
+                  )}
+                  {card.isForSale && (
+                    <span className="bg-gradient-to-r from-emerald-600 to-emerald-700 px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-lg">
+                      🛒 NA LOJA
+                    </span>
+                  )}
+                </div>
+
+                {/* Ações */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleEdit(card)}
+                    className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 px-3 py-2.5 rounded-lg text-sm font-bold text-white transition-all duration-200 shadow-lg hover:shadow-blue-500/50"
+                  >
+                    ✏️ Editar
+                  </button>
+                  {card.isActive ? (
+                    <button
+                      onClick={() => handleDelete(card.id)}
+                      className="flex-1 bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 px-3 py-2.5 rounded-lg text-sm font-bold text-white transition-all duration-200 shadow-lg hover:shadow-orange-500/50"
+                    >
+                      🔒 Desativar
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleActivate(card.id)}
+                      className="flex-1 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 px-3 py-2.5 rounded-lg text-sm font-bold text-white transition-all duration-200 shadow-lg hover:shadow-green-500/50"
+                    >
+                      ✅ Ativar
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleHardDelete(card.id)}
+                    className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 px-3 py-2.5 rounded-lg text-sm font-bold text-white transition-all duration-200 shadow-lg hover:shadow-red-500/50"
+                    title="Deletar permanentemente"
+                  >
+                    🗑️
+                  </button>
+                </div>
               </div>
             </motion.div>
           ))}
-        </div>
-      )}
-
-      {/* Modal de Detalhes da Carta */}
-      {selectedCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setSelectedCard(null)}>
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            onClick={(e) => e.stopPropagation()}
-            className="bg-gray-800 rounded-lg p-6 w-full max-w-4xl max-h-[95vh] overflow-y-auto shadow-2xl border-2 border-purple-500/50"
-          >
-            <div className="flex justify-between items-start mb-6">
-              <h2 className="text-2xl font-bold">{selectedCard.name}</h2>
-              <button
-                onClick={() => setSelectedCard(null)}
-                className="text-gray-400 hover:text-white text-2xl font-bold transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Imagem da Carta - Tamanho Completo */}
-              <div className="flex justify-center items-start">
-                <div className="relative w-full max-w-[400px] aspect-[2/3]">
-                  <CardImage
-                    card={selectedCard}
-                    className="w-full h-full object-contain rounded-lg shadow-2xl"
-                    fallback="/images/fundoCarta.webp"
-                  />
-                </div>
-              </div>
-
-              {/* Informações - Compacto */}
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-xs text-gray-400 mb-0.5">ID</p>
-                    <p className="text-sm font-mono">{(selectedCard as any).idCarta || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-400 mb-0.5">Tipo</p>
-                    <p className="text-sm font-bold">{selectedCard.type}</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-xs text-gray-400 mb-0.5">Raridade</p>
-                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                      selectedCard.rarity === 'Common' ? 'bg-gray-600 text-white' :
-                      selectedCard.rarity === 'Rare' ? 'bg-blue-600 text-white' :
-                      selectedCard.rarity === 'Super Rare' ? 'bg-purple-600 text-white' :
-                      selectedCard.rarity === 'Ultra Rare' ? 'bg-yellow-600 text-white' :
-                      selectedCard.rarity === 'Secret Rare' ? 'bg-gradient-to-r from-yellow-400 to-orange-500 text-white' :
-                      'bg-gray-600 text-white'
-                    }`}>
-                      {selectedCard.rarity}
-                    </span>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-400 mb-0.5">Status</p>
-                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                      selectedCard.isActive 
-                        ? 'bg-green-500 text-white' 
-                        : 'bg-red-500 text-white'
-                    }`}>
-                      {selectedCard.isActive ? '✓ ATIVA' : '✗ INATIVA'}
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-xs text-gray-400 mb-0.5">Descrição</p>
-                  <p className="text-xs text-gray-300 line-clamp-3">{selectedCard.description || 'Sem descrição'}</p>
-                </div>
-
-                {selectedCard.type === 'Monster' && (
-                  <>
-                    <div className="grid grid-cols-3 gap-2">
-                      {(selectedCard as any).monsterType && (
-                        <div>
-                          <p className="text-xs text-gray-400 mb-0.5">Tipo</p>
-                          <p className="text-xs">{(selectedCard as any).monsterType}</p>
-                        </div>
-                      )}
-                      {selectedCard.attribute && (
-                        <div>
-                          <p className="text-xs text-gray-400 mb-0.5">Atributo</p>
-                          <p className="text-xs">{selectedCard.attribute}</p>
-                        </div>
-                      )}
-                      {(selectedCard as any).race && (
-                        <div>
-                          <p className="text-xs text-gray-400 mb-0.5">Raça</p>
-                          <p className="text-xs">{(selectedCard as any).race}</p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="bg-yellow-900/50 px-2 py-1.5 rounded text-center border border-yellow-700/50">
-                        <p className="text-xs text-yellow-300 mb-0.5">Nível</p>
-                        <p className="text-sm font-bold text-yellow-400">⭐ {selectedCard.level || 0}</p>
-                      </div>
-                      <div className="bg-red-900/50 px-2 py-1.5 rounded text-center border border-red-700/50">
-                        <p className="text-xs text-red-300 mb-0.5">ATK</p>
-                        <p className="text-sm font-bold text-red-400">⚔️ {selectedCard.atk || 0}</p>
-                      </div>
-                      <div className="bg-blue-900/50 px-2 py-1.5 rounded text-center border border-blue-700/50">
-                        <p className="text-xs text-blue-300 mb-0.5">DEF</p>
-                        <p className="text-sm font-bold text-blue-400">🛡️ {selectedCard.def || 0}</p>
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {(selectedCard.type === 'Spell' || selectedCard.type === 'Trap') && (
-                  <div>
-                    <p className="text-xs text-gray-400 mb-0.5">
-                      {selectedCard.type === 'Spell' ? 'Tipo de Magia' : 'Tipo de Armadilha'}
-                    </p>
-                    <p className="text-xs">
-                      {selectedCard.type === 'Spell' 
-                        ? ((selectedCard as any).spellType || 'N/A')
-                        : ((selectedCard as any).trapType || 'N/A')
-                      }
-                    </p>
-                  </div>
-                )}
-
-                {(selectedCard.priceCredits || selectedCard.priceCash) && (
-                  <div>
-                    <p className="text-xs text-gray-400 mb-1">Preços</p>
-                    <div className="flex gap-2 flex-wrap">
-                      {selectedCard.priceCredits && selectedCard.priceCredits > 0 && (
-                        <span className="bg-purple-600/30 px-2 py-1 rounded text-xs font-semibold border border-purple-500/30">
-                          💎 {selectedCard.priceCredits.toLocaleString()}
-                        </span>
-                      )}
-                      {selectedCard.priceCash && selectedCard.priceCash > 0 && (
-                        <span className="bg-green-600/30 px-2 py-1 rounded text-xs font-semibold border border-green-500/30">
-                          💵 R$ {selectedCard.priceCash.toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <p className="text-xs text-gray-400 mb-0.5">Criada em</p>
-                  <p className="text-xs text-gray-300">{new Date(selectedCard.createdAt).toLocaleString('pt-BR')}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Ações - Compacto */}
-            <div className="flex gap-2 mt-4 pt-4 border-t border-gray-700">
-              <button
-                onClick={() => {
-                  handleEdit(selectedCard);
-                  setSelectedCard(null);
-                }}
-                className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded-lg text-lg transition-colors"
-                title="Editar"
-              >
-                ⚙️
-              </button>
-              {selectedCard.isActive ? (
-                <button
-                  onClick={() => {
-                    handleDelete(selectedCard.id);
-                    setSelectedCard(null);
-                  }}
-                  className="flex-1 bg-orange-600 hover:bg-orange-700 px-3 py-2 rounded-lg text-xs font-bold text-white transition-colors"
-                >
-                  🔒 Desativar
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    handleActivate(selectedCard.id);
-                    setSelectedCard(null);
-                  }}
-                  className="flex-1 bg-green-600 hover:bg-green-700 px-3 py-2 rounded-lg text-xs font-bold text-white transition-colors"
-                >
-                  ✅ Ativar
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  handleHardDelete(selectedCard.id);
-                  setSelectedCard(null);
-                }}
-                className="bg-red-600 hover:bg-red-700 px-3 py-2 rounded-lg text-xs font-bold text-white transition-colors"
-                title="Deletar permanentemente"
-              >
-                🗑️
-              </button>
-            </div>
-          </motion.div>
         </div>
       )}
 

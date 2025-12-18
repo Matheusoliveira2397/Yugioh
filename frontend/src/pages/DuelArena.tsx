@@ -188,12 +188,14 @@ const DuelArena: React.FC = () => {
   const [myHand, setMyHand] = useState<any[]>([]);
   const [myDeck, setMyDeck] = useState<any[]>([]);
   const [myGraveyard, setMyGraveyard] = useState<any[]>([]);
+  const [myExtraDeck, setMyExtraDeck] = useState<any[]>([]);
   const [opponentHand, setOpponentHand] = useState<any[]>([]);
   
   // Estado para controle de ataque
   const [attackingMonsterIndex, setAttackingMonsterIndex] = useState<number | null>(null);
   const [opponentDeck, setOpponentDeck] = useState<any[]>([]);
   const [opponentGraveyard, setOpponentGraveyard] = useState<any[]>([]);
+  const [opponentExtraDeck, setOpponentExtraDeck] = useState<any[]>([]);
   
   // Estado para descarte de cartas
   const [selectedCardsToDiscard, setSelectedCardsToDiscard] = useState<string[]>([]);
@@ -201,6 +203,9 @@ const DuelArena: React.FC = () => {
   
   // Estado para modal do cemitério
   const [showGraveyardModal, setShowGraveyardModal] = useState(false);
+  const [showExtraDeckModal, setShowExtraDeckModal] = useState(false);
+  const [showOpponentGraveyardModal, setShowOpponentGraveyardModal] = useState(false);
+  const [showOpponentExtraDeckModal, setShowOpponentExtraDeckModal] = useState(false);
   
   // Estado para mostrar mão do oponente virada (The Forceful Sentry ou Confiscation)
   const [showOpponentHandRevealed, setShowOpponentHandRevealed] = useState(false);
@@ -519,6 +524,7 @@ const DuelArena: React.FC = () => {
         const player1Deck = data.player1Field.deck || [];
         const player1Hand = data.player1Field.hand || [];
         const player1Graveyard = data.player1Field.graveyard || [];
+        const player1ExtraDeck = data.player1Field.extraDeck || [];
         // Garantir que monsters e spellTraps sejam arrays de 5 elementos
         const player1MonstersRaw = data.player1Field.monsters || [];
         const player1Monsters = Array.isArray(player1MonstersRaw)
@@ -532,6 +538,7 @@ const DuelArena: React.FC = () => {
         const player2Deck = data.player2Field.deck || [];
         const player2Hand = data.player2Field.hand || [];
         const player2Graveyard = data.player2Field.graveyard || [];
+        const player2ExtraDeck = data.player2Field.extraDeck || [];
         // Garantir que monsters e spellTraps sejam arrays de 5 elementos
         const player2MonstersRaw = data.player2Field.monsters || [];
         const player2Monsters = Array.isArray(player2MonstersRaw)
@@ -547,27 +554,31 @@ const DuelArena: React.FC = () => {
           setMyDeck(player1Deck);
           setMyHand(player1Hand);
           setMyGraveyard(player1Graveyard);
+          setMyExtraDeck(player1ExtraDeck);
           setMyMonsters(player1Monsters);
           setMySpellTraps(player1SpellTraps);
           setOpponentDeck(player2Deck);
           setOpponentHand(player2Hand);
           setOpponentGraveyard(player2Graveyard);
+          setOpponentExtraDeck(player2ExtraDeck);
           setOpponentMonsters(player2Monsters);
           setOpponentSpellTraps(player2SpellTraps);
-          console.log(`✅ [handleDuelUpdate] Player1 - Meu deck: ${player1Deck.length}, Cemitério: ${player1Graveyard.length}, Oponente deck: ${player2Deck.length}`);
+          console.log(`✅ [handleDuelUpdate] Player1 - Meu deck: ${player1Deck.length}, Cemitério: ${player1Graveyard.length}, Extra Deck: ${player1ExtraDeck.length}, Oponente deck: ${player2Deck.length}`);
         } else {
           // É player2 - meu campo é player2Field, oponente é player1Field
           setMyDeck(player2Deck);
           setMyHand(player2Hand);
           setMyGraveyard(player2Graveyard);
+          setMyExtraDeck(player2ExtraDeck);
           setMyMonsters(player2Monsters);
           setMySpellTraps(player2SpellTraps);
           setOpponentDeck(player1Deck);
           setOpponentHand(player1Hand);
           setOpponentGraveyard(player1Graveyard);
+          setOpponentExtraDeck(player1ExtraDeck);
           setOpponentMonsters(player1Monsters);
           setOpponentSpellTraps(player1SpellTraps);
-          console.log(`✅ [handleDuelUpdate] Player2 - Meu deck: ${player2Deck.length}, Cemitério: ${player2Graveyard.length}, Oponente deck: ${player1Deck.length}`);
+          console.log(`✅ [handleDuelUpdate] Player2 - Meu deck: ${player2Deck.length}, Cemitério: ${player2Graveyard.length}, Extra Deck: ${player2ExtraDeck.length}, Oponente deck: ${player1Deck.length}`);
         }
       } else {
         console.warn(`⚠️ [handleDuelUpdate] Dados incompletos - player1Field: ${!!data.player1Field}, player2Field: ${!!data.player2Field}`);
@@ -1247,16 +1258,20 @@ const DuelArena: React.FC = () => {
           // É player1
           setMyDeck(duelFound.player1Field.deck || []);
           setMyHand(duelFound.player1Field.hand || []);
+          setMyExtraDeck(duelFound.player1Field.extraDeck || []);
           setOpponentDeck(duelFound.player2Field.deck || []);
           setOpponentHand(duelFound.player2Field.hand || []);
-          console.log(`✅ [DuelArena] Player1 - Meu deck: ${duelFound.player1Field.deck?.length || 0}, Oponente deck: ${duelFound.player2Field.deck?.length || 0}`);
+          setOpponentExtraDeck(duelFound.player2Field.extraDeck || []);
+          console.log(`✅ [DuelArena] Player1 - Meu deck: ${duelFound.player1Field.deck?.length || 0}, Extra Deck: ${duelFound.player1Field.extraDeck?.length || 0}, Oponente deck: ${duelFound.player2Field.deck?.length || 0}`);
         } else if (userId === player2Id) {
           // É player2
           setMyDeck(duelFound.player2Field.deck || []);
           setMyHand(duelFound.player2Field.hand || []);
+          setMyExtraDeck(duelFound.player2Field.extraDeck || []);
           setOpponentDeck(duelFound.player1Field.deck || []);
           setOpponentHand(duelFound.player1Field.hand || []);
-          console.log(`✅ [DuelArena] Player2 - Meu deck: ${duelFound.player2Field.deck?.length || 0}, Oponente deck: ${duelFound.player1Field.deck?.length || 0}`);
+          setOpponentExtraDeck(duelFound.player1Field.extraDeck || []);
+          console.log(`✅ [DuelArena] Player2 - Meu deck: ${duelFound.player2Field.deck?.length || 0}, Extra Deck: ${duelFound.player2Field.extraDeck?.length || 0}, Oponente deck: ${duelFound.player1Field.deck?.length || 0}`);
         } else {
           console.warn(`⚠️ [DuelArena] userId (${userId}) não corresponde a player1Id (${player1Id}) nem player2Id (${player2Id})`);
         }
@@ -2573,10 +2588,106 @@ const DuelArena: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+            </div>
+          </div>
+        </motion.div>
 
-      <div className="max-w-6xl mx-auto w-full">
-            {/* Linha 1: Perfis dos Duelistas e Timer - Alinhados na mesma altura */}
-            <div className="flex items-start justify-between w-full">
+      <div className="flex gap-0 flex-1 overflow-hidden">
+          {/* Painel Esquerdo: Chat e Logs - Modernizado */}
+          <motion.div 
+            initial={{ x: -300, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+            className="w-[320px] flex-shrink-0 space-y-3 bg-transparent h-full overflow-y-auto pr-2"
+          >
+            <DuelChat
+              messages={chatMessages}
+              onSendMessage={(message) => {
+                if (duelId && user?.id) {
+                  const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
+                  if (!isNaN(userId)) {
+                    sendChatMessage(duelId, userId, message);
+                  } else {
+                    console.error('❌ ID de usuário inválido:', user.id);
+                  }
+                }
+              }}
+            />
+            <DuelLogs logs={duelLogs} />
+            
+            {/* Master Card Search - Apenas para MASTER */}
+            {user?.role === 'MASTER' && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-gradient-to-br from-purple-800/90 to-indigo-900/90 backdrop-blur-md rounded-xl border border-purple-700/50 shadow-2xl overflow-hidden"
+              >
+                <div className="bg-gradient-to-r from-purple-700/50 to-indigo-800/50 px-4 py-3 border-b border-purple-700/50">
+                  <h3 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
+                    <span className="text-lg">👑</span>
+                    Master: Buscar Carta do Deck
+                  </h3>
+                </div>
+                <div className="p-4">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      id="masterCardSearch"
+                      placeholder="Digite o nome da carta..."
+                      className="flex-1 bg-gray-900/50 text-white px-4 py-2 rounded-lg border border-purple-600/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm"
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          const input = e.currentTarget as HTMLInputElement;
+                          const cardName = input.value.trim();
+                          if (cardName && duelId && user?.id) {
+                            const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
+                            if (!isNaN(userId)) {
+                              performAction(duelId, userId, 'MASTER_ADD_CARD_TO_HAND', {
+                                cardName: cardName,
+                              });
+                              input.value = '';
+                            }
+                          }
+                        }
+                      }}
+                    />
+                    <button
+                      onClick={() => {
+                        const input = document.getElementById('masterCardSearch') as HTMLInputElement;
+                        const cardName = input?.value.trim();
+                        if (cardName && duelId && user?.id) {
+                          const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
+                          if (!isNaN(userId)) {
+                            performAction(duelId, userId, 'MASTER_ADD_CARD_TO_HAND', {
+                              cardName: cardName,
+                            });
+                            input.value = '';
+                          }
+                        }
+                      }}
+                      className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors font-semibold text-sm"
+                    >
+                      Adicionar
+                    </button>
+                  </div>
+                  <p className="text-xs text-purple-300/70 mt-2">
+                    Digite o nome da carta e pressione Enter ou clique em Adicionar
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </motion.div>
+
+          {/* Arena Principal - Modernizado */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.3 }}
+            className="flex-1 space-y-1 overflow-y-auto pb-1"
+          >
+            <div className="max-w-5xl mx-auto w-full">
+            {/* Linha 1: Perfis dos Duelistas e Timer - Alinhados na mesma linha do topo do playmat */}
+            <div className="flex items-start justify-between w-full px-4 mb-2">
             {/* MEU DUELISTA (Esquerda) - Modernizado */}
             <motion.div 
             transition={{ duration: 0.2 }}
@@ -2646,7 +2757,7 @@ const DuelArena: React.FC = () => {
           </motion.div>
 
           {/* TIMER (Centro) - Modernizado */}
-          <div className="flex items-center justify-center absolute left-1/2 transform -translate-x-1/2">
+          <div className="flex items-center justify-center flex-1">
             <motion.div 
               className={`px-4 py-2 rounded-xl border-2 shadow-xl transition-all ${
                 isMyTurn 
@@ -2803,107 +2914,7 @@ const DuelArena: React.FC = () => {
             </motion.div>
           )}
           </div>
-
-            </div>
-              </div>
-            </div>
           </div>
-        </motion.div>
-
-        <div className="flex gap-0 flex-1 overflow-hidden">
-          {/* Painel Esquerdo: Chat e Logs - Modernizado */}
-          <motion.div 
-            initial={{ x: -300, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-            className="w-[320px] flex-shrink-0 space-y-3 bg-transparent h-full overflow-y-auto pr-2"
-          >
-            <DuelChat
-              messages={chatMessages}
-              onSendMessage={(message) => {
-                if (duelId && user?.id) {
-                  const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
-                  if (!isNaN(userId)) {
-                    sendChatMessage(duelId, userId, message);
-                  } else {
-                    console.error('❌ ID de usuário inválido:', user.id);
-                  }
-                }
-              }}
-            />
-            <DuelLogs logs={duelLogs} />
-            
-            {/* Master Card Search - Apenas para MASTER */}
-            {user?.role === 'MASTER' && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-gradient-to-br from-purple-800/90 to-indigo-900/90 backdrop-blur-md rounded-xl border border-purple-700/50 shadow-2xl overflow-hidden"
-              >
-                <div className="bg-gradient-to-r from-purple-700/50 to-indigo-800/50 px-4 py-3 border-b border-purple-700/50">
-                  <h3 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
-                    <span className="text-lg">👑</span>
-                    Master: Buscar Carta do Deck
-                  </h3>
-                </div>
-                <div className="p-4">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      id="masterCardSearch"
-                      placeholder="Digite o nome da carta..."
-                      className="flex-1 bg-gray-900/50 text-white px-4 py-2 rounded-lg border border-purple-600/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm"
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter') {
-                          const input = e.currentTarget as HTMLInputElement;
-                          const cardName = input.value.trim();
-                          if (cardName && duelId && user?.id) {
-                            const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
-                            if (!isNaN(userId)) {
-                              performAction(duelId, userId, 'MASTER_ADD_CARD_TO_HAND', {
-                                cardName: cardName,
-                              });
-                              input.value = '';
-                            }
-                          }
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => {
-                        const input = document.getElementById('masterCardSearch') as HTMLInputElement;
-                        const cardName = input?.value.trim();
-                        if (cardName && duelId && user?.id) {
-                          const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
-                          if (!isNaN(userId)) {
-                            performAction(duelId, userId, 'MASTER_ADD_CARD_TO_HAND', {
-                              cardName: cardName,
-                            });
-                            input.value = '';
-                          }
-                        }
-                      }}
-                      className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors font-semibold text-sm"
-                    >
-                      Adicionar
-                    </button>
-                  </div>
-                  <p className="text-xs text-purple-300/70 mt-2">
-                    Digite o nome da carta e pressione Enter ou clique em Adicionar
-                  </p>
-                </div>
-              </motion.div>
-            )}
-          </motion.div>
-
-          {/* Arena Principal - Modernizado */}
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.3 }}
-            className="flex-1 space-y-1 overflow-y-auto -mt-4 pb-1"
-          >
-            <div className="max-w-5xl mx-auto w-full">
             {/* Campo do Oponente */}
             <div className="mt-0">
             <DuelField 
@@ -2913,11 +2924,11 @@ const DuelArena: React.FC = () => {
               monsters={opponentMonsters}
               spellTraps={opponentSpellTraps}
               graveyard={opponentGraveyard}
+              extraDeck={opponentExtraDeck}
               playmatImage={opponentPlaymatImageUrl}
               cardBackImage={opponentSkinImageUrl}
-              onGraveyardClick={() => {
-                // Não permitir ver cemitério do oponente (ou permitir? vou deixar sem por enquanto)
-              }}
+              onGraveyardClick={() => setShowOpponentGraveyardModal(true)}
+              onExtraDeckClick={() => setShowOpponentExtraDeckModal(true)}
               onMonsterClick={(targetZoneIndex) => {
                 if (attackingMonsterIndex !== null) {
                   // Processar ataque
@@ -3020,9 +3031,11 @@ const DuelArena: React.FC = () => {
               monsters={myMonsters}
               spellTraps={mySpellTraps}
               graveyard={myGraveyard}
+              extraDeck={myExtraDeck}
               playmatImage={myPlaymatImageUrl}
               cardBackImage={mySkinImageUrl}
               onGraveyardClick={() => setShowGraveyardModal(true)}
+              onExtraDeckClick={() => setShowExtraDeckModal(true)}
               onAttackClick={(zoneIndex) => {
                 // Iniciar seleção de alvo
                 setAttackingMonsterIndex(zoneIndex);
@@ -3457,7 +3470,7 @@ const DuelArena: React.FC = () => {
                         </motion.button>
                       ) : isMyTurn ? (
                         <>
-                          {phase === 'END' && isActive ? (
+                          {phase === 'END' && isActive && myHand.length <= 6 ? (
                             <motion.button
                               whileHover={{ y: -2 }}
                               whileTap={{ scale: 0.95 }}
@@ -3467,6 +3480,9 @@ const DuelArena: React.FC = () => {
                             >
                               ✓ Finalizar
                             </motion.button>
+                          ) : phase === 'END' && isActive && myHand.length > 6 ? (
+                            // Não mostrar botão quando tem mais de 6 cartas - apenas o aviso de descarte
+                            null
                           ) : (
                             <motion.button
                               whileHover={!isPast && phase !== 'DRAW' && !isBattlePhaseDisabled ? { y: -2, scale: 1.05 } : {}}
@@ -4004,8 +4020,8 @@ const DuelArena: React.FC = () => {
               })}
               </div>
             )}
-          </motion.div>
-            </div>
+            </motion.div>
+          </div>
           </motion.div>
         </div>
       </div>
@@ -4016,6 +4032,183 @@ const DuelArena: React.FC = () => {
           <p className="text-lg font-bold text-center">
             💀 Você tem {myHand.length} cartas na mão! Clique nas cartas com 💀 para descartá-las até ficar com 6.
           </p>
+        </div>
+      )}
+
+      {/* Modal do Extra Deck */}
+      {showExtraDeckModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999]">
+          <div className="bg-black/30 rounded-2xl border-2 border-purple-500/50 p-6 max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
+                Extra Deck
+              </h2>
+              <button
+                onClick={() => setShowExtraDeckModal(false)}
+                className="text-white hover:text-red-400 text-2xl font-bold transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-slate-300 mb-6 text-center">
+              Total de cartas: <span className="font-bold text-purple-400">{myExtraDeck.length}</span>
+            </p>
+
+            {myExtraDeck.length === 0 ? (
+              <div className="text-center py-12 text-slate-400">
+                <p className="text-xl">Extra Deck vazio</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-3">
+                {myExtraDeck.map((card, index) => {
+                  const cardId = card.id || card.cardId || card.idCarta;
+                  return (
+                    <motion.div
+                      key={`extra-${index}-${cardId}`}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: index * 0.02 }}
+                      className="relative cursor-pointer aspect-[59/86]"
+                      onClick={() => {
+                        console.log('🔍 [DuelArena] Extra Deck card clicked:', {
+                          name: card?.name,
+                          description: card?.description,
+                          hasDescription: !!card?.description,
+                          descriptionLength: card?.description?.length || 0,
+                          allKeys: Object.keys(card || {})
+                        });
+                        setSelectedCardInfo(card);
+                      }}
+                    >
+                      <CardImage
+                        card={card}
+                        className="w-full h-full rounded-lg shadow-lg hover:shadow-xl transition-all"
+                        fallback="/images/fundoCarta.webp"
+                      />
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal do Extra Deck do Oponente */}
+      {showOpponentExtraDeckModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999]">
+          <div className="bg-black/30 rounded-2xl border-2 border-purple-500/50 p-6 max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
+                Extra Deck do Oponente
+              </h2>
+              <button
+                onClick={() => setShowOpponentExtraDeckModal(false)}
+                className="text-white hover:text-red-400 text-2xl font-bold transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-slate-300 mb-6 text-center">
+              Total de cartas: <span className="font-bold text-purple-400">{opponentExtraDeck.length}</span>
+            </p>
+
+            {opponentExtraDeck.length === 0 ? (
+              <div className="text-center py-12 text-slate-400">
+                <p className="text-xl">Extra Deck vazio</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-3">
+                {opponentExtraDeck.map((card, index) => {
+                  const cardId = card.id || card.cardId || card.idCarta;
+                  return (
+                    <motion.div
+                      key={`opponent-extra-${index}-${cardId}`}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: index * 0.02 }}
+                      className="relative cursor-pointer aspect-[59/86]"
+                      onClick={() => {
+                        console.log('🔍 [DuelArena] Opponent Extra Deck card clicked:', {
+                          name: card?.name,
+                          description: card?.description,
+                          hasDescription: !!card?.description,
+                          descriptionLength: card?.description?.length || 0,
+                          allKeys: Object.keys(card || {})
+                        });
+                        setSelectedCardInfo(card);
+                      }}
+                    >
+                      <CardImage
+                        card={card}
+                        className="w-full h-full rounded-lg shadow-lg hover:shadow-xl transition-all"
+                        fallback="/images/fundoCarta.webp"
+                      />
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal do Cemitério do Oponente */}
+      {showOpponentGraveyardModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999]">
+          <div className="bg-black/30 rounded-2xl border-2 border-white/20 p-6 max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-white">
+                Cemitério do Oponente (GY)
+              </h2>
+              <button
+                onClick={() => setShowOpponentGraveyardModal(false)}
+                className="text-white hover:text-red-400 text-2xl font-bold transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-slate-300 mb-6 text-center">
+              Total de cartas: <span className="font-bold text-yellow-400">{opponentGraveyard.length}</span>
+            </p>
+
+            {opponentGraveyard.length === 0 ? (
+              <div className="text-center py-12 text-slate-400">
+                <p className="text-xl">Cemitério vazio</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-3">
+                {opponentGraveyard.map((card, index) => {
+                  const cardId = card.id || card.cardId || card.idCarta;
+                  return (
+                    <motion.div
+                      key={`opponent-gy-${index}-${cardId}`}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: index * 0.02 }}
+                      className="relative cursor-pointer aspect-[59/86]"
+                      onClick={() => {
+                        console.log('🔍 [DuelArena] Opponent Graveyard card clicked:', {
+                          name: card?.name,
+                          description: card?.description,
+                          hasDescription: !!card?.description,
+                          descriptionLength: card?.description?.length || 0,
+                          allKeys: Object.keys(card || {})
+                        });
+                        setSelectedCardInfo(card);
+                      }}
+                    >
+                      <CardImage
+                        card={card}
+                        className="w-full h-full rounded-lg border-2 border-purple-500/30 transition-all"
+                        fallback="/images/fundoCarta.webp"
+                      />
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

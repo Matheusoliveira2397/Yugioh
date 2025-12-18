@@ -22,10 +22,7 @@ export class EconomyService {
     description?: string,
     metadata?: any
   ): Promise<Transaction> {
-    // Garantir que sempre trabalhamos com valores inteiros (banco usa integer)
-    const intAmount = Math.floor(amount);
-
-    if (intAmount <= 0) {
+    if (amount <= 0) {
       throw new BadRequestException('Quantidade deve ser positiva');
     }
 
@@ -37,14 +34,14 @@ export class EconomyService {
     // Atualiza saldo do usuário
     const field = currencyType;
     await this.userRepository.update(userId, {
-      [field]: () => `"${field}" + ${intAmount}`
+      [field]: () => `"${field}" + ${amount}`
     });
 
     // Registra transação
     const transaction = this.transactionRepository.create({
       userId,
       currencyType,
-      amount: intAmount,
+      amount,
       type,
       description,
       metadata
@@ -62,10 +59,7 @@ export class EconomyService {
     description?: string,
     metadata?: any
   ): Promise<Transaction> {
-    // Garantir que sempre trabalhamos com valores inteiros
-    const intAmount = Math.floor(amount);
-
-    if (intAmount <= 0) {
+    if (amount <= 0) {
       throw new BadRequestException('Quantidade deve ser positiva');
     }
 
@@ -82,18 +76,18 @@ export class EconomyService {
       currentBalance = user.cash || 0;
     }
     
-    if (currentBalance < intAmount) {
+    if (currentBalance < amount) {
       throw new BadRequestException(`Saldo insuficiente de ${currencyType}`);
     }
 
     // Atualiza saldo do usuário
     if (currencyType === CurrencyType.CREDITS) {
       await this.userRepository.update(userId, {
-        credits: () => `"credits" - ${intAmount}`
+        credits: () => `"credits" - ${amount}`
       });
     } else if (currencyType === CurrencyType.CASH) {
       await this.userRepository.update(userId, {
-        cash: () => `"cash" - ${intAmount}`
+        cash: () => `"cash" - ${amount}`
       });
     }
 
@@ -101,7 +95,7 @@ export class EconomyService {
     const transaction = this.transactionRepository.create({
       userId,
       currencyType,
-      amount: -intAmount,
+      amount: -amount,
       type,
       description,
       metadata
@@ -222,56 +216,5 @@ export class EconomyService {
       TransactionType.TRANSFER,
       `Recebido de outro usuário${description ? ': ' + description : ''}`
     );
-  }
-
-  // Comprar créditos com dinheiro (cash)
-  // Taxa de conversão: 1 cash = 10 credits (configurável)
-  async buyCreditsWithCash(
-    userId: number,
-    cashAmount: number,
-    exchangeRate: number = 10 // 1 cash = 10 credits por padrão
-  ): Promise<{ creditsReceived: number; cashSpent: number; transaction: Transaction }> {
-    if (cashAmount <= 0) {
-      throw new BadRequestException('Quantidade de cash deve ser positiva');
-    }
-
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('Usuário não encontrado');
-    }
-
-    // Verificar saldo de cash
-    if (user.cash < cashAmount) {
-      throw new BadRequestException(`Saldo insuficiente de cash. Você tem ${user.cash} cash, mas precisa de ${cashAmount}`);
-    }
-
-    // Calcular créditos a receber
-    const creditsReceived = Math.floor(cashAmount * exchangeRate);
-
-    // Remover cash
-    const cashTransaction = await this.removeCurrency(
-      userId,
-      CurrencyType.CASH,
-      cashAmount,
-      TransactionType.PURCHASE,
-      `Compra de ${creditsReceived} créditos com ${cashAmount} cash`,
-      { exchangeRate, creditsReceived, cashAmount }
-    );
-
-    // Adicionar créditos
-    const creditsTransaction = await this.addCurrency(
-      userId,
-      CurrencyType.CREDITS,
-      creditsReceived,
-      TransactionType.PURCHASE,
-      `Créditos comprados com ${cashAmount} cash`,
-      { exchangeRate, creditsReceived, cashAmount, sourceTransaction: cashTransaction.id }
-    );
-
-    return {
-      creditsReceived,
-      cashSpent: cashAmount,
-      transaction: creditsTransaction
-    };
   }
 }

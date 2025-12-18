@@ -14,14 +14,3 @@ WHERE status = 'IN_PROGRESS' AND turn_started_at IS NULL;
 
 
 
-
-
-
-
-
-
-
-
-
-
-

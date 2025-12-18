@@ -403,7 +403,7 @@ export default function AdminCardCreator() {
                   </select>
                 </div>
 
-                {/* Level/Rank/Link */}
+                {/* Level/Rank/Link Rating */}
                 {cardForm.monsterType === 'Xyz' ? (
                   <div>
                     <label className="block text-sm font-bold mb-2">Rank</label>

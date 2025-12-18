@@ -13,108 +13,28 @@ export default function AdminPanel() {
 
   const adminCards = [
     { 
-      id: 'site-tabs', 
-      label: 'Gerenciar Abas', 
-      icon: '🔧',
-      description: 'Ativar/desativar abas do site',
-      route: '/admin/site-tabs',
-      color: 'from-gray-600 to-gray-800'
-    },
-    { 
       id: 'cards', 
-      label: 'Cartas', 
+      label: 'Gerenciar Cartas', 
       icon: '🎴',
-      description: 'Gerenciar cartas',
+      description: 'Criar, editar e remover cartas do jogo',
       route: '/admin/cartas',
       color: 'from-purple-600 to-purple-800'
     },
     { 
       id: 'players', 
-      label: 'Jogadores', 
+      label: 'Gerenciar Jogadores', 
       icon: '👤',
-      description: 'Gerenciar usuários',
+      description: 'Banir, desbanir e gerenciar usuários',
       route: '/admin/players',
       color: 'from-blue-600 to-blue-800'
     },
     { 
       id: 'news', 
-      label: 'Notícias', 
+      label: 'Gerenciar Notícias', 
       icon: '📢',
-      description: 'Gerenciar notícias',
+      description: 'Criar e editar notícias do sistema',
       route: '/admin/news',
       color: 'from-green-600 to-green-800'
-    },
-    { 
-      id: 'playmats', 
-      label: 'Playmats', 
-      icon: '🎨',
-      description: 'Gerenciar playmats',
-      route: '/admin/playmats',
-      color: 'from-blue-600 to-cyan-800'
-    },
-    { 
-      id: 'sleeves', 
-      label: 'Skins', 
-      icon: '🎭',
-      description: 'Gerenciar skins',
-      route: '/admin/sleeves',
-      color: 'from-emerald-600 to-teal-800'
-    },
-    { 
-      id: 'initial-decks', 
-      label: 'Decks Iniciais', 
-      icon: '🎴',
-      description: 'Gerenciar decks iniciais',
-      route: '/admin/initial-decks',
-      color: 'from-purple-600 to-pink-800'
-    },
-    { 
-      id: 'tournaments', 
-      label: 'Torneios', 
-      icon: '🏆',
-      description: 'Gerenciar torneios',
-      route: '/admin/tournaments',
-      color: 'from-yellow-600 to-orange-800'
-    },
-    { 
-      id: 'arena', 
-      label: 'Arena', 
-      icon: '🏟️',
-      description: 'Gerenciar arena',
-      route: '/admin/arena',
-      color: 'from-indigo-600 to-purple-800'
-    },
-    { 
-      id: 'seasons', 
-      label: 'Seasons', 
-      icon: '🏆',
-      description: 'Gerenciar seasons',
-      route: '/admin/seasons',
-      color: 'from-amber-600 to-yellow-800'
-    },
-    { 
-      id: 'messages', 
-      label: 'Mensagens', 
-      icon: '📢',
-      description: 'Enviar mensagens em massa',
-      route: '/admin/messages',
-      color: 'from-pink-600 to-rose-800'
-    },
-    { 
-      id: 'achievements', 
-      label: 'Conquistas', 
-      icon: '🏆',
-      description: 'Enviar conquistas para usuários',
-      route: '/admin/achievements',
-      color: 'from-yellow-600 to-amber-800'
-    },
-    { 
-      id: 'divisions', 
-      label: 'Divisões', 
-      icon: '📊',
-      description: 'Gerenciar divisões do ranking',
-      route: '/admin/divisions',
-      color: 'from-indigo-600 to-purple-800'
     },
   ];
 
@@ -147,30 +67,30 @@ export default function AdminPanel() {
         </motion.div>
 
         {/* Cards de Administração */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {adminCards.map((card, index) => (
             <motion.div
               key={card.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              whileHover={{ scale: 1.03, y: -2 }}
-              whileTap={{ scale: 0.97 }}
+              transition={{ delay: index * 0.1 }}
+              whileHover={{ scale: 1.05, y: -5 }}
+              whileTap={{ scale: 0.95 }}
               onClick={() => navigate(card.route)}
               className={`
                 bg-gradient-to-br ${card.color} 
-                rounded-lg p-4 cursor-pointer 
-                shadow-lg hover:shadow-xl 
+                rounded-xl p-8 cursor-pointer 
+                shadow-xl hover:shadow-2xl 
                 border border-white/10
-                transition-all duration-200
+                transition-all duration-300
               `}
             >
               <div className="text-center">
-                <div className="text-4xl mb-2">{card.icon}</div>
-                <h3 className="text-sm font-bold text-white mb-1">
+                <div className="text-7xl mb-4">{card.icon}</div>
+                <h3 className="text-2xl font-bold text-white mb-2">
                   {card.label}
                 </h3>
-                <p className="text-gray-200 text-xs">
+                <p className="text-gray-200 text-sm">
                   {card.description}
                 </p>
               </div>

@@ -34,12 +34,6 @@ export class ChallengeArena {
     minRating?: number;
     maxRating?: number;
     allowedDeckTypes?: string[];
-    levelRanges?: Array<{ min: number; max: number; name: string }>;
-    rewards?: {
-      top1?: { credits?: number; gems?: number; cash?: number };
-      top3?: { credits?: number; gems?: number; cash?: number };
-      top10?: { credits?: number; gems?: number; cash?: number };
-    };
   };
 
   @CreateDateColumn()

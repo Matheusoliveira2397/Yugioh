@@ -9,14 +9,12 @@ import { LocalStrategy } from './strategies/local.strategy';
 import { UsersModule } from '../users/users.module';
 import { MailModule } from '../mail/mail.module';
 import { SeasonsModule } from '../seasons/seasons.module';
-import { InitialDecksModule } from '../initial-decks/initial-decks.module';
 
 @Module({
   imports: [
     UsersModule,
     MailModule,
     SeasonsModule,
-    InitialDecksModule,
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

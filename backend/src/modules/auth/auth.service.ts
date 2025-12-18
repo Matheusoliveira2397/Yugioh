@@ -5,7 +5,6 @@ import { UsersService } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 import { SeasonsService } from '../seasons/seasons.service';
-import { InitialDecksService } from '../initial-decks/initial-decks.service';
 
 @Injectable()
 export class AuthService {
@@ -14,7 +13,6 @@ export class AuthService {
     private jwtService: JwtService,
     private mailService: MailService,
     private seasonsService: SeasonsService,
-    private initialDecksService: InitialDecksService,
   ) {}
 
   async validateUser(username: string, password: string): Promise<any> {
@@ -41,40 +39,30 @@ export class AuthService {
     // Garantir que sub seja number
     const payload = { username: user.username, sub: Number(user.id), role: user.role };
     
-    // Buscar dados completos do usuário incluindo grupo atualizado
-    const fullProfile = await this.usersService.getFullProfile(user.id);
+    // Buscar dados completos do usuário incluindo clanTag atualizado
+    const fullUser = await this.usersService.findById(user.id);
     
-      return {
-        access_token: this.jwtService.sign(payload),
-        user: {
-          id: fullProfile.id,
-          nickname: fullProfile.nickname,
-          username: fullProfile.username,
-          email: fullProfile.email,
-          winsGeral: fullProfile.winsGeral,
-          lossesGeral: fullProfile.lossesGeral,
-          winsSeason: fullProfile.winsSeason,
-          lossesSeason: fullProfile.lossesSeason,
-          rating: fullProfile.rating,
-          credits: fullProfile.credits || 0,
-          cash: fullProfile.cash || 0,
-          profileImage: (fullProfile.profileImage && !fullProfile.profileImage.includes('/images/default') && !fullProfile.profileImage.includes('/avatars/default')) 
-            ? fullProfile.profileImage 
-            : null,
-          role: fullProfile.role,
-          clanTag: fullProfile.clanTag || null,
-          level: fullProfile.level || 1,
-          experience: fullProfile.experience || 0,
-          totalScore: fullProfile.totalScore != null ? Number(fullProfile.totalScore) : 0,
-          equippedDeckName: (fullProfile as any).equippedDeckName || null,
-          group: fullProfile.group || null,
-          division: fullProfile.division || null, // Divisão dinâmica do usuário
-          seasonScore: fullProfile.seasonRanking?.seasonScore || 0,
-          seasonRank: fullProfile.seasonRank || null,
-          generalRank: fullProfile.generalRank || null,
-          globalRank: fullProfile.globalRank || fullProfile.generalRank || null,
-        },
-      };
+    return {
+      access_token: this.jwtService.sign(payload),
+      user: {
+        id: fullUser.id,
+        nickname: fullUser.nickname,
+        username: fullUser.username,
+        email: fullUser.email,
+        winsGeral: fullUser.winsGeral,
+        lossesGeral: fullUser.lossesGeral,
+        winsSeason: fullUser.winsSeason,
+        lossesSeason: fullUser.lossesSeason,
+        rating: fullUser.rating,
+        credits: fullUser.credits || 0,
+        cash: fullUser.cash || 0,
+        profileImage: fullUser.profileImage || '/images/default.png',
+        role: fullUser.role,
+        clanTag: fullUser.clanTag || null,
+        level: fullUser.level || 1,
+        experience: fullUser.experience || 0,
+      },
+    };
   }
 
   async checkNickname(nickname: string) {
@@ -163,11 +151,10 @@ export class AuthService {
       rating: 1000,
       credits: 50,
       cash: 50000,
-      profileImage: undefined,
+      profileImage: '/images/default.png',
       clanTag: undefined,
       biography: undefined,
       playerClass: 'Novato',
-      division: 'Bronze', // Todos começam na divisão Bronze
       isOnline: false,
       isBanned: false,
       banReason: undefined,
@@ -180,14 +167,6 @@ export class AuthService {
     } catch (error) {
       console.error('Erro ao criar ranking da season para o usuário:', error);
       // Não falha o registro se não houver season ativa
-    }
-
-    // Atribuir deck inicial aleatório ao usuário
-    try {
-      await this.initialDecksService.assignDeckToUser(user.id);
-    } catch (error) {
-      console.error('Erro ao atribuir deck inicial ao usuário:', error);
-      // Não falha o registro se não houver deck inicial disponível
     }
 
     // Envio de email desabilitado temporariamente

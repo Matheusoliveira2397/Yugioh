@@ -3,18 +3,18 @@ import { useEffect, useState } from 'react';
 import { useSocketStore } from '../stores/socketStore';
 import { useAuthStore } from '../stores/authStore';
 import CardImage from '../components/CardImage';
-import { useCosmeticsStore } from '../stores/cosmeticsStore';
-import Calculator from '../components/Calculator';
+
+// Imagem de fundo da carta (carta virada)
+// Você pode substituir por uma URL de imagem real de carta virada do Yu-Gi-Oh!
+const FUNDO_CARTA = '/images/fundoCarta.webp'; // Caminho para imagem de carta virada
 
 export default function DuelPage() {
   const { duelId } = useParams();
   const { user } = useAuthStore();
   const { emit, on, off } = useSocketStore();
-  const { ownedSkins, equippedSkinId } = useCosmeticsStore();
   const [duelState, setDuelState] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
 
   useEffect(() => {
     if (!duelId || !user) {
@@ -144,18 +144,6 @@ export default function DuelPage() {
     console.log(`[DuelPage Render] Primeira carta idCarta:`, playerHand[0]?.idCarta);
   }
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-
-  const equippedSkin = equippedSkinId
-    ? ownedSkins.find((s) => s.id === equippedSkinId)
-    : null;
-
-  const cardBackImage = equippedSkin
-    ? (equippedSkin.image.startsWith('http')
-        ? equippedSkin.image
-        : `${API_URL}${equippedSkin.image}`)
-    : '/images/fundoCarta.webp';
-
   const handleEndTurn = () => {
     if (duelId && user) {
       emit('endTurn', { duelId, userId: user.id });
@@ -230,34 +218,6 @@ export default function DuelPage() {
 
   return (
     <div className="h-screen p-4 relative z-10">
-      {/* Botão da Calculadora - Canto Inferior Esquerdo */}
-      <button
-        onClick={() => setIsCalculatorOpen(true)}
-        className="fixed bottom-6 left-6 z-40 bg-yellow-600 hover:bg-yellow-500 text-white rounded-full p-4 shadow-lg transition-all hover:scale-110 active:scale-95 border-2 border-yellow-400"
-        title="Abrir Calculadora"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className="h-6 w-6"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-          />
-        </svg>
-      </button>
-
-      {/* Componente da Calculadora */}
-      <Calculator
-        isOpen={isCalculatorOpen}
-        onClose={() => setIsCalculatorOpen(false)}
-      />
-
       <div className="max-w-7xl mx-auto h-full flex flex-col">
         {/* Oponente */}
         <div className="bg-gray-800 bg-opacity-50 rounded-lg p-4 mb-4">
@@ -344,7 +304,7 @@ export default function DuelPage() {
                   key={i}
                   className="w-12 h-16 bg-gradient-to-br from-blue-900 to-purple-900 border-2 border-yellow-500 rounded cursor-pointer hover:scale-110 transition-transform"
                   style={{
-                    backgroundImage: `url(${cardBackImage})`,
+                    backgroundImage: `url(${FUNDO_CARTA})`,
                     backgroundSize: 'cover',
                     backgroundPosition: 'center',
                   }}
@@ -374,7 +334,7 @@ export default function DuelPage() {
                   <CardImage
                     card={card}
                     className="w-full h-full"
-                    fallback={cardBackImage}
+                    fallback={FUNDO_CARTA}
                   />
                 </div>
               ))}

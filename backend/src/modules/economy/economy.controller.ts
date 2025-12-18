@@ -90,25 +90,4 @@ export class EconomyController {
       body.description
     );
   }
-
-  @Post('buy-credits')
-  @UseGuards(JwtAuthGuard)
-  async buyCredits(
-    @Request() req: ExpressRequest & { user: any },
-    @Body() body: {
-      cashAmount: number;
-      exchangeRate?: number; // Opcional, padrão é 10
-    }
-  ) {
-    const userId = Number(req.user.id);
-    const result = await this.economyService.buyCreditsWithCash(
-      userId,
-      body.cashAmount,
-      body.exchangeRate || 10
-    );
-    return {
-      message: `Você comprou ${result.creditsReceived} créditos com ${result.cashSpent} cash`,
-      ...result
-    };
-  }
 }

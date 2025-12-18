@@ -9,12 +9,6 @@ export class SaveDeckDto {
   @IsArray()
   @IsString({ each: true }) // Cada item do array deve ser uma string
   @IsNotEmpty({ each: true }) // Cada item não pode ser vazio
-  cardIds: string[]; // Array de cardIds do Deck Principal (pode ter duplicatas)
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  @IsNotEmpty({ each: true })
-  extraDeckCardIds?: string[]; // Array de cardIds do Extra Deck (máximo 15, apenas Fusion)
+  cardIds: string[]; // Array de cardIds (pode ter duplicatas)
 }
 
