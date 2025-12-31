@@ -59,19 +59,19 @@ export default function CardImage({ card, className = '', style = {}, fallback =
       lastImageSrcRef.current = null;
     }
     
-    // Debug: apenas logar se não tiver idCarta (para identificar problemas)
-    if (!cardId) {
-      console.warn(`[CardImage] ⚠️ Carta sem idCarta:`, card?.name, card);
-      return;
-    }
-    
-    // Usar cardImageUrl memoizado
+    // PRIORIDADE 1: Usar cardImageUrl memoizado (pode vir de cardImage ou idCarta)
     if (cardImageUrl) {
+      console.log(`[CardImage] ✅ Usando cardImageUrl para "${card?.name}":`, cardImageUrl);
       setImageSrc(cardImageUrl);
       imageSrcRef.current = cardImageUrl;
       lastImageSrcRef.current = cardImageUrl;
       setAttemptedPaths(new Set([cardImageUrl]));
-    } else if (possiblePaths.length > 0) {
+      return;
+    }
+    
+    // PRIORIDADE 2: Se não tiver cardImageUrl mas tiver cardId, tentar caminhos possíveis
+    if (cardId && possiblePaths.length > 0) {
+      console.log(`[CardImage] 🔍 Tentando caminhos locais para "${card?.name}" (idCarta: ${cardId}):`, possiblePaths);
       // Usar o primeiro caminho possível
       setImageSrc(possiblePaths[0]);
       imageSrcRef.current = possiblePaths[0];
@@ -79,13 +79,24 @@ export default function CardImage({ card, className = '', style = {}, fallback =
       setAttemptedPaths(new Set([possiblePaths[0]]));
       setCurrentIndex(0);
       currentIndexRef.current = 0;
-    } else {
-      console.error(`[CardImage] ❌ Sem caminhos possíveis! cardId: ${cardId}, card:`, card?.name);
-      setImageSrc(null);
-      imageSrcRef.current = null;
-      lastImageSrcRef.current = null;
-      setHasError(true);
+      return;
     }
+    
+    // Se não tiver nem cardImageUrl nem cardId, mostrar erro
+    if (!cardId && !cardImageUrl) {
+      console.warn(`[CardImage] ⚠️ Carta sem idCarta e sem cardImage:`, card?.name, {
+        id: card?.id,
+        idCarta: card?.idCarta,
+        cardId: card?.cardId,
+        cardImage: card?.cardImage,
+        card: card
+      });
+    }
+    
+    setImageSrc(null);
+    imageSrcRef.current = null;
+    lastImageSrcRef.current = null;
+    setHasError(true);
   }, [cardId, cardImageUrl, possiblePaths.length]); // Só executar quando cardId, cardImageUrl ou número de paths mudarem
 
   const handleImageError = () => {

@@ -17,12 +17,30 @@ interface Achievement {
 
 interface DuelHistory {
   id: string;
-  player1: any;
-  player2: any;
-  result: string;
-  winnerId: number | null;
-  createdAt: Date;
-  finishedAt: Date | null;
+  playerId: number;
+  opponentId: number;
+  opponent: {
+    id: number;
+    nickname?: string;
+    username?: string;
+    clanTag?: string;
+    profileImage?: string;
+  };
+  result: 'WIN' | 'LOSS' | 'DRAW' | 'CANCELLED';
+  origin: 'RANDOM' | 'ARENA' | 'TOURNAMENT' | 'CHAT' | 'OTHER';
+  playerLifePoints: number;
+  opponentLifePoints: number;
+  scoreEarned: number;
+  turns: number;
+  duration: number;
+  finishedAt: Date;
+  // Campos legados para compatibilidade
+  player1?: any;
+  player2?: any;
+  winnerId?: number | null;
+  createdAt?: Date;
+  player1LifePoints?: number;
+  player2LifePoints?: number;
 }
 
 export const ProfilePage: React.FC = () => {
@@ -48,6 +66,23 @@ export const ProfilePage: React.FC = () => {
     confirmPassword: '',
   });
   const [updating, setUpdating] = useState(false);
+  const [groupInfo, setGroupInfo] = useState<{
+    group: { id: string; name: string; tag: string } | null;
+    memberRank: number | null;
+    memberTotalRank: number | null;
+  } | null>(null);
+  const [friendshipStatus, setFriendshipStatus] = useState<{
+    status: string;
+    friendship: any;
+  } | null>(null);
+  const [friends, setFriends] = useState<any[]>([]);
+  const [loadingFriends, setLoadingFriends] = useState(false);
+  const [showFriendsModal, setShowFriendsModal] = useState(false);
+  const [directMatchStats, setDirectMatchStats] = useState<any>(null);
+  const [loadingDirectMatch, setLoadingDirectMatch] = useState(false);
+  const [showLevelsModal, setShowLevelsModal] = useState(false);
+  const [nextLevels, setNextLevels] = useState<any[]>([]);
+  const [loadingLevels, setLoadingLevels] = useState(false);
 
   const getCurrentUserId = () => {
     if (!currentUser?.id) return null;
@@ -121,14 +156,73 @@ export const ProfilePage: React.FC = () => {
           console.error('Erro ao carregar conquistas:', err);
         }
 
-        // Carregar histórico de duelos
+        // Carregar estatísticas de confronto direto (apenas se não for o próprio perfil)
+        if (!isOwnProfile && currentUserIdNum) {
+          try {
+            setLoadingDirectMatch(true);
+            const directMatchResponse = await axios.get(`${API_URL}/duels/direct-match/${userId}`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            });
+            if (directMatchResponse.data.success) {
+              setDirectMatchStats(directMatchResponse.data);
+            }
+          } catch (err) {
+            console.error('Erro ao carregar confronto direto:', err);
+            setDirectMatchStats(null);
+          } finally {
+            setLoadingDirectMatch(false);
+          }
+        } else {
+          setDirectMatchStats(null);
+        }
+
+        // Carregar histórico de duelos (usar endpoint de histórico que inclui origin)
         try {
-          const duelsResponse = await axios.get(`${API_URL}/duels/user/${userId}`, {
+          console.log('🔍 [ProfilePage] Carregando histórico de duelos para userId:', userId);
+          const historyResponse = await axios.get(`${API_URL}/duels/history/user/${userId}`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
           });
-          setDuelHistory(duelsResponse.data || []);
+          console.log('🔍 [ProfilePage] Resposta do histórico:', historyResponse.data);
+          
+          // O endpoint retorna { history: [...], total: number }
+          const historyData = historyResponse.data?.history || historyResponse.data || [];
+          console.log('🔍 [ProfilePage] Dados do histórico processados:', historyData);
+          console.log('🔍 [ProfilePage] Total de duelos no histórico:', historyData.length);
+          
+          setDuelHistory(Array.isArray(historyData) ? historyData : []);
+        } catch (err: any) {
+          console.error('❌ [ProfilePage] Erro ao carregar histórico:', err);
+          console.error('❌ [ProfilePage] Detalhes do erro:', err.response?.data || err.message);
+          setDuelHistory([]);
+        }
+
+        // Carregar informações do clã
+        try {
+          const groupResponse = await axios.get(`${API_URL}/groups/user/${userId}/info`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          setGroupInfo(groupResponse.data);
         } catch (err) {
-          console.error('Erro ao carregar histórico:', err);
+          console.error('Erro ao carregar informações do clã:', err);
+          setGroupInfo(null);
+        }
+
+        // Carregar status de amizade (se não for o próprio perfil)
+        if (!isOwnProfile && currentUserIdNum && token) {
+          try {
+            const friendshipResponse = await axios.get(`${API_URL}/friends/status/${userId}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            setFriendshipStatus(friendshipResponse.data);
+          } catch (err) {
+            console.error('Erro ao carregar status de amizade:', err);
+            setFriendshipStatus({ status: 'none', friendship: null });
+          }
+        }
+
+        // Carregar lista de amigos do perfil (todos podem ver)
+        if (token && userId) {
+          loadFriends(userId);
         }
       } catch (error: any) {
         console.error('Erro ao carregar perfil:', error);
@@ -141,6 +235,62 @@ export const ProfilePage: React.FC = () => {
 
     loadProfile();
   }, [id, currentUser, token, navigate, isOwnProfile, currentUserIdNum]);
+
+  const loadFriends = async (userId?: number) => {
+    if (!token) return;
+    try {
+      setLoadingFriends(true);
+      const targetUserId = userId || urlIdNum || currentUserIdNum;
+      if (!targetUserId) return;
+      
+      // Buscar amigos do usuário do perfil
+      const response = await axios.get(`${API_URL}/friends/user/${targetUserId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setFriends(response.data || []);
+    } catch (err) {
+      console.error('Erro ao carregar amigos:', err);
+      setFriends([]);
+    } finally {
+      setLoadingFriends(false);
+    }
+  };
+
+  const loadNextLevels = async (currentLevel: number) => {
+    if (!token) return;
+    try {
+      setLoadingLevels(true);
+      const response = await axios.get(`${API_URL}/levels/next/${currentLevel}?count=10`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setNextLevels(response.data || []);
+    } catch (err) {
+      console.error('Erro ao carregar próximos níveis:', err);
+      setNextLevels([]);
+    } finally {
+      setLoadingLevels(false);
+    }
+  };
+
+  const handleSendFriendRequest = async () => {
+    if (!token || !profileUser || !currentUserIdNum) return;
+    
+    try {
+      await axios.post(
+        `${API_URL}/friends/request`,
+        { userId: profileUser.id },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setMessage('✅ Solicitação de amizade enviada!');
+      // Recarregar status de amizade
+      const friendshipResponse = await axios.get(`${API_URL}/friends/status/${profileUser.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setFriendshipStatus(friendshipResponse.data);
+    } catch (error: any) {
+      setMessage('❌ ' + (error.response?.data?.message || 'Erro ao enviar solicitação'));
+    }
+  };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -365,27 +515,75 @@ export const ProfilePage: React.FC = () => {
   const seasonWins = profileUser.seasonRanking?.wins || profileUser.winsSeason || 0;
   const seasonLosses = profileUser.seasonRanking?.losses || profileUser.lossesSeason || 0;
   const seasonScore = profileUser.seasonRanking?.seasonScore || 0;
-  const division = profileUser.seasonRanking?.division || 'Bronze';
+  const division = profileUser.division || 'Bronze';
 
   return (
     <div className="min-h-screen py-12 px-4 relative z-10">
       <div className="max-w-6xl mx-auto">
-        {/* Botão Editar Perfil */}
-        {isOwnProfile && (
-          <div className="flex justify-end mb-4">
+        {/* Botões de Ação */}
+        <div className="flex justify-end items-center gap-3 mb-6">
+          {/* Ícone de Amigos */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setShowFriendsModal(true)}
+            className="relative p-3 hover:bg-white/10 rounded-lg transition border border-white/20 text-white"
+            title={`Ver amigos (${friends.length})`}
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+            {friends.length > 0 && (
+              <span className="absolute -top-1 -right-1 bg-purple-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                {friends.length > 9 ? '9+' : friends.length}
+              </span>
+            )}
+          </motion.button>
+
+          {isOwnProfile ? (
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={handleOpenEditModal}
-              className="px-6 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition border border-slate-600/50 text-white font-semibold flex items-center gap-2"
+              className="px-6 py-2 hover:bg-white/10 rounded-lg transition border border-white/20 text-white font-semibold flex items-center gap-2"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
               Editar Perfil
             </motion.button>
-          </div>
-        )}
+          ) : (
+            friendshipStatus && (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleSendFriendRequest}
+                disabled={friendshipStatus.status === 'ACCEPTED' || friendshipStatus.status === 'pending'}
+                className={`px-6 py-2 rounded-lg transition border font-semibold flex items-center gap-2 ${
+                  friendshipStatus.status === 'ACCEPTED'
+                    ? 'bg-green-600/20 border-green-500/50 text-green-400 cursor-not-allowed'
+                    : friendshipStatus.status === 'pending'
+                    ? 'bg-yellow-600/20 border-yellow-500/50 text-yellow-400 cursor-not-allowed'
+                    : 'bg-purple-600/20 border-purple-500/50 text-purple-400 hover:bg-purple-600/30'
+                }`}
+              >
+                {friendshipStatus.status === 'ACCEPTED' ? (
+                  <>
+                    <span>✓</span> Amigos
+                  </>
+                ) : friendshipStatus.status === 'pending' ? (
+                  <>
+                    <span>⏳</span> Solicitação Enviada
+                  </>
+                ) : (
+                  <>
+                    <span>+</span> Enviar Solicitação de Amizade
+                  </>
+                )}
+              </motion.button>
+            )
+          )}
+        </div>
 
         {/* Card Principal: Foto + Estatísticas */}
         <motion.div
@@ -400,7 +598,7 @@ export const ProfilePage: React.FC = () => {
               whileHover={{ scale: 1.02 }}
               className="relative flex-shrink-0"
             >
-              <div className="w-80 h-80 rounded-xl overflow-hidden border-2 border-slate-600/50 shadow-2xl">
+              <div className="w-80 h-80 rounded-xl overflow-hidden border-2 border-purple-500/50 shadow-2xl">
                 <img
                   src={currentImageUrl}
                   alt="Avatar"
@@ -411,7 +609,7 @@ export const ProfilePage: React.FC = () => {
                 />
               </div>
               {isOwnProfile && (
-                <label className="absolute bottom-3 right-3 bg-slate-700 hover:bg-slate-600 rounded-full p-3 cursor-pointer transition-all shadow-lg border border-slate-500/50">
+                <label className="absolute bottom-3 right-3 hover:bg-white/10 rounded-full p-3 cursor-pointer transition-all shadow-lg border border-white/20">
                   <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -430,75 +628,186 @@ export const ProfilePage: React.FC = () => {
             <div className="flex-1 min-w-0">
               {/* Nome, ID e Nível */}
               <div className="mb-4">
-                <h1 className="text-4xl font-bold text-white mb-2">
+                <h1 className="text-4xl font-bold text-white mb-2 flex items-center gap-3">
                   {profileUser.clanTag ? `|${profileUser.clanTag}| ${profileUser.nickname}` : profileUser.nickname}
                 </h1>
                 <div className="flex items-center gap-4">
                   <p className="text-slate-400">ID: #{profileUser.id}</p>
-                  <span className="text-sm text-slate-300 flex items-center gap-1">
+                  <span 
+                    className="text-sm text-slate-300 flex items-center gap-1 cursor-pointer hover:text-yellow-400 transition-colors"
+                    onClick={() => {
+                      setShowLevelsModal(true);
+                      loadNextLevels(profileUser.level || 1);
+                    }}
+                    title="Clique para ver os próximos níveis"
+                  >
                     <span>⭐</span> Nível <span className="text-base font-bold text-white ml-1">{profileUser.level || 1}</span>
                   </span>
+                  {profileUser.lastIpAddress && (
+                    <span className="text-sm text-slate-400 flex items-center gap-1">
+                      <span>🌐</span> IP: <span className="text-blue-400 font-mono">{profileUser.lastIpAddress}</span>
+                    </span>
+                  )}
                 </div>
                 <p className="text-slate-500">@{profileUser.username}</p>
               </div>
 
               {/* Estatísticas - Agrupadas */}
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {/* Score Season e Score Geral lado a lado */}
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm text-slate-300 flex items-center gap-1">
-                        <span>📊</span> Score Season
+                  <div className="bg-black/20 rounded-lg p-3 border border-slate-700/50">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs md:text-sm text-slate-400 font-medium uppercase tracking-wide flex items-center gap-1.5">
+                        <span className="text-base">📊</span> Score Season
                       </span>
-                      <span className="text-base font-bold text-cyan-400">{seasonScore || 0}</span>
+                      <span className="text-lg md:text-xl font-bold text-cyan-400 drop-shadow-lg">{seasonScore || 0}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-400">⚡ V/D:</span>
-                      <span className="text-sm font-bold text-white">
-                        <span className="text-green-400">{seasonWins}</span> / <span className="text-red-400">{seasonLosses}</span>
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-700/30">
+                      <span className="text-xs text-slate-500 font-medium">⚡ V/D</span>
+                      <span className="text-sm md:text-base font-bold">
+                        <span className="text-green-400">{seasonWins}</span>
+                        <span className="text-slate-500 mx-1">/</span>
+                        <span className="text-red-400">{seasonLosses}</span>
                       </span>
                     </div>
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm text-slate-300 flex items-center gap-1">
-                        <span>🏆</span> Score Geral
+                  <div className="bg-black/20 rounded-lg p-3 border border-slate-700/50">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs md:text-sm text-slate-400 font-medium uppercase tracking-wide flex items-center gap-1.5">
+                        <span className="text-base">🏆</span> Score Geral
                       </span>
-                      <span className="text-base font-bold text-yellow-400">{profileUser.totalScore?.toLocaleString() || 0}</span>
+                      <span className="text-lg md:text-xl font-bold text-yellow-400 drop-shadow-lg">{profileUser.totalScore?.toLocaleString() || 0}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-400">📈 V/D:</span>
-                      <span className="text-sm font-bold text-white">
-                        <span className="text-green-400">{profileUser.winsGeral || 0}</span> / <span className="text-red-400">{profileUser.lossesGeral || 0}</span>
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-700/30">
+                      <span className="text-xs text-slate-500 font-medium">📈 V/D</span>
+                      <span className="text-sm md:text-base font-bold">
+                        <span className="text-green-400">{profileUser.winsGeral || 0}</span>
+                        <span className="text-slate-500 mx-1">/</span>
+                        <span className="text-red-400">{profileUser.lossesGeral || 0}</span>
                       </span>
                     </div>
                   </div>
                 </div>
 
                 {/* Outras estatísticas */}
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   {/* Ranking Season e Ranking Geral lado a lado */}
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-slate-300 flex items-center gap-1">
-                        <span>📈</span> Ranking Season
-                      </span>
-                      <span className="text-base font-bold text-purple-400">{profileUser.seasonRanking?.rank || '-'}°</span>
+                    <div className="bg-black/20 rounded-lg p-3 border border-slate-700/50">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs md:text-sm text-slate-400 font-medium uppercase tracking-wide flex items-center gap-1.5">
+                          <span className="text-base">📈</span> Ranking Season
+                        </span>
+                        <span className="text-lg md:text-xl font-bold text-purple-400 drop-shadow-lg">
+                          {profileUser.seasonRank !== null && profileUser.seasonRank !== undefined 
+                            ? `${profileUser.seasonRank}°` 
+                            : (profileUser.seasonRanking?.rank !== null && profileUser.seasonRanking?.rank !== undefined 
+                              ? `${profileUser.seasonRanking.rank}°` 
+                              : '-')}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-slate-300 flex items-center gap-1">
-                        <span>🎖️</span> Ranking Geral
-                      </span>
-                      <span className="text-base font-bold text-orange-400">{profileUser.generalRank || '-'}°</span>
+                    <div className="bg-black/20 rounded-lg p-3 border border-slate-700/50">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs md:text-sm text-slate-400 font-medium uppercase tracking-wide flex items-center gap-1.5">
+                          <span className="text-base">🎖️</span> Ranking Geral
+                        </span>
+                        <span className="text-lg md:text-xl font-bold text-orange-400 drop-shadow-lg">
+                          {profileUser.generalRank !== null && profileUser.generalRank !== undefined 
+                            ? `${profileUser.generalRank}°` 
+                            : '-'}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-slate-300 flex items-center gap-1">
-                      <span>🏅</span> Divisão
-                    </span>
-                    <span className="text-base font-bold text-cyan-400">{division}</span>
+                  <div className="bg-black/20 rounded-lg p-3 border border-slate-700/50">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs md:text-sm text-slate-400 font-medium uppercase tracking-wide flex items-center gap-1.5">
+                        <span className="text-base">🏅</span> Divisão
+                      </span>
+                      <div className="flex items-center gap-2">
+                      {(() => {
+                        const getDivisionImage = (div: string): string | null => {
+                          if (!div) return null;
+                          const normalized = div.trim().toUpperCase();
+                          const divisionMap: { [key: string]: string } = {
+                            'BRONZE': 'Bronze',
+                            'SILVER': 'Prata',
+                            'GOLD': 'Ouro',
+                            'PLATINUM': 'Ouro',
+                            'DIAMOND': 'Diamante',
+                            'DIAMANTE': 'Diamante',
+                            'MASTER': 'Mestre',
+                            'MESTRE': 'Mestre',
+                            'LEGENDARY': 'Desafiante',
+                            'DESAFIANTE': 'Desafiante',
+                            'PRATA': 'Prata',
+                            'OURO': 'Ouro',
+                          };
+                          const divisionName = divisionMap[normalized];
+                          return divisionName ? `/images/Divisões/${divisionName}.png` : null;
+                        };
+                        const imagePath = getDivisionImage(division);
+                        return imagePath ? (
+                          <img
+                            src={imagePath}
+                            alt={division}
+                            className="w-6 h-6 object-contain"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        ) : null;
+                      })()}
+                      <span className="text-lg md:text-xl font-bold text-cyan-400 drop-shadow-lg">{division}</span>
+                    </div>
+                    </div>
                   </div>
+                  {groupInfo?.group && (
+                    <>
+                      <div className="bg-black/20 rounded-lg p-3 border border-slate-700/50">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs md:text-sm text-slate-400 font-medium uppercase tracking-wide flex items-center gap-1.5">
+                            {groupInfo.group.logo && (
+                              <img 
+                                src={`${API_URL}${groupInfo.group.logo}`}
+                                alt={groupInfo.group.name}
+                                className="w-4 h-4 rounded object-cover"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                            )}
+                            <span className="text-base">👥</span> Clã
+                          </span>
+                          <span className="text-lg md:text-xl font-bold text-cyan-400 drop-shadow-lg">
+                            {groupInfo.group.tag ? `|${groupInfo.group.tag}|` : groupInfo.group.name}
+                          </span>
+                        </div>
+                      </div>
+                      {groupInfo.memberRank && (
+                        <div className="bg-black/20 rounded-lg p-3 border border-slate-700/50">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs md:text-sm text-slate-400 font-medium uppercase tracking-wide flex items-center gap-1.5">
+                              <span className="text-base">🏆</span> Ranking no Clã
+                            </span>
+                            <span className="text-lg md:text-xl font-bold text-yellow-400 drop-shadow-lg">{groupInfo.memberRank}°</span>
+                          </div>
+                        </div>
+                      )}
+                      {groupInfo.memberTotalRank && (
+                        <div className="bg-black/20 rounded-lg p-3 border border-slate-700/50">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs md:text-sm text-slate-400 font-medium uppercase tracking-wide flex items-center gap-1.5">
+                              <span className="text-base">⭐</span> Ranking do Clã
+                            </span>
+                            <span className="text-lg md:text-xl font-bold text-orange-400 drop-shadow-lg">{groupInfo.memberTotalRank}°</span>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -512,21 +821,22 @@ export const ProfilePage: React.FC = () => {
             animate={{ opacity: 1, y: 0 }}
             className={`mb-6 p-4 rounded-lg text-center font-semibold ${
               message.includes('✅')
-                ? 'bg-green-500/20 text-green-400 border border-green-500/50'
-                : 'bg-red-500/20 text-red-400 border border-red-500/50'
+                ? 'text-green-400 border border-green-500/50'
+                : 'text-red-400 border border-red-500/50'
             }`}
           >
             {message}
           </motion.div>
         )}
 
+        {/* Conteúdo em Sequência */}
         <div className="space-y-6">
           {/* Biografia */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="p-6"
-            style={{ backgroundColor: 'transparent' }}
+            className="p-6 rounded-xl border border-white/10"
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
           >
             <h2 className="text-2xl font-bold text-white mb-4">📝 Biografia</h2>
             {isOwnProfile && !editingBio ? (
@@ -536,7 +846,7 @@ export const ProfilePage: React.FC = () => {
                 </p>
                   <button
                     onClick={() => setEditingBio(true)}
-                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition border border-slate-600/50"
+                    className="px-4 py-2 hover:bg-white/10 rounded-lg transition border border-white/20"
                   >
                     Editar Biografia
                   </button>
@@ -549,7 +859,7 @@ export const ProfilePage: React.FC = () => {
                   placeholder="Escreva sua biografia aqui..."
                   maxLength={500}
                   rows={6}
-                    className="w-full px-4 py-2 bg-slate-700/50 rounded-lg text-white border border-slate-600/50 resize-none focus:border-slate-500 focus:outline-none"
+                    className="w-full px-4 py-2 rounded-lg text-white border border-white/20 resize-none focus:border-white/40 focus:outline-none"
                 />
                 <div className="text-sm text-gray-400 text-right">
                   {biography.length}/500 caracteres
@@ -557,7 +867,7 @@ export const ProfilePage: React.FC = () => {
                 <div className="flex gap-2">
                     <button
                       onClick={handleSaveBiography}
-                      className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition border border-slate-600/50"
+                      className="flex-1 px-4 py-2 hover:bg-white/10 rounded-lg transition border border-white/20"
                     >
                       Salvar
                     </button>
@@ -566,7 +876,7 @@ export const ProfilePage: React.FC = () => {
                         setEditingBio(false);
                         setBiography(profileUser.biography || '');
                       }}
-                      className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg transition border border-slate-700/50"
+                      className="flex-1 px-4 py-2 hover:bg-white/10 rounded-lg transition border border-white/20"
                     >
                       Cancelar
                     </button>
@@ -583,8 +893,8 @@ export const ProfilePage: React.FC = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="p-6"
-            style={{ backgroundColor: 'transparent' }}
+            className="p-6 rounded-xl border border-white/10"
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
           >
             <h2 className="text-2xl font-bold text-white mb-4">🏆 Conquistas</h2>
             {achievements.length === 0 ? (
@@ -594,11 +904,27 @@ export const ProfilePage: React.FC = () => {
                 {achievements.map((achievement) => (
                   <div
                     key={achievement.id}
-                    className="bg-slate-700/50 p-4 rounded-xl border border-slate-600/50 hover:border-slate-500/50 transition-colors"
+                    className="flex flex-col items-center p-4 rounded-xl border border-white/20 hover:border-white/40 transition-colors bg-slate-900/50"
                   >
-                    <div className="text-white font-bold mb-1">{achievement.title}</div>
-                    <div className="text-sm text-slate-400">{achievement.description}</div>
-                    <div className="text-xs text-slate-500 mt-2">
+                    {achievement.icon ? (
+                      <img
+                        src={`${API_URL}${achievement.icon}`}
+                        alt={achievement.title}
+                        className="w-24 h-24 object-contain mb-3"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div className="w-24 h-24 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-lg flex items-center justify-center text-4xl mb-3">
+                        🏆
+                      </div>
+                    )}
+                    <div className="text-white font-bold mb-1 text-center">{achievement.title}</div>
+                    {achievement.description && (
+                      <div className="text-sm text-slate-400 text-center mb-2">{achievement.description}</div>
+                    )}
+                    <div className="text-xs text-slate-500">
                       {new Date(achievement.unlockedAt).toLocaleDateString('pt-BR')}
                     </div>
                   </div>
@@ -607,61 +933,426 @@ export const ProfilePage: React.FC = () => {
             )}
           </motion.div>
 
+          {/* Confronto Direto - Apenas se não for o próprio perfil */}
+          {!isOwnProfile && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-6 rounded-xl border border-white/10"
+              style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
+            >
+              <h2 className="text-2xl font-bold text-white mb-6">⚔️ Confronto Direto</h2>
+              {loadingDirectMatch ? (
+                <div className="text-center py-8">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
+                  <p className="text-gray-400 mt-2">Carregando estatísticas...</p>
+                </div>
+              ) : directMatchStats ? (
+                <div className="space-y-6">
+                  {/* Imagens dos duelistas com X entre elas */}
+                  <div className="flex items-center justify-center gap-4 md:gap-8 mb-6">
+                    {/* Jogador 1 (você) */}
+                    <div className="flex flex-col items-center">
+                      {currentUser?.profileImage ? (
+                        <img
+                          src={`${API_URL}${currentUser.profileImage}`}
+                          alt={currentUser.nickname}
+                          className="w-20 h-20 md:w-24 md:h-24 rounded-full border-2 border-purple-500/50 object-cover"
+                          onError={(e) => {
+                            e.currentTarget.src = '/images/default.png';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-20 h-20 md:w-24 md:h-24 rounded-full border-2 border-purple-500/50 bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-2xl">
+                          {currentUser?.nickname?.[0]?.toUpperCase() || '?'}
+                        </div>
+                      )}
+                      <span className="text-white font-bold mt-2 text-sm md:text-base">{currentUser?.nickname || 'Você'}</span>
+                    </div>
+
+                    {/* X entre os duelistas */}
+                    <div className="text-4xl md:text-5xl font-bold text-red-500">⚔️</div>
+
+                    {/* Jogador 2 (oponente) */}
+                    <div className="flex flex-col items-center">
+                      {directMatchStats.player2?.profileImage ? (
+                        <img
+                          src={`${API_URL}${directMatchStats.player2.profileImage}`}
+                          alt={directMatchStats.player2.nickname}
+                          className="w-20 h-20 md:w-24 md:h-24 rounded-full border-2 border-purple-500/50 object-cover"
+                          onError={(e) => {
+                            e.currentTarget.src = '/images/default.png';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-20 h-20 md:w-24 md:h-24 rounded-full border-2 border-purple-500/50 bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-2xl">
+                          {directMatchStats.player2?.nickname?.[0]?.toUpperCase() || '?'}
+                        </div>
+                      )}
+                      <span className="text-white font-bold mt-2 text-sm md:text-base">{directMatchStats.player2?.nickname || 'Oponente'}</span>
+                    </div>
+                  </div>
+
+                  {/* Estatísticas gerais */}
+                  <div className="bg-black/30 rounded-lg p-4 border border-white/10 mb-6">
+                    <h3 className="text-lg font-bold text-white mb-3 text-center">Estatísticas Gerais</h3>
+                    <div className="grid grid-cols-3 gap-4 text-center">
+                      <div>
+                        <div className="text-2xl font-bold text-green-400">{directMatchStats.total.player1Wins}</div>
+                        <div className="text-sm text-gray-400">Suas Vitórias</div>
+                      </div>
+                      <div>
+                        <div className="text-2xl font-bold text-yellow-400">{directMatchStats.total.draws}</div>
+                        <div className="text-sm text-gray-400">Empates</div>
+                      </div>
+                      <div>
+                        <div className="text-2xl font-bold text-red-400">{directMatchStats.total.player2Wins}</div>
+                        <div className="text-sm text-gray-400">Vitórias do Oponente</div>
+                      </div>
+                    </div>
+                    <div className="text-center mt-4 text-sm text-gray-400">
+                      Total de duelos: <span className="font-bold text-white">{directMatchStats.total.totalMatches}</span>
+                    </div>
+                  </div>
+
+                  {/* Estatísticas por tipo de duelo */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-bold text-white mb-3">Por Tipo de Duelo</h3>
+                    {[
+                      { key: 'RANDOM', label: 'Random Duel', icon: '🎲' },
+                      { key: 'CHAT', label: 'Chat Duel', icon: '💬' },
+                      { key: 'ARENA', label: 'Arena Duel', icon: '🏟️' },
+                      { key: 'TOURNAMENT', label: 'Tournament Duel', icon: '🏆' },
+                      { key: 'OTHER', label: 'Outros', icon: '⚔️' },
+                    ].map(({ key, label, icon }) => {
+                      const stats = directMatchStats.byOrigin[key as keyof typeof directMatchStats.byOrigin];
+                      if (!stats || stats.total === 0) return null;
+
+                      return (
+                        <div key={key} className="bg-black/30 rounded-lg p-4 border border-white/10">
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="text-2xl">{icon}</span>
+                            <h4 className="text-white font-bold">{label}</h4>
+                            <span className="ml-auto text-sm text-gray-400">Total: {stats.total}</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-4 text-center">
+                            <div>
+                              <div className="text-xl font-bold text-green-400">{stats.player1Wins}</div>
+                              <div className="text-xs text-gray-400">Você venceu</div>
+                            </div>
+                            <div>
+                              <div className="text-xl font-bold text-yellow-400">{stats.draws}</div>
+                              <div className="text-xs text-gray-400">Empates</div>
+                            </div>
+                            <div>
+                              <div className="text-xl font-bold text-red-400">{stats.player2Wins}</div>
+                              <div className="text-xs text-gray-400">Oponente venceu</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {Object.values(directMatchStats.byOrigin).every((s: any) => s.total === 0) && (
+                      <p className="text-gray-400 text-center py-4">Nenhum duelo registrado ainda.</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-gray-400 text-center py-4">Nenhum confronto direto registrado ainda.</p>
+              )}
+            </motion.div>
+          )}
+
           {/* Histórico de Duelos */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="p-6"
-            style={{ backgroundColor: 'transparent' }}
+            className="p-6 rounded-xl border border-white/10"
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
           >
             <h2 className="text-2xl font-bold text-white mb-4">⚔️ Histórico de Duelos</h2>
-            {duelHistory.length === 0 ? (
+            {!duelHistory || duelHistory.length === 0 ? (
               <p className="text-gray-400">Nenhum duelo registrado ainda.</p>
             ) : (
               <div className="space-y-3 max-h-96 overflow-y-auto">
-                {duelHistory.map((duel) => {
-                  const isPlayer1 = duel.player1?.id === profileUser.id;
-                  const opponent = isPlayer1 ? duel.player2 : duel.player1;
-                  const won = duel.winnerId === profileUser.id;
-                  const isDraw = duel.result === 'DRAW';
+                {duelHistory.map((duel, index) => {
+                  try {
+                    if (!profileUser || !profileUser.id) {
+                      return null;
+                    }
+                    const currentUserId = typeof profileUser.id === 'string' ? parseInt(profileUser.id, 10) : Number(profileUser.id);
+                    
+                    let opponent: any;
+                    let won: boolean;
+                    let isDraw: boolean;
+                    let myLifePoints: number;
+                    let opponentLifePoints: number;
+                    
+                    if (duel.opponent) {
+                      opponent = duel.opponent;
+                      won = duel.result === 'WIN';
+                      isDraw = duel.result === 'DRAW' || duel.result === 'CANCELLED';
+                      myLifePoints = duel.playerLifePoints || 0;
+                      opponentLifePoints = duel.opponentLifePoints || 0;
+                    } else {
+                      const player1Id = typeof duel.player1?.id === 'string' ? parseInt(duel.player1.id, 10) : Number(duel.player1?.id);
+                      const player2Id = typeof duel.player2?.id === 'string' ? parseInt(duel.player2.id, 10) : Number(duel.player2?.id);
+                      const isPlayer1 = player1Id === currentUserId;
+                      opponent = isPlayer1 ? duel.player2 : duel.player1;
+                      won = duel.winnerId === currentUserId;
+                      isDraw = duel.result === 'DRAW';
+                      myLifePoints = isPlayer1 ? (duel.player1LifePoints || 0) : (duel.player2LifePoints || 0);
+                      opponentLifePoints = isPlayer1 ? (duel.player2LifePoints || 0) : (duel.player1LifePoints || 0);
+                    }
+                    
+                    const getDuelTypeName = (origin: string | undefined): string => {
+                      if (!origin) return 'Duelo';
+                      switch (origin.toUpperCase()) {
+                        case 'RANDOM': return 'Random Duel';
+                        case 'ARENA': return 'Arena Duel';
+                        case 'TOURNAMENT': return 'Tournament Duel';
+                        case 'CHAT': return 'Chat Duel';
+                        default: return 'Duelo';
+                      }
+                    };
+                    
+                    const duelTypeName = getDuelTypeName(duel.origin);
+                    
+                    if (!opponent) {
+                      return null;
+                    }
 
-                  return (
-                    <div
-                      key={duel.id}
-                      className={`p-4 rounded-xl border ${
-                        won
-                          ? 'bg-slate-700/50 border-green-500/30'
-                          : isDraw
-                          ? 'bg-slate-700/50 border-yellow-500/30'
-                          : 'bg-slate-700/50 border-red-500/30'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="font-bold text-white">
-                            vs {opponent?.clanTag ? `|${opponent.clanTag}| ${opponent?.nickname || 'Desconhecido'}` : (opponent?.nickname || 'Desconhecido')}
+                    return (
+                      <div
+                        key={duel.id}
+                        className={`p-4 rounded-xl border ${
+                          won ? 'border-green-500/30' : isDraw ? 'border-yellow-500/30' : 'border-red-500/30'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              {opponent?.profileImage && (
+                                <img
+                                  src={`${API_URL}${opponent.profileImage}`}
+                                  alt={opponent?.nickname || opponent?.username}
+                                  className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
+                                  onError={(e) => {
+                                    e.currentTarget.src = '/images/default.png';
+                                  }}
+                                />
+                              )}
+                              <div className="flex-1">
+                                <div className="font-bold text-white text-lg">
+                                  {won ? 'Venceu' : isDraw ? 'Empatou' : 'Perdeu'} um {duelTypeName} contra {opponent?.clanTag ? `|${opponent.clanTag}| ` : ''}{opponent?.nickname || opponent?.username || 'Desconhecido'}
+                                </div>
+                                {opponent?.level && (
+                                  <div className="text-xs text-slate-400">
+                                    Nível: {opponent.level} ⭐
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              <div>
+                                <span className="text-slate-400">Meus LP: </span>
+                                <span className={`font-bold ${myLifePoints > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                  {myLifePoints?.toLocaleString() || 0}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400">Oponente LP: </span>
+                                <span className={`font-bold ${opponentLifePoints > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                  {opponentLifePoints?.toLocaleString() || 0}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-xs text-gray-400 mt-2">
+                              {duel.finishedAt 
+                                ? `Finalizado em ${new Date(duel.finishedAt).toLocaleString('pt-BR')}`
+                                : duel.createdAt
+                                ? `Criado em ${new Date(duel.createdAt).toLocaleString('pt-BR')}`
+                                : 'Data não disponível'
+                              }
+                            </div>
                           </div>
-                          <div className="text-sm text-gray-400">
-                            {new Date(duel.createdAt).toLocaleDateString('pt-BR')}
+                          <div className={`px-3 py-2 rounded-lg font-bold text-sm whitespace-nowrap ${
+                            won ? 'text-green-400 border border-green-500/30' : isDraw ? 'text-yellow-400 border border-yellow-500/30' : 'text-red-400 border border-red-500/30'
+                          }`}>
+                            {won ? '🏆 Vitória' : isDraw ? '🤝 Empate' : '❌ Derrota'}
                           </div>
-                        </div>
-                        <div className={`px-3 py-1 rounded-lg font-bold text-sm ${
-                          won
-                            ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                            : isDraw
-                            ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
-                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                        }`}>
-                          {won ? 'Vitória' : isDraw ? 'Empate' : 'Derrota'}
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  } catch (error: any) {
+                    console.error(`❌ [ProfilePage] Erro ao renderizar duelo ${index}:`, error);
+                    return null;
+                  }
+                }).filter((item) => item !== null)}
               </div>
             )}
           </motion.div>
         </div>
+
+        {/* Modal de Amigos */}
+        {showFriendsModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={() => setShowFriendsModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-slate-800 rounded-xl border border-purple-500/30 max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col"
+            >
+              <div className="p-6 border-b border-slate-700 flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-white">
+                  👥 {isOwnProfile ? 'Meus Amigos' : `Amigos de ${profileUser?.nickname || profileUser?.username}`} ({friends.length})
+                </h2>
+                <button
+                  onClick={() => setShowFriendsModal(false)}
+                  className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6">
+                {loadingFriends ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+                  </div>
+                ) : friends.length === 0 ? (
+                  <div className="text-center py-12 text-gray-400">
+                    <p className="text-4xl mb-2">😔</p>
+                    <p>{isOwnProfile ? 'Você ainda não tem amigos. Visite perfis de outros usuários para enviar solicitações!' : 'Este usuário ainda não tem amigos.'}</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {friends.map((friend) => (
+                      <motion.div
+                        key={friend.id}
+                        whileHover={{ scale: 1.02 }}
+                        className="p-4 rounded-xl border border-white/20 hover:border-purple-500/50 transition-colors cursor-pointer"
+                        onClick={() => {
+                          setShowFriendsModal(false);
+                          navigate(`/profile/${friend.id}`);
+                        }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={friend.profileImage ? `${API_URL}${friend.profileImage}` : "/images/default.png"}
+                            alt={friend.username}
+                            className="w-16 h-16 rounded-full border-2 border-purple-500/50 object-cover"
+                            onError={(e) => {
+                              e.currentTarget.src = '/images/default.png';
+                            }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-white truncate">
+                              {friend.clanTag ? `|${friend.clanTag}| ${friend.nickname}` : friend.nickname}
+                            </p>
+                            <p className="text-sm text-gray-400 truncate">@{friend.username}</p>
+                            <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+                              <span className={`w-2 h-2 rounded-full ${friend.isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></span>
+                              <span>{friend.isOnline ? 'Online' : 'Offline'}</span>
+                              <span>•</span>
+                              <span>Nível {friend.level || 1}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* Modal de Amigos */}
+        {showFriendsModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={() => setShowFriendsModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-slate-800 rounded-xl border border-purple-500/30 max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col"
+            >
+              <div className="p-6 border-b border-slate-700 flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-white">
+                  👥 {isOwnProfile ? 'Meus Amigos' : `Amigos de ${profileUser?.nickname || profileUser?.username}`} ({friends.length})
+                </h2>
+                <button
+                  onClick={() => setShowFriendsModal(false)}
+                  className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6">
+                {loadingFriends ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+                  </div>
+                ) : friends.length === 0 ? (
+                  <div className="text-center py-12 text-gray-400">
+                    <p className="text-4xl mb-2">😔</p>
+                    <p>{isOwnProfile ? 'Você ainda não tem amigos. Visite perfis de outros usuários para enviar solicitações!' : 'Este usuário ainda não tem amigos.'}</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {friends.map((friend) => (
+                      <motion.div
+                        key={friend.id}
+                        whileHover={{ scale: 1.02 }}
+                        className="p-4 rounded-xl border border-white/20 hover:border-purple-500/50 transition-colors cursor-pointer"
+                        onClick={() => {
+                          setShowFriendsModal(false);
+                          navigate(`/profile/${friend.id}`);
+                        }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={friend.profileImage ? `${API_URL}${friend.profileImage}` : "/images/default.png"}
+                            alt={friend.username}
+                            className="w-16 h-16 rounded-full border-2 border-purple-500/50 object-cover"
+                            onError={(e) => {
+                              e.currentTarget.src = '/images/default.png';
+                            }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-white truncate">
+                              {friend.clanTag ? `|${friend.clanTag}| ${friend.nickname}` : friend.nickname}
+                            </p>
+                            <p className="text-sm text-gray-400 truncate">@{friend.username}</p>
+                            <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+                              <span className={`w-2 h-2 rounded-full ${friend.isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></span>
+                              <span>{friend.isOnline ? 'Online' : 'Offline'}</span>
+                              <span>•</span>
+                              <span>Nível {friend.level || 1}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
 
         {/* Upload de Imagem (Modal) */}
         {isOwnProfile && selectedFile && (
@@ -854,6 +1545,93 @@ export const ProfilePage: React.FC = () => {
               </div>
             </motion.div>
           </motion.div>
+        )}
+
+        {/* Modal de Próximos Níveis */}
+        {showLevelsModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-gradient-to-br from-gray-900 to-black rounded-xl shadow-2xl border-2 border-purple-500/50 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-3xl font-bold text-white flex items-center gap-2">
+                    <span>⭐</span> Próximos Níveis
+                  </h2>
+                  <button
+                    onClick={() => setShowLevelsModal(false)}
+                    className="text-gray-400 hover:text-white transition-colors text-2xl font-bold"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {loadingLevels ? (
+                  <div className="text-center py-8">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
+                    <p className="text-gray-400 mt-4">Carregando próximos níveis...</p>
+                  </div>
+                ) : nextLevels.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-400">Você já alcançou o nível máximo! 🎉</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-purple-500/30">
+                          <th className="text-left py-3 px-4 text-purple-400 font-bold">Nível</th>
+                          <th className="text-left py-3 px-4 text-purple-400 font-bold">Score Necessário</th>
+                          <th className="text-left py-3 px-4 text-purple-400 font-bold">Score Restante</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {nextLevels.map((level: any, index: number) => {
+                          const currentScore = parseFloat(profileUser?.totalScore || 0);
+                          const requiredScore = level.requiredScore || 0;
+                          const scoreRemaining = Math.max(0, requiredScore - currentScore);
+                          const isNextLevel = index === 0;
+
+                          return (
+                            <tr
+                              key={level.level}
+                              className={`border-b border-gray-700/50 ${
+                                isNextLevel ? 'bg-purple-500/10' : ''
+                              } hover:bg-gray-800/50 transition-colors`}
+                            >
+                              <td className="py-3 px-4">
+                                <span className={`font-bold ${isNextLevel ? 'text-yellow-400' : 'text-white'}`}>
+                                  {level.level}
+                                  {isNextLevel && ' ⭐'}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-gray-300">
+                                {requiredScore.toLocaleString('pt-BR')} pts
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className={scoreRemaining === 0 ? 'text-green-400' : 'text-yellow-400'}>
+                                  {scoreRemaining === 0 ? '✅ Alcançado' : `${scoreRemaining.toLocaleString('pt-BR')} pts`}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <div className="mt-6 pt-4 border-t border-gray-700/50">
+                  <p className="text-sm text-gray-400 text-center">
+                    Score atual: <span className="text-white font-bold">{parseFloat(profileUser?.totalScore || 0).toLocaleString('pt-BR')} pts</span>
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          </div>
         )}
       </div>
     </div>

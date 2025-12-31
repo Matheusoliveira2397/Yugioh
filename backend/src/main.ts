@@ -6,6 +6,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { LoggingInterceptor } from './logging.interceptor';
 import { HttpExceptionFilter } from './http-exception.filter';
+import * as fs from 'fs';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -52,9 +53,69 @@ async function bootstrap() {
   app.use(require('express').json({ limit: '10mb' }));
   app.use(require('express').urlencoded({ extended: true, limit: '10mb' }));
 
+  // Garantir que os diretórios e arquivos padrão existam
+  const uploadsDir = join(__dirname, '..', 'uploads');
+  const avatarsDir = join(uploadsDir, 'avatars');
+  const imagesDir = join(uploadsDir, 'images');
+  const defaultAvatarPath = join(avatarsDir, 'default.png');
+  const defaultImagePath = join(imagesDir, 'default.png');
+  const frontendDefaultPath = join(__dirname, '..', '..', 'frontend', 'public', 'images', 'default.png');
+
+  // Criar diretórios se não existirem
+  if (!fs.existsSync(avatarsDir)) {
+    fs.mkdirSync(avatarsDir, { recursive: true });
+    console.log('📁 Diretório de avatares criado:', avatarsDir);
+  }
+  if (!fs.existsSync(imagesDir)) {
+    fs.mkdirSync(imagesDir, { recursive: true });
+    console.log('📁 Diretório de imagens criado:', imagesDir);
+  }
+
+  // Copiar default.png se não existir
+  // Tenta copiar do frontend (desenvolvimento local) ou usar arquivo já existente no volume (Docker)
+  if (!fs.existsSync(defaultAvatarPath)) {
+    if (fs.existsSync(frontendDefaultPath)) {
+      try {
+        fs.copyFileSync(frontendDefaultPath, defaultAvatarPath);
+        console.log('✅ Arquivo default.png copiado para avatares do frontend');
+      } catch (error) {
+        console.warn('⚠️ Não foi possível copiar do frontend. Arquivo deve estar no volume do Docker.');
+      }
+    } else {
+      console.warn('⚠️ Arquivo default.png não encontrado em avatares. Certifique-se de que está no volume do Docker.');
+    }
+  } else {
+    console.log('✅ Arquivo default.png já existe em avatares');
+  }
+  
+  if (!fs.existsSync(defaultImagePath)) {
+    if (fs.existsSync(frontendDefaultPath)) {
+      try {
+        fs.copyFileSync(frontendDefaultPath, defaultImagePath);
+        console.log('✅ Arquivo default.png copiado para imagens do frontend');
+      } catch (error) {
+        console.warn('⚠️ Não foi possível copiar do frontend. Arquivo deve estar no volume do Docker.');
+      }
+    } else {
+      console.warn('⚠️ Arquivo default.png não encontrado em imagens. Certifique-se de que está no volume do Docker.');
+    }
+  } else {
+    console.log('✅ Arquivo default.png já existe em imagens');
+  }
+
   // Servir arquivos estáticos (uploads)
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
     prefix: '/uploads/',
+  });
+
+  // Servir imagens padrão
+  app.useStaticAssets(join(__dirname, '..', 'uploads', 'images'), {
+    prefix: '/images/',
+  });
+
+  // Servir avatares padrão
+  app.useStaticAssets(join(__dirname, '..', 'uploads', 'avatars'), {
+    prefix: '/avatars/',
   });
 
   // Habilitar CORS

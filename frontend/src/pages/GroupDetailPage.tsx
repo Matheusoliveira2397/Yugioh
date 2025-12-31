@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
-import { useSocket } from '../hooks/useSocket';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -15,6 +14,16 @@ interface Group {
   logo: string;
   banner?: string;
   totalScore: number;
+  seasonScore?: number;
+  level?: number;
+  totalCash?: number;
+  credits?: number;
+  totalWins?: number;
+  totalLosses?: number;
+  winsSeason?: number;
+  lossesSeason?: number;
+  totalAchievements?: number;
+  memberCount?: number;
   maxMembers: number;
   isPublic: boolean;
   isActive: boolean;
@@ -41,6 +50,8 @@ interface GroupMember {
     profileImage: string;
     level: number;
     clanTag?: string;
+    winsSeason?: number;
+    lossesSeason?: number;
   };
 }
 
@@ -50,11 +61,9 @@ export default function GroupDetailPage() {
   const { token, user } = useAuthStore();
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
-  const [activeTab, setActiveTab] = useState<'weekly' | 'season' | 'total' | 'chat'>('weekly');
+  const [achievements, setAchievements] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'weekly' | 'season' | 'total'>('weekly');
   const [loading, setLoading] = useState(true);
-  const [messages, setMessages] = useState<any[]>([]);
-  const [messageInput, setMessageInput] = useState('');
-  const [loadingMessages, setLoadingMessages] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editFormData, setEditFormData] = useState({
@@ -69,15 +78,27 @@ export default function GroupDetailPage() {
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
   const [editError, setEditError] = useState('');
 
-  const { getSocket } = useSocket();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (id) {
       fetchGroupDetails();
       fetchRanking('weekly');
+      fetchAchievements();
     }
   }, [id]);
+
+  const fetchAchievements = async () => {
+    if (!id) return;
+    try {
+      const response = await axios.get(`${API_URL}/groups/${id}/achievements`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setAchievements(response.data || []);
+    } catch (error) {
+      console.error('Erro ao buscar conquistas do grupo:', error);
+      setAchievements([]);
+    }
+  };
 
   // Calcular se é membro
   const userId = user?.id ? (typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id)) : null;
@@ -88,17 +109,6 @@ export default function GroupDetailPage() {
     return memberId !== null && userId === memberId;
   });
 
-  useEffect(() => {
-    if (id && isMember && activeTab === 'chat' && user?.id) {
-      fetchMessages();
-      const cleanup = setupWebSocket();
-      return cleanup;
-    }
-  }, [id, isMember, activeTab, user?.id, members]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
 
   const fetchGroupDetails = async () => {
     try {
@@ -126,90 +136,46 @@ export default function GroupDetailPage() {
     }
   };
 
-  const fetchMessages = async () => {
-    if (!id || !isMember) return;
-    try {
-      setLoadingMessages(true);
-      const url = `${API_URL}/groups/messages/${id}`;
-      console.log('📥 [Frontend] Buscando mensagens:', { url, groupId: id });
-      const response = await axios.get(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setMessages(response.data || []);
-    } catch (error: any) {
-      console.error('Erro ao buscar mensagens:', error);
-      if (error.response?.status === 403) {
-        alert('Você não é membro deste clã');
-      }
-    } finally {
-      setLoadingMessages(false);
-    }
-  };
 
-  const setupWebSocket = () => {
-    const socket = getSocket();
-    if (!socket || !id || !user?.id) return;
-
-    const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
-    socket.emit('joinGroupChat', { groupId: id, userId });
-
-    const messageHandler = (message: any) => {
-      setMessages((prev) => {
-        // Evitar duplicatas
-        if (prev.some(m => m.id === message.id)) {
-          return prev;
-        }
-        return [...prev, message];
-      });
-    };
-
-    socket.on('groupMessage', messageHandler);
-    socket.on('groupChatError', (error: any) => {
-      console.error('Erro no chat do clã:', error);
-      alert(error.message || 'Erro no chat do clã');
-    });
-
-    return () => {
-      socket.off('groupMessage', messageHandler);
-      socket.off('groupChatError');
-      socket.emit('leaveGroupChat', { groupId: id });
-    };
-  };
-
-  const handleSendMessage = async () => {
-    if (!messageInput.trim() || !id || !isMember) return;
-
-    const url = `${API_URL}/groups/messages/${id}`;
-    const body = { message: messageInput };
-    const headers = { Authorization: `Bearer ${token}` };
+  const handleJoinGroup = async () => {
+    if (!id) return;
     
-    console.log('📤 [Frontend] Enviando mensagem:', {
-      url,
-      body,
-      hasToken: !!token,
-      groupId: id,
-    });
-
     try {
-      const response = await axios.post(url, body, { headers });
-
-      // Adicionar mensagem localmente (já será adicionada via WebSocket também)
-      setMessageInput('');
-
-      // Enviar via WebSocket para outros membros
-      const socket = getSocket();
-      if (socket) {
-        socket.emit('groupMessage', {
-          groupId: id,
-          message: response.data,
-        });
+      await axios.post(
+        `${API_URL}/groups/join/${id}`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      
+      // Buscar dados atualizados do usuário após entrar no grupo
+      try {
+        const userResponse = await axios.get(
+          `${API_URL}/users/me`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        
+        console.log('🔄 [joinGroup] Dados do usuário recebidos:', userResponse.data);
+        if (userResponse.data) {
+          const updatedUser = { ...user, ...userResponse.data };
+          console.log('✅ [joinGroup] Atualizando store com clanTag:', updatedUser.clanTag);
+          useAuthStore.setState({
+            user: updatedUser,
+          });
+        }
+      } catch (err) {
+        console.error('❌ Erro ao buscar dados do usuário:', err);
       }
+      
+      alert('Você entrou no clã!');
+      // Recarregar dados do grupo para atualizar a lista de membros
+      await fetchGroupDetails();
+      await fetchRanking(activeTab);
     } catch (error: any) {
-      console.error('❌ [Frontend] Erro ao enviar mensagem:', error);
-      console.error('❌ [Frontend] URL tentada:', url);
-      console.error('❌ [Frontend] Status:', error.response?.status);
-      console.error('❌ [Frontend] Response data:', error.response?.data);
-      alert(error.response?.data?.message || 'Erro ao enviar mensagem');
+      alert(error.response?.data?.message || 'Erro ao entrar no clã');
     }
   };
 
@@ -258,6 +224,44 @@ export default function GroupDetailPage() {
       navigate('/groups');
     } catch (error: any) {
       alert(error.response?.data?.message || 'Erro ao excluir grupo');
+    }
+  };
+
+  const handlePromoteMember = async (memberUserId: number, role: 'CO_LEADER' | 'ELDER') => {
+    if (!confirm(`Tem certeza que deseja promover este membro a ${role === 'CO_LEADER' ? 'Co-Líder' : 'Veterano'}?`)) {
+      return;
+    }
+
+    try {
+      await axios.post(
+        `${API_URL}/groups/${id}/promote/${memberUserId}`,
+        { role },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert('Membro promovido com sucesso!');
+      await fetchGroupDetails();
+      await fetchRanking(activeTab);
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Erro ao promover membro');
+    }
+  };
+
+  const handleDemoteMember = async (memberUserId: number) => {
+    if (!confirm('Tem certeza que deseja rebaixar este membro a Membro?')) {
+      return;
+    }
+
+    try {
+      await axios.post(
+        `${API_URL}/groups/${id}/demote/${memberUserId}`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert('Membro rebaixado com sucesso!');
+      await fetchGroupDetails();
+      await fetchRanking(activeTab);
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Erro ao rebaixar membro');
     }
   };
 
@@ -352,17 +356,116 @@ export default function GroupDetailPage() {
             ← Voltar para Grupos
           </Link>
 
-          <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-8 border border-purple-500/50 shadow-2xl">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-6">
-                {/* Tag do Grupo */}
-                <div className="w-24 h-24 bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl flex items-center justify-center text-4xl font-bold text-white shadow-lg">
-                  {group.tag}
-                </div>
+          <div className="relative rounded-2xl overflow-hidden border border-purple-500/50 shadow-2xl">
+            {/* Banner como background */}
+            {group.banner && (
+              <div className="absolute inset-0 z-0">
+                <img
+                  src={`${API_URL}${group.banner}`}
+                  alt={`Banner de ${group.name}`}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+                <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/60 to-black/80"></div>
+              </div>
+            )}
+            
+            {/* Conteúdo sobre o banner */}
+            <div className={`relative z-10 p-8 ${group.banner ? '' : 'bg-slate-900/30'}`}>
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  {/* Logo e Nome do Grupo no topo */}
+                  <div className="flex items-center gap-4 mb-4">
+                    {/* Logo do Grupo */}
+                    {group.logo ? (
+                      <img 
+                        src={`${API_URL}${group.logo}`}
+                        alt={group.name}
+                        className="w-24 h-24 rounded-2xl object-cover border-2 border-purple-500 shadow-lg"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                          if (fallback) fallback.style.display = 'flex';
+                        }}
+                      />
+                    ) : null}
+                    <div className={`w-24 h-24 bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl flex items-center justify-center text-4xl font-bold text-white shadow-lg ${group.logo ? 'hidden' : ''}`}>
+                      {group.tag}
+                    </div>
 
-                {/* Info do Grupo */}
-                <div>
-                  <h1 className="text-4xl font-bold text-white mb-2">{group.name}</h1>
+                    {/* Nome do Grupo */}
+                    <div>
+                      <h1 className="text-4xl font-bold text-white">
+                        |{group.tag}| {group.name}
+                      </h1>
+                    </div>
+                  </div>
+
+                  {/* Info do Grupo */}
+                  <div>
+                  {/* Calcular winsSeason e lossesSeason a partir dos membros */}
+                  {(() => {
+                    const seasonWins = members.reduce((sum, member) => sum + (member.user?.winsSeason || 0), 0);
+                    const seasonLosses = members.reduce((sum, member) => sum + (member.user?.lossesSeason || 0), 0);
+                    return (
+                      <>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                          <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
+                            <div className="text-xs text-slate-400 mb-1">Membros</div>
+                            <div className="text-white font-bold text-lg">
+                              {group.memberCount || members.length}/{group.maxMembers}
+                            </div>
+                          </div>
+                          <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
+                            <div className="text-xs text-slate-400 mb-1">Nível</div>
+                            <div className="text-purple-400 font-bold text-lg">
+                              {group.level || 1}
+                            </div>
+                          </div>
+                          <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
+                            <div className="text-xs text-slate-400 mb-1">Score Geral</div>
+                            <div className="text-yellow-400 font-bold text-lg">
+                              {group.totalScore?.toLocaleString() || 0}
+                            </div>
+                          </div>
+                          <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
+                            <div className="text-xs text-slate-400 mb-1">Score Season</div>
+                            <div className="text-blue-400 font-bold text-lg">
+                              {(group.seasonScore || 0).toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                          <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
+                            <div className="text-xs text-slate-400 mb-1">Crédito</div>
+                            <div className="text-yellow-400 font-bold text-lg">
+                              {(group.credits || 0).toLocaleString()}
+                            </div>
+                          </div>
+                          <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
+                            <div className="text-xs text-slate-400 mb-1">Cash</div>
+                            <div className="text-green-400 font-bold text-lg">
+                              {(group.totalCash || 0).toLocaleString()}
+                            </div>
+                          </div>
+                          <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
+                            <div className="text-xs text-slate-400 mb-1">V/D Season</div>
+                            <div className="text-white font-bold text-lg">
+                              <span className="text-green-400">{seasonWins}</span> / <span className="text-red-400">{seasonLosses}</span>
+                            </div>
+                          </div>
+                          <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
+                            <div className="text-xs text-slate-400 mb-1">V/D Geral</div>
+                            <div className="text-white font-bold text-lg">
+                              <span className="text-green-400">{group.totalWins || 0}</span> / <span className="text-red-400">{group.totalLosses || 0}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                   <div className="flex items-center gap-4 mb-3">
                     <span className={`text-sm px-3 py-1 rounded ${
                       group.isPublic
@@ -371,24 +474,41 @@ export default function GroupDetailPage() {
                     }`}>
                       {group.isPublic ? '🌍 Público' : '🔒 Privado'}
                     </span>
-                    <span className="text-slate-400">
-                      👥 {members.length}/{group.maxMembers} membros
-                    </span>
-                    <span className="text-yellow-400 font-bold">
-                      🏆 {group.totalScore.toLocaleString()} pontos
+                    <span className="text-purple-400 font-bold">
+                      🏆 {group.totalAchievements || 0} Conquistas
                     </span>
                   </div>
                   <p className="text-slate-300">{group.description || 'Sem descrição'}</p>
-                  <p className="text-slate-400 text-sm mt-2">
-                    👑 Líder: <span className="text-white font-semibold">
-                      {group.leader.clanTag ? `|${group.leader.clanTag}| ${group.leader.nickname}` : group.leader.nickname}
-                    </span>
-                  </p>
+                  <div className="flex justify-between items-center mt-2">
+                    <p className="text-slate-400 text-sm">
+                      👑 Fundador: <Link to={`/profile/${group.leader.id}`} className="text-white font-semibold hover:text-purple-400 transition-colors cursor-pointer">
+                        {group.leader.clanTag ? `|${group.leader.clanTag}| ${group.leader.nickname}` : group.leader.nickname}
+                      </Link>
+                    </p>
+                    <div className="bg-slate-900/30 rounded-lg p-3 border border-white/10">
+                      <div className="text-xs text-slate-400 mb-1">Fundado em</div>
+                      <div className="text-white font-bold text-sm">
+                        {group.createdAt ? new Date(group.createdAt).toLocaleDateString('pt-BR', {
+                          day: '2-digit',
+                          month: 'long',
+                          year: 'numeric'
+                        }) : 'N/A'}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
               {/* Ações */}
               <div className="flex gap-3">
+                {!isMember && !user?.group && !user?.clanTag && (
+                  <button
+                    onClick={handleJoinGroup}
+                    className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-bold hover:from-green-700 hover:to-emerald-700 transition-colors shadow-lg shadow-green-500/30"
+                  >
+                    ✨ Entrar no Clã
+                  </button>
+                )}
                 {isMember && !isLeader && (
                   <button
                     onClick={handleLeaveGroup}
@@ -401,21 +521,93 @@ export default function GroupDetailPage() {
                   <>
                     <button
                       onClick={handleOpenEditModal}
-                      className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
+                      className="p-3 text-white hover:text-blue-400 transition-colors flex items-center justify-center text-2xl"
+                      title="Editar Grupo"
                     >
-                      ✏️ Editar Grupo
+                      ⚙️
                     </button>
                     <button
                       onClick={() => setShowDeleteModal(true)}
-                      className="px-6 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors"
+                      className="p-3 text-white hover:text-red-400 transition-colors flex items-center justify-center text-2xl"
+                      title="Excluir Grupo"
                     >
-                      🗑️ Excluir Grupo
+                      🗑️
                     </button>
                   </>
                 )}
               </div>
+              </div>
             </div>
           </div>
+        </motion.div>
+
+        {/* Conquistas do Grupo */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8 bg-slate-900/30  rounded-2xl p-8 border border-purple-500/50 shadow-2xl"
+        >
+          <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
+            🏆 Conquistas do Clã
+          </h2>
+          {achievements.length === 0 ? (
+            <p className="text-gray-400">Nenhuma conquista desbloqueada ainda.</p>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+              {achievements.map((achievement) => (
+                <div
+                  key={achievement.id}
+                  className="p-3 rounded-lg border border-white/20 hover:border-white/40 transition-colors bg-slate-900/30 flex flex-col items-center text-center"
+                >
+                  {/* Imagem da conquista - maior destaque */}
+                  {achievement.icon && (
+                    <img
+                      src={`${API_URL}${achievement.icon}`}
+                      alt={achievement.title}
+                      className="w-24 h-24 object-contain mb-2"
+                      onError={(e) => {
+                        e.currentTarget.src = '/images/default_achievement.png';
+                      }}
+                    />
+                  )}
+                  
+                  {/* Título da conquista */}
+                  <div className="text-white font-semibold text-xs mb-1 line-clamp-2">{achievement.title}</div>
+                  
+                  {/* Descrição da conquista */}
+                  {achievement.description && (
+                    <div className="text-xs text-slate-400 mb-2 line-clamp-2">{achievement.description}</div>
+                  )}
+                  
+                  {/* Informações do usuário que desbloqueou */}
+                  <div className="mt-auto pt-2 border-t border-white/10 w-full">
+                    <div className="flex items-center gap-1.5 justify-center mb-1">
+                      <img
+                        src={achievement.user?.profileImage ? `${API_URL}${achievement.user.profileImage}` : '/images/default.png'}
+                        alt={achievement.user?.nickname || 'Usuário'}
+                        className="w-5 h-5 rounded-full border border-purple-500/50 object-cover flex-shrink-0"
+                        onError={(e) => {
+                          e.currentTarget.src = '/images/default.png';
+                        }}
+                      />
+                      <p className="text-xs text-slate-300 truncate">
+                        <Link to={`/profile/${achievement.user?.id}`} className="hover:text-purple-400 transition-colors cursor-pointer">
+                          {achievement.user?.clanTag ? `|${achievement.user.clanTag}| ` : ''}{achievement.user?.nickname || 'Usuário'}
+                        </Link>
+                      </p>
+                    </div>
+                    <p className="text-xs text-slate-500 text-center">
+                      {new Date(achievement.unlockedAt).toLocaleDateString('pt-BR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric'
+                      })}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </motion.div>
 
         {/* Tabs de Ranking */}
@@ -425,7 +617,7 @@ export default function GroupDetailPage() {
             className={`px-6 py-3 rounded-xl font-bold transition-all ${
               activeTab === 'weekly'
                 ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                : 'bg-slate-900/30  text-slate-400 hover:bg-slate-900/50 border border-white/20'
             }`}
           >
             📅 Ranking Semanal
@@ -435,7 +627,7 @@ export default function GroupDetailPage() {
             className={`px-6 py-3 rounded-xl font-bold transition-all ${
               activeTab === 'season'
                 ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                : 'bg-slate-900/30  text-slate-400 hover:bg-slate-900/50 border border-white/20'
             }`}
           >
             🏆 Ranking da Season
@@ -448,31 +640,19 @@ export default function GroupDetailPage() {
             className={`px-6 py-3 rounded-xl font-bold transition-all ${
               activeTab === 'total'
                 ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                : 'bg-slate-900/30  text-slate-400 hover:bg-slate-900/50 border border-white/20'
             }`}
           >
             ⭐ Ranking Total
           </button>
-          {isMember && (
-            <button
-              onClick={() => setActiveTab('chat')}
-              className={`px-6 py-3 rounded-xl font-bold transition-all ${
-                activeTab === 'chat'
-                  ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
-                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-              }`}
-            >
-              💬 Chat do Clã
-            </button>
-          )}
         </div>
 
         {/* Ranking de Membros */}
-        {activeTab !== 'chat' && (
-        <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl border border-slate-700 overflow-hidden">
+        {(
+        <div className="bg-slate-900/30  rounded-2xl border border-slate-700/50 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-slate-900/50">
+              <thead className="bg-slate-900/30 ">
                 <tr>
                   <th className="px-6 py-4 text-left text-slate-400 font-semibold">#</th>
                   <th className="px-6 py-4 text-left text-slate-400 font-semibold">Membro</th>
@@ -495,7 +675,7 @@ export default function GroupDetailPage() {
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.05 }}
-                      className="border-t border-slate-700/50 hover:bg-slate-800/50 transition-colors"
+                      className="border-t border-slate-700/50 hover:bg-slate-900/30 transition-colors"
                     >
                       <td className="px-6 py-4">
                         <span className={`text-2xl font-bold ${
@@ -518,25 +698,58 @@ export default function GroupDetailPage() {
                             }}
                           />
                           <div>
-                            <p className="text-white font-semibold">
+                            <Link to={`/profile/${member.user.id}`} className="text-white font-semibold hover:text-purple-400 transition-colors cursor-pointer block">
                               {member.user.clanTag ? `|${member.user.clanTag}| ${member.user.nickname}` : member.user.nickname}
-                            </p>
+                            </Link>
                             <p className="text-slate-400 text-sm">Nível {member.user.level || 0}</p>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`px-3 py-1 rounded text-sm font-semibold ${
-                          member.role === 'LEADER' ? 'bg-yellow-500/20 text-yellow-400' :
-                          member.role === 'CO_LEADER' ? 'bg-orange-500/20 text-orange-400' :
-                          member.role === 'ELDER' ? 'bg-purple-500/20 text-purple-400' :
-                          'bg-slate-700/50 text-slate-300'
-                        }`}>
-                          {member.role === 'LEADER' ? '👑 Líder' :
-                           member.role === 'CO_LEADER' ? '⭐ Co-Líder' :
-                           member.role === 'ELDER' ? '💎 Veterano' :
-                           '👤 Membro'}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`px-3 py-1 rounded text-sm font-semibold ${
+                            member.role === 'LEADER' ? 'bg-yellow-500/20 text-yellow-400' :
+                            member.role === 'CO_LEADER' ? 'bg-orange-500/20 text-orange-400' :
+                            member.role === 'ELDER' ? 'bg-purple-500/20 text-purple-400' :
+                            'bg-slate-700/50 text-slate-300'
+                          }`}>
+                            {member.role === 'LEADER' ? '👑 Líder' :
+                             member.role === 'CO_LEADER' ? '⭐ Co-Líder' :
+                             member.role === 'ELDER' ? '💎 Veterano' :
+                             '👤 Membro'}
+                          </span>
+                          {isLeader && member.role !== 'LEADER' && (
+                            <div className="flex gap-1">
+                              {member.role !== 'CO_LEADER' && (
+                                <button
+                                  onClick={() => handlePromoteMember(member.user.id, 'CO_LEADER')}
+                                  className="px-2 py-1 bg-orange-600/20 hover:bg-orange-600/40 text-orange-400 rounded text-xs transition-colors"
+                                  title="Promover a Co-Líder"
+                                >
+                                  ⭐
+                                </button>
+                              )}
+                              {member.role !== 'ELDER' && member.role !== 'CO_LEADER' && (
+                                <button
+                                  onClick={() => handlePromoteMember(member.user.id, 'ELDER')}
+                                  className="px-2 py-1 bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 rounded text-xs transition-colors"
+                                  title="Promover a Veterano"
+                                >
+                                  💎
+                                </button>
+                              )}
+                              {(member.role === 'CO_LEADER' || member.role === 'ELDER') && (
+                                <button
+                                  onClick={() => handleDemoteMember(member.user.id)}
+                                  className="px-2 py-1 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded text-xs transition-colors"
+                                  title="Rebaixar a Membro"
+                                >
+                                  ⬇️
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <span className="text-xl font-bold text-yellow-400">
@@ -558,121 +771,18 @@ export default function GroupDetailPage() {
           </div>
         </div>
         )}
-
-      {/* Chat do Clã */}
-      {activeTab === 'chat' && isMember && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-purple-500/50 shadow-2xl"
-        >
-          <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
-            💬 Chat do Clã
-          </h2>
-
-          {loadingMessages ? (
-            <div className="text-center py-8">
-              <div className="text-slate-400">Carregando mensagens...</div>
-            </div>
-          ) : (
-            <>
-              {/* Área de Mensagens */}
-              <div className="bg-slate-900/50 rounded-lg p-4 h-96 overflow-y-auto mb-4 border border-slate-700">
-                {messages.length === 0 ? (
-                  <div className="text-center text-slate-500 py-8">
-                    Nenhuma mensagem ainda. Seja o primeiro a falar!
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {messages.map((msg) => {
-                      const isOwnMessage = msg.user?.id === user?.id || msg.userId === user?.id;
-                      return (
-                        <div
-                          key={msg.id}
-                          className={`flex gap-3 ${isOwnMessage ? 'flex-row-reverse' : ''}`}
-                        >
-                          <img
-                            src={msg.user?.profileImage ? `${API_URL}${msg.user.profileImage}` : '/images/default.png'}
-                            alt={msg.user?.nickname || 'Usuário'}
-                            className="w-10 h-10 rounded-full border-2 border-purple-500/50"
-                            onError={(e) => {
-                              e.currentTarget.src = '/images/default.png';
-                            }}
-                          />
-                          <div className={`flex-1 ${isOwnMessage ? 'text-right' : ''}`}>
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-bold text-purple-400">
-                                {msg.user?.clanTag ? `|${msg.user.clanTag}| ` : ''}
-                                {msg.user?.nickname || msg.user?.username || 'Usuário'}
-                              </span>
-                              <span className="text-xs text-slate-500">
-                                {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })}
-                              </span>
-                            </div>
-                            <div
-                              className={`inline-block px-4 py-2 rounded-lg ${
-                                isOwnMessage
-                                  ? 'bg-purple-600 text-white'
-                                  : 'bg-slate-700 text-slate-200'
-                              }`}
-                            >
-                              {msg.message}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <div ref={messagesEndRef} />
-                  </div>
-                )}
-              </div>
-
-              {/* Input de Mensagem */}
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage();
-                    }
-                  }}
-                  placeholder="Digite sua mensagem..."
-                  className="flex-1 px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-purple-500 focus:outline-none"
-                  maxLength={500}
-                />
-                <button
-                  onClick={handleSendMessage}
-                  disabled={!messageInput.trim()}
-                  className="px-6 py-3 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Enviar
-                </button>
-              </div>
-              <p className="text-xs text-slate-500 mt-2">
-                Apenas membros do clã podem ver e enviar mensagens
-              </p>
-            </>
-          )}
-        </motion.div>
-      )}
       </div>
 
       {/* Modal de Edição */}
       {showEditModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 overflow-y-auto">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4 overflow-y-auto">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-8 max-w-2xl w-full border border-purple-500/50 shadow-2xl my-8"
+            className="bg-slate-900/80  rounded-2xl p-8 max-w-2xl w-full border border-purple-500/50 shadow-2xl my-8"
           >
             <h2 className="text-3xl font-bold text-white mb-6 flex items-center gap-3">
-              <span className="text-4xl">✏️</span>
+              <span className="text-4xl">⚙️</span>
               Editar Grupo
             </h2>
 
@@ -687,7 +797,7 @@ export default function GroupDetailPage() {
                   value={editFormData.name}
                   onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
                   placeholder="Ex: Dragões Supremos"
-                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-purple-500 focus:outline-none"
+                  className="w-full px-4 py-3 bg-slate-900/30  border border-slate-700/50 rounded-xl text-white focus:border-purple-500 focus:outline-none"
                   required
                 />
               </div>
@@ -792,7 +902,7 @@ export default function GroupDetailPage() {
                     className={`flex-1 py-3 rounded-xl font-semibold transition-all ${
                       editFormData.isPublic
                         ? 'bg-green-600 text-white'
-                        : 'bg-slate-900 text-slate-400 border border-slate-700'
+                        : 'bg-slate-900/30  text-slate-400 border border-slate-700/50'
                     }`}
                   >
                     🌍 Público
@@ -803,7 +913,7 @@ export default function GroupDetailPage() {
                     className={`flex-1 py-3 rounded-xl font-semibold transition-all ${
                       !editFormData.isPublic
                         ? 'bg-red-600 text-white'
-                        : 'bg-slate-900 text-slate-400 border border-slate-700'
+                        : 'bg-slate-900/30  text-slate-400 border border-slate-700/50'
                     }`}
                   >
                     🔒 Privado
@@ -846,11 +956,11 @@ export default function GroupDetailPage() {
 
       {/* Modal de Confirmação de Exclusão */}
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-8 max-w-md w-full border border-red-500/50 shadow-2xl"
+            className="bg-slate-900/80  rounded-2xl p-8 max-w-md w-full border border-red-500/50 shadow-2xl"
           >
             <h2 className="text-3xl font-bold text-white mb-4 flex items-center gap-3">
               <span className="text-4xl">⚠️</span>

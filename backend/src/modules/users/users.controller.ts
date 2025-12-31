@@ -23,6 +23,11 @@ export class UsersController {
     return this.usersService.getGeneralRanking();
   }
 
+  @Get('ranking/season/division/:division')
+  async getSeasonRankingByDivision(@Param('division') division: string) {
+    return this.usersService.getSeasonRankingByDivision(division);
+  }
+
   @Get('ranking/top5')
   async getTop5Players() {
     return this.usersService.getTop5Players();
@@ -56,16 +61,23 @@ export class UsersController {
           lossesGeral: fullProfile.lossesGeral,
           winsSeason: fullProfile.winsSeason,
           lossesSeason: fullProfile.lossesSeason,
-          rating: fullProfile.rating,
           credits: fullProfile.credits || 0,
           cash: fullProfile.cash || 0,
-          profileImage: fullProfile.profileImage || '/images/default.png',
+          profileImage: (fullProfile.profileImage && !fullProfile.profileImage.includes('/images/default') && !fullProfile.profileImage.includes('/avatars/default')) 
+            ? fullProfile.profileImage 
+            : null,
           role: fullProfile.role,
           clanTag: fullProfile.clanTag || null,
           level: fullProfile.level || 1,
           experience: fullProfile.experience || 0,
-          totalScore: fullProfile.totalScore || 0,
+          totalScore: fullProfile.totalScore != null ? Number(fullProfile.totalScore) : 0,
           playerClass: fullProfile.playerClass || 'Novato',
+          group: fullProfile.group || null,
+          seasonRank: fullProfile.seasonRank || null,
+          generalRank: fullProfile.generalRank || null,
+          globalRank: fullProfile.globalRank || fullProfile.generalRank || null,
+          seasonScore: fullProfile.seasonRanking?.seasonScore || 0,
+          division: fullProfile.division || null, // Divisão dinâmica do usuário
         };
       })(),
       new Promise((_, reject) => 
@@ -82,16 +94,20 @@ export class UsersController {
         lossesGeral: 0,
         winsSeason: 0,
         lossesSeason: 0,
-        rating: 0,
         credits: 0,
         cash: 0,
-        profileImage: '/images/default.png',
+        profileImage: null,
         role: req.user.role || 'USER',
         clanTag: null,
         level: 1,
         experience: 0,
         totalScore: 0,
         playerClass: 'Novato',
+        seasonRank: null,
+        generalRank: null,
+        globalRank: null,
+        seasonScore: 0,
+        division: 'Bronze',
       };
     });
   }

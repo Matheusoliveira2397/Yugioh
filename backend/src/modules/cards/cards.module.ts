@@ -5,6 +5,7 @@ import { CardsController } from './cards.controller';
 import { Card } from './entities/card.entity';
 import { UploadModule } from '../upload/upload.module';
 import { ShopModule } from '../shop/shop.module';
+import { CardsDbMigrationService } from './cards-db-migration.service';
 
 @Module({
   imports: [
@@ -13,7 +14,7 @@ import { ShopModule } from '../shop/shop.module';
     forwardRef(() => ShopModule),
   ],
   controllers: [CardsController],
-  providers: [CardsService],
+  providers: [CardsService, CardsDbMigrationService],
   exports: [CardsService],
 })
 export class CardsModule {}

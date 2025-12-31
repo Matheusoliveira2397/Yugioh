@@ -3,6 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { CardsService } from './cards.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
+import { Public } from '../../common/decorators/public.decorator';
 import { Card } from './entities/card.entity';
 import { UploadService } from '../upload/upload.service';
 import { CreateCardDto } from './dto/create-card.dto';
@@ -36,8 +37,14 @@ export class CardsController {
 
   @Get('by-id-carta/:idCarta')
   findByIdCarta(@Param('idCarta') idCarta: string) {
-    // Buscar especificamente por idCarta
+    // Buscar especificamente por idCarta (único para cada skin)
     return this.cardsService.findByIdCarta(idCarta);
+  }
+
+  @Get('by-name/:name/skins')
+  findSkinsByName(@Param('name') name: string) {
+    // Buscar todas as skins de uma carta pelo nome (compartilham o mesmo efeito)
+    return this.cardsService.findSkinsByName(name);
   }
 
   @Post()
@@ -194,6 +201,7 @@ export class CardsController {
 
   // ==================== LOJA ====================
   
+  @Public()
   @Get('shop/for-sale')
   getCardsForSale() {
     return this.cardsService.getCardsForSale();

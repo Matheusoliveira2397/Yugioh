@@ -48,8 +48,10 @@ export class CardsService {
       // Se for UUID, buscar por id
       card = await this.cardsRepository.findOne({ where: { id } });
     } else {
-      // Se não for UUID, buscar por idCarta (evita erro de tipo)
-      card = await this.cardsRepository.findOne({ where: { idCarta: id } });
+      // Se não for UUID, buscar por idCarta
+      card = await this.cardsRepository.findOne({ 
+        where: { idCarta: id }
+      });
     }
     
     // Se não encontrar, tentar a outra opção com query builder (faz cast correto)
@@ -61,8 +63,10 @@ export class CardsService {
           .orWhere('card.id::text = :id', { id }) // Cast UUID para text
           .getOne();
       } catch (error) {
-        // Se falhar, apenas buscar por idCarta
-        card = await this.cardsRepository.findOne({ where: { idCarta: id } });
+        // Se falhar, tentar buscar por idCarta
+        card = await this.cardsRepository.findOne({ 
+          where: { idCarta: id }
+        });
       }
     }
     
@@ -73,11 +77,26 @@ export class CardsService {
   }
 
   async findByIdCarta(idCarta: string): Promise<Card> {
-    const card = await this.cardsRepository.findOne({ where: { idCarta } });
+    const card = await this.cardsRepository.findOne({ 
+      where: { idCarta }
+    });
+    
     if (!card) {
       throw new NotFoundException(`Card with idCarta "${idCarta}" not found`);
     }
     return card;
+  }
+
+  /**
+   * Busca todas as skins de uma carta pelo nome (compartilham o mesmo efeito)
+   */
+  async findSkinsByName(name: string): Promise<Card[]> {
+    return this.cardsRepository.find({
+      where: { name },
+      order: { 
+        createdAt: 'ASC' 
+      },
+    });
   }
 
   // Lista de campos permitidos na entidade Card (usada em múltiplos lugares)
@@ -144,11 +163,13 @@ export class CardsService {
 
     // Verificar se idCarta já existe (deve ser único)
     const existingCard = await this.cardsRepository.findOne({
-      where: { idCarta: cleanedData.idCarta.trim() }
+      where: { 
+        idCarta: cleanedData.idCarta.trim()
+      }
     });
     
     if (existingCard) {
-      throw new BadRequestException(`ID da carta "${cleanedData.idCarta}" já está em uso. Escolha outro ID.`);
+      throw new BadRequestException(`Carta com idCarta "${cleanedData.idCarta}" já existe. Use outro idCarta.`);
     }
 
     // Criar a carta manualmente com apenas os campos permitidos
@@ -157,7 +178,7 @@ export class CardsService {
     const cleanedDataAny = cleanedData as any; // Cast para permitir indexação por string
     for (const key of this.ALLOWED_FIELDS) {
       if (cleanedDataAny[key] !== undefined && cleanedDataAny[key] !== null) {
-        if (key === 'idCarta') {
+        if (key === 'idCarta' || key === 'name') {
           cardToSave[key] = cleanedDataAny[key].trim();
         } else {
           cardToSave[key] = cleanedDataAny[key];
@@ -342,11 +363,13 @@ export class CardsService {
           
           // Verificar se o novo idCarta já existe em outra carta
           const existingCard = await this.cardsRepository.findOne({
-            where: { idCarta: cleanData.idCarta.trim() }
+            where: { 
+              idCarta: cleanData.idCarta.trim()
+            }
           });
           
           if (existingCard && existingCard.id !== id) {
-            throw new BadRequestException(`ID da carta "${cleanData.idCarta}" já está em uso por outra carta. Escolha outro ID.`);
+            throw new BadRequestException(`Carta com idCarta "${cleanData.idCarta}" já existe. Use outro idCarta.`);
           }
           
           cleanData.idCarta = cleanData.idCarta.trim();
@@ -458,7 +481,8 @@ export class CardsService {
         
         // Verificar se é erro de constraint única (idCarta duplicado)
         if (error.code === '23505' || error.message?.includes('duplicate key') || error.message?.includes('UNIQUE constraint')) {
-          throw new BadRequestException(`ID da carta "${cleanData.idCarta || card.idCarta}" já está em uso por outra carta. Escolha outro ID.`);
+          const idCarta = cleanData.idCarta || card.idCarta;
+          throw new BadRequestException(`Carta com idCarta "${idCarta}" já existe. Use outro idCarta.`);
         }
         
         // Verificar se é erro de constraint de foreign key
@@ -651,6 +675,7 @@ export class CardsService {
           },
           select: [
             'id',
+            'idCarta',
             'name',
             'description',
             'cardImage',
@@ -756,6 +781,17 @@ export class CardsService {
         isForSale: true,
       },
       order: { rarity: 'DESC', name: 'ASC' },
+    });
+  }
+
+  // ==================== ÚLTIMAS CARTAS CADASTRADAS (TODAS, NÃO APENAS À VENDA) ====================
+  async getLatestCards(limit: number = 10): Promise<Card[]> {
+    return this.cardsRepository.find({
+      where: { 
+        isActive: true,
+      },
+      order: { createdAt: 'DESC' },
+      take: limit,
     });
   }
 

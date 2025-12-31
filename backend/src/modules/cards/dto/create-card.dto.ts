@@ -15,11 +15,11 @@ export class CreateCardDto {
   // ==================== INFORMAÇÕES BÁSICAS ====================
   @IsString()
   @IsNotEmpty()
-  name: string;
+  name: string; // Nome da carta (compartilhado entre skins - define o efeito)
 
   @IsString()
   @IsNotEmpty()
-  idCarta: string; // ID único para diferenciar versões da mesma carta (ex: diferentes artes) - OBRIGATÓRIO
+  idCarta: string; // ID único da skin (diferencia cada versão/skin da carta)
 
   @IsString()
   @IsNotEmpty()

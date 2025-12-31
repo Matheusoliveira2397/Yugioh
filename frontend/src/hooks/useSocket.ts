@@ -457,6 +457,14 @@ export const useSocket = () => {
       socket.on('duelLog', duelLogListener);
       listenersRef.current.set('duelLog', duelLogListener);
       
+      // Listener para carregar logs salvos do banco quando entrar no duelo
+      const duelLogsLoadedListener = (data: { logs: DuelLog[] }) => {
+        console.log(`[${tabId}] 📋 Logs carregados do banco: ${data.logs.length} logs`);
+        setDuelLogs(data.logs);
+      };
+      socket.on('duelLogsLoaded', duelLogsLoadedListener);
+      listenersRef.current.set('duelLogsLoaded', duelLogsLoadedListener);
+      
       // Listener para atualização de life points
       const lifePointsUpdateListener = (data: any) => {
         console.log(`[${tabId}] Life points atualizados:`, data);

@@ -34,6 +34,27 @@ export class ChallengeArena {
     minRating?: number;
     maxRating?: number;
     allowedDeckTypes?: string[];
+    levelRanges?: Array<{ min: number; max: number; name: string }>;
+    rewards?: {
+      top1?: { credits?: number; gems?: number; cash?: number };
+      top3?: { credits?: number; gems?: number; cash?: number };
+      top10?: { credits?: number; gems?: number; cash?: number };
+      // Premiações por faixa de nível (top 5 de cada faixa)
+      levelRangeRewards?: Array<{
+        levelRange: string; // Nome da faixa (ex: "Nível 1", "Nível 2-3")
+        top1?: { cash?: number; score?: number; additionalScore?: number };
+        top2?: { cash?: number; score?: number; additionalScore?: number };
+        top3?: { cash?: number; score?: number; additionalScore?: number };
+        top4?: { cash?: number; score?: number; additionalScore?: number };
+        top5?: { cash?: number; score?: number; additionalScore?: number };
+      }>;
+    };
+    // Configuração de horários recorrentes
+    isRecurring?: boolean; // Se a arena é recorrente diariamente
+    dailyStartTime?: string; // Horário de início diário (HH:mm)
+    durationMinutes?: number; // Duração em minutos
+    // Controle de distribuição de prêmios
+    rewardsDistributed?: boolean; // Se os prêmios já foram distribuídos
   };
 
   @CreateDateColumn()

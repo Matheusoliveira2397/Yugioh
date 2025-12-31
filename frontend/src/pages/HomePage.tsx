@@ -11,7 +11,8 @@ interface RankingPlayer {
   id: string;
   username: string;
   avatar?: string;
-  rating: number;
+  totalScore?: number;
+  level?: number;
   wins: number;
   losses: number;
   winRate: number;
@@ -84,8 +85,15 @@ export default function HomePage() {
       const response = await axios.get(`${API_URL}/users`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      // Ordenar por rating
-      const sorted = response.data.sort((a: RankingPlayer, b: RankingPlayer) => b.rating - a.rating);
+      // Ordenar por totalScore e depois por level
+      const sorted = response.data.sort((a: RankingPlayer, b: RankingPlayer) => {
+        const scoreA = a.score || 0;
+        const scoreB = b.score || 0;
+        if (scoreB !== scoreA) {
+          return scoreB - scoreA;
+        }
+        return (b.level || 1) - (a.level || 1);
+      });
       setRanking(sorted.slice(0, 10)); // Top 10
     } catch (error) {
       console.error('Erro ao buscar ranking:', error);
@@ -115,8 +123,8 @@ export default function HomePage() {
                 <span className="text-red-400 font-bold">{user?.lossesGeral || 0}</span>
               </div>
               <div>
-                <span className="text-gray-400">Rating:</span>{' '}
-                <span className="text-yellow-400 font-bold">{user?.rating || 1000}</span>
+                <span className="text-gray-400">Score:</span>{' '}
+                <span className="text-yellow-400 font-bold">{user?.totalScore?.toFixed(1) || 0}</span>
               </div>
               <div>
                 <span className="text-gray-400">Créditos:</span>{' '}
@@ -224,8 +232,8 @@ export default function HomePage() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-2xl font-bold text-yellow-400">{player.rating}</p>
-                        <p className="text-xs text-gray-400">Rating</p>
+                        <p className="text-2xl font-bold text-yellow-400">{player.level || 1}</p>
+                        <p className="text-xs text-gray-400">Nível</p>
                       </div>
                     </motion.div>
                   ))

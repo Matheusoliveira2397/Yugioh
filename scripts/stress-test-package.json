@@ -1,0 +1,17 @@
+{
+  "name": "stress-test",
+  "version": "1.0.0",
+  "description": "Script de teste de stress para Yu-Gi-Oh! Duel Arena",
+  "main": "stress-test.js",
+  "scripts": {
+    "test": "node stress-test.js",
+    "test:small": "NUM_USERS=10 NUM_DUELS=20 node stress-test.js",
+    "test:medium": "NUM_USERS=50 NUM_DUELS=100 node stress-test.js",
+    "test:large": "NUM_USERS=100 NUM_DUELS=200 node stress-test.js",
+    "test:stress": "NUM_USERS=200 NUM_DUELS=500 CONCURRENT=20 node stress-test.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  }
+}
+

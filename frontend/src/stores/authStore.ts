@@ -11,7 +11,6 @@ interface User {
   lossesGeral: number;
   winsSeason: number;
   lossesSeason: number;
-  rating: number;
   profileImage: string;
   role?: 'PLAYER' | 'ADMIN' | 'MASTER';
   level?: number;
@@ -23,12 +22,14 @@ interface User {
   seasonScore?: number;
   totalScore?: number;
   seasonRank?: number;
+  generalRank?: number;
   globalRank?: number;
   division?: string;
   group?: {
     id: string;
     name: string;
     tag: string;
+    logo?: string;
   };
 }
 
@@ -39,6 +40,7 @@ interface AuthState {
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
   setUser: (user: User) => void;
+  refreshUser: () => Promise<void>;
   logout: () => void;
 }
 
@@ -92,6 +94,23 @@ export const useAuthStore = create<AuthState>()(
 
       setUser: (user: User) => {
         set({ user });
+      },
+
+      refreshUser: async () => {
+        const currentState = useAuthStore.getState();
+        if (!currentState.token || !currentState.isAuthenticated) {
+          return;
+        }
+
+        try {
+          // O axios já adiciona o token automaticamente via interceptor
+          const response = await api.get('/users/me');
+          const updatedUser = response.data;
+          set({ user: updatedUser });
+        } catch (error) {
+          console.error('Erro ao atualizar dados do usuário:', error);
+          // Não fazer logout em caso de erro, apenas logar o erro
+        }
       },
 
       logout: () => {

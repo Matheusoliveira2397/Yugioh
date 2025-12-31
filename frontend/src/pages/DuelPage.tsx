@@ -3,15 +3,13 @@ import { useEffect, useState } from 'react';
 import { useSocketStore } from '../stores/socketStore';
 import { useAuthStore } from '../stores/authStore';
 import CardImage from '../components/CardImage';
-
-// Imagem de fundo da carta (carta virada)
-// Você pode substituir por uma URL de imagem real de carta virada do Yu-Gi-Oh!
-const FUNDO_CARTA = '/images/fundoCarta.webp'; // Caminho para imagem de carta virada
+import { useCosmeticsStore } from '../stores/cosmeticsStore';
 
 export default function DuelPage() {
   const { duelId } = useParams();
   const { user } = useAuthStore();
   const { emit, on, off } = useSocketStore();
+  const { ownedSkins, equippedSkinId } = useCosmeticsStore();
   const [duelState, setDuelState] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -144,6 +142,18 @@ export default function DuelPage() {
     console.log(`[DuelPage Render] Primeira carta idCarta:`, playerHand[0]?.idCarta);
   }
 
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+  const equippedSkin = equippedSkinId
+    ? ownedSkins.find((s) => s.id === equippedSkinId)
+    : null;
+
+  const cardBackImage = equippedSkin
+    ? (equippedSkin.image.startsWith('http')
+        ? equippedSkin.image
+        : `${API_URL}${equippedSkin.image}`)
+    : '/images/fundoCarta.webp';
+
   const handleEndTurn = () => {
     if (duelId && user) {
       emit('endTurn', { duelId, userId: user.id });
@@ -218,6 +228,7 @@ export default function DuelPage() {
 
   return (
     <div className="h-screen p-4 relative z-10">
+
       <div className="max-w-7xl mx-auto h-full flex flex-col">
         {/* Oponente */}
         <div className="bg-gray-800 bg-opacity-50 rounded-lg p-4 mb-4">
@@ -304,7 +315,7 @@ export default function DuelPage() {
                   key={i}
                   className="w-12 h-16 bg-gradient-to-br from-blue-900 to-purple-900 border-2 border-yellow-500 rounded cursor-pointer hover:scale-110 transition-transform"
                   style={{
-                    backgroundImage: `url(${FUNDO_CARTA})`,
+                    backgroundImage: `url(${cardBackImage})`,
                     backgroundSize: 'cover',
                     backgroundPosition: 'center',
                   }}
@@ -334,7 +345,7 @@ export default function DuelPage() {
                   <CardImage
                     card={card}
                     className="w-full h-full"
-                    fallback={FUNDO_CARTA}
+                    fallback={cardBackImage}
                   />
                 </div>
               ))}

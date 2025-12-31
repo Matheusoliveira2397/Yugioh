@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan, LessThan, Between } from 'typeorm';
+import { Repository, MoreThan, LessThan, Between, In } from 'typeorm';
 import { ChallengeArena } from './arena.entity';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Duel, DuelStatus, DuelResult } from '../duels/entities/duel.entity';
 import { User } from '../users/entities/user.entity';
+import { Group } from '../groups/entities/group.entity';
+import { GroupMember } from '../groups/entities/group-member.entity';
 
 @Injectable()
 export class ArenaService {
@@ -15,15 +17,36 @@ export class ArenaService {
     private duelRepository: Repository<Duel>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(Group)
+    private groupRepository: Repository<Group>,
+    @InjectRepository(GroupMember)
+    private groupMemberRepository: Repository<GroupMember>,
   ) {}
+
+  private levelRanges: Array<{ min: number; max: number; name: string }> = [
+    { min: 1, max: 1, name: 'Nível 1' },
+    { min: 2, max: 3, name: 'Nível 2-3' },
+    { min: 4, max: 5, name: 'Nível 4-5' },
+    { min: 6, max: 10, name: 'Nível 6-10' },
+    { min: 11, max: 999, name: 'Nível 11+' },
+  ];
 
   // Determinar divisão baseada no nível
   getLevelDivision(level: number): string {
-    if (level <= 1) return 'Nível 1';
-    if (level <= 3) return 'Nível 2-3';
-    if (level <= 5) return 'Nível 4-5';
-    if (level <= 10) return 'Nível 6-10';
+    for (const range of this.levelRanges) {
+      if (level >= range.min && level <= range.max) {
+        return range.name;
+      }
+    }
     return 'Nível 11+';
+  }
+
+  getLevelRanges(): Array<{ min: number; max: number; name: string }> {
+    return this.levelRanges;
+  }
+
+  updateLevelRanges(ranges: Array<{ min: number; max: number; name: string }>): void {
+    this.levelRanges = ranges;
   }
 
   async getCurrentArena(): Promise<ChallengeArena | null> {
@@ -181,7 +204,7 @@ export class ArenaService {
       }
 
       // Query ULTRA OTIMIZADA - sem eager loading, apenas campos essenciais
-      const duels = await Promise.race([
+      const duels: Duel[] = await Promise.race([
         this.duelRepository
           .createQueryBuilder('duel')
           .select([
@@ -201,7 +224,7 @@ export class ArenaService {
         new Promise<Duel[]>((_, reject) => 
           setTimeout(() => reject(new Error('Query timeout: getArenaRankingByDivision')), 3000)
         )
-      ]).catch(() => []);
+      ]).catch(() => [] as Duel[]);
 
       if (duels.length === 0) {
         return [];
@@ -214,15 +237,15 @@ export class ArenaService {
         playerIds.add(duel.player2Id);
       });
 
-      const players = await Promise.race([
+      const players: User[] = await Promise.race([
         this.userRepository.find({
           where: Array.from(playerIds).map(id => ({ id })),
-          select: ['id', 'nickname', 'clanTag', 'profileImage', 'level']
+          select: ['id', 'nickname', 'clanTag', 'profileImage', 'level', 'division']
         }),
         new Promise<User[]>((_, reject) => 
           setTimeout(() => reject(new Error('Query timeout: find players')), 2000)
         )
-      ]).catch(() => []);
+      ]).catch(() => [] as User[]);
 
       const playerMap = new Map(players.map(p => [p.id, p]));
 
@@ -235,8 +258,9 @@ export class ArenaService {
         
         if (!p1 || !p2) continue;
 
-        const p1Division = this.getLevelDivision(p1.level || 1);
-        const p2Division = this.getLevelDivision(p2.level || 1);
+        // Buscar divisão do campo division da tabela users
+        const p1Division = p1.division || 'Bronze';
+        const p2Division = p2.division || 'Bronze';
 
         // Só contar duelos onde ambos estão na mesma divisão
         if (p1Division !== division || p2Division !== division) continue;
@@ -267,11 +291,29 @@ export class ArenaService {
         }
       }
 
+      // Buscar grupos dos jogadores para pegar as logos
+      const userIds = Array.from(playerScores.values())
+        .filter(data => data.user !== null)
+        .map(data => data.user!.id);
+      
+      const groupMembers = await this.groupMemberRepository.find({
+        where: { userId: In(userIds), isActive: true },
+        relations: ['group'],
+        select: ['userId', 'groupId']
+      });
+
+      const groupMap = new Map<number, string>();
+      for (const member of groupMembers) {
+        if (member.group && member.group.logo) {
+          groupMap.set(member.userId, member.group.logo);
+        }
+      }
+
       // Converter para array e ordenar por score
       const ranking = Array.from(playerScores.values())
         .filter(data => data.user !== null)
         .sort((a, b) => b.score - a.score)
-        .slice(0, 10) // Top 10
+        .slice(0, 5) // Top 5
         .map((data, index) => ({
           rank: index + 1,
           userId: data.user!.id,
@@ -282,6 +324,7 @@ export class ArenaService {
           wins: data.wins,
           losses: data.losses,
           score: data.score,
+          groupLogo: groupMap.get(data.user!.id) || undefined,
         }));
 
       return ranking;
@@ -295,7 +338,7 @@ export class ArenaService {
   // Buscar todos os rankings por divisão de uma arena - OTIMIZADO
   async getAllArenaRankings(arenaId: string) {
     try {
-      const divisions = ['Nível 1', 'Nível 2-3', 'Nível 4-5', 'Nível 6-10', 'Nível 11+'];
+      const divisions = this.levelRanges.map(r => r.name);
       
       // Executar todas as queries em paralelo com timeout
       const rankingsPromises = divisions.map(division => 
@@ -328,6 +371,190 @@ export class ArenaService {
         'Nível 6-10': [],
         'Nível 11+': []
       };
+    }
+  }
+
+  // Admin methods
+  async getAllArenas(): Promise<ChallengeArena[]> {
+    return await this.arenaRepository.find({
+      order: { startTime: 'DESC' },
+      take: 100,
+    });
+  }
+
+  async getArenaById(id: string): Promise<ChallengeArena | null> {
+    return await this.arenaRepository.findOne({ where: { id } });
+  }
+
+  async createArenaAdmin(data: {
+    name: string;
+    description?: string;
+    startTime: Date;
+    endTime: Date;
+    scoreMultiplier?: number;
+    bonusGems?: number;
+    config?: any;
+  }): Promise<ChallengeArena> {
+    const arena = this.arenaRepository.create({
+      name: data.name,
+      description: data.description,
+      startTime: new Date(data.startTime),
+      endTime: new Date(data.endTime),
+      scoreMultiplier: data.scoreMultiplier || 1.5,
+      bonusGems: data.bonusGems || 50,
+      config: data.config || {},
+      isActive: true,
+      participants: 0,
+    });
+
+    return await this.arenaRepository.save(arena);
+  }
+
+  async updateArena(id: string, data: Partial<ChallengeArena>): Promise<ChallengeArena> {
+    const arena = await this.arenaRepository.findOne({ where: { id } });
+    if (!arena) {
+      throw new Error('Arena não encontrada');
+    }
+
+    // Preservar config existente e mesclar com nova config
+    if (data.config) {
+      data.config = { ...(arena.config || {}), ...data.config };
+    }
+
+    if (data.startTime) data.startTime = new Date(data.startTime);
+    if (data.endTime) data.endTime = new Date(data.endTime);
+
+    Object.assign(arena, data);
+    return await this.arenaRepository.save(arena);
+  }
+
+  async deleteArena(id: string): Promise<void> {
+    await this.arenaRepository.delete(id);
+  }
+
+  /**
+   * Distribuir prêmios para os top 5 de cada faixa de nível quando a arena termina
+   */
+  async distributeArenaRewards(arenaId: string): Promise<void> {
+    try {
+      const arena = await this.arenaRepository.findOne({ where: { id: arenaId } });
+      if (!arena) {
+        console.error(`[distributeArenaRewards] Arena ${arenaId} não encontrada`);
+        return;
+      }
+
+      // Verificar se já foram distribuídos os prêmios
+      if (arena.config?.rewardsDistributed === true) {
+        console.log(`[distributeArenaRewards] Prêmios da arena ${arenaId} já foram distribuídos`);
+        return;
+      }
+
+      const rewards = arena.config?.rewards?.levelRangeRewards;
+      if (!rewards || rewards.length === 0) {
+        console.log(`[distributeArenaRewards] Nenhuma premiação configurada para a arena ${arenaId}`);
+        // Marcar como distribuído mesmo sem prêmios
+        arena.config = { ...arena.config, rewardsDistributed: true };
+        await this.arenaRepository.save(arena);
+        return;
+      }
+
+      const levelRanges = arena.config?.levelRanges || this.levelRanges;
+      let totalDistributed = 0;
+
+      // Para cada faixa de nível configurada
+      for (const levelRangeReward of rewards) {
+        const levelRangeName = levelRangeReward.levelRange;
+        
+        // Buscar ranking top 5 dessa faixa
+        const ranking = await this.getArenaRankingByDivision(arenaId, levelRangeName);
+        const top5 = ranking.slice(0, 5);
+
+        // Distribuir prêmios para cada posição
+        for (let i = 0; i < top5.length; i++) {
+          const player = top5[i];
+          const position = i + 1; // 1, 2, 3, 4, 5
+          const rewardKey = `top${position}` as 'top1' | 'top2' | 'top3' | 'top4' | 'top5';
+          const reward = levelRangeReward[rewardKey];
+
+          if (reward) {
+            const user = await this.userRepository.findOne({ where: { id: player.userId } });
+            if (!user) continue;
+
+            // Calcular valores a adicionar
+            const cashToAdd = reward.cash || 0;
+            const totalScoreToAdd = (reward.score || 0) + (reward.additionalScore || 0);
+
+            if (cashToAdd > 0 || totalScoreToAdd > 0) {
+              // Usar SQL direto para garantir precisão
+              const updateFields: string[] = [];
+              const updateValues: any[] = [];
+              let paramIndex = 1;
+
+              if (cashToAdd > 0) {
+                updateFields.push(`cash = COALESCE(cash, 0) + $${paramIndex}`);
+                updateValues.push(cashToAdd);
+                paramIndex++;
+              }
+
+              if (totalScoreToAdd > 0) {
+                updateFields.push(`total_score = COALESCE(total_score, 0) + $${paramIndex}`);
+                updateValues.push(totalScoreToAdd);
+                paramIndex++;
+              }
+
+              if (updateFields.length > 0) {
+                updateValues.push(player.userId);
+                await this.userRepository.query(
+                  `UPDATE users SET ${updateFields.join(', ')} WHERE id = $${paramIndex} RETURNING id, cash, total_score`,
+                  updateValues
+                );
+                totalDistributed++;
+                console.log(`[distributeArenaRewards] Prêmio distribuído para ${user.nickname} (${levelRangeName}, posição ${position}): cash=${cashToAdd}, score=${totalScoreToAdd}`);
+              }
+            }
+          }
+        }
+      }
+
+      // Marcar como distribuído
+      arena.config = { ...arena.config, rewardsDistributed: true };
+      await this.arenaRepository.save(arena);
+
+      console.log(`[distributeArenaRewards] ✅ Prêmios da arena ${arenaId} distribuídos. Total: ${totalDistributed} jogadores premiados`);
+    } catch (error) {
+      console.error(`[distributeArenaRewards] ❌ Erro ao distribuir prêmios da arena ${arenaId}:`, error);
+    }
+  }
+
+  /**
+   * Verificar e distribuir prêmios de arenas finalizadas
+   */
+  @Cron(CronExpression.EVERY_5_MINUTES) // Verificar a cada 5 minutos
+  async checkAndDistributeRewards(): Promise<void> {
+    try {
+      const now = new Date();
+      
+      // Buscar arenas que terminaram mas ainda não tiveram prêmios distribuídos
+      const finishedArenas = await this.arenaRepository.find({
+        where: {
+          isActive: true,
+          endTime: LessThan(now),
+        },
+      });
+
+      for (const arena of finishedArenas) {
+        // Verificar se já foram distribuídos
+        if (arena.config?.rewardsDistributed !== true) {
+          console.log(`[checkAndDistributeRewards] Distribuindo prêmios da arena ${arena.name} (${arena.id})`);
+          await this.distributeArenaRewards(arena.id);
+          
+          // Desativar arena após distribuir prêmios
+          arena.isActive = false;
+          await this.arenaRepository.save(arena);
+        }
+      }
+    } catch (error) {
+      console.error('[checkAndDistributeRewards] Erro ao verificar arenas finalizadas:', error);
     }
   }
 }

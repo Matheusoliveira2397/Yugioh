@@ -124,10 +124,34 @@ export class DuelQueueService implements OnModuleInit, OnModuleDestroy {
           return;
         }
         
+        // Buscar duelo completo do banco para garantir que temos os campos player1Field e player2Field
+        const fullDuel = await this.duelsService.findDuelByIdFromDatabase(duelIdStr);
+        if (!fullDuel) {
+          console.error(`❌ [DuelQueueService] Não foi possível buscar duelo completo do banco!`);
+          task.reject(new Error('Erro ao buscar duelo completo'));
+          this.isProcessing = false;
+          return;
+        }
+        
         // Yield antes de emitir (prioriza HTTP)
         await new Promise(resolve => setImmediate(resolve));
         
-          // Preparar dados simplificados
+          // Preparar dados simplificados - INCLUIR player1Field e player2Field
+          // Usar fullDuel que foi buscado do banco para garantir que temos os campos
+          const player1Field = (fullDuel as any).player1Field || {};
+          const player2Field = (fullDuel as any).player2Field || {};
+          
+          console.log(`📤 [DuelQueueService] Preparando dados - player1Field: ${player1Field?.deck?.length || 0} cartas no deck, ${player1Field?.hand?.length || 0} na mão`);
+          console.log(`📤 [DuelQueueService] Preparando dados - player2Field: ${player2Field?.deck?.length || 0} cartas no deck, ${player2Field?.hand?.length || 0} na mão`);
+          
+          // Validar que ambos os campos têm cartas
+          if (!player1Field.deck || player1Field.deck.length === 0) {
+            console.error(`❌ [DuelQueueService] ERRO: player1Field está vazio!`);
+          }
+          if (!player2Field.deck || player2Field.deck.length === 0) {
+            console.error(`❌ [DuelQueueService] ERRO: player2Field está vazio!`);
+          }
+          
           const duelCreatedDataPlayer1 = {
             duelId: duelIdStr,
           player1Id: task.player1Id,
@@ -142,6 +166,8 @@ export class DuelQueueService implements OnModuleInit, OnModuleDestroy {
           yourTurn: (duel as any).currentTurn === 1,
           lifePoints: duel.player1LifePoints || 8000,
           opponentLifePoints: duel.player2LifePoints || 8000,
+          player1Field: player1Field, // SEMPRE do player1
+          player2Field: player2Field, // SEMPRE do player2
         };
 
           const duelCreatedDataPlayer2 = {
@@ -158,6 +184,8 @@ export class DuelQueueService implements OnModuleInit, OnModuleDestroy {
           yourTurn: (duel as any).currentTurn === 2,
           lifePoints: duel.player2LifePoints || 8000,
           opponentLifePoints: duel.player1LifePoints || 8000,
+          player1Field: player1Field, // SEMPRE do player1
+          player2Field: player2Field, // SEMPRE do player2
         };
 
           // Notificar ambos os jogadores
@@ -174,6 +202,14 @@ export class DuelQueueService implements OnModuleInit, OnModuleDestroy {
       console.error(`❌ [DuelQueueService] Tipo:`, error?.constructor?.name);
       console.error(`❌ [DuelQueueService] Mensagem:`, error instanceof Error ? error.message : String(error));
       console.error(`❌ [DuelQueueService] Stack:`, error instanceof Error ? error.stack : 'N/A');
+      
+      // Enviar mensagem de erro específica para os jogadores se o servidor estiver disponível
+      if (this.server) {
+        const errorMessage = error instanceof Error ? error.message : 'Erro ao criar duelo';
+        this.server.to(`user_${task.player1Id}`).emit('duelError', { message: errorMessage });
+        this.server.to(`user_${task.player2Id}`).emit('duelError', { message: errorMessage });
+      }
+      
       task.reject(error as Error);
     } finally {
       // Yield antes de processar próxima tarefa (prioriza HTTP)

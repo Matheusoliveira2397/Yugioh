@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Query, Body, UseGuards } from '@nestjs/common';
 import { SeasonsService } from './seasons.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AdminGuard } from '../auth/guards/admin.guard';
 
 @Controller('seasons')
 export class SeasonsController {
@@ -46,6 +47,86 @@ export class SeasonsController {
   @Post('end/:id')
   @UseGuards(JwtAuthGuard)
   async endSeason(@Param('id') id: string) {
+    return this.seasonsService.endSeason(id);
+  }
+
+  @Get('ranking/division/:division')
+  async getDivisionRanking(
+    @Param('division') division: string,
+    @Query('seasonId') seasonId?: string,
+    @Query('limit') limit?: number
+  ) {
+    return this.seasonsService.getDivisionRanking(division as any, seasonId, limit || 100);
+  }
+
+  // ========== ENDPOINTS ADMIN ==========
+  
+  @Get('admin/all')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  async getAllSeasonsAdmin() {
+    return this.seasonsService.getAllSeasons();
+  }
+
+  @Get('admin/:id')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  async getSeasonById(@Param('id') id: string) {
+    return this.seasonsService.getSeasonById(id);
+  }
+
+  @Post('admin/create')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  async createSeasonAdmin(@Body() createDto: {
+    name: string;
+    startDate: Date;
+    endDate: Date;
+    prizes?: {
+      first: { trophy: string; credits: number };
+      second: { trophy: string; credits: number };
+      third: { trophy: string; credits: number };
+    };
+    divisionPrizes?: {
+      [key: string]: {
+        first: { trophy: string; credits: number };
+        second: { trophy: string; credits: number };
+        third: { trophy: string; credits: number };
+      };
+    };
+  }) {
+    return this.seasonsService.createSeasonAdmin(createDto);
+  }
+
+  @Put('admin/:id')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  async updateSeason(@Param('id') id: string, @Body() updateDto: {
+    name?: string;
+    startDate?: Date;
+    endDate?: Date;
+    isActive?: boolean;
+    prizes?: {
+      first: { trophy: string; credits: number };
+      second: { trophy: string; credits: number };
+      third: { trophy: string; credits: number };
+    };
+    divisionPrizes?: {
+      [key: string]: {
+        first: { trophy: string; credits: number };
+        second: { trophy: string; credits: number };
+        third: { trophy: string; credits: number };
+      };
+    };
+  }) {
+    return this.seasonsService.updateSeason(id, updateDto);
+  }
+
+  @Delete('admin/:id')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  async deleteSeason(@Param('id') id: string) {
+    return this.seasonsService.deleteSeason(id);
+  }
+
+  @Post('admin/:id/end')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  async endSeasonAdmin(@Param('id') id: string) {
     return this.seasonsService.endSeason(id);
   }
 }

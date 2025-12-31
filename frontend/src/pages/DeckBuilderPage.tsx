@@ -1,9 +1,52 @@
 
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { api } from '../api/axios';
+import CardImage from '../components/CardImage';
+import { useAuthStore } from '../stores/authStore';
+
+interface DeckCardSummary {
+  id: string;
+  card?: {
+    id: string;
+    idCarta?: string;
+    name: string;
+    cardImage?: string;
+  };
+}
+
+interface DeckSummary {
+  id: string;
+  name: string;
+  cards?: DeckCardSummary[];
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 export default function DeckBuilderPage() {
   const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const [decks, setDecks] = useState<DeckSummary[]>([]);
+  const [loadingDecks, setLoadingDecks] = useState(false);
+
+  useEffect(() => {
+    const fetchDecks = async () => {
+      setLoadingDecks(true);
+      try {
+        const res = await api.get<DeckSummary[]>('/decks');
+        setDecks(res.data || []);
+      } catch (error) {
+        console.error('❌ Erro ao carregar decks:', error);
+        setDecks([]);
+      } finally {
+        setLoadingDecks(false);
+      }
+    };
+
+    fetchDecks();
+  }, []);
+
   return (
     <div className="min-h-screen py-12 px-4 relative z-10">
       <div className="max-w-6xl mx-auto">
@@ -12,7 +55,7 @@ export default function DeckBuilderPage() {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.1 }}
-          className="bg-gradient-to-br from-slate-800/90 via-slate-900/90 to-slate-800/90 rounded-2xl overflow-hidden border-2 border-slate-700/50 shadow-2xl mb-8"
+          className="rounded-2xl overflow-hidden mb-8"
         >
           {/* Imagem de Fundo com Overlay */}
           <div className="relative h-64 overflow-hidden">
@@ -24,8 +67,6 @@ export default function DeckBuilderPage() {
                 e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400"><rect fill="%23374151" width="1200" height="400"/><text x="50%" y="50%" font-size="64" fill="%239CA3AF" text-anchor="middle" dominant-baseline="middle">🎴 Deck</text></svg>';
               }}
             />
-            {/* Overlay escuro */}
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-slate-900/60 to-slate-900"></div>
             
             {/* Texto sobre a imagem */}
             <div className="absolute bottom-6 left-8">
@@ -37,114 +78,183 @@ export default function DeckBuilderPage() {
           {/* Conteúdo do Card */}
           <div className="p-8">
 
-            {/* Grid de Cards de Deck */}
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-              {/* Card 1 - Deck Principal */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                whileHover={{ scale: 1.03 }}
-                className="bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl p-6 border border-slate-600/50 cursor-pointer hover:border-purple-500/50 transition-all"
-              >
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-purple-800 rounded-lg flex items-center justify-center text-3xl">
-                    🎴
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-white">Deck Principal</h3>
-                    <p className="text-sm text-gray-400">0/60 cartas</p>
-                  </div>
+            {/* Grid com Meus Decks e Criar Novo Deck */}
+            <div className="grid md:grid-cols-3 gap-6 mb-8">
+              {/* Lista de decks do usuário */}
+              <div className="md:col-span-2">
+                <h2 className="text-2xl font-bold text-white mb-3 flex items-center gap-2">
+                  <span>📚</span> Meus Decks
+                </h2>
+              {loadingDecks ? (
+                <div className="text-gray-300 text-sm py-4">Carregando decks...</div>
+              ) : decks.length === 0 ? (
+                <div className="text-gray-400 text-sm py-4">
+                  Você ainda não tem nenhum deck salvo. Crie um novo para aparecer aqui.
                 </div>
-                <div className="flex justify-between text-sm mb-3">
-                  <span className="text-gray-400">Monstros:</span>
-                  <span className="text-orange-400 font-bold">0</span>
-                </div>
-                <div className="flex justify-between text-sm mb-3">
-                  <span className="text-gray-400">Magias:</span>
-                  <span className="text-blue-400 font-bold">0</span>
-                </div>
-                <div className="flex justify-between text-sm mb-4">
-                  <span className="text-gray-400">Armadilhas:</span>
-                  <span className="text-purple-400 font-bold">0</span>
-                </div>
-                <button
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 rounded-lg transition-colors"
-                  onClick={() => navigate('/deck-edit')}
-                >
-                  Editar Deck
-                </button>
-              </motion.div>
+              ) : (
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {decks.map((deck) => {
+                    const cardsCount = deck.cards?.length ?? 0;
+                    const lastDeckCard =
+                      deck.cards && deck.cards.length > 0
+                        ? deck.cards[deck.cards.length - 1]
+                        : undefined;
+                    const lastCard = lastDeckCard?.card;
+                    const isEquipped = user?.equippedDeckName === deck.name;
+                    return (
+                      <motion.div
+                        key={deck.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        whileHover={{ scale: 1.02 }}
+                        className={`rounded-xl p-4 border ${
+                          isEquipped
+                            ? 'border-purple-400 shadow-[0_0_18px_rgba(168,85,247,0.6)]'
+                            : 'border-white/20'
+                        } hover:border-purple-500/60 transition-all`}
+                      >
+                        {/* Nome + info */}
+                        <div className="flex items-center justify-between mb-2">
+                          <h3
+                            className="text-lg font-semibold text-white truncate"
+                            title={deck.name}
+                          >
+                            {deck.name}
+                          </h3>
+                          <span className="text-xs text-gray-300 bg-black/30 px-2 py-0.5 rounded-full">
+                            {cardsCount} cartas
+                          </span>
+                        </div>
 
-              {/* Card 2 - Criar Novo Deck */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                whileHover={{ scale: 1.03 }}
-                className="bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl p-6 border border-dashed border-slate-600 cursor-pointer hover:border-green-500/50 transition-all"
-              >
-                <div className="flex flex-col items-center justify-center h-full text-center">
-                  <div className="w-20 h-20 bg-gradient-to-br from-green-600 to-green-800 rounded-full flex items-center justify-center text-4xl mb-4">
-                    ➕
-                  </div>
-                  <h3 className="text-xl font-bold text-white mb-2">Criar Novo Deck</h3>
-                  <p className="text-sm text-gray-400 mb-4">Monte um deck do zero</p>
-                  <button className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors">
-                    Começar
-                  </button>
-                </div>
-              </motion.div>
+                        {/* Imagem do deck (última carta) - levemente menor */}
+                        <div className="w-full max-w-[96px] mx-auto aspect-[2/3] rounded-lg overflow-hidden border border-white/20 mb-3">
+                          {lastCard ? (
+                            <CardImage
+                              card={lastCard}
+                              className="w-full h-full object-cover"
+                              fallback="/images/fundoCarta.webp"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-500 text-xs">
+                              Sem carta
+                            </div>
+                          )}
+                        </div>
 
-              {/* Card 3 - Deck Aleatório */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 }}
-                whileHover={{ scale: 1.03 }}
-                className="bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl p-6 border border-slate-600/50 cursor-pointer hover:border-yellow-500/50 transition-all"
-              >
-                <div className="flex flex-col items-center justify-center h-full text-center">
-                  <div className="w-20 h-20 bg-gradient-to-br from-yellow-600 to-orange-600 rounded-full flex items-center justify-center text-4xl mb-4">
-                    🎲
-                  </div>
-                  <h3 className="text-xl font-bold text-white mb-2">Deck Aleatório</h3>
-                  <p className="text-sm text-gray-400 mb-4">Gere um deck surpresa</p>
-                  <button className="bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors">
-                    Gerar
-                  </button>
+                        {/* Detalhes + botões */}
+                        <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
+                          <span>
+                            Criado:{' '}
+                            {deck.createdAt
+                              ? new Date(deck.createdAt).toLocaleDateString()
+                              : '-'}
+                          </span>
+                          {isEquipped && (
+                            <span className="px-2 py-0.5 rounded-full bg-purple-600/80 text-[10px] font-bold text-white">
+                              Equipado
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex gap-2 items-center">
+                          <button
+                            className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-3 rounded-lg transition-colors text-sm"
+                            onClick={() =>
+                              navigate('/deck-edit', {
+                                state: { deckName: deck.name },
+                              })
+                            }
+                            title="Editar Deck"
+                          >
+                            ⚙️
+                          </button>
+                          <button
+                            className={`flex-1 ${isEquipped ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-600 hover:bg-blue-700'} text-white font-semibold py-2 px-3 rounded-lg transition-colors text-xs disabled:opacity-60 disabled:cursor-not-allowed`}
+                            disabled={isEquipped}
+                            onClick={async () => {
+                              try {
+                                await api.patch('/me/cosmetics', {
+                                  equippedDeckName: deck.name,
+                                });
+                                if (user) {
+                                  useAuthStore.getState().setUser({
+                                    ...user,
+                                    equippedDeckName: deck.name,
+                                  } as any);
+                                }
+                                alert(`✅ Deck "${deck.name}" equipado!`);
+                              } catch (error: any) {
+                                console.error('❌ Erro ao equipar deck:', error);
+                                alert(
+                                  `❌ Erro ao equipar deck: ${
+                                    error.response?.data?.message ||
+                                    error.message ||
+                                    'Erro desconhecido'
+                                  }`,
+                                );
+                              }
+                            }}
+                          >
+                            {isEquipped ? 'Equipado' : 'Equipar'}
+                          </button>
+                          <button
+                            className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-3 rounded-lg transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                            disabled={isEquipped}
+                            onClick={async () => {
+                              if (!confirm(`Tem certeza que deseja deletar o deck "${deck.name}"?`)) {
+                                return;
+                              }
+                              try {
+                                await api.delete(`/decks/${deck.id}`);
+                                setDecks((prev) => prev.filter((d) => d.id !== deck.id));
+                                alert('✅ Deck deletado com sucesso.');
+                              } catch (error: any) {
+                                console.error('❌ Erro ao deletar deck:', error);
+                                alert(
+                                  `❌ Erro ao deletar deck: ${
+                                    error.response?.data?.message || error.message || 'Erro desconhecido'
+                                  }`,
+                                );
+                              }
+                            }}
+                            title="Deletar Deck"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
                 </div>
-              </motion.div>
-            </div>
-
-            {/* Seção de Decks Recomendados */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.6 }}
-              className="bg-slate-800/50 rounded-xl p-6 border border-slate-700/50"
-            >
-              <h3 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
-                <span>⭐</span> Decks Recomendados
-              </h3>
-              <div className="grid md:grid-cols-3 gap-4">
-                <div className="bg-slate-700/50 rounded-lg p-4 hover:bg-slate-700 transition-colors cursor-pointer">
-                  <h4 className="font-bold text-white mb-2">🐉 Dragões</h4>
-                  <p className="text-sm text-gray-400 mb-3">Deck focado em monstros tipo Dragão</p>
-                  <span className="text-xs text-purple-400">40 cartas</span>
-                </div>
-                <div className="bg-slate-700/50 rounded-lg p-4 hover:bg-slate-700 transition-colors cursor-pointer">
-                  <h4 className="font-bold text-white mb-2">⚔️ Guerreiros</h4>
-                  <p className="text-sm text-gray-400 mb-3">Estratégia de ataque direto</p>
-                  <span className="text-xs text-purple-400">40 cartas</span>
-                </div>
-                <div className="bg-slate-700/50 rounded-lg p-4 hover:bg-slate-700 transition-colors cursor-pointer">
-                  <h4 className="font-bold text-white mb-2">🌟 Exodia</h4>
-                  <p className="text-sm text-gray-400 mb-3">Vitória por cartas especiais</p>
-                  <span className="text-xs text-purple-400">40 cartas</span>
-                </div>
+              )}
               </div>
-            </motion.div>
+
+              {/* Card - Criar Novo Deck (começar do zero) */}
+              <div className="md:col-span-1">
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3 }}
+                  whileHover={{ scale: 1.03 }}
+                  className="rounded-xl p-6 border border-dashed border-white/20 cursor-pointer hover:border-green-500/50 transition-all h-full"
+                >
+                  <div className="flex flex-col items-center justify-center h-full text-center">
+                    <div className="w-20 h-20 bg-gradient-to-br from-green-600 to-green-800 rounded-full flex items-center justify-center text-4xl mb-4">
+                      ➕
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2">Criar Novo Deck</h3>
+                    <p className="text-sm text-gray-400 mb-4">
+                      Monte um deck do zero (entre 40 e 60 cartas)
+                    </p>
+                    <button
+                      className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors"
+                      onClick={() => navigate('/deck-edit', { state: { newDeck: true } })}
+                    >
+                      Começar
+                    </button>
+                  </div>
+                </motion.div>
+              </div>
+            </div>
           </div>
         </motion.div>
       </div>

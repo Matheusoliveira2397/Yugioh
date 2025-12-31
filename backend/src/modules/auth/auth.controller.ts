@@ -1,12 +1,16 @@
-import { Controller, Post, Get, Body, UseGuards, Request, Param, Query } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Request, Param, Query, Ip } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { UsersService } from '../users/users.service';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private usersService: UsersService,
+  ) {}
 
   @Post('register')
   async register(@Body() registerDto: RegisterDto) {
@@ -35,7 +39,28 @@ export class AuthController {
 
   @UseGuards(LocalAuthGuard)
   @Post('login')
-  async login(@Body() loginDto: LoginDto, @Request() req: any) {
-    return this.authService.login(req.user);
+  async login(@Body() loginDto: LoginDto, @Request() req: any, @Ip() ip: string) {
+    const result = await this.authService.login(req.user);
+    
+    // Capturar IP real (considerando proxies)
+    const realIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
+                   req.headers['x-real-ip'] || 
+                   ip || 
+                   req.ip || 
+                   req.connection?.remoteAddress || 
+                   'unknown';
+    
+    console.log(`🌐 [login] Capturando IP para usuário ${req.user.id}: ${realIp}`);
+    
+    // Atualizar último login, IP e marcar como online
+    try {
+      await this.usersService.updateLastLogin(req.user.id, realIp);
+      // updateLastLogin já marca como online, não precisa fazer novamente
+      console.log(`✅ [login] IP, último login atualizados e usuário ${req.user.id} marcado como online`);
+    } catch (error) {
+      console.error(`❌ [login] Erro ao atualizar IP para usuário ${req.user.id}:`, error);
+    }
+    
+    return result;
   }
 }

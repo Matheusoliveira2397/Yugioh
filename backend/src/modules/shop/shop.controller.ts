@@ -96,6 +96,27 @@ export class ShopController {
     return this.shopService.getShopItem(id);
   }
 
+  // ==================== VENDER CARTA ====================
+  @Post('sell')
+  @UseGuards(JwtAuthGuard)
+  async sellCard(
+    @Request() req: any,
+    @Body() body: { cardId: string; quantity?: number }
+  ) {
+    this.logRequest('POST', '/sell');
+    const userId = req.user.id;
+    const quantity = body.quantity || 1;
+    
+    try {
+      const result = await this.shopService.sellCard(userId, body.cardId, quantity);
+      console.log('✅ Venda realizada com sucesso:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ Erro ao vender carta:', error);
+      throw error;
+    }
+  }
+
   // ==================== ADICIONAR SALDO (ADMIN) ====================
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Post('admin/add-balance')

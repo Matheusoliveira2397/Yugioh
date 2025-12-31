@@ -32,19 +32,19 @@ export class GroupMember {
   @Column({ type: 'enum', enum: GroupRole, default: GroupRole.MEMBER })
   role: GroupRole;
 
-  // Score Semanal (reseta toda semana)
-  @Column({ type: 'int', default: 0 })
+  // Score Semanal (reseta toda semana) - usar numeric para suportar decimais
+  @Column({ type: 'numeric', precision: 10, scale: 2, default: 0 })
   weeklyScore: number;
 
   @Column({ type: 'timestamp', nullable: true })
   weeklyScoreResetAt: Date;
 
-  // Score da Season (reseta a cada season)
-  @Column({ type: 'int', default: 0 })
+  // Score da Season (reseta a cada season) - usar numeric para suportar decimais
+  @Column({ type: 'numeric', precision: 10, scale: 2, default: 0 })
   seasonScore: number;
 
-  // Score Geral (nunca reseta)
-  @Column({ type: 'int', default: 0 })
+  // Score Geral (nunca reseta) - usar numeric para suportar decimais
+  @Column({ type: 'numeric', precision: 10, scale: 2, default: 0 })
   totalScore: number;
 
   @Column({ type: 'int', default: 0 })

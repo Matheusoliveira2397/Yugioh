@@ -1,7 +1,11 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { ArenaMatchmakingService } from './arena-matchmaking.service';
 import { DuelsService } from '../duels/duels.service';
+import { User } from '../users/entities/user.entity';
 import { Server } from 'socket.io';
+import { logger } from '../../common/utils/logger.util';
 
 /**
  * Serviço global de processamento de matchmaking da Arena
@@ -19,6 +23,8 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
   constructor(
     private arenaMatchmakingService: ArenaMatchmakingService,
     private duelsService: DuelsService,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
   ) {}
 
   /**
@@ -47,11 +53,11 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
    */
   private start() {
     if (this.processingInterval) {
-      console.log('⚠️ [ArenaMatchmakingProcessor] Processador já está rodando');
+      logger.debug('⚠️ [ArenaMatchmakingProcessor] Processador já está rodando');
       return;
     }
 
-    console.log('🚀 [ArenaMatchmakingProcessor] Iniciando processador global de matchmaking da Arena...');
+    logger.info('🚀 [ArenaMatchmakingProcessor] Iniciando processador global de matchmaking da Arena...');
     
     this.processingInterval = setInterval(() => {
       // CRÍTICO: Verificar duelos ativos de forma não bloqueante
@@ -75,14 +81,14 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
           // Não bloquear - processar de forma assíncrona
           if (!this.isProcessing) {
             this.processQueues().catch(error => {
-              console.error('❌ [ArenaMatchmakingProcessor] Erro no processamento:', error);
+              logger.error('❌ [ArenaMatchmakingProcessor] Erro no processamento:', error);
             });
           }
         });
       });
     }, this.PROCESSING_INTERVAL_MS);
 
-    console.log(`✅ [ArenaMatchmakingProcessor] Processador iniciado (intervalo: ${this.PROCESSING_INTERVAL_MS}ms)`);
+    logger.info(`✅ [ArenaMatchmakingProcessor] Processador iniciado (intervalo: ${this.PROCESSING_INTERVAL_MS}ms)`);
   }
 
   /**
@@ -119,15 +125,15 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       
-      // Obter todas as divisões e seus jogadores
-      const divisions = this.arenaMatchmakingService.getDivisions();
+      // Obter todas as faixas de nível e seus jogadores
+      const levelRanges = this.arenaMatchmakingService.getLevelRanges();
       
-      // Processar cada divisão
-      for (const division of divisions) {
-        // Yield entre divisões
+      // Processar cada faixa de nível
+      for (const levelRange of levelRanges) {
+        // Yield entre faixas
         await new Promise(resolve => setTimeout(resolve, 50));
         
-        const players = this.arenaMatchmakingService.getQueueForDivision(division);
+        const players = this.arenaMatchmakingService.getQueueForLevelRange(levelRange);
         
         if (players.length === 0) {
           continue; // Fila vazia, pular
@@ -148,21 +154,63 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
             const match = await this.arenaMatchmakingService.findArenaOpponent(player.userId);
             
             if (match) {
+              // Buscar informações de ambos os jogadores do banco (otimizado: apenas campos necessários)
+              try {
+                const [opponentUser, player1User] = await Promise.all([
+                  this.userRepository.findOne({
+                    where: { id: match.opponent.userId },
+                    select: ['id', 'username', 'nickname', 'clanTag', 'level', 'avatar', 'profileImage'],
+                    cache: false, // Não usar cache para dados em tempo real
+                  }),
+                  this.userRepository.findOne({
+                    where: { id: match.player1Id },
+                    select: ['id', 'username', 'nickname', 'clanTag', 'level', 'avatar', 'profileImage'],
+                    cache: false,
+                  })
+                ]);
+                
+                // Criar objeto com informações do oponente para passar ao notifyPlayers
+                const opponentInfo = opponentUser ? {
+                  userId: match.opponent.userId,
+                  username: opponentUser.nickname || opponentUser.username,
+                  clanTag: opponentUser.clanTag,
+                  level: opponentUser.level || 1,
+                  avatar: opponentUser.avatar || opponentUser.profileImage,
+                } : {
+                  userId: match.opponent.userId,
+                  username: 'Unknown',
+                  clanTag: null,
+                  level: match.opponent.level || 1,
+                  avatar: null,
+                };
+                
+                // Adicionar informações do player1 ao match para uso no notifyPlayers
+                (match as any).player1Info = player1User ? {
+                  username: player1User.nickname || player1User.username,
+                  clanTag: player1User.clanTag,
+                  level: player1User.level || 1,
+                  avatar: player1User.avatar || player1User.profileImage,
+                } : null;
+                
+                // Substituir opponent no match com as informações completas
+                (match as any).opponent = opponentInfo;
+              } catch (error) {
+                logger.warn(`⚠️ [ArenaMatchmakingProcessor] Erro ao buscar informações dos jogadores:`, error);
+              }
+              
               // Match encontrado! Notificar jogadores (SEM criar duelo automaticamente)
               this.notifyPlayers(match);
               // findArenaOpponent já remove os jogadores da fila
             }
           } catch (error) {
-            // Silenciosamente ignorar erros individuais
-            if (process.env.NODE_ENV === 'development') {
-              console.error(`[ArenaMatchmakingProcessor] Erro ao processar jogador ${player.userId}:`, error);
-            }
+            // Silenciosamente ignorar erros individuais (apenas logar em dev)
+            logger.debug(`⚠️ [ArenaMatchmakingProcessor] Erro ao processar jogador ${player.userId}:`, error);
           }
         }
       }
     } catch (error) {
       // Erro crítico - logar mas não parar o processador
-      console.error('❌ [ArenaMatchmakingProcessor] Erro crítico ao processar filas:', error);
+      logger.error('❌ [ArenaMatchmakingProcessor] Erro crítico ao processar filas:', error);
     } finally {
       this.isProcessing = false;
     }
@@ -171,18 +219,18 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
   /**
    * Notificar jogadores sobre match encontrado usando rooms Socket.IO
    */
-  private notifyPlayers(match: { opponent: any; duel: any }) {
+  private notifyPlayers(match: { opponent: any; duel: any; player1Id?: number; player2Id?: number; player1Info?: any }) {
     if (!this.server) {
-      console.error('❌ [ArenaMatchmakingProcessor] Servidor Socket.IO não configurado');
+      logger.error('❌ [ArenaMatchmakingProcessor] Servidor Socket.IO não configurado');
       return;
     }
 
     try {
-      const { opponent, duel, player1Id, player2Id } = match as any;
+      const { opponent, duel, player1Id, player2Id, player1Info } = match as any;
       
       // Se não tem opponent ou IDs, não notificar
       if (!opponent || !player1Id || !player2Id) {
-        console.error(`❌ [ArenaMatchmakingProcessor] Dados inválidos:`, { opponent, player1Id, player2Id });
+        logger.warn(`⚠️ [ArenaMatchmakingProcessor] Dados inválidos:`, { opponent, player1Id, player2Id });
         return;
       }
 
@@ -206,10 +254,10 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
         player2Id: player2Id,
         opponent: {
           id: player1Id,
-          username: opponent.username || 'Unknown',
-          clanTag: opponent.clanTag || null,
-          level: opponent.level || 1,
-          avatar: opponent.avatar || null,
+          username: player1Info?.username || 'Unknown',
+          clanTag: player1Info?.clanTag || null,
+          level: player1Info?.level || 1,
+          avatar: player1Info?.avatar || null,
         },
       };
 
@@ -219,9 +267,9 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
       // Notificar player2 usando room (todas as abas recebem)
       this.server.to(`user_${player2Id}`).emit('duelFound', matchData2);
 
-      console.log(`✅ [ArenaMatchmakingProcessor] Match encontrado: Player1=${player1Id} vs Player2=${player2Id}`);
+      logger.debug(`✅ [ArenaMatchmakingProcessor] Match encontrado: Player1=${player1Id} vs Player2=${player2Id}`);
     } catch (error) {
-      console.error('❌ [ArenaMatchmakingProcessor] Erro ao notificar jogadores:', error);
+      logger.error('❌ [ArenaMatchmakingProcessor] Erro ao notificar jogadores:', error);
     }
   }
 }

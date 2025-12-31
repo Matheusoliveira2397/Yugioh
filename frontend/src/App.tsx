@@ -22,6 +22,21 @@ import AdminPanel from './pages/AdminPanel';
 import AdminCardsPanel from './pages/AdminCardsPanel';
 import AdminPlayersPanel from './pages/AdminPlayersPanel';
 import AdminNewsPanel from './pages/AdminNewsPanel';
+import AdminPlaymatsPanel from './pages/AdminPlaymatsPanel';
+import AdminSleevesPanel from './pages/AdminSleevesPanel';
+import AdminInitialDecksPanel from './pages/AdminInitialDecksPanel';
+import AdminTournamentsPanel from './pages/AdminTournamentsPanel';
+import AdminArenaPanel from './pages/AdminArenaPanel';
+import AdminArenaSchedulesPanel from './pages/AdminArenaSchedulesPanel';
+import AdminSeasonsPanel from './pages/AdminSeasonsPanel';
+import AdminSiteTabsPanel from './pages/AdminSiteTabsPanel';
+import AdminMessagesPanel from './pages/AdminMessagesPanel';
+import AdminAchievementsPanel from './pages/AdminAchievementsPanel';
+import AdminDivisionsPanel from './pages/AdminDivisionsPanel';
+import AdminRandomDuelLevelRangesPanel from './pages/AdminRandomDuelLevelRangesPanel';
+import AdminSocialMediaPanel from './pages/AdminSocialMediaPanel';
+import CreditPage from './pages/CreditPage';
+import HelpPage from './pages/HelpPage';
 import MissionsPage from './pages/MissionsPage';
 import DropsPage from './pages/DropsPage';
 import DuelArena from './pages/DuelArena';
@@ -34,7 +49,12 @@ function App() {
   const { isAuthenticated } = useAuthStore();
 
   return (
-    <Router>
+    <Router
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
@@ -345,6 +365,199 @@ function App() {
             isAuthenticated ? (
               <Layout>
                 <AdminNewsPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/playmats"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminPlaymatsPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/sleeves"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminSleevesPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/initial-decks"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminInitialDecksPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/tournaments"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminTournamentsPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/arena"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminArenaPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/arena/schedules"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminArenaSchedulesPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+        
+        <Route
+          path="/admin/seasons"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminSeasonsPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/site-tabs"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminSiteTabsPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/messages"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminMessagesPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+        <Route
+          path="/admin/achievements"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminAchievementsPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+        <Route
+          path="/admin/divisions"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminDivisionsPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/random-duel-level-ranges"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminRandomDuelLevelRangesPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/social-media"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminSocialMediaPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/credit"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <CreditPage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/help"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <HelpPage />
               </Layout>
             ) : (
               <Navigate to="/login" />

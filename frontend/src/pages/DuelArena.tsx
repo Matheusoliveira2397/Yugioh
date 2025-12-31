@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
@@ -9,7 +10,6 @@ import DuelLogs from '../components/duel/DuelLogs';
 import DuelField from '../components/duel/DuelField';
 import CardImage from '../components/CardImage';
 import { getCardImage } from '../utils/cardImage';
-import Calculator from '../components/Calculator';
 import TributeSelectionModal from '../components/duel/TributeSelectionModal';
 
 interface DuelData {
@@ -172,6 +172,7 @@ const DuelArena: React.FC = () => {
   const [turnTimer, setTurnTimer] = useState<NodeJS.Timeout | null>(null);
   const [timeExpired, setTimeExpired] = useState(false); // Indica se o tempo do oponente expirou
   const [turnTimeLimit, setTurnTimeLimit] = useState(90); // Limite de tempo do turno (vem do banco)
+  const [turnTimeRemainingFromServer, setTurnTimeRemainingFromServer] = useState<number | null>(null); // Tempo restante do servidor (fonte da verdade)
   const [turnStartedAt, setTurnStartedAt] = useState<Date | null>(null); // Timestamp de quando o turno começou
   const [duelTime, setDuelTime] = useState(0); // Tempo total do duelo em segundos
   const [duelStartTime, setDuelStartTime] = useState<number | null>(null); // Timestamp de quando o duelo começou
@@ -184,11 +185,17 @@ const DuelArena: React.FC = () => {
   const turnTimeLimitRef = useRef<number>(90);
   const duelDataRef = useRef<DuelData | null>(null);
   
+  // Refs para estados dos modais (para acessar valores mais recentes nos listeners)
+  const showOpponentHandRevealedRef = useRef(false);
+  const showGracefulCharityModalRef = useRef(false);
+  const cardEffectTypeRef = useRef<'forcefulSentry' | 'confiscation' | null>(null);
+  
   // Sistema de mão e deck - carregados do backend
   const [myHand, setMyHand] = useState<any[]>([]);
   const [myDeck, setMyDeck] = useState<any[]>([]);
   const [myGraveyard, setMyGraveyard] = useState<any[]>([]);
   const [myExtraDeck, setMyExtraDeck] = useState<any[]>([]);
+  const [myBanished, setMyBanished] = useState<any[]>([]);
   const [opponentHand, setOpponentHand] = useState<any[]>([]);
   
   // Estado para controle de ataque
@@ -196,6 +203,7 @@ const DuelArena: React.FC = () => {
   const [opponentDeck, setOpponentDeck] = useState<any[]>([]);
   const [opponentGraveyard, setOpponentGraveyard] = useState<any[]>([]);
   const [opponentExtraDeck, setOpponentExtraDeck] = useState<any[]>([]);
+  const [opponentBanished, setOpponentBanished] = useState<any[]>([]);
   
   // Estado para descarte de cartas
   const [selectedCardsToDiscard, setSelectedCardsToDiscard] = useState<string[]>([]);
@@ -226,16 +234,80 @@ const DuelArena: React.FC = () => {
     playerGraveyard: any[];
     opponentGraveyard: any[];
   } | null>(null);
-  const [selectedMonsterReborn, setSelectedMonsterReborn] = useState<{ graveyard: 'player' | 'opponent'; index: number } | null>(null);
+  // Usar identificadores únicos para MonsterReborn
+  const [selectedMonsterReborn, setSelectedMonsterReborn] = useState<{ 
+    graveyard: 'player' | 'opponent'; 
+    index: number;
+    instanceId?: string;
+    graveyardIndex?: number;
+  } | null>(null);
   
   // Estado para ChaosSorcerer Special Summon
   const [showChaosSorcererModal, setShowChaosSorcererModal] = useState(false);
   const [chaosSorcererData, setChaosSorcererData] = useState<{
+    cardName?: string;
     lightMonsters: any[];
     darkMonsters: any[];
   } | null>(null);
-  const [selectedLightMonster, setSelectedLightMonster] = useState<number | null>(null);
-  const [selectedDarkMonster, setSelectedDarkMonster] = useState<number | null>(null);
+  // Usar identificadores únicos (instanceId ou graveyardIndex) ao invés de apenas índice
+  const [selectedLightMonster, setSelectedLightMonster] = useState<{ instanceId?: string; graveyardIndex?: number; arrayIndex: number } | null>(null);
+  const [selectedDarkMonster, setSelectedDarkMonster] = useState<{ instanceId?: string; graveyardIndex?: number; arrayIndex: number } | null>(null);
+  
+  // Estado para efeito do ChaosSorcerer (banir monstro do oponente)
+  const [isSelectingChaosSorcererTarget, setIsSelectingChaosSorcererTarget] = useState(false);
+  const [chaosSorcererMonsterZoneIndex, setChaosSorcererMonsterZoneIndex] = useState<number | null>(null);
+  
+  // Debug: Monitorar quando o modal deveria abrir
+  useEffect(() => {
+    if (showChaosSorcererModal) {
+      console.log(`🎯 [useEffect] Modal ChaosSorcerer ABERTO!`, {
+        showChaosSorcererModal,
+        chaosSorcererData,
+        lightMonstersCount: chaosSorcererData?.lightMonsters?.length || 0,
+        darkMonstersCount: chaosSorcererData?.darkMonsters?.length || 0,
+      });
+    }
+  }, [showChaosSorcererModal, chaosSorcererData]);
+  
+  // Estado para Red-Eyes Darkness Metal Dragon Special Summon
+  const [showRedEyesDarknessMetalDragonModal, setShowRedEyesDarknessMetalDragonModal] = useState(false);
+  const [redEyesDarknessMetalDragonData, setRedEyesDarknessMetalDragonData] = useState<{
+    cardId?: string;
+    dragonMonsters: any[];
+  } | null>(null);
+  const [selectedDragonToBanish, setSelectedDragonToBanish] = useState<number | null>(null);
+  
+  // Estado para efeito do Red-Eyes Darkness Metal Dragon (invocar dragão da mão/cemitério)
+  const [showRedEyesDarknessMetalDragonEffectModal, setShowRedEyesDarknessMetalDragonEffectModal] = useState(false);
+  const [redEyesDarknessMetalDragonEffectData, setRedEyesDarknessMetalDragonEffectData] = useState<{
+    monsterZoneIndex: number;
+    dragonsInHand: any[];
+    dragonsInGraveyard: any[];
+  } | null>(null);
+  const [selectedDragonSource, setSelectedDragonSource] = useState<'hand' | 'graveyard' | null>(null);
+  const [selectedDragonIndex, setSelectedDragonIndex] = useState<number | null>(null);
+  const [selectedDragonId, setSelectedDragonId] = useState<string | null>(null); // Para rastrear qual dragão foi selecionado (com source e index)
+  
+  // Estado para Cyber-Stein
+  const [showCyberSteinModal, setShowCyberSteinModal] = useState(false);
+  const [cyberSteinData, setCyberSteinData] = useState<{
+    monsterZoneIndex: number;
+    extraDeckMonsters: any[];
+  } | null>(null);
+  const [selectedCyberSteinMonster, setSelectedCyberSteinMonster] = useState<number | null>(null);
+  
+  // Estado para Dark Armed Dragon
+  const [showDarkArmedDragonEffectModal, setShowDarkArmedDragonEffectModal] = useState(false);
+  const [darkArmedDragonEffectData, setDarkArmedDragonEffectData] = useState<{
+    monsterZoneIndex: number;
+    darkMonsters: any[];
+  } | null>(null);
+  const [selectedDarkMonsterToBanish, setSelectedDarkMonsterToBanish] = useState<number | null>(null);
+  const [selectedCardToDestroy, setSelectedCardToDestroy] = useState<{
+    player: 'player' | 'opponent';
+    type: 'monster' | 'spellTrap';
+    zoneIndex: number;
+  } | null>(null);
   
   // Estado para ChangeOfHeart
   const [showChangeOfHeartModal, setShowChangeOfHeartModal] = useState(false);
@@ -251,6 +323,21 @@ const DuelArena: React.FC = () => {
   } | null>(null);
   const [selectedBrainControlMonster, setSelectedBrainControlMonster] = useState<number | null>(null);
   
+  // Estado para SoulTaker
+  const [showSoulTakerModal, setShowSoulTakerModal] = useState(false);
+  const [soulTakerData, setSoulTakerData] = useState<{
+    opponentMonsters: any[];
+  } | null>(null);
+  const [selectedSoulTakerMonster, setSelectedSoulTakerMonster] = useState<number | null>(null);
+  
+  // Estado para Exiled Force
+  const [showExiledForceModal, setShowExiledForceModal] = useState(false);
+  const [exiledForceData, setExiledForceData] = useState<{
+    availableMonsters: Array<{ monster: any; zoneIndex: number; player: 'player' | 'opponent' }>;
+    monsterZoneIndex?: number;
+  } | null>(null);
+  const [selectedExiledForceMonster, setSelectedExiledForceMonster] = useState<{ zoneIndex: number; player: 'player' | 'opponent' } | null>(null);
+  
   // Estado para UnitedWeStand
   const [showUnitedWeStandModal, setShowUnitedWeStandModal] = useState(false);
   const [unitedWeStandData, setUnitedWeStandData] = useState<{
@@ -264,6 +351,20 @@ const DuelArena: React.FC = () => {
     availableMonsters: any[];
   } | null>(null);
   const [selectedMagePowerMonster, setSelectedMagePowerMonster] = useState<number | null>(null);
+
+  // Estado para Reinforcement Of The Army
+  const [showReinforcementOfTheArmyModal, setShowReinforcementOfTheArmyModal] = useState(false);
+  const [reinforcementOfTheArmyData, setReinforcementOfTheArmyData] = useState<{
+    warriorMonsters: any[];
+  } | null>(null);
+  const [selectedReinforcementOfTheArmyMonster, setSelectedReinforcementOfTheArmyMonster] = useState<number | null>(null);
+  
+  // Estado para Last Will
+  const [showLastWillModal, setShowLastWillModal] = useState(false);
+  const [lastWillData, setLastWillData] = useState<{
+    eligibleMonsters: any[];
+  } | null>(null);
+  const [selectedLastWillMonster, setSelectedLastWillMonster] = useState<number | null>(null);
   
   // Estado para Mystical Space Typhoon
   const [isSelectingMSTTarget, setIsSelectingMSTTarget] = useState(false);
@@ -313,8 +414,8 @@ const DuelArena: React.FC = () => {
   const [mySpellTraps, setMySpellTraps] = useState<(any | null)[]>(Array(5).fill(null));
   const [opponentSpellTraps, setOpponentSpellTraps] = useState<(any | null)[]>(Array(5).fill(null));
   
-  // Estado para calculadora
-  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
+  // Estado para Last Will - indica se um monstro foi destruído no campo do jogador neste turno
+  const [monsterDestroyedThisTurn, setMonsterDestroyedThisTurn] = useState<boolean>(false);
   
   // Estado para rastrear se já fez invocação normal neste turno
   const [normalSummonUsed, setNormalSummonUsed] = useState(false);
@@ -404,12 +505,22 @@ const DuelArena: React.FC = () => {
 
     // Handler para receber dados do duelo via WebSocket
     const handleDuelUpdate = (data: any) => {
-      console.log('📥 [handleDuelUpdate] Recebido duelUpdate:', {
+      console.log('📥 [handleDuelUpdate] ========== RECEBIDO DUEL UPDATE ==========');
+      console.log('📥 [handleDuelUpdate] Dados básicos:', {
         id: data?.id,
         hasPlayer1Field: !!data?.player1Field,
         hasPlayer2Field: !!data?.player2Field,
         pendingChoice: data?.pendingChoice,
+        pendingChoiceType: data?.pendingChoice?.type,
+        pendingChoiceUserId: data?.pendingChoice?.userId,
+        pendingChoiceData: data?.pendingChoice?.data,
       });
+      
+      // Log completo do pendingChoice se existir
+      if (data?.pendingChoice) {
+        console.log('📥 [handleDuelUpdate] pendingChoice COMPLETO:', JSON.stringify(data.pendingChoice, null, 2));
+      }
+      console.log('📥 [handleDuelUpdate] ===========================================');
       
       // Garantir que loading seja false imediatamente ao receber qualquer update válido
       if (data && data.id) {
@@ -502,10 +613,13 @@ const DuelArena: React.FC = () => {
       // Usar tempo restante calculado pelo backend se disponível
       if (data.turnTimeRemaining !== undefined) {
         setTurnTimeLeft(data.turnTimeRemaining);
+        setTurnTimeRemainingFromServer(data.turnTimeRemaining); // Armazenar tempo do servidor
       } else if (data.turnTime !== undefined && data.turnTime > 0) {
         setTurnTimeLeft(data.turnTime);
+        setTurnTimeRemainingFromServer(null); // Resetar se não veio do servidor
       } else {
         setTurnTimeLeft(90);
+        setTurnTimeRemainingFromServer(null); // Resetar se não veio do servidor
       }
       
       // Salvar timestamp de quando o turno começou
@@ -525,6 +639,7 @@ const DuelArena: React.FC = () => {
         const player1Hand = data.player1Field.hand || [];
         const player1Graveyard = data.player1Field.graveyard || [];
         const player1ExtraDeck = data.player1Field.extraDeck || [];
+        const player1Banished = data.player1Field.banished || [];
         // Garantir que monsters e spellTraps sejam arrays de 5 elementos
         const player1MonstersRaw = data.player1Field.monsters || [];
         const player1Monsters = Array.isArray(player1MonstersRaw)
@@ -539,6 +654,7 @@ const DuelArena: React.FC = () => {
         const player2Hand = data.player2Field.hand || [];
         const player2Graveyard = data.player2Field.graveyard || [];
         const player2ExtraDeck = data.player2Field.extraDeck || [];
+        const player2Banished = data.player2Field.banished || [];
         // Garantir que monsters e spellTraps sejam arrays de 5 elementos
         const player2MonstersRaw = data.player2Field.monsters || [];
         const player2Monsters = Array.isArray(player2MonstersRaw)
@@ -555,27 +671,42 @@ const DuelArena: React.FC = () => {
           setMyHand(player1Hand);
           setMyGraveyard(player1Graveyard);
           setMyExtraDeck(player1ExtraDeck);
+          setMyBanished(player1Banished);
           setMyMonsters(player1Monsters);
           setMySpellTraps(player1SpellTraps);
+          
+          // Armazenar flag monsterDestroyedThisTurn para Last Will
+          const monsterDestroyedFlag = data.player1Field?.monsterDestroyedThisTurn || false;
+          console.log(`🔍 [handleDuelUpdate] Player1 - monsterDestroyedThisTurn: ${monsterDestroyedFlag}`);
+          setMonsterDestroyedThisTurn(monsterDestroyedFlag);
           setOpponentDeck(player2Deck);
           setOpponentHand(player2Hand);
           setOpponentGraveyard(player2Graveyard);
           setOpponentExtraDeck(player2ExtraDeck);
+          setOpponentBanished(player2Banished);
           setOpponentMonsters(player2Monsters);
           setOpponentSpellTraps(player2SpellTraps);
-          console.log(`✅ [handleDuelUpdate] Player1 - Meu deck: ${player1Deck.length}, Cemitério: ${player1Graveyard.length}, Extra Deck: ${player1ExtraDeck.length}, Oponente deck: ${player2Deck.length}`);
+          console.log(`✅ [handleDuelUpdate] Player1 - Meu deck: ${player1Deck.length}, Cemitério: ${player1Graveyard.length}, Extra Deck: ${player1ExtraDeck.length}, Banidas: ${player1Banished.length}, Oponente deck: ${player2Deck.length}`);
         } else {
           // É player2 - meu campo é player2Field, oponente é player1Field
           setMyDeck(player2Deck);
           setMyHand(player2Hand);
           setMyGraveyard(player2Graveyard);
           setMyExtraDeck(player2ExtraDeck);
+          setMyBanished(player2Banished);
           setMyMonsters(player2Monsters);
           setMySpellTraps(player2SpellTraps);
+          
+          // Armazenar flag monsterDestroyedThisTurn para Last Will
+          const monsterDestroyedFlag = data.player2Field?.monsterDestroyedThisTurn || false;
+          console.log(`🔍 [handleDuelUpdate] Player2 - monsterDestroyedThisTurn: ${monsterDestroyedFlag}`);
+          setMonsterDestroyedThisTurn(monsterDestroyedFlag);
+          
           setOpponentDeck(player1Deck);
           setOpponentHand(player1Hand);
           setOpponentGraveyard(player1Graveyard);
           setOpponentExtraDeck(player1ExtraDeck);
+          setOpponentBanished(player1Banished);
           setOpponentMonsters(player1Monsters);
           setOpponentSpellTraps(player1SpellTraps);
           console.log(`✅ [handleDuelUpdate] Player2 - Meu deck: ${player2Deck.length}, Cemitério: ${player2Graveyard.length}, Extra Deck: ${player2ExtraDeck.length}, Oponente deck: ${player1Deck.length}`);
@@ -586,9 +717,86 @@ const DuelArena: React.FC = () => {
       
       // Atualizar estado do pendingChoice
       const pendingChoice = (data as any).pendingChoice;
+      const previousPendingChoice = currentPendingChoice;
+      
+      // Log para debug
+      console.log(`🔍 [handleDuelUpdate] pendingChoice atualizado:`, {
+        previous: previousPendingChoice?.type || 'null',
+        current: pendingChoice?.type || 'null',
+        showGracefulCharityModal,
+        showOpponentHandRevealed,
+        cardEffectType
+      });
+      
+      // Verificar se pendingChoice mudou de não-null para null
+      const wasGracefulCharity = previousPendingChoice && previousPendingChoice.type === 'GRACEFUL_CHARITY';
+      const wasConfiscation = previousPendingChoice && previousPendingChoice.type === 'CONFISCATION';
+      const wasForcefulSentry = previousPendingChoice && previousPendingChoice.type === 'FORCEFUL_SENTRY';
+      const isNowNull = !pendingChoice || pendingChoice === null || pendingChoice === undefined;
+      
+      // Se pendingChoice mudou de não-null para null, fechar os modais ANTES de atualizar o estado
+      if (previousPendingChoice && isNowNull) {
+        console.log(`✅ [handleDuelUpdate] Escolha confirmada pelo backend - fechando modais`);
+        console.log(`🔍 [handleDuelUpdate] previousPendingChoice:`, previousPendingChoice?.type, 'pendingChoice:', pendingChoice, 'wasGracefulCharity:', wasGracefulCharity);
+        
+        // Fechar modais de Confiscation/ForcefulSentry APENAS se pendingChoice realmente mudou de não-null para null
+        // Não fechar se ainda há pendingChoice (pode ser um update intermediário)
+        if ((wasConfiscation || wasForcefulSentry || showOpponentHandRevealed) && 
+            (cardEffectType === 'confiscation' || cardEffectType === 'forcefulSentry') &&
+            isNowNull && previousPendingChoice) {
+          console.log(`✅ [handleDuelUpdate] Fechando modal ${cardEffectType} - wasConfiscation: ${wasConfiscation}, wasForcefulSentry: ${wasForcefulSentry}, showOpponentHandRevealed: ${showOpponentHandRevealed}, isNowNull: ${isNowNull}, previousPendingChoice: ${!!previousPendingChoice}`);
+          setShowOpponentHandRevealed(false);
+          setOpponentHandRevealed([]);
+          setCardEffectType(null);
+        }
+        
+        // Fechar modal de GracefulCharity (verificar tanto pelo tipo quanto pelo estado do modal)
+        if (wasGracefulCharity || showGracefulCharityModal) {
+          console.log(`✅ [handleDuelUpdate] Fechando modal GracefulCharity - wasGracefulCharity: ${wasGracefulCharity}, showGracefulCharityModal: ${showGracefulCharityModal}`);
+          setShowGracefulCharityModal(false);
+          setGracefulCharityHand([]);
+          setSelectedGracefulCharityCards([]);
+        }
+      }
+      
+      // Atualizar estado do pendingChoice DEPOIS de fechar modais
+      // Isso garante que o useEffect também seja acionado
       setCurrentPendingChoice(pendingChoice || null);
       
-      // Verificar se há escolha pendente e restaurar modal
+      // Verificação adicional: Se pendingChoice é null e o modal ainda está aberto, forçar fechamento
+      // Isso garante que o modal feche mesmo se a verificação anterior não funcionou
+      // Verificar também se não há pendingChoice no updatedDuel
+      if (isNowNull && showGracefulCharityModal) {
+        console.log(`⚠️ [handleDuelUpdate] pendingChoice é null mas modal ainda está aberto - forçando fechamento`);
+        console.log(`🔍 [handleDuelUpdate] Detalhes - isNowNull: ${isNowNull}, showGracefulCharityModal: ${showGracefulCharityModal}, pendingChoice:`, pendingChoice);
+        setShowGracefulCharityModal(false);
+        setGracefulCharityHand([]);
+        setSelectedGracefulCharityCards([]);
+      }
+      
+      // Verificação final: Se não há pendingChoice e o modal está aberto, sempre fechar
+      // Isso é uma verificação de segurança adicional
+      if ((!pendingChoice || pendingChoice === null || pendingChoice === undefined) && showGracefulCharityModal) {
+        console.log(`🔒 [handleDuelUpdate] Verificação final - fechando modal GracefulCharity (pendingChoice ausente)`);
+        setShowGracefulCharityModal(false);
+        setGracefulCharityHand([]);
+        setSelectedGracefulCharityCards([]);
+      }
+      
+      // Verificação para modais de Confiscation/ForcefulSentry também
+      // IMPORTANTE: Só fechar se realmente mudou de não-null para null (não fechar em updates intermediários)
+      if ((!pendingChoice || pendingChoice === null || pendingChoice === undefined) && 
+          showOpponentHandRevealed && 
+          isNowNull && 
+          previousPendingChoice) {
+        console.log(`🔒 [handleDuelUpdate] Verificação final - fechando modal Confiscation/ForcefulSentry (pendingChoice mudou de não-null para null)`);
+        setShowOpponentHandRevealed(false);
+        setOpponentHandRevealed([]);
+        setCardEffectType(null);
+      }
+      
+      // Verificar se há escolha pendente e restaurar modal IMEDIATAMENTE
+      // Isso garante que o modal abra mesmo no primeiro carregamento
       if (pendingChoice) {
         console.log(`🔍 [handleDuelUpdate] Escolha pendente encontrada:`, {
           type: pendingChoice.type,
@@ -596,81 +804,42 @@ const DuelArena: React.FC = () => {
           myUserId: user?.id,
           hasData: !!pendingChoice.data,
           opponentHandLength: pendingChoice.data?.opponentHand?.length,
-          playerHandLength: pendingChoice.data?.playerHand?.length
+          playerHandLength: pendingChoice.data?.playerHand?.length,
+          isFirstLoad: !previousPendingChoice // Indica se é o primeiro carregamento
         });
         
-        const isMyChoice = pendingChoice.userId === user?.id;
-        console.log(`🔍 [handleDuelUpdate] É minha escolha? ${isMyChoice} (pendingChoice.userId: ${pendingChoice.userId}, user?.id: ${user?.id})`);
+        // Comparar IDs convertendo ambos para número para garantir compatibilidade
+        const pendingUserId = typeof pendingChoice.userId === 'string' ? parseInt(pendingChoice.userId, 10) : Number(pendingChoice.userId);
+        const myUserId = typeof user?.id === 'string' ? parseInt(user.id, 10) : Number(user?.id);
+        const isMyChoice = pendingUserId === myUserId;
+        
+        console.log(`🔍 [handleDuelUpdate] ========== VERIFICANDO PENDING CHOICE ==========`);
+        console.log(`🔍 [handleDuelUpdate] Tipo: ${pendingChoice.type}`);
+        console.log(`🔍 [handleDuelUpdate] É minha escolha? ${isMyChoice}`);
+        console.log(`🔍 [handleDuelUpdate] pendingChoice.userId: ${pendingChoice.userId} (${typeof pendingChoice.userId}) -> ${pendingUserId} (number)`);
+        console.log(`🔍 [handleDuelUpdate] user?.id: ${user?.id} (${typeof user?.id}) -> ${myUserId} (number)`);
+        console.log(`🔍 [handleDuelUpdate] Comparação: ${pendingUserId} === ${myUserId} = ${pendingUserId === myUserId}`);
+        console.log(`🔍 [handleDuelUpdate] ===========================================`);
         
         if (isMyChoice) {
-          console.log(`✅ [handleDuelUpdate] Restaurando modal para escolha pendente:`, pendingChoice.type);
+          console.log(`✅ [handleDuelUpdate] É MINHA ESCOLHA! Restaurando modal para:`, pendingChoice.type);
           
+          // Abrir modal IMEDIATAMENTE quando há pendingChoice
           if (pendingChoice.type === 'CONFISCATION' && pendingChoice.data?.opponentHand) {
-            console.log(`✅ [handleDuelUpdate] Restaurando modal Confiscation com ${pendingChoice.data.opponentHand.length} cartas`);
+            console.log(`✅ [handleDuelUpdate] Abrindo modal Confiscation com ${pendingChoice.data.opponentHand.length} cartas`);
             setOpponentHandRevealed(pendingChoice.data.opponentHand);
             setShowOpponentHandRevealed(true);
             setCardEffectType('confiscation');
           } else if (pendingChoice.type === 'GRACEFUL_CHARITY' && pendingChoice.data?.playerHand) {
-            console.log(`✅ [handleDuelUpdate] Restaurando modal GracefulCharity com ${pendingChoice.data.playerHand.length} cartas`);
+            console.log(`✅ [handleDuelUpdate] Abrindo modal GracefulCharity com ${pendingChoice.data.playerHand.length} cartas`);
             setGracefulCharityHand(pendingChoice.data.playerHand);
             setShowGracefulCharityModal(true);
             setSelectedGracefulCharityCards([]);
           } else if (pendingChoice.type === 'FORCEFUL_SENTRY' && pendingChoice.data?.opponentHand) {
-            console.log(`✅ [handleDuelUpdate] Restaurando modal ForcefulSentry com ${pendingChoice.data.opponentHand.length} cartas`);
+            console.log(`✅ [handleDuelUpdate] Abrindo modal ForcefulSentry com ${pendingChoice.data.opponentHand.length} cartas`);
             setOpponentHandRevealed(pendingChoice.data.opponentHand);
             setShowOpponentHandRevealed(true);
             setCardEffectType('forcefulSentry');
-          } else if (pendingChoice.type === 'MONSTER_REBORN' && pendingChoice.data) {
-            console.log(`✅ [handleDuelUpdate] Restaurando modal MonsterReborn`);
-            setMonsterRebornData({
-              playerGraveyard: pendingChoice.data.playerGraveyard || [],
-              opponentGraveyard: pendingChoice.data.opponentGraveyard || [],
-            });
-            setShowMonsterRebornModal(true);
-            setSelectedMonsterReborn(null);
-          } else if (pendingChoice.type === 'CHANGE_OF_HEART' && pendingChoice.data) {
-            console.log(`✅ [handleDuelUpdate] Restaurando modal ChangeOfHeart`);
-            setChangeOfHeartData({
-              opponentMonsters: pendingChoice.data.opponentMonsters || [],
-            });
-            setShowChangeOfHeartModal(true);
-            setSelectedChangeOfHeartMonster(null);
-          } else if (pendingChoice.type === 'BRAIN_CONTROL' && pendingChoice.data) {
-            console.log(`✅ [handleDuelUpdate] Restaurando modal BrainControl`);
-            setBrainControlData({
-              opponentMonsters: pendingChoice.data.opponentMonsters || [],
-            });
-            setShowBrainControlModal(true);
-            setSelectedBrainControlMonster(null);
-          } else if (pendingChoice.type === 'UNITED_WE_STAND' && pendingChoice.data) {
-            console.log(`✅ [handleDuelUpdate] Restaurando modal UnitedWeStand`);
-            setUnitedWeStandData({
-              availableMonsters: pendingChoice.data.availableMonsters || [],
-            });
-            setShowUnitedWeStandModal(true);
-            setSelectedUnitedWeStandMonster(null);
-          } else if (pendingChoice.type === 'MAGE_POWER' && pendingChoice.data) {
-            console.log(`✅ [handleDuelUpdate] Restaurando modal MagePower`);
-            setMagePowerData({
-              availableMonsters: pendingChoice.data.availableMonsters || [],
-            });
-            setShowMagePowerModal(true);
-            setSelectedMagePowerMonster(null);
-          } else if (pendingChoice.type === 'MYSTICAL_SPACE_TYPHOON') {
-            console.log(`✅ [handleDuelUpdate] Restaurando seleção de alvo para Mystical Space Typhoon`);
-            setIsSelectingMSTTarget(true);
-          } else if (pendingChoice.type === 'SNOWMAN_EATER') {
-            console.log(`✅ [handleDuelUpdate] Restaurando seleção de alvo para SnowmanEater`);
-            setIsSelectingSnowmanEaterTarget(true);
-          } else if (pendingChoice.type === 'CHAOS_SORCERER_SUMMON' && pendingChoice.data) {
-            console.log(`✅ [handleDuelUpdate] Restaurando modal ChaosSorcerer`);
-            setChaosSorcererData({
-              lightMonsters: pendingChoice.data.lightMonsters || [],
-              darkMonsters: pendingChoice.data.darkMonsters || [],
-            });
-            setShowChaosSorcererModal(true);
-            setSelectedLightMonster(null);
-            setSelectedDarkMonster(null);
           } else {
             console.warn(`⚠️ [handleDuelUpdate] Tipo de escolha pendente desconhecido ou dados faltando:`, pendingChoice);
           }
@@ -681,45 +850,11 @@ const DuelArena: React.FC = () => {
           // Não fechar aqui - deixar o listener closePendingChoiceModal fazer isso
         }
       } else {
-        // Não há escolha pendente - fechar modais se estiverem abertos
-        // Isso garante que os modais sejam fechados após a escolha ser processada
-        if (showBrainControlModal) {
-          console.log(`ℹ️ [handleDuelUpdate] Nenhuma escolha pendente - fechando modal BrainControl`);
-          setShowBrainControlModal(false);
-          setBrainControlData(null);
-          setSelectedBrainControlMonster(null);
-        }
-        if (showChangeOfHeartModal) {
-          console.log(`ℹ️ [handleDuelUpdate] Nenhuma escolha pendente - fechando modal ChangeOfHeart`);
-          setShowChangeOfHeartModal(false);
-          setChangeOfHeartData(null);
-          setSelectedChangeOfHeartMonster(null);
-        }
-        if (showUnitedWeStandModal) {
-          console.log(`ℹ️ [handleDuelUpdate] Nenhuma escolha pendente - fechando modal UnitedWeStand`);
-          setShowUnitedWeStandModal(false);
-          setUnitedWeStandData(null);
-          setSelectedUnitedWeStandMonster(null);
-        }
-        if (showMagePowerModal) {
-          console.log(`ℹ️ [handleDuelUpdate] Nenhuma escolha pendente - fechando modal MagePower`);
-          setShowMagePowerModal(false);
-          setMagePowerData(null);
-          setSelectedMagePowerMonster(null);
-        }
-        if (isSelectingMSTTarget) {
-          console.log(`ℹ️ [handleDuelUpdate] Nenhuma escolha pendente - fechando seleção de alvo MST`);
-          setIsSelectingMSTTarget(false);
-        }
-        if (isSelectingBreakerTarget) {
-          console.log(`ℹ️ [handleDuelUpdate] Nenhuma escolha pendente - fechando seleção de alvo Breaker`);
-          setIsSelectingBreakerTarget(false);
-          setBreakerMonsterZoneIndex(null);
-        }
-        if (isSelectingSnowmanEaterTarget) {
-          console.log(`ℹ️ [handleDuelUpdate] Nenhuma escolha pendente - fechando seleção de alvo SnowmanEater`);
-          setIsSelectingSnowmanEaterTarget(false);
-        }
+        // Não há escolha pendente - mas não fechar aqui
+        // O fechamento já foi tratado acima quando pendingChoice mudou de não-null para null
+        // Isso evita fechar modais durante o carregamento inicial quando não há pendingChoice
+        // NOTA: Modais não-persistentes (Monster Reborn, Change of Heart, etc.) são fechados via closePendingChoiceModal
+        // ou quando o usuário cancela/atualiza a página, não aqui
         console.log(`ℹ️ [handleDuelUpdate] Nenhuma escolha pendente encontrada`);
       }
       
@@ -730,6 +865,38 @@ const DuelArena: React.FC = () => {
     const handleDuelError = (data: any) => {
       const errorMessage = data.message || 'Erro ao carregar duelo';
       console.error('❌ [DuelArena] Erro recebido do backend:', errorMessage);
+      
+      // Se o erro menciona "escolha pendente" e há pendingChoice no erro, abrir o modal
+      if (errorMessage.includes('escolha pendente') || errorMessage.includes('completar a escolha')) {
+        const pendingChoice = data.pendingChoice;
+        if (pendingChoice && pendingChoice.userId === user?.id) {
+          console.log('🔍 [handleDuelError] Erro de escolha pendente detectado - abrindo modal:', pendingChoice.type);
+          
+          // Abrir modal baseado no tipo de pendingChoice
+          if (pendingChoice.type === 'CONFISCATION' && pendingChoice.data?.opponentHand) {
+            console.log(`✅ [handleDuelError] Abrindo modal Confiscation com ${pendingChoice.data.opponentHand.length} cartas`);
+            setOpponentHandRevealed(pendingChoice.data.opponentHand);
+            setShowOpponentHandRevealed(true);
+            setCardEffectType('confiscation');
+            setCurrentPendingChoice(pendingChoice);
+          } else if (pendingChoice.type === 'GRACEFUL_CHARITY' && pendingChoice.data?.playerHand) {
+            console.log(`✅ [handleDuelError] Abrindo modal GracefulCharity com ${pendingChoice.data.playerHand.length} cartas`);
+            setGracefulCharityHand(pendingChoice.data.playerHand);
+            setShowGracefulCharityModal(true);
+            setSelectedGracefulCharityCards([]);
+            setCurrentPendingChoice(pendingChoice);
+          } else if (pendingChoice.type === 'FORCEFUL_SENTRY' && pendingChoice.data?.opponentHand) {
+            console.log(`✅ [handleDuelError] Abrindo modal ForcefulSentry com ${pendingChoice.data.opponentHand.length} cartas`);
+            setOpponentHandRevealed(pendingChoice.data.opponentHand);
+            setShowOpponentHandRevealed(true);
+            setCardEffectType('forcefulSentry');
+            setCurrentPendingChoice(pendingChoice);
+          }
+          
+          // Não mostrar erro se conseguimos abrir o modal
+          return;
+        }
+      }
       
       // Se o erro for "Duelo não encontrado" mas já temos duelData, não fechar o duelo
       // Pode ser um erro temporário ou de sincronização
@@ -962,6 +1129,33 @@ const DuelArena: React.FC = () => {
       };
       socket.on('brainControlShowOpponentMonsters', brainControlListener);
       console.log('✅ [DuelArena] Listener brainControlShowOpponentMonsters registrado');
+      
+      // Listener para SoulTaker
+      const soulTakerListener = (data: { opponentMonsters: any[]; duelId: string | number }) => {
+        console.log('🔍 [DuelArena] soulTakerShowOpponentMonsters recebido:', data);
+        if (data.duelId === duelId) {
+          setSoulTakerData({ opponentMonsters: data.opponentMonsters });
+          setShowSoulTakerModal(true);
+          setSelectedSoulTakerMonster(null);
+        }
+      };
+      socket.on('soulTakerShowOpponentMonsters', soulTakerListener);
+      console.log('✅ [DuelArena] Listener soulTakerShowOpponentMonsters registrado');
+
+      // Listener para Exiled Force
+      const exiledForceListener = (data: { availableMonsters: Array<{ monster: any; zoneIndex: number; player: 'player' | 'opponent' }>; duelId: string | number; monsterZoneIndex?: number }) => {
+        console.log('🔍 [DuelArena] exiledForceShowTargets recebido:', data);
+        if (data.duelId === duelId) {
+          setExiledForceData({ 
+            availableMonsters: data.availableMonsters,
+            monsterZoneIndex: data.monsterZoneIndex
+          });
+          setShowExiledForceModal(true);
+          setSelectedExiledForceMonster(null);
+        }
+      };
+      socket.on('exiledForceShowTargets', exiledForceListener);
+      console.log('✅ [DuelArena] Listener exiledForceShowTargets registrado');
 
       // Listener para UnitedWeStand
       const unitedWeStandListener = (data: { availableMonsters: any[]; duelId: string | number }) => {
@@ -998,32 +1192,311 @@ const DuelArena: React.FC = () => {
 
       socket.on('magePowerShowMonsters', magePowerListener);
       console.log('✅ [DuelArena] Listener magePowerShowMonsters registrado');
+      
+      // Listener para Reinforcement Of The Army
+      const reinforcementOfTheArmyListener = (data: { warriorMonsters: any[]; duelId: string | number }) => {
+        console.log('✨ [ReinforcementOfTheArmy Listener] Evento recebido!', data);
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) {
+          console.warn('⚠️ [ReinforcementOfTheArmy Listener] Evento não é para este duelo - ignorando');
+          return;
+        }
+        console.log('✨ [ReinforcementOfTheArmy Listener] Abrindo modal');
+        setReinforcementOfTheArmyData({
+          warriorMonsters: data.warriorMonsters || [],
+        });
+        setShowReinforcementOfTheArmyModal(true);
+        setSelectedReinforcementOfTheArmyMonster(null);
+      };
+      socket.on('reinforcementOfTheArmyShowDeck', reinforcementOfTheArmyListener);
+      console.log('✅ [DuelArena] Listener reinforcementOfTheArmyShowDeck registrado');
+
+      // Listener para Last Will
+      const lastWillListener = (data: { eligibleMonsters: any[]; duelId: string | number }) => {
+        console.log('✨ [LastWill Listener] Evento recebido!', data);
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) {
+          console.warn('⚠️ [LastWill Listener] Evento não é para este duelo - ignorando');
+          return;
+        }
+        console.log('✨ [LastWill Listener] Abrindo modal');
+        setLastWillData({
+          eligibleMonsters: data.eligibleMonsters || [],
+        });
+        setShowLastWillModal(true);
+        setSelectedLastWillMonster(null);
+      };
+      socket.on('lastWillShowDeck', lastWillListener);
+      console.log('✅ [DuelArena] Listener lastWillShowDeck registrado');
+
+      // Listener para Chaos Sorcerer Summon
+      const chaosSorcererSummonListener = (data: { duelId: string | number; data: any }) => {
+        console.log('✨ [ChaosSorcererSummon Listener] Evento recebido!', data);
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) {
+          console.warn('⚠️ [ChaosSorcererSummon Listener] Evento não é para este duelo - ignorando');
+          return;
+        }
+        console.log('✨ [ChaosSorcererSummon Listener] Abrindo modal');
+        if (data.data) {
+          setChaosSorcererData({
+            cardName: data.data.cardName || 'Carta Chaos',
+            lightMonsters: data.data.lightMonsters || [],
+            darkMonsters: data.data.darkMonsters || [],
+          });
+          setShowChaosSorcererModal(true);
+          setSelectedLightMonster(null);
+          setSelectedDarkMonster(null);
+        }
+      };
+      socket.on('chaosSorcererSummonShowMonsters', chaosSorcererSummonListener);
+      console.log('✅ [DuelArena] Listener chaosSorcererSummonShowMonsters registrado');
+
+      // Listener para Chaos Sorcerer Effect
+      const chaosSorcererEffectListener = (data: { duelId: string | number; data: any }) => {
+        console.log('✨ [ChaosSorcererEffect Listener] Evento recebido!', data);
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) {
+          console.warn('⚠️ [ChaosSorcererEffect Listener] Evento não é para este duelo - ignorando');
+          return;
+        }
+        console.log('✨ [ChaosSorcererEffect Listener] Iniciando seleção de alvo');
+        setIsSelectingChaosSorcererTarget(true);
+        if (data.data?.monsterZoneIndex !== undefined) {
+          setChaosSorcererMonsterZoneIndex(data.data.monsterZoneIndex);
+        }
+      };
+      socket.on('chaosSorcererEffectShowTargets', chaosSorcererEffectListener);
+      console.log('✅ [DuelArena] Listener chaosSorcererEffectShowTargets registrado');
+
+      // Listener para Dark Armed Dragon Summon
+      const darkArmedDragonSummonListener = (data: { duelId: string | number; data: any }) => {
+        console.log('✨ [DarkArmedDragonSummon Listener] Evento recebido!', data);
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) {
+          console.warn('⚠️ [DarkArmedDragonSummon Listener] Evento não é para este duelo - ignorando');
+          return;
+        }
+        console.log('✨ [DarkArmedDragonSummon Listener] Mostrando zonas disponíveis');
+        // Dark Armed Dragon invoca diretamente sem modal (sempre em ataque)
+        // O backend já valida que há exatamente 3 Dark no cemitério
+        if (data.data && duelId && user?.id) {
+          // Usar duelDataRef para obter o estado mais recente do duelo
+          const currentDuelData = duelDataRef.current;
+          if (currentDuelData) {
+            const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
+            const player1Id = typeof currentDuelData.player1Id === 'string' ? parseInt(currentDuelData.player1Id, 10) : Number(currentDuelData.player1Id);
+            const isPlayer1 = userId === player1Id;
+            const field = isPlayer1 ? currentDuelData.player1Field : currentDuelData.player2Field;
+            const monsters = field?.monsters || [];
+            const emptyZoneIndex = monsters.findIndex((m: any) => m === null || m === undefined);
+            if (emptyZoneIndex !== -1) {
+              const cardId = data.data.cardId;
+              performAction(duelId, user.id, 'DARK_ARMED_DRAGON_SUMMON_CHOICE', {
+                cardId: cardId,
+                zoneIndex: emptyZoneIndex,
+              });
+            }
+          }
+        }
+      };
+      socket.on('darkArmedDragonSummonShowZones', darkArmedDragonSummonListener);
+      console.log('✅ [DuelArena] Listener darkArmedDragonSummonShowZones registrado');
+
+      // Listener para Dark Armed Dragon Effect
+      const darkArmedDragonEffectListener = (data: { duelId: string | number; data: any }) => {
+        console.log('✨ [DarkArmedDragonEffect Listener] Evento recebido!', data);
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) {
+          console.warn('⚠️ [DarkArmedDragonEffect Listener] Evento não é para este duelo - ignorando');
+          return;
+        }
+        console.log('✨ [DarkArmedDragonEffect Listener] Abrindo modal');
+        if (data.data) {
+          setDarkArmedDragonEffectData({
+            monsterZoneIndex: data.data.monsterZoneIndex,
+            darkMonsters: data.data.darkMonsters || [],
+          });
+          setShowDarkArmedDragonEffectModal(true);
+          setSelectedDarkMonsterToBanish(null);
+        }
+      };
+      socket.on('darkArmedDragonEffectShowModal', darkArmedDragonEffectListener);
+      console.log('✅ [DuelArena] Listener darkArmedDragonEffectShowModal registrado');
+
+      // Listener para Red-Eyes Darkness Metal Dragon Summon
+      const redEyesDarknessMetalDragonSummonListener = (data: { duelId: string | number; data: any }) => {
+        console.log('✨ [RedEyesDarknessMetalDragonSummon Listener] Evento recebido!', data);
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) {
+          console.warn('⚠️ [RedEyesDarknessMetalDragonSummon Listener] Evento não é para este duelo - ignorando');
+          return;
+        }
+        console.log('✨ [RedEyesDarknessMetalDragonSummon Listener] Abrindo modal');
+        if (data.data) {
+          setRedEyesDarknessMetalDragonData({
+            cardId: data.data.cardId || '',
+            dragonMonsters: data.data.dragonMonsters || [],
+          });
+          setShowRedEyesDarknessMetalDragonModal(true);
+          setSelectedDragonToBanish(null);
+        }
+      };
+      socket.on('redEyesDarknessMetalDragonSummonShowDragons', redEyesDarknessMetalDragonSummonListener);
+      console.log('✅ [DuelArena] Listener redEyesDarknessMetalDragonSummonShowDragons registrado');
+
+      // Listener para Red-Eyes Darkness Metal Dragon Effect
+      const redEyesDarknessMetalDragonEffectListener = (data: { duelId: string | number; data: any }) => {
+        console.log('✨ [RedEyesDarknessMetalDragonEffect Listener] Evento recebido!', data);
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) {
+          console.warn('⚠️ [RedEyesDarknessMetalDragonEffect Listener] Evento não é para este duelo - ignorando');
+          return;
+        }
+        console.log('✨ [RedEyesDarknessMetalDragonEffect Listener] Abrindo modal');
+        if (data.data) {
+          setRedEyesDarknessMetalDragonEffectData({
+            monsterZoneIndex: data.data.monsterZoneIndex,
+            dragonsInHand: data.data.dragonsInHand || [],
+            dragonsInGraveyard: data.data.dragonsInGraveyard || [],
+          });
+          setShowRedEyesDarknessMetalDragonEffectModal(true);
+          setSelectedDragonSource(null);
+          setSelectedDragonIndex(null);
+          setSelectedDragonId(null);
+        }
+      };
+      socket.on('redEyesDarknessMetalDragonEffectShowDragons', redEyesDarknessMetalDragonEffectListener);
+      console.log('✅ [DuelArena] Listener redEyesDarknessMetalDragonEffectShowDragons registrado');
+
+      // Listener para Cyber-Stein Effect
+      const cyberSteinEffectListener = (data: { duelId: string | number; data: any }) => {
+        console.log('✨ [CyberSteinEffect Listener] Evento recebido!', data);
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) {
+          console.warn('⚠️ [CyberSteinEffect Listener] Evento não é para este duelo - ignorando');
+          return;
+        }
+        console.log('✨ [CyberSteinEffect Listener] Abrindo modal');
+        if (data.data) {
+          setCyberSteinData({
+            monsterZoneIndex: data.data.monsterZoneIndex,
+            extraDeckMonsters: data.data.extraDeckMonsters || [],
+          });
+          setShowCyberSteinModal(true);
+          setSelectedCyberSteinMonster(null);
+        }
+      };
+      socket.on('cyberSteinEffectShowExtraDeck', cyberSteinEffectListener);
+      console.log('✅ [DuelArena] Listener cyberSteinEffectShowExtraDeck registrado');
+
+      // Listener para Mystical Space Typhoon
+      const mysticalSpaceTyphoonListener = (data: { duelId: string | number; playerSpellTraps: any[]; opponentSpellTraps: any[]; spellTrapZoneIndex: number }) => {
+        console.log('✨ [MysticalSpaceTyphoon Listener] Evento recebido!', data);
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) {
+          console.warn('⚠️ [MysticalSpaceTyphoon Listener] Evento não é para este duelo - ignorando');
+          return;
+        }
+        console.log('✨ [MysticalSpaceTyphoon Listener] Iniciando seleção de alvo');
+        setIsSelectingMSTTarget(true);
+        // Os dados necessários já estão disponíveis no estado do componente
+      };
+      socket.on('mysticalSpaceTyphoonShowTargets', mysticalSpaceTyphoonListener);
+      console.log('✅ [DuelArena] Listener mysticalSpaceTyphoonShowTargets registrado');
+
+      // Listener para Snowman Eater
+      const snowmanEaterListener = (data: { duelId: string | number; faceUpMonsters: any[]; monsterZoneIndex: number }) => {
+        console.log('✨ [SnowmanEater Listener] Evento recebido!', data);
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) {
+          console.warn('⚠️ [SnowmanEater Listener] Evento não é para este duelo - ignorando');
+          return;
+        }
+        console.log('✨ [SnowmanEater Listener] Iniciando seleção de alvo');
+        setIsSelectingSnowmanEaterTarget(true);
+        // Os dados necessários já estão disponíveis no estado do componente
+      };
+      socket.on('snowmanEaterShowTargets', snowmanEaterListener);
+      console.log('✅ [DuelArena] Listener snowmanEaterShowTargets registrado');
 
       // Listener para fechar modal quando turno é roubado ou muda
+      // IMPORTANTE: Se o motivo for 'turn_stolen', fechar TODOS os modais (escolha automática será feita)
       const closePendingChoiceModalListener = (data: { duelId: string | number; userId?: number; reason: string }) => {
         console.log('🔒 [closePendingChoiceModal] Evento recebido para fechar modal:', data);
         console.log('🔒 [closePendingChoiceModal] Verificando condições - duelId:', data.duelId, '===', duelId, 'userId:', data.userId, '===', user?.id);
         
-        // Verificar se é para este duelo e se é para este usuário (ou para todos)
+        // Verificar se é para este duelo
         const isForThisDuel = data.duelId === duelId || String(data.duelId) === String(duelId);
-        const isForThisUser = !data.userId || data.userId === user?.id;
+        
+        // Se o turno foi roubado, fechar TODOS os modais (escolha automática será feita pelo backend)
+        // O evento é emitido para todos na sala, mas só fecha o modal se for para este duelo E se o userId corresponder ao usuário atual
+        if (isForThisDuel && data.reason === 'turn_stolen') {
+          // Converter ambos os IDs para número para comparação
+          const eventUserId = typeof data.userId === 'string' ? parseInt(data.userId, 10) : Number(data.userId);
+          const currentUserId = typeof user?.id === 'string' ? parseInt(user.id, 10) : Number(user?.id);
+          
+          // Verificar se o evento é para este usuário OU se não há userId especificado (fechar para todos)
+          const userIdMatch = !data.userId || eventUserId === currentUserId;
+          
+          if (userIdMatch) {
+            console.log('🔒 [closePendingChoiceModal] Turno foi roubado - fechando TODOS os modais imediatamente');
+            console.log('🔒 [closePendingChoiceModal] userId do evento:', data.userId, '->', eventUserId, 'userId atual:', user?.id, '->', currentUserId, 'match:', userIdMatch);
+            
+            // Usar refs para acessar valores mais recentes dos modais
+            const isOpponentHandRevealedOpen = showOpponentHandRevealedRef.current;
+            const isGracefulCharityOpen = showGracefulCharityModalRef.current;
+            const currentCardEffectType = cardEffectTypeRef.current;
+            
+            console.log('🔒 [closePendingChoiceModal] Estados atuais dos modais (via refs):', {
+              isOpponentHandRevealedOpen,
+              isGracefulCharityOpen,
+              currentCardEffectType
+            });
+            
+            // Fechar todos os modais quando o turno é roubado
+            if (isOpponentHandRevealedOpen) {
+              console.log('🔒 [closePendingChoiceModal] Fechando modal Confiscation/ForcefulSentry (turno roubado)');
+              setShowOpponentHandRevealed(false);
+              setOpponentHandRevealed([]);
+              setCardEffectType(null);
+            }
+            if (isGracefulCharityOpen) {
+              console.log('🔒 [closePendingChoiceModal] Fechando modal GracefulCharity (turno roubado)');
+              setShowGracefulCharityModal(false);
+              setGracefulCharityHand([]);
+              setSelectedGracefulCharityCards([]);
+            }
+            return; // Não processar mais nada, já fechou os modais
+          } else {
+            console.log('🔒 [closePendingChoiceModal] Evento de turno roubado recebido, mas não é para este usuário');
+            console.log('🔒 [closePendingChoiceModal] eventUserId:', eventUserId, 'currentUserId:', currentUserId);
+          }
+        }
+        
+        // Verificar se é para este usuário (para outros casos)
+        const eventUserId = typeof data.userId === 'string' ? parseInt(data.userId, 10) : Number(data.userId);
+        const currentUserId = typeof user?.id === 'string' ? parseInt(user.id, 10) : Number(user?.id);
+        const isForThisUser = !data.userId || eventUserId === currentUserId;
         
         if (isForThisDuel && isForThisUser) {
-          console.log('🔒 [closePendingChoiceModal] ✅ Condições atendidas - fechando modais imediatamente - motivo:', data.reason);
+          console.log('🔒 [closePendingChoiceModal] ✅ Condições atendidas - fechando modais - motivo:', data.reason);
           
-          // Fechar todos os modais de escolha pendente
-          if (showOpponentHandRevealed) {
-            console.log('🔒 [closePendingChoiceModal] Fechando modal de escolha (Confiscation/ForcefulSentry)');
-            setShowOpponentHandRevealed(false);
-            setCardEffectType(null);
-            setOpponentHandRevealed([]);
+          // Se o motivo for 'choice_completed', fechar modais de Confiscation/ForcefulSentry/GracefulCharity
+          if (data.reason === 'choice_completed') {
+            const cardEffectTypeFromData = (data as any).cardEffectType;
+            if (cardEffectTypeFromData === 'confiscation' || cardEffectType === 'confiscation') {
+              console.log('🔒 [closePendingChoiceModal] Fechando modal Confiscation (choice_completed)');
+              setShowOpponentHandRevealed(false);
+              setOpponentHandRevealed([]);
+              setCardEffectType(null);
+            }
+            if (cardEffectTypeFromData === 'forcefulSentry' || cardEffectType === 'forcefulSentry') {
+              console.log('🔒 [closePendingChoiceModal] Fechando modal ForcefulSentry (choice_completed)');
+              setShowOpponentHandRevealed(false);
+              setOpponentHandRevealed([]);
+              setCardEffectType(null);
+            }
+            if (cardEffectTypeFromData === 'gracefulCharity' || showGracefulCharityModal) {
+              console.log('🔒 [closePendingChoiceModal] Fechando modal GracefulCharity (choice_completed)');
+              setShowGracefulCharityModal(false);
+              setGracefulCharityHand([]);
+              setSelectedGracefulCharityCards([]);
+            }
           }
-          if (showGracefulCharityModal) {
-            console.log('🔒 [closePendingChoiceModal] Fechando modal GracefulCharity');
-            setShowGracefulCharityModal(false);
-            setGracefulCharityHand([]);
-            setSelectedGracefulCharityCards([]);
-          }
+          
+          // NÃO fechar modais de Confiscation, GracefulCharity e ForcefulSentry em outros casos (exceto choice_completed)
+          // Esses modais só fecham quando pendingChoice vira null (escolha confirmada) ou quando reason é choice_completed
+          // Fechar apenas outros modais que não são de seleção obrigatória
           if (showMonsterRebornModal) {
             console.log('🔒 [closePendingChoiceModal] Fechando modal MonsterReborn');
             setShowMonsterRebornModal(false);
@@ -1037,6 +1510,33 @@ const DuelArena: React.FC = () => {
             setSelectedLightMonster(null);
             setSelectedDarkMonster(null);
           }
+          if (showRedEyesDarknessMetalDragonModal) {
+            console.log('🔒 [closePendingChoiceModal] Fechando modal Red-Eyes Darkness Metal Dragon');
+            setShowRedEyesDarknessMetalDragonModal(false);
+            setRedEyesDarknessMetalDragonData(null);
+            setSelectedDragonToBanish(null);
+          }
+          if (showRedEyesDarknessMetalDragonEffectModal) {
+            console.log('🔒 [closePendingChoiceModal] Fechando modal de efeito do Red-Eyes Darkness Metal Dragon');
+            setShowRedEyesDarknessMetalDragonEffectModal(false);
+            setRedEyesDarknessMetalDragonEffectData(null);
+            setSelectedDragonSource(null);
+            setSelectedDragonIndex(null);
+            setSelectedDragonId(null);
+          }
+          if (showCyberSteinModal) {
+            console.log('🔒 [closePendingChoiceModal] Fechando modal Cyber-Stein');
+            setShowCyberSteinModal(false);
+            setCyberSteinData(null);
+            setSelectedCyberSteinMonster(null);
+          }
+          if (showDarkArmedDragonEffectModal) {
+            console.log('🔒 [closePendingChoiceModal] Fechando modal Dark Armed Dragon');
+            setShowDarkArmedDragonEffectModal(false);
+            setDarkArmedDragonEffectData(null);
+            setSelectedDarkMonsterToBanish(null);
+            setSelectedCardToDestroy(null);
+          }
           if (showChangeOfHeartModal) {
             console.log('🔒 [closePendingChoiceModal] Fechando modal ChangeOfHeart');
             setShowChangeOfHeartModal(false);
@@ -1048,6 +1548,18 @@ const DuelArena: React.FC = () => {
             setShowBrainControlModal(false);
             setBrainControlData(null);
             setSelectedBrainControlMonster(null);
+          }
+          if (showSoulTakerModal) {
+            console.log('🔒 [closePendingChoiceModal] Fechando modal SoulTaker');
+            setShowSoulTakerModal(false);
+            setSoulTakerData(null);
+            setSelectedSoulTakerMonster(null);
+          }
+          if (showExiledForceModal) {
+            console.log('🔒 [closePendingChoiceModal] Fechando modal Exiled Force');
+            setShowExiledForceModal(false);
+            setExiledForceData(null);
+            setSelectedExiledForceMonster(null);
           }
           if (showUnitedWeStandModal) {
             console.log('🔒 [closePendingChoiceModal] Fechando modal UnitedWeStand');
@@ -1068,8 +1580,20 @@ const DuelArena: React.FC = () => {
             setSelectedCardInfo(null);
           }
           
-          // Limpar pendingChoice também
-          setCurrentPendingChoice(null);
+          // NÃO limpar pendingChoice se for Confiscation, GracefulCharity ou ForcefulSentry
+          // Esses modais devem permanecer abertos até que a escolha seja feita
+          const isSelectionRequired = currentPendingChoice && (
+            currentPendingChoice.type === 'CONFISCATION' ||
+            currentPendingChoice.type === 'GRACEFUL_CHARITY' ||
+            currentPendingChoice.type === 'FORCEFUL_SENTRY'
+          );
+          
+          if (!isSelectionRequired) {
+            // Limpar pendingChoice apenas se não for um modal de seleção obrigatória
+            setCurrentPendingChoice(null);
+          } else {
+            console.log('⚠️ [closePendingChoiceModal] Mantendo pendingChoice ativo para modal de seleção obrigatória:', currentPendingChoice.type);
+          }
         } else {
           console.log('🔒 [closePendingChoiceModal] ⚠️ Condições NÃO atendidas - NÃO fechando modais');
           console.log('🔒 [closePendingChoiceModal] isForThisDuel:', isForThisDuel, 'isForThisUser:', isForThisUser);
@@ -1198,6 +1722,17 @@ const DuelArena: React.FC = () => {
         currentSocket.off('confiscationShowHand', confiscationListener);
         currentSocket.off('gracefulCharityShowHand', gracefulCharityListener);
         currentSocket.off('closePendingChoiceModal', closePendingChoiceModalListener);
+        currentSocket.off('chaosSorcererSummonShowMonsters', chaosSorcererSummonListener);
+        currentSocket.off('chaosSorcererEffectShowTargets', chaosSorcererEffectListener);
+        currentSocket.off('darkArmedDragonSummonShowZones', darkArmedDragonSummonListener);
+        currentSocket.off('darkArmedDragonEffectShowModal', darkArmedDragonEffectListener);
+        currentSocket.off('redEyesDarknessMetalDragonSummonShowDragons', redEyesDarknessMetalDragonSummonListener);
+        currentSocket.off('redEyesDarknessMetalDragonEffectShowDragons', redEyesDarknessMetalDragonEffectListener);
+        currentSocket.off('cyberSteinEffectShowExtraDeck', cyberSteinEffectListener);
+        currentSocket.off('mysticalSpaceTyphoonShowTargets', mysticalSpaceTyphoonListener);
+        currentSocket.off('snowmanEaterShowTargets', snowmanEaterListener);
+        currentSocket.off('soulTakerShowOpponentMonsters', soulTakerListener);
+        currentSocket.off('exiledForceShowTargets', exiledForceListener);
         // Remover listener de conexão se ainda estiver ativo
         if (connectListener) {
           currentSocket.off('connect', connectListener);
@@ -1212,6 +1747,49 @@ const DuelArena: React.FC = () => {
   // 1. Listener closePendingChoiceModal (quando turno é roubado/muda)
   // 2. handleDuelUpdate (quando pendingChoice é null ou não é do usuário)
   // Isso evita interferir na abertura dos modais
+
+  // Verificar e restaurar modais quando currentPendingChoice mudar ou quando o componente montar
+  useEffect(() => {
+    if (!currentPendingChoice || !user?.id) {
+      return;
+    }
+
+    // Comparar IDs convertendo ambos para número para garantir compatibilidade
+    const pendingUserId = typeof currentPendingChoice.userId === 'string' ? parseInt(currentPendingChoice.userId, 10) : Number(currentPendingChoice.userId);
+    const myUserId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
+    const isMyChoice = pendingUserId === myUserId;
+    
+    if (!isMyChoice) {
+      console.log(`⚠️ [useEffect pendingChoice] Não é minha escolha - pendingUserId: ${pendingUserId}, myUserId: ${myUserId}`);
+      return;
+    }
+
+    console.log(`🔍 [useEffect pendingChoice] Verificando se precisa restaurar modal:`, currentPendingChoice.type, {
+      hasData: !!currentPendingChoice.data,
+      opponentHandLength: currentPendingChoice.data?.opponentHand?.length,
+      playerHandLength: currentPendingChoice.data?.playerHand?.length
+    });
+
+    // Restaurar modais baseado no tipo de pendingChoice
+    if (currentPendingChoice.type === 'CONFISCATION' && currentPendingChoice.data?.opponentHand) {
+      console.log(`✅ [useEffect pendingChoice] Restaurando modal Confiscation com ${currentPendingChoice.data.opponentHand.length} cartas`);
+      setOpponentHandRevealed(currentPendingChoice.data.opponentHand);
+      setShowOpponentHandRevealed(true);
+      setCardEffectType('confiscation');
+    } else if (currentPendingChoice.type === 'GRACEFUL_CHARITY' && currentPendingChoice.data?.playerHand) {
+      console.log(`✅ [useEffect pendingChoice] Restaurando modal GracefulCharity com ${currentPendingChoice.data.playerHand.length} cartas`);
+      setGracefulCharityHand(currentPendingChoice.data.playerHand);
+      setShowGracefulCharityModal(true);
+      setSelectedGracefulCharityCards([]);
+    } else if (currentPendingChoice.type === 'FORCEFUL_SENTRY' && currentPendingChoice.data?.opponentHand) {
+      console.log(`✅ [useEffect pendingChoice] Restaurando modal ForcefulSentry com ${currentPendingChoice.data.opponentHand.length} cartas`);
+      setOpponentHandRevealed(currentPendingChoice.data.opponentHand);
+      setShowOpponentHandRevealed(true);
+      setCardEffectType('forcefulSentry');
+    } else {
+      console.warn(`⚠️ [useEffect pendingChoice] Tipo de pendingChoice desconhecido ou dados faltando:`, currentPendingChoice);
+    }
+  }, [currentPendingChoice, user?.id]);
 
   // Debug: verificar estados do Confiscation
   useEffect(() => {
@@ -1440,8 +2018,9 @@ const DuelArena: React.FC = () => {
         setOpponentMonsters(player2Monsters);
         setOpponentSpellTraps(player2SpellTraps);
         // Atualizar flag de invocação normal
-        setNormalSummonUsed(duelUpdate.player1Field?.normalSummonUsed === true);
-        console.log(`✅ [handleDuelUpdate] Player1 - Meu deck: ${player1Deck.length}, Oponente deck: ${player2Deck.length}`);
+        const newNormalSummonUsed = duelUpdate.player1Field?.normalSummonUsed === true;
+        setNormalSummonUsed(newNormalSummonUsed);
+        console.log(`✅ [handleDuelUpdate] Player1 - normalSummonUsed: ${newNormalSummonUsed}, Meu deck: ${player1Deck.length}, Oponente deck: ${player2Deck.length}`);
       } else {
         // É player2 - meu campo é player2Field, oponente é player1Field
         // Detectar dano recebido
@@ -1492,8 +2071,9 @@ const DuelArena: React.FC = () => {
         setOpponentMonsters(player1Monsters);
         setOpponentSpellTraps(player1SpellTraps);
         // Atualizar flag de invocação normal
-        setNormalSummonUsed(duelUpdate.player2Field?.normalSummonUsed === true);
-        console.log(`✅ [handleDuelUpdate] Player2 - Meu deck: ${player2Deck.length}, Oponente deck: ${player1Deck.length}`);
+        const newNormalSummonUsed = duelUpdate.player2Field?.normalSummonUsed === true;
+        setNormalSummonUsed(newNormalSummonUsed);
+        console.log(`✅ [handleDuelUpdate] Player2 - normalSummonUsed: ${newNormalSummonUsed}, Meu deck: ${player2Deck.length}, Oponente deck: ${player1Deck.length}`);
       }
     } else {
       console.warn(`⚠️ [handleDuelUpdate] Dados incompletos - player1Field: ${!!duelUpdate.player1Field}, player2Field: ${!!duelUpdate.player2Field}`);
@@ -1546,10 +2126,13 @@ const DuelArena: React.FC = () => {
     // Usar tempo restante calculado pelo backend se disponível
     if (duelUpdate.turnTimeRemaining !== undefined) {
       setTurnTimeLeft(duelUpdate.turnTimeRemaining);
+      setTurnTimeRemainingFromServer(duelUpdate.turnTimeRemaining); // Armazenar tempo do servidor
     } else if (duelUpdate.turnTime !== undefined && duelUpdate.turnTime > 0) {
       // Se o turno mudou, resetar o timer para o novo valor
       if (duelUpdate.currentTurn && duelUpdate.currentTurn !== currentTurn) {
         setTurnTimeLeft(duelUpdate.turnTime);
+        // NÃO resetar turnTimeRemainingFromServer aqui - aguardar atualização do servidor
+        // O servidor sempre envia turnTimeRemaining quando disponível
       }
     }
     
@@ -1584,10 +2167,19 @@ const DuelArena: React.FC = () => {
       if (duelUpdate.turnTimeRemaining !== undefined) {
         console.log(`⏰ [handleDuelUpdate] Sincronizando tempo do banco: ${duelUpdate.turnTimeRemaining}s`);
         setTurnTimeLeft(duelUpdate.turnTimeRemaining);
-        // Se o tempo expirou e não é meu turno, marcar para mostrar botão
+        
+        // Verificar se é o turno do jogador atual
         const isCurrentlyMyTurn = (isPlayer1 && duelUpdate.currentTurn === 1) || (!isPlayer1 && duelUpdate.currentTurn === 2);
+        
+        // O turnTimeRemaining sempre reflete o tempo do jogador que está jogando (currentTurn)
+        // Se não é meu turno, então o turnTimeRemaining é do oponente
+        // Armazenar o tempo restante do servidor (fonte da verdade para mostrar botão)
+        setTurnTimeRemainingFromServer(duelUpdate.turnTimeRemaining);
+        
+        // Se o tempo expirou e não é meu turno, marcar para mostrar botão
         if (duelUpdate.turnTimeRemaining <= 0 && !isCurrentlyMyTurn) {
           setTimeExpired(true);
+          console.log(`⏰ [handleDuelUpdate] Tempo do oponente expirou no banco: ${duelUpdate.turnTimeRemaining}s`);
         } else {
           setTimeExpired(false);
         }
@@ -1679,6 +2271,13 @@ const DuelArena: React.FC = () => {
     turnStartedAtRef.current = turnStartedAt;
     turnTimeLimitRef.current = turnTimeLimit || 90;
   }, [isMyTurn, duelId, user?.id, turnStartedAt, turnTimeLimit]);
+  
+  // Atualizar refs dos modais sempre que os estados mudarem
+  useEffect(() => {
+    showOpponentHandRevealedRef.current = showOpponentHandRevealed;
+    showGracefulCharityModalRef.current = showGracefulCharityModal;
+    cardEffectTypeRef.current = cardEffectType;
+  }, [showOpponentHandRevealed, showGracefulCharityModal, cardEffectType]);
 
   // Timer do Turno - Calcula baseado no timestamp do backend
   useEffect(() => {
@@ -1690,6 +2289,8 @@ const DuelArena: React.FC = () => {
 
     // Resetar estado de tempo expirado quando o turno muda
     setTimeExpired(false);
+    // NÃO resetar turnTimeRemainingFromServer aqui - ele deve ser atualizado pelo handleDuelUpdate
+    // que sempre recebe o tempo do jogador que está jogando (currentTurn)
 
     // Função para calcular tempo restante baseado no timestamp
     const calculateRemainingTime = (): number => {
@@ -2380,33 +2981,6 @@ const DuelArena: React.FC = () => {
 
   return (
     <div className="min-h-screen w-full relative pb-1">
-      {/* Botão da Calculadora - Canto Inferior Esquerdo */}
-      <button
-        onClick={() => setIsCalculatorOpen(true)}
-        className="fixed bottom-6 left-6 z-[100] bg-yellow-600 hover:bg-yellow-500 text-white rounded-full p-4 shadow-lg transition-all hover:scale-110 active:scale-95 border-2 border-yellow-400"
-        title="Abrir Calculadora"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className="h-6 w-6"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-          />
-        </svg>
-      </button>
-
-      {/* Componente da Calculadora */}
-      <Calculator
-        isOpen={isCalculatorOpen}
-        onClose={() => setIsCalculatorOpen(false)}
-      />
 
       {/* Background Image */}
       <div 
@@ -2687,11 +3261,11 @@ const DuelArena: React.FC = () => {
           >
             <div className="max-w-5xl mx-auto w-full">
             {/* Linha 1: Perfis dos Duelistas e Timer - Alinhados na mesma linha do topo do playmat */}
-            <div className="flex items-start justify-between w-full px-4 mb-2">
+            <div className="relative flex items-start justify-between w-full px-4 mb-2">
             {/* MEU DUELISTA (Esquerda) - Modernizado */}
             <motion.div 
             transition={{ duration: 0.2 }}
-            className="flex items-center gap-2 bg-black/20 px-4 py-2 rounded-xl border-2 border-blue-400/30 shadow-lg transition-all flex-shrink-0"
+            className="flex items-center gap-2 bg-black/20 px-4 py-2 rounded-xl border-2 border-blue-400/30 shadow-lg transition-all flex-shrink-0 z-10"
           >
             {/* Level - Modernizado */}
             <motion.div 
@@ -2757,7 +3331,7 @@ const DuelArena: React.FC = () => {
           </motion.div>
 
           {/* TIMER (Centro) - Modernizado */}
-          <div className="flex items-center justify-center flex-1">
+          <div className="absolute left-1/2 top-0 transform -translate-x-1/2 flex items-center justify-center z-20">
             <motion.div 
               className={`px-4 py-2 rounded-xl border-2 shadow-xl transition-all ${
                 isMyTurn 
@@ -2799,7 +3373,7 @@ const DuelArena: React.FC = () => {
           </div>
 
           {/* OPONENTE (Direita) - Modernizado - Alinhado com cartas embaixo */}
-          <div className="flex flex-col items-end flex-shrink-0">
+          <div className="flex flex-col items-end flex-shrink-0 z-10">
             <motion.div 
               transition={{ duration: 0.2 }}
               className="flex items-center gap-2 bg-black/20 px-4 py-2 rounded-xl border-2 border-red-400/30 shadow-lg transition-all"
@@ -2876,7 +3450,7 @@ const DuelArena: React.FC = () => {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.4 }}
-              className="flex justify-center gap-2 py-3 overflow-x-auto overflow-y-visible px-3 mt-2"
+              className="flex justify-center gap-2 py-3 overflow-x-auto overflow-y-visible px-3 mt-8"
             >
               {(showOpponentHandRevealed && cardEffectType === 'forcefulSentry' ? opponentHandRevealed : opponentHand).map((card: any, index: number) => {
                 const uniqueKey = `opp-hand-${index}-${card.idCarta || card.id || card.cardId || index}`;
@@ -2946,7 +3520,8 @@ const DuelArena: React.FC = () => {
               }}
               onMonsterDrop={(attackerZoneIndex, targetZoneIndex) => {
                 // Processar ataque via drag and drop
-                if (currentPhase === 'BATTLE' && isMyTurn) {
+                // Se está em STANDBY ou MAIN1, mudar automaticamente para BATTLE antes de atacar
+                if ((currentPhase === 'STANDBY' || currentPhase === 'MAIN1' || currentPhase === 'BATTLE') && isMyTurn) {
                   // Acionar animação imediatamente
                   triggerAttackAnimation(attackerZoneIndex, targetZoneIndex);
                   
@@ -2961,7 +3536,7 @@ const DuelArena: React.FC = () => {
               isMyTurn={isMyTurn}
               currentPhase={currentPhase}
               isSelectingSpellTrapTarget={isSelectingMSTTarget && isMyTurn}
-              isSelectingMonsterTarget={isSelectingSnowmanEaterTarget && isMyTurn}
+              isSelectingMonsterTarget={(isSelectingSnowmanEaterTarget || isSelectingChaosSorcererTarget) && isMyTurn}
               onCardClick={(card, zoneIndex) => {
                 // Se estamos selecionando alvo para MST, processar escolha
                 if (isSelectingMSTTarget && zoneIndex !== undefined) {
@@ -3011,6 +3586,27 @@ const DuelArena: React.FC = () => {
                   return;
                 }
                 
+                // Se estamos selecionando alvo para ChaosSorcerer, processar escolha
+                if (isSelectingChaosSorcererTarget && chaosSorcererMonsterZoneIndex !== null && zoneIndex !== undefined && card) {
+                  // Verificar se o monstro está face-up (attack ou defense)
+                  const isFaceUp = card.position === 'attack' || card.position === 'defense';
+                  if (isFaceUp) {
+                    const targetPlayer = 'opponent'; // Campo do oponente
+                    if (duelId && user?.id) {
+                      performAction(duelId, user.id, 'CHAOS_SORCERER_EFFECT_CHOICE', {
+                        targetPlayer,
+                        targetZoneIndex: zoneIndex,
+                      });
+                      setIsSelectingChaosSorcererTarget(false);
+                      setChaosSorcererMonsterZoneIndex(null);
+                    }
+                  } else {
+                    // Mostrar mensagem se tentar escolher um monstro face-down
+                    alert('ChaosSorcerer só pode banir monstros face-up (ataque ou defesa)');
+                  }
+                  return;
+                }
+                
                 console.log('🔍 [DuelArena] Card clicked:', {
                   name: card?.name,
                   description: card?.description,
@@ -3035,6 +3631,7 @@ const DuelArena: React.FC = () => {
               playmatImage={myPlaymatImageUrl}
               cardBackImage={mySkinImageUrl}
               onGraveyardClick={() => setShowGraveyardModal(true)}
+              monsterDestroyedThisTurn={monsterDestroyedThisTurn}
               onExtraDeckClick={() => setShowExtraDeckModal(true)}
               onAttackClick={(zoneIndex) => {
                 // Iniciar seleção de alvo
@@ -3055,6 +3652,92 @@ const DuelArena: React.FC = () => {
                 if (duelId && user?.id) {
                   setIsSelectingBreakerTarget(true);
                   setBreakerMonsterZoneIndex(monsterZoneIndex);
+                }
+              }}
+              onActivateMonsterEffect={(monsterZoneIndex) => {
+                // Verificar qual monstro está na zona para determinar qual efeito ativar
+                const monster = myMonsters[monsterZoneIndex];
+                if (!monster) return;
+                
+                const cardId = monster.idCarta || monster.id || monster.cardId;
+                const cardName = (monster.name || monster.cardName || '').toLowerCase();
+                
+                // Verificar se é ChaosSorcerer
+                const isChaosSorcerer = cardId === 'ChaosSorcerer' || 
+                                       cardId === 'chaossorcerer' ||
+                                       cardName === 'chaos sorcerer' ||
+                                       (typeof cardId === 'string' && cardId.toLowerCase().includes('chaossorcerer'));
+                
+                // Verificar se é Red-Eyes Darkness Metal Dragon
+                const isRedEyesDarknessMetalDragon = cardId === 'RedEyesDarknessMetalDragon' ||
+                                                     cardId === 'Red-EyesDarknessMetalDragon' ||
+                                                     cardId === 'redeyesdarknessmetaldragon' ||
+                                                     cardName === 'red-eyes darkness metal dragon' ||
+                                                     cardName === 'red eyes darkness metal dragon' ||
+                                                     (typeof cardId === 'string' && cardId.toLowerCase().includes('redeyesdarknessmetaldragon')) ||
+                                                     (typeof cardName === 'string' && cardName.includes('red-eyes darkness metal dragon'));
+                
+                // Verificar se é Cyber-Stein
+                const isCyberStein = cardId === 'CyberStein' || 
+                                    cardId === 'cyberstein' ||
+                                    cardId === 'Cyber-Stein' ||
+                                    cardName === 'cyber-stein' ||
+                                    cardName === 'cyber stein' ||
+                                    (typeof cardId === 'string' && cardId.toLowerCase().includes('cyberstein'));
+                
+                // Verificar se é Exiled Force
+                const isExiledForce = cardId === 'ExiledForce' ||
+                                     cardId === 'exiledforce' ||
+                                     cardId === 'Exiled-Force' ||
+                                     cardName === 'exiled force' ||
+                                     cardName === 'exiled-force' ||
+                                     (typeof cardId === 'string' && cardId.toLowerCase().includes('exiledforce')) ||
+                                     (typeof cardName === 'string' && cardName.includes('exiled force'));
+                
+                if (duelId && user?.id) {
+                  if (isChaosSorcerer) {
+                    // Ativar efeito do ChaosSorcerer
+                    performAction(duelId, user.id, 'START_CHAOS_SORCERER_EFFECT', {
+                      monsterZoneIndex,
+                    });
+                  } else if (isRedEyesDarknessMetalDragon) {
+                    // Ativar efeito do Red-Eyes Darkness Metal Dragon
+                    performAction(duelId, user.id, 'START_RED_EYES_DARKNESS_METAL_DRAGON_EFFECT', {
+                      monsterZoneIndex,
+                    });
+                  } else if (isCyberStein) {
+                    // Ativar efeito do Cyber-Stein
+                    performAction(duelId, user.id, 'START_CYBER_STEIN_EFFECT', {
+                      monsterZoneIndex,
+                    });
+                  } else if (isExiledForce) {
+                    // Ativar efeito do Exiled Force
+                    performAction(duelId, user.id, 'START_EXILED_FORCE_EFFECT', {
+                      monsterZoneIndex,
+                    });
+                  } else {
+                    // Verificar se é Dark Armed Dragon
+                    const monster = myMonsters[monsterZoneIndex];
+                    if (monster) {
+                      const monsterCardId = (monster.idCarta || monster.id || monster.cardId || '').toString().toLowerCase();
+                      const monsterName = (monster.name || monster.cardName || '').toLowerCase();
+                      const isDarkArmedDragon = monsterCardId === 'darkarmeddragon' ||
+                                                monsterCardId === 'dark-armeddragon' ||
+                                                monsterCardId === 'darkarmed-dragon' ||
+                                                monsterName === 'dark armed dragon' ||
+                                                monsterName === 'dark-armed dragon' ||
+                                                monsterName === 'darkarmeddragon' ||
+                                                (typeof monsterCardId === 'string' && monsterCardId.includes('darkarmeddragon')) ||
+                                                (typeof monsterName === 'string' && monsterName.includes('dark armed dragon'));
+                      
+                      if (isDarkArmedDragon) {
+                        // Ativar efeito do Dark Armed Dragon
+                        performAction(duelId, user.id, 'START_DARK_ARMED_DRAGON_EFFECT', {
+                          monsterZoneIndex,
+                        });
+                      }
+                    }
+                  }
                 }
               }}
               isMyTurn={isMyTurn}
@@ -3224,8 +3907,6 @@ const DuelArena: React.FC = () => {
                   });
                 }
               }}
-              isMyTurn={isMyTurn}
-              currentPhase={currentPhase}
             />
 
             {/* Aviso de seleção de alvo de ataque */}
@@ -3270,6 +3951,36 @@ const DuelArena: React.FC = () => {
                   </div>
                   <button
                     onClick={() => setSelectingSpellTrapSlot(null)}
+                    className="ml-4 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-all"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Aviso de seleção de alvo para efeito do ChaosSorcerer */}
+            {isSelectingChaosSorcererTarget && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-gradient-to-r from-indigo-600/95 to-purple-600/95 text-white px-6 py-3 rounded-lg shadow-2xl border-2 border-indigo-400/70"
+              >
+                <div className="flex items-center gap-4">
+                  <span className="text-2xl">🌟</span>
+                  <div>
+                    <p className="font-bold text-lg">Efeito do ChaosSorcerer</p>
+                    <p className="text-sm opacity-90">Selecione 1 monstro face-up do oponente para banir (você não poderá atacar neste turno)</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setIsSelectingChaosSorcererTarget(false);
+                      setChaosSorcererMonsterZoneIndex(null);
+                      // Cancelar a escolha pendente no backend
+                      if (duelId && user?.id) {
+                        performAction(duelId, user.id, 'CANCEL_EFFECT', {});
+                      }
+                    }}
                     className="ml-4 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-all"
                   >
                     Cancelar
@@ -3366,8 +4077,27 @@ const DuelArena: React.FC = () => {
               )}
             </AnimatePresence>
 
-            {/* Fases do Jogo - Modernizado */}
-            {(isMyTurn || (!isMyTurn && timeExpired)) && (
+            {/* Botão Roubar Turno - Aparece quando não é meu turno e tempo do oponente expirou */}
+            {!isMyTurn && turnTimeRemainingFromServer !== null && turnTimeRemainingFromServer <= 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex justify-center items-center py-3 px-5"
+              >
+                <motion.button
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleStealTurn}
+                  className="px-6 py-2.5 rounded-xl font-bold text-sm transition-all border-2 min-w-[120px] bg-gradient-to-r from-red-600 to-orange-600 text-white border-red-300 shadow-xl shadow-red-500/60 hover:from-red-500 hover:to-orange-500 cursor-pointer ring-2 ring-red-400/50 animate-pulse"
+                  title="Roubar Turno - Tempo do oponente expirou!"
+                >
+                  ⚡ ROUBAR TURNO
+                </motion.button>
+              </motion.div>
+            )}
+
+            {/* Fases do Jogo - Modernizado - Só aparece quando é meu turno */}
+            {isMyTurn && (
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -3404,15 +4134,17 @@ const DuelArena: React.FC = () => {
                   const isFirstTurnOfFirstPlayer = currentTurn === 1 && isPlayer1 && isMyTurn && !hasTurnChanged;
                   const isBattlePhaseDisabled = phase === 'BATTLE' && isFirstTurnOfFirstPlayer;
                   
-                  // Se o tempo do oponente expirou e não é meu turno, mostrar botão de roubar turno na posição da fase BATTLE
-                  const showStealTurnButton = !isMyTurn && timeExpired && phase === 'BATTLE';
-                  
-                  // Função para avançar até a fase clicada
+                  // Função para ir diretamente para a fase clicada
                   const handlePhaseClick = async () => {
                     if (!duelId || !user?.id || phase === 'DRAW' || isPast || isBattlePhaseDisabled) return;
                     
                     const socket = getSocket();
                     if (!socket || !socket.connected) return;
+                    
+                    // Se clicou na fase atual, não fazer nada (exceto END)
+                    if (isActive && phase !== 'END') {
+                      return;
+                    }
                     
                     // Se clicou na fase atual (END), avançar fase (que vai verificar se precisa descartar ou avançar turno)
                     if (isActive && phase === 'END') {
@@ -3425,50 +4157,22 @@ const DuelArena: React.FC = () => {
                       return;
                     }
                     
-                    // Se clicou em uma fase futura, avançar fase por fase até chegar nela
-                    // Pular fase BATTLE se for o primeiro turno do primeiro jogador
+                    // Se clicou em uma fase futura, ir diretamente para ela
                     if (isFuture) {
-                      const targetIndex = phases.indexOf(phase);
-                      const currentIndex = phaseIndex;
-                      let phasesToAdvance = targetIndex - currentIndex;
-                      
-                      // Se é o primeiro turno do primeiro jogador e está tentando ir para BATTLE ou além, pular BATTLE
-                      if (isFirstTurnOfFirstPlayer && targetIndex >= phases.indexOf('BATTLE') && currentIndex < phases.indexOf('BATTLE')) {
-                        // Se o alvo é BATTLE, ir direto para MAIN2
-                        if (phase === 'BATTLE') {
-                          phasesToAdvance = phases.indexOf('MAIN2') - currentIndex;
-                        }
-                        // Se o alvo é MAIN2 ou END, ajustar para pular BATTLE
-                        else if (targetIndex > phases.indexOf('BATTLE')) {
-                          phasesToAdvance = targetIndex - currentIndex - 1; // -1 para pular BATTLE
-                        }
+                      // Se é o primeiro turno do primeiro jogador e está tentando ir para BATTLE, ir para MAIN2
+                      let targetPhase = phase;
+                      if (isFirstTurnOfFirstPlayer && phase === 'BATTLE') {
+                        targetPhase = 'MAIN2';
                       }
                       
-                      // Avançar fase por fase
-                      for (let i = 0; i < phasesToAdvance; i++) {
-                        socket.emit('nextPhase', { duelId, userId: user.id });
-                        // Pequeno delay entre cada avanço para evitar problemas
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                      }
-                    } else if (isActive && phase !== 'END' && phase !== 'DRAW') {
-                      // Se clicou na fase atual (exceto END e DRAW), avançar para próxima
-                      socket.emit('nextPhase', { duelId, userId: user.id });
+                      // Chamar goToPhase para ir diretamente para a fase alvo
+                      socket.emit('goToPhase', { duelId, userId: user.id, targetPhase });
                     }
                   };
                   
                   return (
                     <React.Fragment key={phase}>
-                      {showStealTurnButton ? (
-                        <motion.button
-                          whileHover={{ y: -2 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={handleStealTurn}
-                          className="px-6 py-2.5 rounded-xl font-bold text-sm transition-all border-2 min-w-[120px]  bg-gradient-to-r from-red-600 to-orange-600 text-white border-red-300 shadow-xl shadow-red-500/60 hover:from-red-500 hover:to-orange-500 cursor-pointer ring-2 ring-red-400/50 animate-pulse"
-                          title="Roubar Turno - Tempo do oponente expirou!"
-                        >
-                          ⚡ ROUBAR TURNO
-                        </motion.button>
-                      ) : isMyTurn ? (
+                      {isMyTurn ? (
                         <>
                           {phase === 'END' && isActive && myHand.length <= 6 ? (
                             <motion.button
@@ -3518,16 +4222,7 @@ const DuelArena: React.FC = () => {
                             </motion.button>
                           )}
                         </>
-                      ) : (
-                        // Quando não é meu turno e não precisa mostrar botão de roubar, mostrar fase desabilitada
-                        <motion.button
-                          disabled
-                          className="px-4 py-2.5 rounded-xl font-bold text-sm transition-all border-2 min-w-[60px]  bg-black/20 text-white/50 border-white/20 cursor-not-allowed opacity-40"
-                          title={phaseFullNames[phase]}
-                        >
-                          {phaseAbbreviations[phase]}
-                        </motion.button>
-                      )}
+                      ) : null}
                       {index < 5 && (
                         <div className="flex items-center">
                           <div className={`w-1.5 h-1.5 rounded-full transition-all ${
@@ -3560,11 +4255,13 @@ const DuelArena: React.FC = () => {
               transition={{ duration: 0.5, delay: 0.4 }}
               className="flex justify-start items-center gap-2 py-1 overflow-x-auto overflow-y-visible px-3 min-h-[200px] relative w-full mt-2"
               style={{ 
-                overflowY: 'visible', 
+                overflowY: 'visible',
+                overflowX: 'auto',
                 paddingTop: '10px', 
                 paddingBottom: '5px',
                 scrollbarWidth: 'thin',
-                scrollbarColor: 'rgba(255, 255, 255, 0.3) transparent'
+                scrollbarColor: 'rgba(255, 255, 255, 0.3) transparent',
+                maxWidth: '100%'
               }}
               onClick={(e) => {
                 // Fechar zoom se clicar fora das cartas
@@ -3580,14 +4277,49 @@ const DuelArena: React.FC = () => {
                   <p className="text-sm text-slate-400 mt-2">Deck: {myDeck.length} cartas restantes</p>
                 </div>
               ) : (
-                <div data-hand-container className="flex gap-2 overflow-x-auto overflow-y-visible pb-4 px-4 justify-center items-center">
+                <div 
+                  data-hand-container 
+                  className="flex gap-2 overflow-x-auto overflow-y-visible pb-4 px-4 items-center w-full" 
+                  style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255, 255, 255, 0.3) transparent', maxWidth: '100%' }}
+                  onWheel={(e) => {
+                    // Permitir scroll horizontal com a roda do mouse
+                    const container = e.currentTarget;
+                    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                      // Se o scroll vertical for maior, converter para horizontal
+                      e.preventDefault();
+                      container.scrollLeft += e.deltaY;
+                    }
+                  }}
+                >
+                {(() => {
+                  // Log todas as cartas na mão para debug do Dark Armed Dragon
+                  const darkArmedDragonInHand = myHand.find((c: any) => {
+                    if (!c) return false;
+                    const name = (c?.name || c?.cardName || '').toLowerCase().trim();
+                    const idCarta = (c?.idCarta || '').toLowerCase().trim();
+                    // Verificação exata - deve ser exatamente "Dark Armed Dragon"
+                    const isDarkArmedDragon = name === 'dark armed dragon' || name === 'dark-armed dragon' ||
+                           idCarta === 'darkarmeddragon' || idCarta === 'dark-armeddragon' || idCarta === 'darkarmed-dragon' ||
+                           idCarta === 'darkarmeddragon';
+                    if (isDarkArmedDragon) {
+                      console.log('🔍 [Dark Armed Dragon] Dark Armed Dragon encontrado na mão:', {
+                        name: c.name || c.cardName,
+                        idCarta: c.idCarta,
+                        id: c.id,
+                        cardId: c.cardId,
+                        fullCard: c
+                      });
+                    }
+                    return isDarkArmedDragon;
+                  });
+                  return null;
+                })()}
                 {myHand.map((card: any, index: number) => {
                   // Criar chave única combinando index com idCarta para diferenciar cópias da mesma carta
                   // O index garante unicidade mesmo que haja múltiplas cópias da mesma carta
                   const uniqueKey = `my-hand-${index}-${card.idCarta || card.id || card.cardId || index}`;
-                  // Calcular tamanho dinâmico baseado na quantidade de cartas
-                  // Mínimo de 80px, máximo de 120px, ajusta conforme o número de cartas
-                  const cardWidth = Math.max(80, Math.min(120, Math.floor(1000 / Math.max(myHand.length, 1))));
+                  // Tamanho fixo para as cartas - permitir scroll horizontal quando houver muitas
+                  const cardWidth = 120; // Tamanho fixo
                   const cardHeight = Math.floor(cardWidth * 1.458); // Proporção 59:86
                   
                   const cardType = card.type || card.cardType;
@@ -3609,7 +4341,9 @@ const DuelArena: React.FC = () => {
                     style={{
                       width: `${cardWidth}px`,
                       height: `${cardHeight}px`,
-                      minWidth: `${cardWidth}px`
+                      minWidth: `${cardWidth}px`,
+                      maxWidth: `${cardWidth}px`,
+                      flexShrink: 0
                     }}
                     title={card.name || `Carta ${index + 1}`}
                     draggable={canDrag}
@@ -3704,8 +4438,25 @@ const DuelArena: React.FC = () => {
                                   const isInMainPhase = (currentPhase === 'MAIN1' || currentPhase === 'MAIN2');
                                   const availableMonstersCount = myMonsters.filter(m => m !== null && m !== undefined).length;
                                   
-                                  // Verificar se é Swift Gaia The Fierce Knight
+                                  // Verificar se é Dark Armed Dragon (não pode ser invocado normalmente)
                                   const cardIdCarta = card.idCarta || card.id || card.cardId || '';
+                                  const cardName = (card.name || card.cardName || '').toLowerCase().trim();
+                                  // Verificação exata - deve ser exatamente "Dark Armed Dragon" ou variações exatas do ID
+                                  const isDarkArmedDragon = cardIdCarta === 'DarkArmedDragon' ||
+                                                          cardIdCarta === 'darkarmeddragon' ||
+                                                          cardIdCarta === 'Dark-ArmedDragon' ||
+                                                          cardIdCarta === 'DarkArmed-Dragon' ||
+                                                          cardName === 'dark armed dragon' ||
+                                                          cardName === 'dark-armed dragon';
+                                  
+                                  // Se for Dark Armed Dragon, não mostrar botões de invocação normal aqui
+                                  // (será tratado mais abaixo com verificação de 3 Dark no cemitério)
+                                  // NÃO retornar null aqui - deixar o código continuar para mostrar o botão de invocação especial
+                                  // if (isDarkArmedDragon) {
+                                  //   return null; // Não mostrar botões de invocação normal
+                                  // }
+                                  
+                                  // Verificar se é Swift Gaia The Fierce Knight
                                   const isSwiftGaia = cardIdCarta.toLowerCase().includes('swiftgaiathefierceknight') || 
                                                       card.name?.toLowerCase().includes('swift gaia') ||
                                                       card.name?.toLowerCase().includes('swiftgaia');
@@ -3726,9 +4477,13 @@ const DuelArena: React.FC = () => {
                                   }
                                   
                                   // Verificar se pode invocar (sem tributo ou com tributos disponíveis)
+                                  // IMPORTANTE: Sempre mostrar os botões, mesmo quando normalSummonUsed é true
+                                  // Eles ficarão desabilitados para indicar que não pode mais invocar
                                   const canSummonWithoutTribute = (cardLevel <= 4 || canSummonSwiftGaiaWithoutTribute) && !normalSummonUsed && isInMainPhase;
                                   const canSummonWithTribute = requiredTributes > 0 && !normalSummonUsed && isInMainPhase && availableMonstersCount >= requiredTributes;
                                   const canSummon = canSummonWithoutTribute || canSummonWithTribute;
+                                  // isDisabled será true quando normalSummonUsed é true, mas os botões ainda devem aparecer
+                                  // SEMPRE mostrar os botões quando isMonster é true, independente de isDisabled
                                   const isDisabled = !canSummon;
                                   
                                   const handleSummonClick = async (position: 'attack' | 'defense' | 'set') => {
@@ -3759,6 +4514,8 @@ const DuelArena: React.FC = () => {
                                       setShowTributeModal(true);
                                     } else {
                                       // Invocação normal sem tributo - acionar animação antes
+                                      // Atualizar estado local imediatamente para que os botões fiquem desabilitados
+                                      setNormalSummonUsed(true);
                                       await triggerCardPlacementAnimation(card, emptyZoneIndex, true);
                                       performAction(duelId, user.id, 'SUMMON_MONSTER', {
                                         cardId: card.id || card.cardId || card.idCarta,
@@ -3771,18 +4528,123 @@ const DuelArena: React.FC = () => {
                                   };
                                   
                                   // Verificar se é Cyber Dragon e se pode ser invocado por invocação especial
-                                  const cardName = (card.name || card.cardName || '').toLowerCase();
                                   const cardIdCheck = (card.idCarta || card.id || card.cardId || '').toString().toLowerCase();
                                   const isCyberDragon = cardName === 'cyberdragon' || 
                                                        cardName === 'cyber dragon' ||
                                                        cardIdCheck === 'cyberdragon' ||
                                                        cardIdCheck.includes('cyberdragon');
                                   
-                                  // Verificar se é ChaosSorcerer
-                                  const isChaosSorcerer = cardName === 'chaossorcerer' || 
-                                                          cardName === 'chaos sorcerer' ||
-                                                          cardIdCheck === 'chaossorcerer' ||
-                                                          cardIdCheck.includes('chaossorcerer');
+                                  // Verificar se é uma carta Chaos que requer invocação especial (ChaosSorcerer, ChaosEmperorDragon, BlackLusterSoldierEnvoyOfTheBeginning)
+                                  // O backend usa isExactCard que compara idCarta.toLowerCase().trim() e também verifica o nome
+                                  const cardIdForCheck = (card.idCarta || card.id || card.cardId || '').toString().toLowerCase().trim();
+                                  const cardNameForCheck = (card.name || card.cardName || '').toLowerCase().trim();
+                                  
+                                  // Função auxiliar para verificar se corresponde (similar ao isExactCard do backend)
+                                  const matchesCard = (idToCheck: string, nameToCheck: string, targetId: string, targetNameVariations: string[]) => {
+                                    // Verificar por ID exato ou se contém
+                                    if (idToCheck === targetId.toLowerCase() || idToCheck.includes(targetId.toLowerCase()) || targetId.toLowerCase().includes(idToCheck)) {
+                                      return true;
+                                    }
+                                    // Verificar por nome (exato ou contém)
+                                    for (const nameVar of targetNameVariations) {
+                                      const nameVarLower = nameVar.toLowerCase();
+                                      if (nameToCheck === nameVarLower || nameToCheck.includes(nameVarLower) || nameVarLower.includes(nameToCheck)) {
+                                        return true;
+                                      }
+                                    }
+                                    // Verificar se o nome corresponde ao padrão do backend (converte "ChaosSorcerer" -> "chaos sorcerer")
+                                    const targetNameFromId = targetId.replace(/([A-Z])/g, ' $1').trim().toLowerCase();
+                                    if (nameToCheck === targetNameFromId || nameToCheck.includes(targetNameFromId) || targetNameFromId.includes(nameToCheck)) {
+                                      return true;
+                                    }
+                                    return false;
+                                  };
+                                  
+                                  // Verificar se é uma das cartas Chaos (usando a mesma lógica do backend isExactCard)
+                                  const isChaosSorcerer = matchesCard(
+                                    cardIdForCheck,
+                                    cardNameForCheck,
+                                    'chaossorcerer',
+                                    ['chaos sorcerer', 'chaossorcerer']
+                                  );
+                                  const isChaosEmperorDragon = matchesCard(
+                                    cardIdForCheck,
+                                    cardNameForCheck,
+                                    'chaosemperordragon',
+                                    ['chaos emperor dragon', 'chaosemperordragon']
+                                  );
+                                  const isBlackLusterSoldier = matchesCard(
+                                    cardIdForCheck,
+                                    cardNameForCheck,
+                                    'blacklustersoldierenvoyofthebeginning',
+                                    ['black luster soldier envoy of the beginning', 'blacklustersoldierenvoyofthebeginning', 'black luster soldier']
+                                  ) || (typeof cardIdForCheck === 'string' && cardIdForCheck.includes('blacklustersoldier'));
+                                  const isChaosCard = isChaosSorcerer || isChaosEmperorDragon || isBlackLusterSoldier;
+                                  
+                                  // Verificar se é Red-Eyes Darkness Metal Dragon
+                                  const isRedEyesDarknessMetalDragon = cardIdForCheck === 'redeyesdarknessmetaldragon' ||
+                                                                       cardIdForCheck === 'red-eyesdarknessmetaldragon' ||
+                                                                       cardIdForCheck === 'redeyesdarknessmetaldragon' ||
+                                                                       cardNameForCheck === 'red-eyes darkness metal dragon' ||
+                                                                       cardNameForCheck === 'red eyes darkness metal dragon' ||
+                                                                       cardNameForCheck.includes('red-eyes darkness metal dragon') ||
+                                                                       (typeof cardIdForCheck === 'string' && cardIdForCheck.toLowerCase().includes('redeyesdarknessmetaldragon')) ||
+                                                                       (typeof cardNameForCheck === 'string' && cardNameForCheck.includes('red-eyes darkness metal dragon'));
+                                  
+                                  // Log detalhado de TODAS as cartas na mão para debug
+                                  console.log('🔍 [DuelArena] Verificando carta na mão:', {
+                                    name: card.name || card.cardName,
+                                    idCarta: card.idCarta,
+                                    id: card.id,
+                                    cardId: card.cardId,
+                                    cardName: cardName,
+                                    cardIdCheck: cardIdCheck,
+                                    cardIdForCheck: cardIdForCheck,
+                                    type: card.type || card.cardType
+                                  });
+                                  
+                                  // Verificação exata como no backend (isExactCard)
+                                  // Log se detectou carta Chaos
+                                  if (isChaosCard) {
+                                    const cardType = isChaosSorcerer ? 'ChaosSorcerer' : 
+                                                    isChaosEmperorDragon ? 'ChaosEmperorDragon' : 
+                                                    'BlackLusterSoldierEnvoyOfTheBeginning';
+                                    console.log(`✅ [DuelArena] ${cardType} DETECTADO!`, {
+                                      cardIdForCheck,
+                                      cardNameForCheck,
+                                      isChaosSorcerer,
+                                      isChaosEmperorDragon,
+                                      isBlackLusterSoldier
+                                    });
+                                  }
+                                  
+                                  // Debug: Log para verificar se detectou carta Chaos
+                                  if (isChaosCard) {
+                                    const cardType = isChaosSorcerer ? 'ChaosSorcerer' : 
+                                                    isChaosEmperorDragon ? 'ChaosEmperorDragon' : 
+                                                    'BlackLusterSoldierEnvoyOfTheBeginning';
+                                    console.log(`✅ [DuelArena] ${cardType} DETECTADO!`, {
+                                      cardName: cardNameForCheck,
+                                      cardIdCheck,
+                                      cardIdForCheck,
+                                      myGraveyardLength: myGraveyard.length,
+                                      currentPhase,
+                                      isMyTurn
+                                    });
+                                  } else {
+                                    // Log se não detectou - pode ajudar a identificar o problema
+                                    if (cardName.includes('chaos') || cardName.includes('sorcerer') || 
+                                        cardIdCheck.includes('chaos') || cardIdCheck.includes('sorcerer')) {
+                                      console.log('⚠️ [DuelArena] Carta parece ser ChaosSorcerer mas não foi detectada:', {
+                                        cardName,
+                                        cardIdCheck,
+                                        cardIdForCheck,
+                                        idCarta: card.idCarta,
+                                        id: card.id,
+                                        cardId: card.cardId
+                                      });
+                                    }
+                                  }
                                   
                                   // Condições para invocação especial: oponente tem pelo menos 1 monstro E jogador não tem nenhum
                                   const opponentMonstersCount = opponentMonsters.filter((m: any) => m !== null && m !== undefined).length;
@@ -3793,22 +4655,7 @@ const DuelArena: React.FC = () => {
                                                                       (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') &&
                                                                       isMyTurn;
                                   
-                                  // Condições para invocação especial do ChaosSorcerer: precisa de 1 LIGHT e 1 DARK no cemitério
-                                  const lightMonstersInGraveyard = myGraveyard.filter((c: any) => {
-                                    const cardType = c.type || c.cardType;
-                                    const attribute = (c.attribute || '').toUpperCase();
-                                    return cardType === 'Monster' && attribute === 'LIGHT';
-                                  });
-                                  const darkMonstersInGraveyard = myGraveyard.filter((c: any) => {
-                                    const cardType = c.type || c.cardType;
-                                    const attribute = (c.attribute || '').toUpperCase();
-                                    return cardType === 'Monster' && attribute === 'DARK';
-                                  });
-                                  const canSpecialSummonChaosSorcerer = isChaosSorcerer && 
-                                                                         lightMonstersInGraveyard.length >= 1 && 
-                                                                         darkMonstersInGraveyard.length >= 1 &&
-                                                                         (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') &&
-                                                                         isMyTurn;
+                                  // Para ChaosSorcerer, o botão sempre aparece - o backend valida as condições ao abrir o modal
                                   
                                   const handleSpecialSummonCyberDragon = async (position: 'attack' | 'defense') => {
                                     const emptyZoneIndex = myMonsters.findIndex(m => m === null || m === undefined);
@@ -3829,54 +4676,77 @@ const DuelArena: React.FC = () => {
                                   };
                                   
                                   const handleSpecialSummonChaosSorcerer = async () => {
+                                    console.log('🔍 [handleSpecialSummonChaosSorcerer] Iniciando invocação especial do ChaosSorcerer');
+                                    
+                                    // Verificar se há zona vazia (mas não invocar ainda - só quando confirmar no modal)
                                     const emptyZoneIndex = myMonsters.findIndex(m => m === null || m === undefined);
                                     if (emptyZoneIndex === -1) {
                                       alert('Todas as zonas de monstro estão ocupadas!');
                                       return;
                                     }
                                     
-                                    // Acionar animação antes de invocar
-                                    await triggerCardPlacementAnimation(card, emptyZoneIndex, true);
+                                    // Priorizar instanceId (único), depois idCarta, id, cardId
+                                    const cardIdToSend = card.instanceId || card.idCarta || card.id || card.cardId;
+                                    console.log('🔍 [handleSpecialSummonChaosSorcerer] Enviando ação para abrir modal:', {
+                                      actionType: 'START_CHAOS_SORCERER_SUMMON',
+                                      cardId: cardIdToSend,
+                                      instanceId: card.instanceId,
+                                      idCarta: card.idCarta,
+                                      id: card.id,
+                                      cardName: card.name || card.cardName,
+                                      duelId,
+                                      userId: user.id,
+                                      emptyZoneIndex
+                                    });
+                                    
+                                    // NÃO remover a carta da mão ainda - apenas abrir o modal
+                                    // A carta só será removida quando o usuário confirmar no modal
                                     performAction(duelId, user.id, 'START_CHAOS_SORCERER_SUMMON', {
-                                      cardId: card.id || card.cardId || card.idCarta,
+                                      cardId: cardIdToSend,
                                     });
                                     setZoomedCard(null);
                                   };
 
-                                  return (
-                                    <>
-                                      {/* Botão de Invocação Especial do Cyber Dragon (se condições forem atendidas) */}
-                                      {canSpecialSummonCyberDragon && (
-                                        <>
-                                          <motion.button
-                                            whileHover={{ y: -2 }}
-                                            whileTap={{ scale: 0.9 }}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleSpecialSummonCyberDragon('attack');
-                                            }}
-                                            className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-gradient-to-br from-yellow-600/90 to-orange-600/90 hover:from-yellow-500 hover:to-orange-500 border-yellow-400/70 cursor-pointer shadow-yellow-500/40 hover:shadow-yellow-500/60"
-                                            title={`Invocação Especial - Cyber Dragon em Ataque (ATK: ${card.atk || 0}) - Não conta como invocação normal`}
-                                          >
-                                            <span className="text-sm">⚡</span>
-                                          </motion.button>
-                                          <motion.button
-                                            whileHover={{ y: -2 }}
-                                            whileTap={{ scale: 0.9 }}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleSpecialSummonCyberDragon('defense');
-                                            }}
-                                            className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-gradient-to-br from-yellow-600/90 to-orange-600/90 hover:from-yellow-500 hover:to-orange-500 border-yellow-400/70 cursor-pointer shadow-yellow-500/40 hover:shadow-yellow-500/60"
-                                            title={`Invocação Especial - Cyber Dragon em Defesa (DEF: ${card.def || 0}) - Não conta como invocação normal`}
-                                          >
-                                            <span className="text-sm">🛡️⚡</span>
-                                          </motion.button>
-                                        </>
-                                      )}
-                                      
-                                      {/* Botão de Invocação Especial do ChaosSorcerer (se condições forem atendidas) */}
-                                      {canSpecialSummonChaosSorcerer && (
+                                  const handleSpecialSummonRedEyesDarknessMetalDragon = async () => {
+                                    console.log('🔍 [handleSpecialSummonRedEyesDarknessMetalDragon] Iniciando invocação especial');
+                                    
+                                    // Verificar se há zona vazia (mas não invocar ainda - só quando confirmar no modal)
+                                    const emptyZoneIndex = myMonsters.findIndex(m => m === null || m === undefined);
+                                    if (emptyZoneIndex === -1) {
+                                      alert('Todas as zonas de monstro estão ocupadas!');
+                                      return;
+                                    }
+                                    
+                                    // Priorizar instanceId (único), depois idCarta, id, cardId (mesma ordem do ChaosSorcerer)
+                                    const cardIdToSend = card.instanceId || card.idCarta || card.id || card.cardId;
+                                    console.log('🔍 [handleSpecialSummonRedEyesDarknessMetalDragon] Enviando ação para abrir modal:', {
+                                      actionType: 'START_RED_EYES_DARKNESS_METAL_DRAGON_SUMMON',
+                                      cardId: cardIdToSend,
+                                      instanceId: card.instanceId,
+                                      idCarta: card.idCarta,
+                                      id: card.id,
+                                      cardName: card.name || card.cardName,
+                                      duelId,
+                                      userId: user.id,
+                                      emptyZoneIndex
+                                    });
+                                    
+                                    // NÃO remover a carta da mão ainda - apenas abrir o modal
+                                    performAction(duelId, user.id, 'START_RED_EYES_DARKNESS_METAL_DRAGON_SUMMON', {
+                                      cardId: cardIdToSend,
+                                    });
+                                    setZoomedCard(null);
+                                  };
+
+                                  // Se for uma carta Chaos, não mostrar botões de invocação normal (só invocação especial)
+                                  // O botão sempre aparece - o backend valida as condições ao abrir o modal
+                                  if (isChaosCard) {
+                                    const cardDisplayName = isChaosSorcerer ? 'ChaosSorcerer' : 
+                                                           isChaosEmperorDragon ? 'ChaosEmperorDragon' : 
+                                                           'BlackLusterSoldierEnvoyOfTheBeginning';
+                                    return (
+                                      <>
+                                        {/* Botão de Invocação Especial de cartas Chaos - sempre visível */}
                                         <motion.button
                                           whileHover={{ y: -2 }}
                                           whileTap={{ scale: 0.9 }}
@@ -3884,10 +4754,266 @@ const DuelArena: React.FC = () => {
                                             e.stopPropagation();
                                             handleSpecialSummonChaosSorcerer();
                                           }}
-                                          className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-gradient-to-br from-purple-600/90 to-indigo-600/90 hover:from-purple-500 hover:to-indigo-500 border-purple-400/70 cursor-pointer shadow-purple-500/40 hover:shadow-purple-500/60"
-                                          title={`Invocação Especial - ChaosSorcerer - Bane 1 LIGHT e 1 DARK do cemitério - Não conta como invocação normal`}
+                                          className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-black/30 border-purple-400/70 cursor-pointer"
+                                          title={`Invocação Especial - ${cardDisplayName} - Bane 1 LIGHT e 1 DARK do cemitério - Não conta como invocação normal`}
                                         >
-                                          <span className="text-sm">✨</span>
+                                          <img 
+                                            src="/images/Duelo/SpecialSummon.png" 
+                                            alt="Special Summon" 
+                                            className="w-6 h-6 object-contain"
+                                          />
+                                        </motion.button>
+                                      </>
+                                    );
+                                  }
+
+                                  // Verificar se é Dark Armed Dragon - verificação exata
+                                  // Usar cardIdCarta e cardName que já foram declarados anteriormente (linha ~4374-4375), ou cardIdForCheck/cardNameForCheck se disponíveis
+                                  // Verificação exata - deve ser exatamente "Dark Armed Dragon" ou variações exatas do ID
+                                  // IMPORTANTE: cardIdCarta e cardName já foram definidos anteriormente, então podemos usá-los aqui
+                                  const isDarkArmedDragonCheck = isDarkArmedDragon || // Reutilizar verificação anterior
+                                                                 (cardIdCarta === 'DarkArmedDragon' ||
+                                                                  cardIdCarta === 'darkarmeddragon' ||
+                                                                  cardIdCarta === 'Dark-ArmedDragon' ||
+                                                                  cardIdCarta === 'DarkArmed-Dragon' ||
+                                                                  cardName === 'dark armed dragon' ||
+                                                                  cardName === 'dark-armed dragon' ||
+                                                                  (cardIdForCheck === 'darkarmeddragon' ||
+                                                                   cardIdForCheck === 'dark-armeddragon' ||
+                                                                   cardIdForCheck === 'darkarmed-dragon' ||
+                                                                   cardNameForCheck === 'dark armed dragon' ||
+                                                                   cardNameForCheck === 'dark-armed dragon'));
+                                  
+                                  // Log para verificar se Dark Armed Dragon está sendo detectado
+                                  // Verificar se é potencialmente Dark Armed Dragon
+                                  const mightBeDarkArmedDragon = cardName === 'dark armed dragon' || 
+                                                                  cardName === 'dark-armed dragon' || 
+                                                                  cardIdCarta.toLowerCase() === 'darkarmeddragon' || 
+                                                                  cardIdForCheck === 'darkarmeddragon' ||
+                                                                  (cardIdCarta.toLowerCase().includes('dark') && cardName.includes('dragon'));
+                                  
+                                  if (mightBeDarkArmedDragon) {
+                                    console.log('🔍 [Dark Armed Dragon] Possível Dark Armed Dragon detectado:', {
+                                      isDarkArmedDragon: isDarkArmedDragon,
+                                      isDarkArmedDragonCheck: isDarkArmedDragonCheck,
+                                      cardIdCarta: cardIdCarta,
+                                      cardName: cardName,
+                                      cardIdForCheck: cardIdForCheck,
+                                      cardNameForCheck: cardNameForCheck,
+                                      fullCard: card
+                                    });
+                                  }
+
+                                  // Se for Red-Eyes Darkness Metal Dragon, não mostrar botões de invocação normal (só invocação especial)
+                                  if (isRedEyesDarknessMetalDragon) {
+                                    // Verificar se a própria carta é do Tipo Dragão
+                                    const cardRace = (card.race || card.cardRace || '').toString().toUpperCase().trim();
+                                    const isDragonType = cardRace === 'DRAGON' || cardRace === 'DRAGÃO' || cardRace.includes('DRAGON');
+                                    
+                                    if (!isDragonType) {
+                                      return null; // Não mostrar botão se a carta não for do tipo Dragon
+                                    }
+                                    
+                                    // Verificar se há monstros do Tipo Dragão face-up no campo
+                                    const hasDragonFaceUp = myMonsters.some((monster: any) => {
+                                      if (!monster || monster === null) return false;
+                                      // Verificar se está face-up
+                                      if (monster.position !== 'attack' && monster.position !== 'defense') return false;
+                                      // Verificar se é do Tipo Dragão
+                                      const race = (monster.race || monster.cardRace || '').toString().toUpperCase().trim();
+                                      return race === 'DRAGON' || race === 'DRAGÃO' || race.includes('DRAGON');
+                                    });
+                                    
+                                    // Só mostrar o botão se houver pelo menos um Dragon face-up
+                                    if (!hasDragonFaceUp) {
+                                      return null;
+                                    }
+                                    
+                                    return (
+                                      <>
+                                        {/* Botão de Invocação Especial do Red-Eyes Darkness Metal Dragon - aparece apenas quando há Dragon face-up */}
+                                        <motion.button
+                                          whileHover={{ y: -2 }}
+                                          whileTap={{ scale: 0.9 }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleSpecialSummonRedEyesDarknessMetalDragon();
+                                          }}
+                                          className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-black/30 border-red-400/70 cursor-pointer"
+                                          title="Invocação Especial - Red-Eyes Darkness Metal Dragon - Bane 1 monstro do Tipo Dragão face-up que você controla"
+                                        >
+                                          <img 
+                                            src="/images/Duelo/SpecialSummon.png" 
+                                            alt="Special Summon" 
+                                            className="w-6 h-6 object-contain"
+                                          />
+                                        </motion.button>
+                                      </>
+                                    );
+                                  }
+
+                                  // Se for Dark Armed Dragon, não mostrar botões de invocação normal (só invocação especial)
+                                  if (isDarkArmedDragonCheck) {
+                                    console.log('✅ [Dark Armed Dragon] Carta detectada como Dark Armed Dragon:', {
+                                      cardIdCarta,
+                                      cardName,
+                                      cardIdForCheck,
+                                      cardNameForCheck,
+                                      isMyTurn,
+                                      currentPhase
+                                    });
+                                    
+                                    // Verificar se é o turno do jogador e está na fase principal
+                                    if (!isMyTurn) {
+                                      console.log('⚠️ [Dark Armed Dragon] Não é o turno do jogador');
+                                      return null;
+                                    }
+                                    
+                                    if (currentPhase !== 'MAIN1' && currentPhase !== 'MAIN2') {
+                                      console.log('⚠️ [Dark Armed Dragon] Não está na fase principal:', currentPhase);
+                                      return null;
+                                    }
+                                    
+                                    // Verificar se há exatamente 3 monstros Dark no cemitério
+                                    // IMPORTANTE: Conta TODOS os monstros Dark, mesmo que tenham o mesmo nome
+                                    // Cada carta no cemitério é contada separadamente, independente do nome
+                                    const graveyardToCheck = myGraveyard || [];
+                                    console.log('🔍 [Dark Armed Dragon] Verificando cemitério:', {
+                                      graveyardLength: graveyardToCheck.length,
+                                      graveyard: graveyardToCheck.map((c: any) => ({
+                                        name: c?.name || c?.cardName,
+                                        type: c?.type || c?.cardType,
+                                        attribute: c?.attribute || c?.cardAttribute
+                                      }))
+                                    });
+                                    
+                                    const darkMonstersInGraveyard = graveyardToCheck.filter((c: any) => {
+                                      if (!c) return false;
+                                      const cardType = (c.type || c.cardType || '').toString().toUpperCase().trim();
+                                      const isMonster = cardType === 'MONSTER' || cardType === 'MONSTRO' || cardType.includes('MONSTER');
+                                      if (!isMonster) {
+                                        console.log('🔍 [Dark Armed Dragon] Carta não é monstro:', {
+                                          name: c?.name || c?.cardName,
+                                          type: cardType
+                                        });
+                                        return false;
+                                      }
+                                      
+                                      // Verificar atributo de múltiplas formas
+                                      const attributeRaw = c.attribute || c.cardAttribute || c.card?.attribute || c.card?.cardAttribute || '';
+                                      const attribute = String(attributeRaw).toUpperCase().trim();
+                                      
+                                      // Verificar se é Dark - aceitar DARK, TREVAS, DARKNESS, ou qualquer string que contenha DARK
+                                      const isDark = attribute === 'DARK' || 
+                                                    attribute === 'TREVAS' ||
+                                                    attribute === 'DARKNESS' ||
+                                                    attribute === 'DARK ATTRIBUTE' ||
+                                                    (typeof attribute === 'string' && attribute.includes('DARK'));
+                                      
+                                      if (!isDark) {
+                                        console.log('⚠️ [Dark Armed Dragon] Carta não é Dark:', {
+                                          name: c?.name || c?.cardName,
+                                          attribute: attribute,
+                                          attributeRaw: attributeRaw,
+                                          fullCard: c
+                                        });
+                                      } else {
+                                        console.log('✅ [Dark Armed Dragon] Monstro Dark encontrado:', {
+                                          name: c?.name || c?.cardName,
+                                          attribute: attribute
+                                        });
+                                      }
+                                      
+                                      return isDark;
+                                    });
+                                    
+                                    console.log('🔍 [Dark Armed Dragon] Monstros Dark encontrados:', {
+                                      count: darkMonstersInGraveyard.length,
+                                      monsters: darkMonstersInGraveyard.map((c: any) => ({
+                                        name: c?.name || c?.cardName,
+                                        attribute: c?.attribute || c?.cardAttribute
+                                      }))
+                                    });
+                                    
+                                    // Só mostrar o botão se houver exatamente 3 Dark no cemitério
+                                    if (darkMonstersInGraveyard.length !== 3) {
+                                      console.log('⚠️ [Dark Armed Dragon] Não há exatamente 3 Dark no cemitério:', darkMonstersInGraveyard.length);
+                                      return null;
+                                    }
+                                    
+                                    console.log('✅ [Dark Armed Dragon] Condições atendidas - mostrando botão de invocação especial');
+                                    
+                                    const handleSpecialSummonDarkArmedDragon = async () => {
+                                      console.log('🔍 [handleSpecialSummonDarkArmedDragon] Iniciando invocação especial');
+                                      
+                                      // Verificar se há zona vazia
+                                      const emptyZoneIndex = myMonsters.findIndex(m => m === null || m === undefined);
+                                      if (emptyZoneIndex === -1) {
+                                        alert('Todas as zonas de monstro estão ocupadas!');
+                                        return;
+                                      }
+                                      
+                                      const cardIdToSend = card.instanceId || card.idCarta || card.id || card.cardId;
+                                      console.log('🔍 [handleSpecialSummonDarkArmedDragon] Enviando ação para invocação especial:', {
+                                        actionType: 'START_DARK_ARMED_DRAGON_SUMMON',
+                                        cardId: cardIdToSend,
+                                        instanceId: card.instanceId,
+                                        idCarta: card.idCarta,
+                                        id: card.id,
+                                        cardName: card.name || card.cardName,
+                                        duelId,
+                                        userId: user.id,
+                                        emptyZoneIndex
+                                      });
+                                      
+                                      performAction(duelId, user.id, 'START_DARK_ARMED_DRAGON_SUMMON', {
+                                        cardId: cardIdToSend,
+                                      });
+                                      setZoomedCard(null);
+                                    };
+                                    
+                                    return (
+                                      <>
+                                        {/* Botão de Invocação Especial do Dark Armed Dragon - aparece apenas quando há exatamente 3 Dark no cemitério */}
+                                        <motion.button
+                                          whileHover={{ y: -2 }}
+                                          whileTap={{ scale: 0.9 }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleSpecialSummonDarkArmedDragon();
+                                          }}
+                                          className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-black/30 border-purple-400/70 cursor-pointer"
+                                          title="Invocação Especial - Dark Armed Dragon - Requer exatamente 3 monstros Dark no cemitério - Invoca em modo de ataque"
+                                        >
+                                          <img 
+                                            src="/images/Duelo/SpecialSummon.png" 
+                                            alt="Special Summon" 
+                                            className="w-6 h-6 object-contain"
+                                          />
+                                        </motion.button>
+                                      </>
+                                    );
+                                  }
+
+                                  return (
+                                    <>
+                                      {/* Botão de Invocação Especial do Cyber Dragon (se condições forem atendidas) - sempre invoca em ataque */}
+                                      {canSpecialSummonCyberDragon && (
+                                        <motion.button
+                                          whileHover={{ y: -2 }}
+                                          whileTap={{ scale: 0.9 }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleSpecialSummonCyberDragon('attack');
+                                          }}
+                                          className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-black/30 border-yellow-400/70 cursor-pointer"
+                                          title={`Invocação Especial - Cyber Dragon em Ataque (ATK: ${card.atk || 0}) - Não conta como invocação normal - Pode mudar para defesa no mesmo turno`}
+                                        >
+                                          <img 
+                                            src="/images/Duelo/SpecialSummon.png" 
+                                            alt="Special Summon" 
+                                            className="w-6 h-6 object-contain"
+                                          />
                                         </motion.button>
                                       )}
                                       
@@ -3902,8 +5028,8 @@ const DuelArena: React.FC = () => {
                                         disabled={isDisabled}
                                         className={`w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg  ${
                                           isDisabled
-                                            ? 'bg-gradient-to-br from-gray-600/50 to-gray-700/50 border-gray-500/50 cursor-not-allowed opacity-50'
-                                            : 'bg-gradient-to-br from-red-600/90 to-red-700/90 hover:from-red-500 hover:to-red-600 border-red-400/70 cursor-pointer shadow-red-500/40 hover:shadow-red-500/60'
+                                            ? 'bg-black/30 border-gray-500/50 cursor-not-allowed opacity-50'
+                                            : 'bg-black/30 border-red-400/70 cursor-pointer'
                                         }`}
                                         title={isDisabled 
                                           ? (normalSummonUsed 
@@ -3917,7 +5043,11 @@ const DuelArena: React.FC = () => {
                                               ? `Invocar em Ataque (ATK: ${card.atk || 0}) - Precisa de ${requiredTributes} tributo(s)`
                                               : `Invocar em Ataque (ATK: ${card.atk || 0}) - Invocação Normal`}
                                       >
-                                        <span className="text-sm">⚔️</span>
+                                        <img 
+                                          src="/images/Duelo/Ataque.png" 
+                                          alt="Ataque" 
+                                          className="w-6 h-6 object-contain"
+                                        />
                                       </motion.button>
                                       
                                       {/* Set (Invocar face-down em defesa) - conta como invocação normal */}
@@ -3931,8 +5061,8 @@ const DuelArena: React.FC = () => {
                                         disabled={isDisabled}
                                         className={`w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg  ${
                                           isDisabled
-                                            ? 'bg-gradient-to-br from-gray-600/50 to-gray-700/50 border-gray-500/50 cursor-not-allowed opacity-50'
-                                            : 'bg-gradient-to-br from-blue-600/90 to-blue-700/90 hover:from-blue-500 hover:to-blue-600 border-blue-400/70 cursor-pointer shadow-blue-500/40 hover:shadow-blue-500/60'
+                                            ? 'bg-black/30 border-gray-500/50 cursor-not-allowed opacity-50'
+                                            : 'bg-black/30 border-blue-400/70 cursor-pointer'
                                         }`}
                                         title={isDisabled 
                                           ? (normalSummonUsed 
@@ -4037,7 +5167,9 @@ const DuelArena: React.FC = () => {
 
       {/* Modal do Extra Deck */}
       {showExtraDeckModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999]">
+        <div 
+          className="fixed inset-0 flex items-center justify-center z-[9999] bg-black/50 backdrop-blur-md"
+        >
           <div className="bg-black/30 rounded-2xl border-2 border-purple-500/50 p-6 max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
@@ -4096,7 +5228,9 @@ const DuelArena: React.FC = () => {
 
       {/* Modal do Extra Deck do Oponente */}
       {showOpponentExtraDeckModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999]">
+        <div 
+          className="fixed inset-0 flex items-center justify-center z-[9999] bg-black/50 backdrop-blur-md"
+        >
           <div className="bg-black/30 rounded-2xl border-2 border-purple-500/50 p-6 max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
@@ -4155,7 +5289,9 @@ const DuelArena: React.FC = () => {
 
       {/* Modal do Cemitério do Oponente */}
       {showOpponentGraveyardModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999]">
+        <div 
+          className="fixed inset-0 flex items-center justify-center z-[9999] bg-black/50 backdrop-blur-md"
+        >
           <div className="bg-black/30 rounded-2xl border-2 border-white/20 p-6 max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold text-white">
@@ -4208,13 +5344,62 @@ const DuelArena: React.FC = () => {
                 })}
               </div>
             )}
+
+            {/* Seção de Cartas Banidas do Oponente */}
+            <div className="mt-8 pt-8 border-t border-white/20">
+              <h3 className="text-xl font-bold text-white mb-4">
+                Cartas Banidas do Oponente (Banished)
+              </h3>
+              <p className="text-slate-300 mb-6 text-center">
+                Total de cartas banidas: <span className="font-bold text-red-400">{opponentBanished.length}</span>
+              </p>
+
+              {opponentBanished.length === 0 ? (
+                <div className="text-center py-8 text-slate-400">
+                  <p className="text-lg">Nenhuma carta banida</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-3">
+                  {opponentBanished.map((card, index) => {
+                    const cardId = card.id || card.cardId || card.idCarta;
+                    return (
+                      <motion.div
+                        key={`opponent-banished-${index}-${cardId}`}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: index * 0.02 }}
+                        className="relative cursor-pointer aspect-[59/86]"
+                        onClick={() => {
+                          console.log('🔍 [DuelArena] Opponent Banished card clicked:', {
+                            name: card?.name,
+                            description: card?.description,
+                            hasDescription: !!card?.description,
+                            descriptionLength: card?.description?.length || 0,
+                            allKeys: Object.keys(card || {})
+                          });
+                          setSelectedCardInfo(card);
+                        }}
+                      >
+                        <CardImage
+                          card={card}
+                          className="w-full h-full rounded-lg border-2 border-red-500/50 transition-all opacity-80"
+                          fallback="/images/fundoCarta.webp"
+                        />
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
 
       {/* Modal do Cemitério */}
       {showGraveyardModal && (
-        <div className="fixed inset-0 bg-black/80  flex items-center justify-center z-[9999]">
+        <div 
+          className="fixed inset-0 flex items-center justify-center z-[9999] bg-black/50 backdrop-blur-md"
+        >
           <div className="bg-black/30  rounded-2xl border-2 border-white/20 p-6 max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold text-white">
@@ -4267,6 +5452,53 @@ const DuelArena: React.FC = () => {
                 })}
               </div>
             )}
+
+            {/* Seção de Cartas Banidas */}
+            <div className="mt-8 pt-8 border-t border-white/20">
+              <h3 className="text-xl font-bold text-white mb-4">
+                Cartas Banidas (Banished)
+              </h3>
+              <p className="text-slate-300 mb-6 text-center">
+                Total de cartas banidas: <span className="font-bold text-red-400">{myBanished.length}</span>
+              </p>
+
+              {myBanished.length === 0 ? (
+                <div className="text-center py-8 text-slate-400">
+                  <p className="text-lg">Nenhuma carta banida</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-3">
+                  {myBanished.map((card, index) => {
+                    const cardId = card.id || card.cardId || card.idCarta;
+                    return (
+                      <motion.div
+                        key={`banished-${index}-${cardId}`}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: index * 0.02 }}
+                        className="relative cursor-pointer aspect-[59/86]"
+                        onClick={() => {
+                          console.log('🔍 [DuelArena] Banished card clicked:', {
+                            name: card?.name,
+                            description: card?.description,
+                            hasDescription: !!card?.description,
+                            descriptionLength: card?.description?.length || 0,
+                            allKeys: Object.keys(card || {})
+                          });
+                          setSelectedCardInfo(card);
+                        }}
+                      >
+                        <CardImage
+                          card={card}
+                          className="w-full h-full rounded-lg border-2 border-red-500/50 transition-all opacity-80"
+                          fallback="/images/fundoCarta.webp"
+                        />
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -4274,13 +5506,8 @@ const DuelArena: React.FC = () => {
       {/* Modal de Confiscation - Seleção de Carta do Oponente */}
       <AnimatePresence mode="wait">
         {showOpponentHandRevealed && cardEffectType === 'confiscation' && (
-          <motion.div
-            key="confiscation-modal"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            transition={{ duration: 0.3 }}
-            className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[10000] flex items-center justify-center p-4"
+          <div
+            className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
             style={{ 
               pointerEvents: 'auto', 
               zIndex: 10000, 
@@ -4289,14 +5516,18 @@ const DuelArena: React.FC = () => {
               left: 0,
               right: 0,
               bottom: 0
+            } as React.CSSProperties}
+            onClick={(e) => {
+              // Não fechar o modal ao clicar no overlay - o usuário deve selecionar uma carta
+              e.stopPropagation();
             }}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl border-2 border-red-500/50 shadow-2xl max-w-4xl w-full max-h-[85vh] overflow-y-auto"
-              style={{ pointerEvents: 'auto' }}
+              className="bg-transparent rounded-2xl border-2 border-red-500/50 shadow-2xl max-w-4xl w-full max-h-[85vh] overflow-y-auto"
+              style={{ backgroundColor: 'transparent', background: 'transparent', pointerEvents: 'auto' }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="p-4">
@@ -4328,9 +5559,8 @@ const DuelArena: React.FC = () => {
                           performAction(duelId, user.id, 'CONFISCATION_CHOICE', {
                             chosenCardIndex: -1,
                           });
-                          setShowOpponentHandRevealed(false);
-                          setOpponentHandRevealed([]);
-                          setCardEffectType(null);
+                          // NÃO fechar o modal aqui - deixar o backend confirmar via pendingChoice
+                          // O modal será fechado automaticamente quando pendingChoice for null
                         }
                       }}
                       className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-bold transition-colors text-sm"
@@ -4351,18 +5581,20 @@ const DuelArena: React.FC = () => {
                           onClick={() => {
                             // Enviar carta direto para o cemitério
                             if (duelId && user?.id) {
-                              console.log(`🎯 Confiscation: Carta selecionada: ${card.name || card.cardName} (índice: ${index})`);
+                              const cardInstanceId = card.instanceId;
+                              if (!cardInstanceId) {
+                                console.error(`❌ Confiscation: Carta não tem instanceId:`, card);
+                                return;
+                              }
+                              console.log(`🎯 Confiscation: Carta selecionada: ${card.name || card.cardName} (instanceId: ${cardInstanceId})`);
                               
-                              // Enviar escolha para o backend
+                              // Enviar escolha para o backend usando instanceId
                               performAction(duelId, user.id, 'CONFISCATION_CHOICE', {
-                                chosenCardIndex: index,
+                                instanceId: cardInstanceId,
                               });
                               
-                              // Resetar estados
-                              setShowOpponentHandRevealed(false);
-                              setOpponentHandRevealed([]);
-                              setCardEffectType(null);
-                              setSelectedConfiscationCard(null);
+                              // NÃO fechar o modal aqui - deixar o backend confirmar via pendingChoice
+                              // O modal será fechado automaticamente quando pendingChoice for null
                             }
                           }}
                           className="relative cursor-pointer group"
@@ -4402,20 +5634,15 @@ const DuelArena: React.FC = () => {
                 </div>
               </div>
             </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
       {/* Modal de The Forceful Sentry - Seleção de Carta do Oponente */}
       <AnimatePresence mode="wait">
         {showOpponentHandRevealed && cardEffectType === 'forcefulSentry' && (
-          <motion.div
-            key="forceful-sentry-modal"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            transition={{ duration: 0.3 }}
-            className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[10000] flex items-center justify-center p-4"
+          <div
+            className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
             style={{ 
               pointerEvents: 'auto', 
               zIndex: 10000, 
@@ -4424,14 +5651,14 @@ const DuelArena: React.FC = () => {
               left: 0,
               right: 0,
               bottom: 0
-            }}
+            } as React.CSSProperties}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl border-2 border-blue-500/50 shadow-2xl max-w-4xl w-full max-h-[85vh] overflow-y-auto"
-              style={{ pointerEvents: 'auto' }}
+              className="bg-transparent rounded-2xl border-2 border-blue-500/50 shadow-2xl max-w-4xl w-full max-h-[85vh] overflow-y-auto"
+              style={{ backgroundColor: 'transparent', background: 'transparent', pointerEvents: 'auto' }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="p-4">
@@ -4459,13 +5686,12 @@ const DuelArena: React.FC = () => {
                       onClick={() => {
                         if (duelId && user?.id) {
                           console.log('🎯 The Forceful Sentry: Continuando sem cartas');
-                          // Completar efeito mesmo sem cartas
+                          // Completar efeito mesmo sem cartas (enviar instanceId vazio)
                           performAction(duelId, user.id, 'FORCEFUL_SENTRY_CHOICE', {
-                            chosenCardIndex: -1,
+                            instanceId: '',
                           });
-                          setShowOpponentHandRevealed(false);
-                          setOpponentHandRevealed([]);
-                          setCardEffectType(null);
+                          // NÃO fechar o modal aqui - deixar o backend confirmar via pendingChoice
+                          // O modal será fechado automaticamente quando pendingChoice for null
                         }
                       }}
                       className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-bold transition-colors text-sm"
@@ -4486,17 +5712,20 @@ const DuelArena: React.FC = () => {
                           onClick={() => {
                             // Enviar carta de volta para o deck
                             if (duelId && user?.id) {
-                              console.log(`🎯 The Forceful Sentry: Carta selecionada: ${card.name || card.cardName} (índice: ${index})`);
+                              const cardInstanceId = card.instanceId;
+                              if (!cardInstanceId) {
+                                console.error(`❌ ForcefulSentry: Carta não tem instanceId:`, card);
+                                return;
+                              }
+                              console.log(`🎯 The Forceful Sentry: Carta selecionada: ${card.name || card.cardName} (instanceId: ${cardInstanceId})`);
                               
-                              // Enviar escolha para o backend
+                              // Enviar escolha para o backend usando instanceId
                               performAction(duelId, user.id, 'FORCEFUL_SENTRY_CHOICE', {
-                                chosenCardIndex: index,
+                                instanceId: cardInstanceId,
                               });
                               
-                              // Resetar estados
-                              setShowOpponentHandRevealed(false);
-                              setOpponentHandRevealed([]);
-                              setCardEffectType(null);
+                              // NÃO fechar o modal aqui - deixar o backend confirmar via pendingChoice
+                              // O modal será fechado automaticamente quando pendingChoice for null
                             }
                           }}
                           className="relative cursor-pointer group"
@@ -4536,36 +5765,26 @@ const DuelArena: React.FC = () => {
                 </div>
               </div>
             </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
       {/* Modal de GracefulCharity - Seleção de 2 Cartas para Descartar */}
-      <AnimatePresence mode="wait">
-        {showGracefulCharityModal && (
-          <motion.div
-            key="graceful-charity-modal"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            transition={{ duration: 0.3 }}
-            className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[10000] flex items-center justify-center p-4"
-            style={{ 
-              pointerEvents: 'auto', 
-              zIndex: 10000, 
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0
-            }}
-          >
+      {showGracefulCharityModal && (
+        <div
+          id="graceful-charity-overlay"
+          className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+          style={{ 
+            zIndex: 10000,
+            pointerEvents: 'auto'
+          } as React.CSSProperties}
+        >
             <motion.div
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl border-2 border-green-500/50 shadow-2xl max-w-4xl w-full max-h-[85vh] overflow-y-auto"
-              style={{ pointerEvents: 'auto' }}
+              className="bg-transparent rounded-2xl border-2 border-green-500/50 shadow-2xl max-w-4xl w-full max-h-[85vh] overflow-y-auto"
+              style={{ backgroundColor: 'transparent', background: 'transparent', pointerEvents: 'auto' }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="p-4">
@@ -4589,24 +5808,15 @@ const DuelArena: React.FC = () => {
                 {gracefulCharityHand.length === 0 ? (
                   <div className="text-center py-8 text-slate-400">
                     <p className="text-lg mb-4">Você não tem cartas na mão</p>
-                    <button
-                      onClick={() => {
-                        setShowGracefulCharityModal(false);
-                        setGracefulCharityHand([]);
-                        setSelectedGracefulCharityCards([]);
-                      }}
-                      className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-bold transition-colors text-sm"
-                    >
-                      Fechar
-                    </button>
+                    <p className="text-sm text-yellow-400">Aguardando processamento...</p>
                   </div>
                 ) : (
                   <>
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 mb-4">
                       {gracefulCharityHand.map((card: any, index: number) => {
-                        const uniqueKey = `graceful-charity-card-${index}-${card.idCarta || card.id || card.cardId || index}`;
-                        const cardId = (card.idCarta || card.id || card.cardId)?.toString();
-                        const isSelected = selectedGracefulCharityCards.includes(cardId);
+                        const cardInstanceId = card.instanceId || `card-${index}`;
+                        const uniqueKey = `graceful-charity-card-${index}-${cardInstanceId}`;
+                        const isSelected = selectedGracefulCharityCards.includes(cardInstanceId);
                         
                         return (
                           <motion.div
@@ -4617,11 +5827,11 @@ const DuelArena: React.FC = () => {
                             onClick={() => {
                               if (isSelected) {
                                 // Desmarcar carta
-                                setSelectedGracefulCharityCards(prev => prev.filter(id => id !== cardId));
+                                setSelectedGracefulCharityCards(prev => prev.filter(id => id !== cardInstanceId));
                               } else {
                                 // Marcar carta (máximo 2)
                                 if (selectedGracefulCharityCards.length < 2) {
-                                  setSelectedGracefulCharityCards(prev => [...prev, cardId]);
+                                  setSelectedGracefulCharityCards(prev => [...prev, cardInstanceId]);
                                 }
                               }
                             }}
@@ -4671,16 +5881,23 @@ const DuelArena: React.FC = () => {
                       <button
                         onClick={() => {
                           if (duelId && user?.id && selectedGracefulCharityCards.length === 2) {
-                            console.log(`🎯 GracefulCharity: Descartando cartas:`, selectedGracefulCharityCards);
+                            console.log(`🎯 GracefulCharity: Descartando cartas com instanceIds:`, selectedGracefulCharityCards);
+                            
+                            // Limpar seleção e fechar modal imediatamente após enviar
+                            const instanceIdsToDiscard = [...selectedGracefulCharityCards];
+                            setSelectedGracefulCharityCards([]);
                             
                             performAction(duelId, user.id, 'GRACEFUL_CHARITY_CHOICE', {
-                              cardIdsToDiscard: selectedGracefulCharityCards,
+                              instanceIdsToDiscard: instanceIdsToDiscard,
                             });
                             
-                            // Resetar estados
-                            setShowGracefulCharityModal(false);
-                            setGracefulCharityHand([]);
-                            setSelectedGracefulCharityCards([]);
+                            // Fechar modal imediatamente após enviar (o backend confirmará via duelUpdate)
+                            // Usar setTimeout para garantir que o performAction seja enviado primeiro
+                            setTimeout(() => {
+                              console.log(`✅ GracefulCharity: Fechando modal após enviar escolha`);
+                              setShowGracefulCharityModal(false);
+                              setGracefulCharityHand([]);
+                            }, 100);
                           }
                         }}
                         disabled={selectedGracefulCharityCards.length !== 2}
@@ -4706,18 +5923,14 @@ const DuelArena: React.FC = () => {
                 </div>
               </div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
 
       {/* Modal de MonsterReborn */}
       <AnimatePresence>
         {showMonsterRebornModal && monsterRebornData && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
@@ -4742,6 +5955,10 @@ const DuelArena: React.FC = () => {
                   </div>
                   <button
                     onClick={() => {
+                      if (duelId && user?.id) {
+                        // Cancelar ativação da carta no backend
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
                       setShowMonsterRebornModal(false);
                       setMonsterRebornData(null);
                       setSelectedMonsterReborn(null);
@@ -4758,16 +5975,26 @@ const DuelArena: React.FC = () => {
                     <h3 className="text-2xl font-bold text-white mb-4">Meu Cemitério</h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                       {monsterRebornData.playerGraveyard.map((monster: any, index: number) => {
-                        const isSelected = selectedMonsterReborn?.graveyard === 'player' && selectedMonsterReborn?.index === index;
+                        // Usar instanceId ou graveyardIndex como identificador único
+                        const uniqueId = monster.instanceId || `player-${monster.graveyardIndex || index}-${index}`;
+                        const isSelected = selectedMonsterReborn?.graveyard === 'player' && 
+                                          selectedMonsterReborn?.index === index &&
+                                          (selectedMonsterReborn.instanceId === monster.instanceId || 
+                                           selectedMonsterReborn.graveyardIndex === monster.graveyardIndex);
                         return (
                           <motion.div
-                            key={`player-graveyard-${index}`}
+                            key={`player-graveyard-${uniqueId}-${index}`}
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             onClick={() => {
-                              setSelectedMonsterReborn({ graveyard: 'player', index });
+                              setSelectedMonsterReborn({ 
+                                graveyard: 'player', 
+                                index,
+                                instanceId: monster.instanceId,
+                                graveyardIndex: monster.graveyardIndex
+                              });
                             }}
                             className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
                               isSelected
@@ -4806,16 +6033,26 @@ const DuelArena: React.FC = () => {
                     <h3 className="text-2xl font-bold text-white mb-4">Cemitério do Oponente</h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                       {monsterRebornData.opponentGraveyard.map((monster: any, index: number) => {
-                        const isSelected = selectedMonsterReborn?.graveyard === 'opponent' && selectedMonsterReborn?.index === index;
+                        // Usar instanceId ou graveyardIndex como identificador único
+                        const uniqueId = monster.instanceId || `opponent-${monster.graveyardIndex || index}-${index}`;
+                        const isSelected = selectedMonsterReborn?.graveyard === 'opponent' && 
+                                          selectedMonsterReborn?.index === index &&
+                                          (selectedMonsterReborn.instanceId === monster.instanceId || 
+                                           selectedMonsterReborn.graveyardIndex === monster.graveyardIndex);
                         return (
                           <motion.div
-                            key={`opponent-graveyard-${index}`}
+                            key={`opponent-graveyard-${uniqueId}-${index}`}
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             onClick={() => {
-                              setSelectedMonsterReborn({ graveyard: 'opponent', index });
+                              setSelectedMonsterReborn({ 
+                                graveyard: 'opponent', 
+                                index,
+                                instanceId: monster.instanceId,
+                                graveyardIndex: monster.graveyardIndex
+                              });
                             }}
                             className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
                               isSelected
@@ -4854,6 +6091,10 @@ const DuelArena: React.FC = () => {
                     <p className="text-lg">Não há monstros nos cemitérios para reviver</p>
                     <button
                       onClick={() => {
+                        if (duelId && user?.id) {
+                          // Cancelar ativação da carta no backend
+                          performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                        }
                         setShowMonsterRebornModal(false);
                         setMonsterRebornData(null);
                         setSelectedMonsterReborn(null);
@@ -4870,6 +6111,10 @@ const DuelArena: React.FC = () => {
                   <div className="flex justify-center gap-4 mt-6">
                     <button
                       onClick={() => {
+                        if (duelId && user?.id) {
+                          // Cancelar ativação da carta no backend
+                          performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                        }
                         setShowMonsterRebornModal(false);
                         setMonsterRebornData(null);
                         setSelectedMonsterReborn(null);
@@ -4906,7 +6151,7 @@ const DuelArena: React.FC = () => {
                 ) : null}
               </div>
             </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
@@ -4964,13 +6209,21 @@ const DuelArena: React.FC = () => {
       </AnimatePresence>
 
       {/* Modal de ChaosSorcerer Special Summon */}
+      {/* Debug: Log do estado do modal */}
+      {(() => {
+        console.log(`🔍 [DuelArena Render] Estado do modal ChaosSorcerer:`, {
+          showChaosSorcererModal,
+          hasChaosSorcererData: !!chaosSorcererData,
+          lightMonstersCount: chaosSorcererData?.lightMonsters?.length || 0,
+          darkMonstersCount: chaosSorcererData?.darkMonsters?.length || 0,
+          shouldRender: showChaosSorcererModal && chaosSorcererData
+        });
+        return null;
+      })()}
       <AnimatePresence>
         {showChaosSorcererModal && chaosSorcererData && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher os monstros
             }}
@@ -4986,7 +6239,7 @@ const DuelArena: React.FC = () => {
                 <div className="flex justify-between items-center mb-6">
                   <div>
                     <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-indigo-400">
-                      ✨ ChaosSorcerer - Invocação Especial
+                      ✨ {chaosSorcererData?.cardName || 'Carta Chaos'} - Invocação Especial
                     </h2>
                     <p className="text-gray-300 mt-2">
                       Escolha 1 monstro LIGHT e 1 monstro DARK do seu cemitério para banir
@@ -4994,6 +6247,10 @@ const DuelArena: React.FC = () => {
                   </div>
                   <button
                     onClick={() => {
+                      if (duelId && user?.id) {
+                        // Cancelar ativação da carta no backend
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
                       setShowChaosSorcererModal(false);
                       setChaosSorcererData(null);
                       setSelectedLightMonster(null);
@@ -5011,16 +6268,24 @@ const DuelArena: React.FC = () => {
                     <h3 className="text-2xl font-bold text-yellow-400 mb-4">💡 Monstros LIGHT</h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                       {chaosSorcererData.lightMonsters.map((monster: any, index: number) => {
-                        const isSelected = selectedLightMonster === index;
+                        // Usar instanceId ou graveyardIndex como identificador único
+                        const uniqueId = monster.instanceId || `light-${monster.graveyardIndex}-${index}` || `light-${index}`;
+                        const isSelected = selectedLightMonster?.arrayIndex === index && 
+                                          (selectedLightMonster.instanceId === monster.instanceId || 
+                                           selectedLightMonster.graveyardIndex === monster.graveyardIndex);
                         return (
                           <motion.div
-                            key={`light-${index}`}
+                            key={`light-${uniqueId}-${index}`}
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             onClick={() => {
-                              setSelectedLightMonster(index);
+                              setSelectedLightMonster({
+                                instanceId: monster.instanceId,
+                                graveyardIndex: monster.graveyardIndex,
+                                arrayIndex: index
+                              });
                             }}
                             className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
                               isSelected
@@ -5051,16 +6316,24 @@ const DuelArena: React.FC = () => {
                     <h3 className="text-2xl font-bold text-purple-400 mb-4">🌑 Monstros DARK</h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                       {chaosSorcererData.darkMonsters.map((monster: any, index: number) => {
-                        const isSelected = selectedDarkMonster === index;
+                        // Usar instanceId ou graveyardIndex como identificador único
+                        const uniqueId = monster.instanceId || `dark-${monster.graveyardIndex}-${index}` || `dark-${index}`;
+                        const isSelected = selectedDarkMonster?.arrayIndex === index && 
+                                          (selectedDarkMonster.instanceId === monster.instanceId || 
+                                           selectedDarkMonster.graveyardIndex === monster.graveyardIndex);
                         return (
                           <motion.div
-                            key={`dark-${index}`}
+                            key={`dark-${uniqueId}-${index}`}
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             onClick={() => {
-                              setSelectedDarkMonster(index);
+                              setSelectedDarkMonster({
+                                instanceId: monster.instanceId,
+                                graveyardIndex: monster.graveyardIndex,
+                                arrayIndex: index
+                              });
                             }}
                             className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
                               isSelected
@@ -5090,6 +6363,10 @@ const DuelArena: React.FC = () => {
                     <p className="text-lg">Não há monstros LIGHT ou DARK no cemitério</p>
                     <button
                       onClick={() => {
+                        if (duelId && user?.id) {
+                          // Cancelar ativação da carta no backend
+                          performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                        }
                         setShowChaosSorcererModal(false);
                         setChaosSorcererData(null);
                         setSelectedLightMonster(null);
@@ -5107,6 +6384,10 @@ const DuelArena: React.FC = () => {
                   <div className="flex justify-center gap-4 mt-6">
                     <button
                       onClick={() => {
+                        if (duelId && user?.id) {
+                          // Cancelar ativação da carta no backend
+                          performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                        }
                         setShowChaosSorcererModal(false);
                         setChaosSorcererData(null);
                         setSelectedLightMonster(null);
@@ -5117,7 +6398,7 @@ const DuelArena: React.FC = () => {
                       Cancelar
                     </button>
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         if (duelId && user?.id && selectedLightMonster !== null && selectedDarkMonster !== null) {
                           // Encontrar zona vazia
                           const emptyZoneIndex = myMonsters.findIndex(m => m === null || m === undefined);
@@ -5126,23 +6407,37 @@ const DuelArena: React.FC = () => {
                             return;
                           }
                           
-                          // Perguntar posição
-                          const position = confirm('Invocar em Ataque? (OK = Ataque, Cancelar = Defesa)') ? 'attack' : 'defense';
+                          // Fechar modal de seleção de monstros primeiro
+                          setShowChaosSorcererModal(false);
                           
-                          console.log(`🎯 ChaosSorcerer: Banindo monstros LIGHT (${selectedLightMonster}) e DARK (${selectedDarkMonster})`);
+                          // Mostrar popup para escolher posição
+                          const position = window.confirm('✨ Invocar ChaosSorcerer em Posição de ATAQUE?\n\nOK = Ataque\nCancelar = Defesa') ? 'attack' : 'defense';
                           
+                          // Obter os monstros selecionados com seus identificadores únicos
+                          const selectedLightMonsterData = chaosSorcererData.lightMonsters[selectedLightMonster.arrayIndex];
+                          const selectedDarkMonsterData = chaosSorcererData.darkMonsters[selectedDarkMonster.arrayIndex];
+                          
+                          console.log(`🎯 [ChaosSorcerer Modal] Confirmando invocação - Banindo monstros LIGHT (índice ${selectedLightMonster.arrayIndex}, instanceId: ${selectedLightMonster.instanceId}) e DARK (índice ${selectedDarkMonster.arrayIndex}, instanceId: ${selectedDarkMonster.instanceId}), posição: ${position}`);
+                          
+                          // Enviar ação para banir monstros e invocar
+                          // Usar instanceId ou graveyardIndex para identificar cada carta única
                           performAction(duelId, user.id, 'CHAOS_SORCERER_SUMMON_CHOICE', {
-                            lightMonsterIndex: selectedLightMonster,
-                            darkMonsterIndex: selectedDarkMonster,
+                            lightMonsterIndex: selectedLightMonster.arrayIndex,
+                            darkMonsterIndex: selectedDarkMonster.arrayIndex,
+                            lightMonsterInstanceId: selectedLightMonster.instanceId || selectedLightMonsterData?.instanceId,
+                            darkMonsterInstanceId: selectedDarkMonster.instanceId || selectedDarkMonsterData?.instanceId,
+                            lightMonsterGraveyardIndex: selectedLightMonster.graveyardIndex || selectedLightMonsterData?.graveyardIndex,
+                            darkMonsterGraveyardIndex: selectedDarkMonster.graveyardIndex || selectedDarkMonsterData?.graveyardIndex,
                             zoneIndex: emptyZoneIndex,
                             position,
                           });
                           
-                          // Resetar estados
-                          setShowChaosSorcererModal(false);
+                          // Resetar estados do modal
                           setChaosSorcererData(null);
                           setSelectedLightMonster(null);
                           setSelectedDarkMonster(null);
+                          
+                          // A carta será removida da mão e os monstros serão banidos pelo backend
                         }
                       }}
                       disabled={selectedLightMonster === null || selectedDarkMonster === null}
@@ -5152,24 +6447,21 @@ const DuelArena: React.FC = () => {
                           : 'bg-gray-600 text-gray-400 cursor-not-allowed'
                       }`}
                     >
-                      {selectedLightMonster !== null && selectedDarkMonster !== null ? '✅ Invocar ChaosSorcerer' : 'Selecione 1 LIGHT e 1 DARK'}
+                      {selectedLightMonster !== null && selectedDarkMonster !== null ? `✅ Invocar ${chaosSorcererData?.cardName || 'Carta Chaos'}` : 'Selecione 1 LIGHT e 1 DARK'}
                     </button>
                   </div>
                 ) : null}
               </div>
             </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
       {/* Modal de ChangeOfHeart */}
       <AnimatePresence>
         {showChangeOfHeartModal && changeOfHeartData && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
@@ -5194,6 +6486,10 @@ const DuelArena: React.FC = () => {
                   </div>
                   <button
                     onClick={() => {
+                      if (duelId && user?.id) {
+                        // Cancelar ativação da carta no backend
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
                       setShowChangeOfHeartModal(false);
                       setChangeOfHeartData(null);
                       setSelectedChangeOfHeartMonster(null);
@@ -5325,6 +6621,10 @@ const DuelArena: React.FC = () => {
                   <div className="flex justify-center gap-4 mt-6">
                     <button
                       onClick={() => {
+                        if (duelId && user?.id) {
+                          // Cancelar ativação da carta no backend
+                          performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                        }
                         setShowChangeOfHeartModal(false);
                         setChangeOfHeartData(null);
                         setSelectedChangeOfHeartMonster(null);
@@ -5362,18 +6662,15 @@ const DuelArena: React.FC = () => {
                 ) : null}
               </div>
             </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
       {/* Modal de UnitedWeStand */}
       <AnimatePresence>
         {showUnitedWeStandModal && unitedWeStandData && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
@@ -5398,6 +6695,10 @@ const DuelArena: React.FC = () => {
                   </div>
                   <button
                     onClick={() => {
+                      if (duelId && user?.id) {
+                        // Cancelar ativação da carta no backend
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
                       setShowUnitedWeStandModal(false);
                       setUnitedWeStandData(null);
                       setSelectedUnitedWeStandMonster(null);
@@ -5511,6 +6812,10 @@ const DuelArena: React.FC = () => {
                   <div className="flex justify-center gap-4 mt-6">
                     <button
                       onClick={() => {
+                        if (duelId && user?.id) {
+                          // Cancelar ativação da carta no backend
+                          performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                        }
                         setShowUnitedWeStandModal(false);
                         setUnitedWeStandData(null);
                         setSelectedUnitedWeStandMonster(null);
@@ -5548,18 +6853,15 @@ const DuelArena: React.FC = () => {
                 ) : null}
               </div>
             </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
       {/* Modal de MagePower */}
       <AnimatePresence>
         {showMagePowerModal && magePowerData && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
@@ -5584,6 +6886,10 @@ const DuelArena: React.FC = () => {
                   </div>
                   <button
                     onClick={() => {
+                      if (duelId && user?.id) {
+                        // Cancelar ativação da carta no backend
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
                       setShowMagePowerModal(false);
                       setMagePowerData(null);
                       setSelectedMagePowerMonster(null);
@@ -5697,6 +7003,10 @@ const DuelArena: React.FC = () => {
                   <div className="flex justify-center gap-4 mt-6">
                     <button
                       onClick={() => {
+                        if (duelId && user?.id) {
+                          // Cancelar ativação da carta no backend
+                          performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                        }
                         setShowMagePowerModal(false);
                         setMagePowerData(null);
                         setSelectedMagePowerMonster(null);
@@ -5734,18 +7044,15 @@ const DuelArena: React.FC = () => {
                 ) : null}
               </div>
             </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
       {/* Modal de BrainControl */}
       <AnimatePresence>
         {showBrainControlModal && brainControlData && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
@@ -5770,6 +7077,10 @@ const DuelArena: React.FC = () => {
                   </div>
                   <button
                     onClick={() => {
+                      if (duelId && user?.id) {
+                        // Cancelar ativação da carta no backend
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
                       setShowBrainControlModal(false);
                       setBrainControlData(null);
                       setSelectedBrainControlMonster(null);
@@ -5799,9 +7110,11 @@ const DuelArena: React.FC = () => {
                         const cardWidth = '120px';
                         const cardHeight = '175px';
                         
+                        // Usar instanceId ou zoneIndex como chave única
+                        const uniqueKey = monster.instanceId || `opponent-monster-${realZoneIndex}-${index}`;
                         return (
                           <motion.div
-                            key={`opponent-monster-${index}`}
+                            key={uniqueKey}
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             whileHover={{ scale: 1.05 }}
@@ -5883,6 +7196,10 @@ const DuelArena: React.FC = () => {
                   <div className="flex justify-center gap-4 mt-6">
                     <button
                       onClick={() => {
+                        if (duelId && user?.id) {
+                          // Cancelar ativação da carta no backend
+                          performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                        }
                         setShowBrainControlModal(false);
                         setBrainControlData(null);
                         setSelectedBrainControlMonster(null);
@@ -5920,6 +7237,714 @@ const DuelArena: React.FC = () => {
                 ) : null}
               </div>
             </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de SoulTaker */}
+      <AnimatePresence>
+        {showSoulTakerModal && soulTakerData && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            onClick={(e) => {
+              // Não fechar ao clicar fora - precisa escolher um monstro
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl border-2 border-red-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              <div className="p-8">
+                {/* Header */}
+                <div className="flex justify-between items-center mb-6 border-b-2 border-red-500/30 pb-4">
+                  <div>
+                    <h2 className="text-4xl font-bold bg-gradient-to-r from-red-400 to-red-600 bg-clip-text text-transparent">
+                      💀 Soul Taker
+                    </h2>
+                    <p className="text-gray-300 mt-2">
+                      Escolha 1 monstro face-up que seu oponente controla; destrua o alvo e, depois, seu oponente ganha 1000 PV.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id) {
+                        // Cancelar ativação da carta no backend
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
+                      setShowSoulTakerModal(false);
+                      setSoulTakerData(null);
+                      setSelectedSoulTakerMonster(null);
+                    }}
+                    className="text-gray-400 hover:text-red-400 text-4xl font-bold transition-colors hover:scale-110 transform"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Seção: Monstros Face-Up do Oponente */}
+                {soulTakerData.opponentMonsters.length > 0 ? (
+                  <div className="mb-6">
+                    <h3 className="text-2xl font-bold text-white mb-4">Monstros Face-Up do Oponente</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                      {soulTakerData.opponentMonsters.map((monster: any, index: number) => {
+                        // O backend envia os monstros com zoneIndex no objeto
+                        const realZoneIndex = monster.zoneIndex !== undefined ? monster.zoneIndex : index;
+                        const isSelected = selectedSoulTakerMonster === realZoneIndex;
+                        const isDefense = monster.position === 'defense';
+                        const isAttack = monster.position === 'attack';
+                        
+                        // Para monstros em defesa, precisamos rotacionar 90 graus
+                        const needsRotation = isDefense;
+                        const containerSize = needsRotation ? '175px' : '120px';
+                        const containerHeight = needsRotation ? '175px' : '175px';
+                        const cardWidth = '120px';
+                        const cardHeight = '175px';
+                        
+                        return (
+                          <motion.div
+                            key={`opponent-monster-${index}`}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => {
+                              setSelectedSoulTakerMonster(realZoneIndex);
+                            }}
+                            className={`relative cursor-pointer rounded-xl border-2 transition-all ${
+                              isSelected
+                                ? 'border-red-400 ring-4 ring-red-400/50 shadow-lg shadow-red-500/50'
+                                : 'border-gray-600 hover:border-red-500/50'
+                            }`}
+                            style={{ 
+                              width: containerSize, 
+                              height: containerHeight,
+                              overflow: 'visible',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            <div
+                              className="relative"
+                              style={{
+                                width: cardWidth,
+                                height: cardHeight,
+                                transform: needsRotation ? 'rotate(90deg)' : 'none',
+                                transformOrigin: 'center center',
+                                overflow: 'hidden',
+                                borderRadius: '8px',
+                              }}
+                            >
+                              <CardImage
+                                card={monster}
+                                className="w-full h-full"
+                                fallback="/images/fundoCarta.webp"
+                              />
+                            </div>
+                            {isSelected && (
+                              <div className="absolute inset-0 bg-red-400/30 flex items-center justify-center pointer-events-none rounded-xl">
+                                <div className="bg-red-400/95 text-black px-3 py-1.5 rounded-lg font-bold text-sm">
+                                  Selecionado
+                                </div>
+                              </div>
+                            )}
+                            <div className="absolute bottom-1 left-1 right-1 text-center pointer-events-none">
+                              <p className="text-white text-xs font-semibold bg-black/70 px-2 py-1 rounded truncate">
+                                {monster.name || monster.cardName || 'Monstro'}
+                              </p>
+                            </div>
+                            <div className="absolute top-1 right-1 pointer-events-none">
+                              <div className="bg-red-500/90 text-white text-xs px-2 py-1 rounded font-bold">
+                                {monster.position === 'attack' ? 'ATK' : 'DEF'}
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-400">
+                    <p className="text-lg">Não há monstros face-up no campo do oponente para destruir</p>
+                    <button
+                      onClick={() => {
+                        setShowSoulTakerModal(false);
+                        setSoulTakerData(null);
+                        setSelectedSoulTakerMonster(null);
+                      }}
+                      className="mt-4 bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-bold transition-colors text-sm"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                )}
+
+                {/* Botões */}
+                {soulTakerData.opponentMonsters.length > 0 ? (
+                  <div className="flex justify-center gap-4 mt-6">
+                    <button
+                      onClick={() => {
+                        if (duelId && user?.id) {
+                          // Cancelar ativação da carta no backend
+                          performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                        }
+                        setShowSoulTakerModal(false);
+                        setSoulTakerData(null);
+                        setSelectedSoulTakerMonster(null);
+                      }}
+                      className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (selectedSoulTakerMonster !== null && duelId && user?.id) {
+                          console.log('✨ [SoulTaker] Enviando escolha:', selectedSoulTakerMonster);
+                          performAction(duelId, user.id, 'SOUL_TAKER_CHOICE', {
+                            chosenMonsterZoneIndex: selectedSoulTakerMonster,
+                          });
+                          
+                          // Resetar estados
+                          setShowSoulTakerModal(false);
+                          setSoulTakerData(null);
+                          setSelectedSoulTakerMonster(null);
+                        }
+                      }}
+                      disabled={selectedSoulTakerMonster === null}
+                      className={`px-8 py-3 rounded-lg font-bold transition-colors text-sm ${
+                        selectedSoulTakerMonster !== null
+                          ? 'bg-red-600 hover:bg-red-700 text-white'
+                          : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                      }`}
+                    >
+                      {selectedSoulTakerMonster !== null 
+                        ? '💀 Destruir Monstro' 
+                        : 'Selecione um monstro'}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Exiled Force */}
+      <AnimatePresence>
+        {showExiledForceModal && exiledForceData && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            onClick={(e) => {
+              // Não fechar ao clicar fora - precisa escolher um monstro
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl border-2 border-orange-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              <div className="p-8">
+                {/* Header */}
+                <div className="flex justify-between items-center mb-6 border-b-2 border-orange-500/30 pb-4">
+                  <div>
+                    <h2 className="text-4xl font-bold bg-gradient-to-r from-orange-400 to-red-600 bg-clip-text text-transparent">
+                      💥 Exiled Force
+                    </h2>
+                    <p className="text-gray-300 mt-2">
+                      Você pode tributar este monstro; destrua 1 monstro no campo.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowExiledForceModal(false);
+                      setExiledForceData(null);
+                      setSelectedExiledForceMonster(null);
+                    }}
+                    className="text-gray-400 hover:text-orange-400 text-4xl font-bold transition-colors hover:scale-110 transform"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Seção: Monstros Disponíveis */}
+                {exiledForceData.availableMonsters.length > 0 ? (
+                  <div className="mb-6">
+                    <h3 className="text-2xl font-bold text-white mb-4">Selecione um Monstro para Destruir</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                      {exiledForceData.availableMonsters.map((item: any, index: number) => {
+                        const { monster, zoneIndex, player } = item;
+                        const isSelected = selectedExiledForceMonster?.zoneIndex === zoneIndex && 
+                                          selectedExiledForceMonster?.player === player;
+                        const isDefense = monster.position === 'defense';
+                        const isAttack = monster.position === 'attack';
+                        
+                        // Para monstros em defesa, precisamos rotacionar 90 graus
+                        const needsRotation = isDefense;
+                        const containerSize = needsRotation ? '175px' : '120px';
+                        const containerHeight = needsRotation ? '175px' : '175px';
+                        const cardWidth = '120px';
+                        const cardHeight = '175px';
+                        
+                        return (
+                          <motion.div
+                            key={`exiled-force-monster-${player}-${zoneIndex}-${index}`}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => {
+                              setSelectedExiledForceMonster({ zoneIndex, player });
+                            }}
+                            className={`relative cursor-pointer rounded-xl border-2 transition-all ${
+                              isSelected
+                                ? 'border-orange-400 ring-4 ring-orange-400/50 shadow-lg shadow-orange-500/50'
+                                : 'border-gray-600 hover:border-orange-500/50'
+                            }`}
+                            style={{ 
+                              width: containerSize, 
+                              height: containerHeight,
+                              overflow: 'visible',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            <div
+                              className="relative"
+                              style={{
+                                width: cardWidth,
+                                height: cardHeight,
+                                transform: needsRotation ? 'rotate(90deg)' : 'none',
+                                transformOrigin: 'center center',
+                                overflow: 'hidden',
+                                borderRadius: '8px',
+                              }}
+                            >
+                              <CardImage
+                                card={monster}
+                                className="w-full h-full"
+                                fallback="/images/fundoCarta.webp"
+                              />
+                            </div>
+                            {isSelected && (
+                              <div className="absolute inset-0 bg-orange-400/30 flex items-center justify-center pointer-events-none rounded-xl">
+                                <div className="bg-orange-400/95 text-black px-3 py-1.5 rounded-lg font-bold text-sm">
+                                  Selecionado
+                                </div>
+                              </div>
+                            )}
+                            <div className="absolute bottom-1 left-1 right-1 text-center pointer-events-none">
+                              <p className="text-white text-xs font-semibold bg-black/70 px-2 py-1 rounded truncate">
+                                {monster.name || monster.cardName || 'Monstro'}
+                              </p>
+                            </div>
+                            <div className="absolute top-1 right-1 pointer-events-none">
+                              <div className={`${player === 'player' ? 'bg-blue-500/90' : 'bg-red-500/90'} text-white text-xs px-2 py-1 rounded font-bold`}>
+                                {player === 'player' ? 'SEU' : 'OPONENTE'}
+                              </div>
+                            </div>
+                            <div className="absolute top-1 left-1 pointer-events-none">
+                              <div className="bg-orange-500/90 text-white text-xs px-2 py-1 rounded font-bold">
+                                {monster.position === 'attack' ? 'ATK' : 'DEF'}
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-400">
+                    <p className="text-lg">Não há monstros no campo para destruir</p>
+                    <button
+                      onClick={() => {
+                        setShowExiledForceModal(false);
+                        setExiledForceData(null);
+                        setSelectedExiledForceMonster(null);
+                      }}
+                      className="mt-4 bg-orange-600 hover:bg-orange-700 text-white px-6 py-2 rounded-lg font-bold transition-colors text-sm"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                )}
+
+                {/* Botões */}
+                {exiledForceData.availableMonsters.length > 0 ? (
+                  <div className="flex justify-center gap-4 mt-6">
+                    <button
+                      onClick={() => {
+                        setShowExiledForceModal(false);
+                        setExiledForceData(null);
+                        setSelectedExiledForceMonster(null);
+                      }}
+                      className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (selectedExiledForceMonster !== null && duelId && user?.id && exiledForceData?.monsterZoneIndex !== undefined) {
+                          console.log('✨ [Exiled Force] Enviando escolha:', selectedExiledForceMonster);
+                          performAction(duelId, user.id, 'EXILED_FORCE_CHOICE', {
+                            monsterZoneIndex: exiledForceData.monsterZoneIndex,
+                            targetPlayer: selectedExiledForceMonster.player,
+                            targetZoneIndex: selectedExiledForceMonster.zoneIndex,
+                          });
+                          
+                          // Resetar estados
+                          setShowExiledForceModal(false);
+                          setExiledForceData(null);
+                          setSelectedExiledForceMonster(null);
+                        }
+                      }}
+                      disabled={selectedExiledForceMonster === null}
+                      className={`px-8 py-3 rounded-lg font-bold transition-colors text-sm ${
+                        selectedExiledForceMonster !== null
+                          ? 'bg-orange-600 hover:bg-orange-700 text-white'
+                          : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                      }`}
+                    >
+                      {selectedExiledForceMonster !== null 
+                        ? '💥 Destruir Monstro' 
+                        : 'Selecione um monstro'}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal do Efeito do Dark Armed Dragon */}
+      <AnimatePresence>
+        {showDarkArmedDragonEffectModal && darkArmedDragonEffectData && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setShowDarkArmedDragonEffectModal(false);
+                setDarkArmedDragonEffectData(null);
+                setSelectedDarkMonsterToBanish(null);
+                setSelectedCardToDestroy(null);
+              }
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-gradient-to-br from-purple-900/95 to-indigo-900/95 border-2 border-purple-400/70 rounded-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="text-center mb-6">
+                <h2 className="text-2xl font-bold text-white mb-2">
+                  Efeito do Dark Armed Dragon
+                </h2>
+                <p className="text-purple-200 text-sm">
+                  {selectedDarkMonsterToBanish === null
+                    ? 'Selecione 1 monstro Dark do seu cemitério para banir'
+                    : selectedCardToDestroy === null
+                    ? 'Selecione 1 carta no campo para destruir'
+                    : 'Confirme a destruição'}
+                </p>
+              </div>
+
+              {selectedDarkMonsterToBanish === null ? (
+                // Primeira etapa: Selecionar monstro Dark do cemitério
+                <div>
+                  <h3 className="text-lg font-semibold text-white mb-4">Monstros Dark no Cemitério:</h3>
+                  {darkArmedDragonEffectData.darkMonsters.length > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                      {darkArmedDragonEffectData.darkMonsters.map((monster: any, index: number) => {
+                        const isSelected = selectedDarkMonsterToBanish === index;
+                        return (
+                          <motion.div
+                            key={index}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => setSelectedDarkMonsterToBanish(index)}
+                            className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                              isSelected
+                                ? 'border-purple-400 shadow-lg shadow-purple-500/50'
+                                : 'border-purple-600/50 hover:border-purple-400'
+                            }`}
+                          >
+                            <CardImage
+                              card={monster}
+                              className="w-full h-48 object-cover"
+                            />
+                            {isSelected && (
+                              <div className="absolute inset-0 bg-purple-400/30 flex items-center justify-center pointer-events-none rounded-xl">
+                                <div className="bg-purple-400/95 text-black px-3 py-1.5 rounded-lg font-bold text-sm">
+                                  Selecionado
+                                </div>
+                              </div>
+                            )}
+                            <div className="absolute bottom-1 left-1 right-1 text-center pointer-events-none">
+                              <p className="text-white text-xs font-semibold bg-black/70 px-2 py-1 rounded truncate">
+                                {monster.name || monster.cardName || 'Monstro'}
+                              </p>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-400">
+                      <p className="text-lg">Não há monstros Dark no seu cemitério</p>
+                    </div>
+                  )}
+                </div>
+              ) : selectedCardToDestroy === null ? (
+                // Segunda etapa: Selecionar carta no campo para destruir
+                <div>
+                  <h3 className="text-lg font-semibold text-white mb-4">Selecione uma carta no campo para destruir:</h3>
+                  <div className="space-y-6">
+                    {/* Monstros do jogador */}
+                    <div>
+                      <h4 className="text-md font-semibold text-purple-200 mb-3">Seus Monstros:</h4>
+                      <div className="grid grid-cols-5 gap-2">
+                        {myMonsters.map((monster: any, index: number) => {
+                          if (!monster || monster === null) return null;
+                          const isSelected = selectedCardToDestroy?.player === 'player' && 
+                                           selectedCardToDestroy?.type === 'monster' && 
+                                           selectedCardToDestroy?.zoneIndex === index;
+                          return (
+                            <motion.div
+                              key={`player-monster-${index}`}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => setSelectedCardToDestroy({ player: 'player', type: 'monster', zoneIndex: index })}
+                              className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                                isSelected
+                                  ? 'border-purple-400 shadow-lg shadow-purple-500/50'
+                                  : 'border-purple-600/50 hover:border-purple-400'
+                              }`}
+                            >
+                              <CardImage
+                                card={monster}
+                                className="w-full h-32 object-cover"
+                              />
+                              {isSelected && (
+                                <div className="absolute inset-0 bg-purple-400/30 flex items-center justify-center pointer-events-none rounded-xl">
+                                  <div className="bg-purple-400/95 text-black px-2 py-1 rounded-lg font-bold text-xs">
+                                    Selecionado
+                                  </div>
+                                </div>
+                              )}
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Spell/Trap do jogador */}
+                    <div>
+                      <h4 className="text-md font-semibold text-purple-200 mb-3">Suas Magias/Armadilhas:</h4>
+                      <div className="grid grid-cols-5 gap-2">
+                        {mySpellTraps.map((spellTrap: any, index: number) => {
+                          if (!spellTrap || spellTrap === null) return null;
+                          const isSelected = selectedCardToDestroy?.player === 'player' && 
+                                           selectedCardToDestroy?.type === 'spellTrap' && 
+                                           selectedCardToDestroy?.zoneIndex === index;
+                          return (
+                            <motion.div
+                              key={`player-spelltrap-${index}`}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => setSelectedCardToDestroy({ player: 'player', type: 'spellTrap', zoneIndex: index })}
+                              className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                                isSelected
+                                  ? 'border-purple-400 shadow-lg shadow-purple-500/50'
+                                  : 'border-purple-600/50 hover:border-purple-400'
+                              }`}
+                            >
+                              <CardImage
+                                card={spellTrap}
+                                className="w-full h-32 object-cover"
+                              />
+                              {isSelected && (
+                                <div className="absolute inset-0 bg-purple-400/30 flex items-center justify-center pointer-events-none rounded-xl">
+                                  <div className="bg-purple-400/95 text-black px-2 py-1 rounded-lg font-bold text-xs">
+                                    Selecionado
+                                  </div>
+                                </div>
+                              )}
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Monstros do oponente */}
+                    <div>
+                      <h4 className="text-md font-semibold text-purple-200 mb-3">Monstros do Oponente:</h4>
+                      <div className="grid grid-cols-5 gap-2">
+                        {opponentMonsters.map((monster: any, index: number) => {
+                          if (!monster || monster === null) return null;
+                          const isSelected = selectedCardToDestroy?.player === 'opponent' && 
+                                           selectedCardToDestroy?.type === 'monster' && 
+                                           selectedCardToDestroy?.zoneIndex === index;
+                          return (
+                            <motion.div
+                              key={`opponent-monster-${index}`}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => setSelectedCardToDestroy({ player: 'opponent', type: 'monster', zoneIndex: index })}
+                              className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                                isSelected
+                                  ? 'border-purple-400 shadow-lg shadow-purple-500/50'
+                                  : 'border-purple-600/50 hover:border-purple-400'
+                              }`}
+                            >
+                              <CardImage
+                                card={monster}
+                                className="w-full h-32 object-cover"
+                              />
+                              {isSelected && (
+                                <div className="absolute inset-0 bg-purple-400/30 flex items-center justify-center pointer-events-none rounded-xl">
+                                  <div className="bg-purple-400/95 text-black px-2 py-1 rounded-lg font-bold text-xs">
+                                    Selecionado
+                                  </div>
+                                </div>
+                              )}
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Spell/Trap do oponente */}
+                    <div>
+                      <h4 className="text-md font-semibold text-purple-200 mb-3">Magias/Armadilhas do Oponente:</h4>
+                      <div className="grid grid-cols-5 gap-2">
+                        {opponentSpellTraps.map((spellTrap: any, index: number) => {
+                          if (!spellTrap || spellTrap === null) return null;
+                          const isSelected = selectedCardToDestroy?.player === 'opponent' && 
+                                           selectedCardToDestroy?.type === 'spellTrap' && 
+                                           selectedCardToDestroy?.zoneIndex === index;
+                          return (
+                            <motion.div
+                              key={`opponent-spelltrap-${index}`}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => setSelectedCardToDestroy({ player: 'opponent', type: 'spellTrap', zoneIndex: index })}
+                              className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                                isSelected
+                                  ? 'border-purple-400 shadow-lg shadow-purple-500/50'
+                                  : 'border-purple-600/50 hover:border-purple-400'
+                              }`}
+                            >
+                              <CardImage
+                                card={spellTrap}
+                                className="w-full h-32 object-cover"
+                              />
+                              {isSelected && (
+                                <div className="absolute inset-0 bg-purple-400/30 flex items-center justify-center pointer-events-none rounded-xl">
+                                  <div className="bg-purple-400/95 text-black px-2 py-1 rounded-lg font-bold text-xs">
+                                    Selecionado
+                                  </div>
+                                </div>
+                              )}
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Botões */}
+              <div className="flex justify-center gap-4 mt-6">
+                <button
+                  onClick={() => {
+                    if (selectedDarkMonsterToBanish === null) {
+                      // Fechar modal
+                      setShowDarkArmedDragonEffectModal(false);
+                      setDarkArmedDragonEffectData(null);
+                      setSelectedDarkMonsterToBanish(null);
+                      setSelectedCardToDestroy(null);
+                    } else if (selectedCardToDestroy === null) {
+                      // Voltar para seleção de monstro Dark
+                      setSelectedDarkMonsterToBanish(null);
+                    } else {
+                      // Voltar para seleção de carta
+                      setSelectedCardToDestroy(null);
+                    }
+                  }}
+                  className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                >
+                  {selectedDarkMonsterToBanish === null ? 'Cancelar' : selectedCardToDestroy === null ? 'Voltar' : 'Voltar'}
+                </button>
+                {selectedDarkMonsterToBanish !== null && (
+                  <button
+                    onClick={() => {
+                      if (selectedCardToDestroy === null) {
+                        // Avançar para seleção de carta
+                        // Não fazer nada, apenas deixar o usuário selecionar
+                      } else if (duelId && user?.id && darkArmedDragonEffectData) {
+                        // Confirmar efeito
+                        const darkMonster = darkArmedDragonEffectData.darkMonsters[selectedDarkMonsterToBanish];
+                        // Usar o graveyardIndex do monstro (calculado no backend) ou encontrar no cemitério atual
+                        let graveyardIndex = darkMonster?.graveyardIndex;
+                        if (graveyardIndex === undefined || graveyardIndex === null) {
+                          // Se não tiver graveyardIndex, encontrar no cemitério atual
+                          const monsterId = darkMonster?.idCarta || darkMonster?.id || darkMonster?.cardId;
+                          const monsterInstanceId = darkMonster?.instanceId;
+                          graveyardIndex = myGraveyard.findIndex((c: any) => {
+                            if (monsterInstanceId && c.instanceId) {
+                              return c.instanceId === monsterInstanceId;
+                            }
+                            const cId = c.idCarta || c.id || c.cardId;
+                            return cId === monsterId || String(cId) === String(monsterId);
+                          });
+                        }
+                        
+                        if (graveyardIndex === -1) {
+                          alert('Monstro não encontrado no cemitério');
+                          return;
+                        }
+                        
+                        performAction(duelId, user.id, 'DARK_ARMED_DRAGON_EFFECT_CHOICE', {
+                          monsterZoneIndex: darkArmedDragonEffectData.monsterZoneIndex,
+                          darkGraveyardIndex: graveyardIndex,
+                          targetPlayer: selectedCardToDestroy.player,
+                          targetType: selectedCardToDestroy.type,
+                          targetZoneIndex: selectedCardToDestroy.zoneIndex,
+                        });
+                        
+                        // Resetar estados
+                        setShowDarkArmedDragonEffectModal(false);
+                        setDarkArmedDragonEffectData(null);
+                        setSelectedDarkMonsterToBanish(null);
+                        setSelectedCardToDestroy(null);
+                      }
+                    }}
+                    disabled={selectedCardToDestroy === null}
+                    className={`px-8 py-3 rounded-lg font-bold transition-colors text-sm ${
+                      selectedCardToDestroy !== null
+                        ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {selectedCardToDestroy === null
+                      ? 'Continuar'
+                      : '💀 Banir e Destruir'}
+                  </button>
+                )}
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -5931,7 +7956,7 @@ const DuelArena: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
             onClick={() => setSelectedCardInfo(null)}
           >
             <motion.div
@@ -6066,6 +8091,9 @@ const DuelArena: React.FC = () => {
             return;
           }
           
+          // Atualizar estado local imediatamente para que os botões fiquem desabilitados
+          setNormalSummonUsed(true);
+          
           // Acionar animação antes de invocar com tributos
           await triggerCardPlacementAnimation(tributeModalData.card, emptyZoneIndex, true);
           
@@ -6087,6 +8115,769 @@ const DuelArena: React.FC = () => {
         summoningCard={tributeModalData?.card || null}
         position={tributeModalData?.position || 'attack'}
       />
+
+      {/* Modal de Invocação Especial do Red-Eyes Darkness Metal Dragon */}
+      <AnimatePresence>
+        {showRedEyesDarknessMetalDragonModal && redEyesDarknessMetalDragonData && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            onClick={(e) => {
+              // Não fechar ao clicar fora - precisa escolher o dragão
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-2 border-red-500/50"
+            >
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <div>
+                    <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-orange-400">
+                      🐉 Red-Eyes Darkness Metal Dragon - Invocação Especial
+                    </h2>
+                    <p className="text-gray-300 mt-2">
+                      Escolha 1 monstro do Tipo Dragão face-up que você controla para banir
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowRedEyesDarknessMetalDragonModal(false);
+                      setRedEyesDarknessMetalDragonData(null);
+                      setSelectedDragonToBanish(null);
+                    }}
+                    className="text-gray-400 hover:text-red-400 text-4xl font-bold transition-colors hover:scale-110 transform"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Monstros Dragão disponíveis */}
+                {redEyesDarknessMetalDragonData.dragonMonsters.length > 0 ? (
+                  <div className="mb-6">
+                    <h3 className="text-2xl font-bold text-red-400 mb-4">🐉 Monstros Dragão no Campo</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                      {redEyesDarknessMetalDragonData.dragonMonsters.map((monster: any, index: number) => {
+                        const isSelected = selectedDragonToBanish === index;
+                        return (
+                          <motion.div
+                            key={`dragon-${index}`}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => {
+                              setSelectedDragonToBanish(index);
+                            }}
+                            className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                              isSelected
+                                ? 'border-red-400 ring-4 ring-red-400/50 shadow-lg shadow-red-500/50'
+                                : 'border-gray-600 hover:border-red-500/50'
+                            }`}
+                            style={{ width: '120px', height: '175px' }}
+                          >
+                            <CardImage
+                              card={monster}
+                              className="w-full h-full object-cover"
+                            />
+                            {isSelected && (
+                              <div className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                ✓
+                              </div>
+                            )}
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-400">
+                    <p className="text-lg">Não há monstros do Tipo Dragão face-up no campo</p>
+                  </div>
+                )}
+
+                {/* Botões */}
+                <div className="flex justify-center gap-4 mt-6">
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id) {
+                        // Cancelar ativação da carta no backend
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
+                      setShowRedEyesDarknessMetalDragonModal(false);
+                      setRedEyesDarknessMetalDragonData(null);
+                      setSelectedDragonToBanish(null);
+                    }}
+                    className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (selectedDragonToBanish === null || !redEyesDarknessMetalDragonData || !duelId || !user?.id) return;
+                      
+                      const selectedDragon = redEyesDarknessMetalDragonData.dragonMonsters[selectedDragonToBanish];
+                      if (!selectedDragon) return;
+                      
+                      const emptyZoneIndex = myMonsters.findIndex(m => m === null || m === undefined);
+                      if (emptyZoneIndex === -1) {
+                        alert('Todas as zonas de monstro estão ocupadas!');
+                        return;
+                      }
+                      
+                      // Fechar modal de seleção de dragão
+                      setShowRedEyesDarknessMetalDragonModal(false);
+                      
+                      // Sempre invocar em ataque
+                      const position = 'attack';
+                      
+                      console.log(`🎯 [Red-Eyes Darkness Metal Dragon Modal] Confirmando invocação - Banindo dragão (índice ${selectedDragon.zoneIndex}), posição: ${position}`);
+                      
+                      // Enviar ação de invocação especial
+                      performAction(duelId, user.id, 'RED_EYES_DARKNESS_METAL_DRAGON_SUMMON_CHOICE', {
+                        cardId: redEyesDarknessMetalDragonData.cardId,
+                        dragonZoneIndex: selectedDragon.zoneIndex,
+                        zoneIndex: emptyZoneIndex,
+                        position,
+                      });
+                      
+                      setRedEyesDarknessMetalDragonData(null);
+                      setSelectedDragonToBanish(null);
+                    }}
+                    disabled={selectedDragonToBanish === null}
+                    className={`px-6 py-3 rounded-lg font-bold transition-colors ${
+                      selectedDragonToBanish !== null
+                        ? 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white cursor-pointer'
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {selectedDragonToBanish !== null ? '✅ Confirmar Invocação' : 'Selecione um Dragão'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Efeito do Red-Eyes Darkness Metal Dragon */}
+      <AnimatePresence>
+        {showRedEyesDarknessMetalDragonEffectModal && redEyesDarknessMetalDragonEffectData && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            onClick={(e) => {
+              // Não fechar ao clicar fora - precisa escolher o dragão
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-2 border-red-500/50"
+            >
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <div>
+                    <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-orange-400">
+                      🐉 Red-Eyes Darkness Metal Dragon - Efeito
+                    </h2>
+                    <p className="text-gray-300 mt-2">
+                      Uma vez por turno: invoque por invocação especial 1 monstro do Tipo Dragão da sua mão ou Cemitério (exceto Red-Eyes Darkness Metal Dragon)
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowRedEyesDarknessMetalDragonEffectModal(false);
+                      setRedEyesDarknessMetalDragonEffectData(null);
+                      setSelectedDragonSource(null);
+                      setSelectedDragonIndex(null);
+                      setSelectedDragonId(null);
+                    }}
+                    className="text-gray-400 hover:text-red-400 text-4xl font-bold transition-colors hover:scale-110 transform"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Dragões na mão */}
+                {redEyesDarknessMetalDragonEffectData.dragonsInHand.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="text-2xl font-bold text-blue-400 mb-4">🃏 Dragões na Mão ({redEyesDarknessMetalDragonEffectData.dragonsInHand.length})</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                      {redEyesDarknessMetalDragonEffectData.dragonsInHand.map((dragon: any, index: number) => {
+                        const dragonId = `hand-${index}`;
+                        const isSelected = selectedDragonId === dragonId;
+                        return (
+                          <motion.div
+                            key={`hand-dragon-${index}`}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => {
+                              setSelectedDragonId(dragonId);
+                              setSelectedDragonSource('hand');
+                              setSelectedDragonIndex(index);
+                            }}
+                            className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                              isSelected
+                                ? 'border-blue-400 ring-4 ring-blue-400/50 shadow-lg shadow-blue-500/50'
+                                : 'border-gray-600 hover:border-blue-500/50'
+                            }`}
+                            style={{ width: '120px', height: '175px' }}
+                          >
+                            <CardImage
+                              card={dragon}
+                              className="w-full h-full object-cover"
+                            />
+                            {isSelected && (
+                              <div className="absolute top-2 right-2 bg-blue-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                ✓
+                              </div>
+                            )}
+                            <div className="absolute bottom-2 left-2 bg-blue-600/80 text-white text-xs font-bold px-2 py-1 rounded">
+                              Mão
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Dragões no cemitério */}
+                {redEyesDarknessMetalDragonEffectData.dragonsInGraveyard.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="text-2xl font-bold text-purple-400 mb-4">⚰️ Dragões no Cemitério ({redEyesDarknessMetalDragonEffectData.dragonsInGraveyard.length})</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                      {redEyesDarknessMetalDragonEffectData.dragonsInGraveyard.map((dragon: any, index: number) => {
+                        const dragonId = `graveyard-${index}`;
+                        const isSelected = selectedDragonId === dragonId;
+                        return (
+                          <motion.div
+                            key={`gy-dragon-${index}`}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => {
+                              setSelectedDragonId(dragonId);
+                              setSelectedDragonSource('graveyard');
+                              setSelectedDragonIndex(index);
+                            }}
+                            className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                              isSelected
+                                ? 'border-purple-400 ring-4 ring-purple-400/50 shadow-lg shadow-purple-500/50'
+                                : 'border-gray-600 hover:border-purple-500/50'
+                            }`}
+                            style={{ width: '120px', height: '175px' }}
+                          >
+                            <CardImage
+                              card={dragon}
+                              className="w-full h-full object-cover"
+                            />
+                            {isSelected && (
+                              <div className="absolute top-2 right-2 bg-purple-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                ✓
+                              </div>
+                            )}
+                            <div className="absolute bottom-2 left-2 bg-purple-600/80 text-white text-xs font-bold px-2 py-1 rounded">
+                              Cemitério
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Mensagem se não houver dragões */}
+                {redEyesDarknessMetalDragonEffectData.dragonsInHand.length === 0 && redEyesDarknessMetalDragonEffectData.dragonsInGraveyard.length === 0 && (
+                  <div className="text-center py-8 text-gray-400">
+                    <p className="text-lg">Não há monstros do Tipo Dragão na sua mão ou cemitério (exceto Red-Eyes Darkness Metal Dragon)</p>
+                  </div>
+                )}
+
+                {/* Botões */}
+                <div className="flex justify-center gap-4 mt-6">
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id) {
+                        // Cancelar ativação da carta no backend
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
+                      setShowRedEyesDarknessMetalDragonEffectModal(false);
+                      setRedEyesDarknessMetalDragonEffectData(null);
+                      setSelectedDragonSource(null);
+                      setSelectedDragonIndex(null);
+                      setSelectedDragonId(null);
+                    }}
+                    className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (selectedDragonSource === null || selectedDragonIndex === null || !redEyesDarknessMetalDragonEffectData || !duelId || !user?.id) return;
+                      
+                      const emptyZoneIndex = myMonsters.findIndex(m => m === null || m === undefined);
+                      if (emptyZoneIndex === -1) {
+                        alert('Todas as zonas de monstro estão ocupadas!');
+                        return;
+                      }
+                      
+                      // Enviar ação de efeito
+                      performAction(duelId, user.id, 'RED_EYES_DARKNESS_METAL_DRAGON_EFFECT_CHOICE', {
+                        monsterZoneIndex: redEyesDarknessMetalDragonEffectData.monsterZoneIndex,
+                        source: selectedDragonSource,
+                        cardIndex: selectedDragonSource === 'hand' 
+                          ? redEyesDarknessMetalDragonEffectData.dragonsInHand[selectedDragonIndex]?.handIndex
+                          : redEyesDarknessMetalDragonEffectData.dragonsInGraveyard[selectedDragonIndex]?.graveyardIndex,
+                        zoneIndex: emptyZoneIndex,
+                        position: 'attack',
+                      });
+                      
+                      setShowRedEyesDarknessMetalDragonEffectModal(false);
+                      setRedEyesDarknessMetalDragonEffectData(null);
+                      setSelectedDragonSource(null);
+                      setSelectedDragonIndex(null);
+                      setSelectedDragonId(null);
+                    }}
+                    disabled={selectedDragonSource === null || selectedDragonIndex === null}
+                    className={`px-6 py-3 rounded-lg font-bold transition-colors ${
+                      selectedDragonSource !== null && selectedDragonIndex !== null
+                        ? 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white cursor-pointer'
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {selectedDragonSource !== null && selectedDragonIndex !== null ? '✅ Confirmar Invocação (Ataque)' : 'Selecione um Dragão'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Cyber-Stein */}
+      <AnimatePresence>
+        {showCyberSteinModal && cyberSteinData && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            onClick={(e) => {
+              // Não fechar ao clicar fora - precisa escolher um monstro
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-2 border-cyan-500/50"
+            >
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <div>
+                    <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400">
+                      ⚡ Cyber-Stein - Efeito
+                    </h2>
+                    <p className="text-gray-300 mt-2">
+                      Pague 5000 LP; invoque por invocação especial 1 monstro do seu Extra Deck em modo de ataque
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id) {
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
+                      setShowCyberSteinModal(false);
+                      setCyberSteinData(null);
+                      setSelectedCyberSteinMonster(null);
+                    }}
+                    className="text-gray-400 hover:text-red-400 text-4xl font-bold transition-colors hover:scale-110 transform"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Monstros do Extra Deck */}
+                {cyberSteinData.extraDeckMonsters.length > 0 ? (
+                  <div className="mb-6">
+                    <h3 className="text-2xl font-bold text-cyan-400 mb-4">📦 Monstros do Extra Deck ({cyberSteinData.extraDeckMonsters.length})</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                      {cyberSteinData.extraDeckMonsters.map((monster: any, index: number) => {
+                        const extraDeckIndex = monster.extraDeckIndex !== undefined ? monster.extraDeckIndex : index;
+                        const isSelected = selectedCyberSteinMonster === extraDeckIndex;
+                        return (
+                          <motion.div
+                            key={`extra-deck-monster-${index}`}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => {
+                              setSelectedCyberSteinMonster(extraDeckIndex);
+                            }}
+                            className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                              isSelected
+                                ? 'border-cyan-400 ring-4 ring-cyan-400/50 shadow-lg shadow-cyan-500/50'
+                                : 'border-gray-600 hover:border-cyan-500/50'
+                            }`}
+                            style={{ width: '120px', height: '175px' }}
+                          >
+                            <CardImage
+                              card={monster}
+                              className="w-full h-full object-cover"
+                            />
+                            {isSelected && (
+                              <div className="absolute top-2 right-2 bg-cyan-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                ✓
+                              </div>
+                            )}
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-400">
+                    <p className="text-lg">Não há monstros no seu Extra Deck para invocar</p>
+                  </div>
+                )}
+
+                {/* Botões */}
+                <div className="flex justify-center gap-4 mt-6">
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id) {
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
+                      setShowCyberSteinModal(false);
+                      setCyberSteinData(null);
+                      setSelectedCyberSteinMonster(null);
+                    }}
+                    className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (selectedCyberSteinMonster !== null && cyberSteinData && duelId && user?.id) {
+                        const emptyZoneIndex = myMonsters.findIndex(m => m === null || m === undefined);
+                        if (emptyZoneIndex === -1) {
+                          alert('Todas as zonas de monstro estão ocupadas!');
+                          return;
+                        }
+                        
+                        performAction(duelId, user.id, 'CYBER_STEIN_EFFECT_CHOICE', {
+                          monsterZoneIndex: cyberSteinData.monsterZoneIndex,
+                          extraDeckIndex: selectedCyberSteinMonster,
+                        });
+                        
+                        setShowCyberSteinModal(false);
+                        setCyberSteinData(null);
+                        setSelectedCyberSteinMonster(null);
+                      }
+                    }}
+                    disabled={selectedCyberSteinMonster === null}
+                    className={`px-6 py-3 rounded-lg font-bold transition-colors ${
+                      selectedCyberSteinMonster !== null
+                        ? 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white cursor-pointer'
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {selectedCyberSteinMonster !== null ? '⚡ Confirmar (Pagar 5000 LP)' : 'Selecione um Monstro'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal do Reinforcement Of The Army */}
+      <AnimatePresence>
+        {showReinforcementOfTheArmyModal && reinforcementOfTheArmyData && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setShowReinforcementOfTheArmyModal(false);
+                setReinforcementOfTheArmyData(null);
+                setSelectedReinforcementOfTheArmyMonster(null);
+              }
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-gradient-to-br from-yellow-900/95 to-orange-900/95 border-2 border-yellow-400/70 rounded-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="text-center mb-6">
+                <h2 className="text-2xl font-bold text-white mb-2">
+                  Reinforcement Of The Army
+                </h2>
+                <p className="text-yellow-200 text-sm">
+                  Selecione 1 monstro Warrior de Level 4 ou menos do seu deck para adicionar à sua mão
+                </p>
+              </div>
+
+              {reinforcementOfTheArmyData.warriorMonsters.length > 0 ? (
+                <div>
+                  <h3 className="text-lg font-semibold text-white mb-4">Monstros Warrior de Level 4 ou menos no Deck:</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                    {reinforcementOfTheArmyData.warriorMonsters.map((monster: any, index: number) => {
+                      const isSelected = selectedReinforcementOfTheArmyMonster === monster.deckIndex;
+                      return (
+                        <motion.div
+                          key={index}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => setSelectedReinforcementOfTheArmyMonster(monster.deckIndex)}
+                          className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                            isSelected
+                              ? 'border-yellow-400 shadow-lg shadow-yellow-500/50'
+                              : 'border-yellow-600/50 hover:border-yellow-400'
+                          }`}
+                          style={{ width: '120px', height: '175px' }}
+                        >
+                          <CardImage
+                            card={monster}
+                            className="w-full h-full object-cover"
+                            fallback="/images/fundoCarta.webp"
+                          />
+                          {isSelected && (
+                            <div className="absolute inset-0 bg-yellow-400/30 flex items-center justify-center pointer-events-none rounded-xl">
+                              <div className="bg-yellow-400/95 text-black px-3 py-1.5 rounded-lg font-bold text-sm">
+                                Selecionado
+                              </div>
+                            </div>
+                          )}
+                          <div className="absolute bottom-1 left-1 right-1 text-center pointer-events-none">
+                            <p className="text-white text-xs font-semibold bg-black/70 px-2 py-1 rounded truncate">
+                              {monster.name || monster.cardName || 'Monstro'}
+                            </p>
+                          </div>
+                          <div className="absolute top-1 left-1 pointer-events-none">
+                            <div className="bg-yellow-500/90 text-black text-xs px-2 py-1 rounded font-bold">
+                              Lv.{monster.level || monster.cardLevel || '?'}
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-400">
+                  <p className="text-lg">Não há monstros Warrior de Level 4 ou menos no seu deck</p>
+                  <button
+                    onClick={() => {
+                      setShowReinforcementOfTheArmyModal(false);
+                      setReinforcementOfTheArmyData(null);
+                      setSelectedReinforcementOfTheArmyMonster(null);
+                    }}
+                    className="mt-4 bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-bold transition-colors text-sm"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              )}
+
+              {/* Botões */}
+              {reinforcementOfTheArmyData.warriorMonsters.length > 0 ? (
+                <div className="flex justify-center gap-4 mt-6">
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id) {
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
+                      setShowReinforcementOfTheArmyModal(false);
+                      setReinforcementOfTheArmyData(null);
+                      setSelectedReinforcementOfTheArmyMonster(null);
+                    }}
+                    className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (selectedReinforcementOfTheArmyMonster !== null && duelId && user?.id) {
+                        console.log('✨ [ReinforcementOfTheArmy] Enviando escolha:', selectedReinforcementOfTheArmyMonster);
+                        performAction(duelId, user.id, 'REINFORCEMENT_OF_THE_ARMY_CHOICE', {
+                          deckIndex: selectedReinforcementOfTheArmyMonster,
+                        });
+                        
+                        // Resetar estados
+                        setShowReinforcementOfTheArmyModal(false);
+                        setReinforcementOfTheArmyData(null);
+                        setSelectedReinforcementOfTheArmyMonster(null);
+                      }
+                    }}
+                    disabled={selectedReinforcementOfTheArmyMonster === null}
+                    className={`px-8 py-3 rounded-lg font-bold transition-colors text-sm ${
+                      selectedReinforcementOfTheArmyMonster !== null
+                        ? 'bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 text-white'
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {selectedReinforcementOfTheArmyMonster !== null 
+                      ? '⚔️ Adicionar à Mão' 
+                      : 'Selecione um monstro'}
+                  </button>
+                </div>
+              ) : null}
+            </motion.div>
+          </motion.div>
+        )}
+        
+        {/* Modal Last Will */}
+        {showLastWillModal && lastWillData && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[10000] flex items-center justify-center p-4"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setShowLastWillModal(false);
+                setLastWillData(null);
+                setSelectedLastWillMonster(null);
+              }
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 border-2 border-purple-500/50 rounded-xl shadow-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-2xl font-bold text-white mb-4 text-center">
+                Last Will - Selecione um Monstro com ATK ≤ 1500
+              </h2>
+              <p className="text-gray-300 text-center mb-6">
+                Escolha um monstro do seu deck com ATK de 1500 ou menos para invocar por invocação especial no primeiro slot disponível
+              </p>
+
+              {/* Lista de Monstros */}
+              {lastWillData.eligibleMonsters.length > 0 ? (
+                <div>
+                  <h3 className="text-lg font-bold text-white mb-3 text-center">Monstros Disponíveis:</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 max-h-96 overflow-y-auto">
+                    {lastWillData.eligibleMonsters.map((monster: any, index: number) => {
+                      const isSelected = selectedLastWillMonster === monster.deckIndex;
+                      return (
+                        <motion.div
+                          key={monster.deckIndex || index}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => {
+                            setSelectedLastWillMonster(monster.deckIndex);
+                          }}
+                          className={`cursor-pointer rounded-lg border-2 p-2 transition-all ${
+                            isSelected
+                              ? 'border-yellow-500 bg-yellow-500/20 shadow-lg shadow-yellow-500/50'
+                              : 'border-gray-600 bg-gray-800/50 hover:border-gray-400'
+                          }`}
+                        >
+                          <CardImage
+                            card={monster}
+                            className="w-full aspect-[2/3] object-cover rounded"
+                          />
+                          <div className="mt-2 text-center">
+                            <p className="text-white text-xs font-bold truncate">
+                              {monster.name || monster.cardName}
+                            </p>
+                            <p className="text-yellow-400 text-xs">
+                              ATK: {monster.atk || monster.cardAtk || 0}
+                            </p>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-400">
+                  <p className="text-lg">Não há monstros com ATK ≤ 1500 no seu deck</p>
+                  <button
+                    onClick={() => {
+                      setShowLastWillModal(false);
+                      setLastWillData(null);
+                      setSelectedLastWillMonster(null);
+                    }}
+                    className="mt-4 bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-bold transition-colors text-sm"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              )}
+
+              {/* Botões */}
+              {lastWillData.eligibleMonsters.length > 0 ? (
+                <div className="flex justify-center gap-4 mt-6">
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id) {
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
+                      setShowLastWillModal(false);
+                      setLastWillData(null);
+                      setSelectedLastWillMonster(null);
+                    }}
+                    className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (selectedLastWillMonster !== null && duelId && user?.id) {
+                        // Encontrar o primeiro slot vazio automaticamente
+                        const firstEmptyZone = myMonsters.findIndex((monster: any) => monster === null || monster === undefined);
+                        
+                        if (firstEmptyZone === -1) {
+                          alert('Não há slots disponíveis para invocar o monstro');
+                          return;
+                        }
+                        
+                        console.log('✨ [LastWill] Enviando escolha:', { deckIndex: selectedLastWillMonster, zoneIndex: firstEmptyZone });
+                        performAction(duelId, user.id, 'LAST_WILL_CHOICE', {
+                          deckIndex: selectedLastWillMonster,
+                          zoneIndex: firstEmptyZone,
+                        });
+                        
+                        // Resetar estados
+                        setShowLastWillModal(false);
+                        setLastWillData(null);
+                        setSelectedLastWillMonster(null);
+                      }
+                    }}
+                    disabled={selectedLastWillMonster === null}
+                    className={`px-8 py-3 rounded-lg font-bold transition-colors text-sm ${
+                      selectedLastWillMonster !== null
+                        ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white'
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {selectedLastWillMonster !== null
+                      ? '✨ Invocar por Invocação Especial' 
+                      : 'Selecione um monstro'}
+                  </button>
+                </div>
+              ) : null}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

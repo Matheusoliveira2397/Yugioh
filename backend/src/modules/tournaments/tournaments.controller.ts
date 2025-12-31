@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
 import { TournamentsService } from './tournaments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
@@ -51,5 +51,39 @@ export class TournamentsController {
   @UseGuards(AdminGuard)
   generateBracket(@Param('id') id: string) {
     return this.tournamentsService.generateBracket(id);
+  }
+
+  /**
+   * Atualizar torneio (apenas admin)
+   */
+  @Put(':id')
+  @UseGuards(AdminGuard)
+  update(@Param('id') id: string, @Body() tournamentData: Partial<Tournament>) {
+    return this.tournamentsService.update(id, tournamentData);
+  }
+
+  /**
+   * Excluir torneio (apenas admin)
+   */
+  @Delete(':id')
+  @UseGuards(AdminGuard)
+  remove(@Param('id') id: string) {
+    return this.tournamentsService.remove(id);
+  }
+
+  /**
+   * Obter top 3 do torneio
+   */
+  @Get(':id/top3')
+  getTop3(@Param('id') id: string) {
+    return this.tournamentsService.getTop3(id);
+  }
+
+  /**
+   * Obter bracket/chave do torneio
+   */
+  @Get(':id/bracket')
+  getBracket(@Param('id') id: string) {
+    return this.tournamentsService.getBracket(id);
   }
 }

@@ -1,7 +1,10 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy, Inject, forwardRef } from '@nestjs/common';
 import { DuelsService } from './duels.service';
 import { Server } from 'socket.io';
 import { DuelOrigin } from './entities/duel.entity';
+import { logger } from '../../common/utils/logger.util';
+import { RandomDuelLevelRangesService } from '../admin/random-duel-level-ranges.service';
+import { UsersService } from '../users/users.service';
 
 interface PlayerInQueue {
   userId: number;
@@ -18,7 +21,13 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
   private isProcessing = false;
   private lastQueueLog: number = 0;
 
-  constructor(private duelsService: DuelsService) {}
+  constructor(
+    private duelsService: DuelsService,
+    @Inject(forwardRef(() => RandomDuelLevelRangesService))
+    private randomDuelLevelRangesService: RandomDuelLevelRangesService,
+    @Inject(forwardRef(() => UsersService))
+    private usersService: UsersService,
+  ) {}
 
   onModuleInit() {
     this.start();
@@ -97,9 +106,9 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     const alreadyInQueue = this.queue.find(p => p.userId === userId);
     if (!alreadyInQueue) {
       this.queue.push({ userId, socketId, joinedAt: new Date() });
-      console.log(`🔍 [Matchmaking] Usuário ${userId} adicionado à fila. Total na fila: ${this.queue.length}`);
+      logger.debug(`🔍 [Matchmaking] Usuário ${userId} adicionado à fila. Total na fila: ${this.queue.length}`);
     } else {
-      console.log(`⚠️ [Matchmaking] Usuário ${userId} já está na fila`);
+      logger.debug(`⚠️ [Matchmaking] Usuário ${userId} já está na fila`);
     }
   }
 
@@ -107,18 +116,22 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     this.queue = this.queue.filter(p => p.userId !== userId);
   }
 
+  isInQueue(userId: number): boolean {
+    return this.queue.some(p => p.userId === userId);
+  }
+
   private async processQueue() {
     if (this.isProcessing) {
-      console.log(`⏸️ [Matchmaking] Já está processando, ignorando...`);
+      logger.debug(`⏸️ [Matchmaking] Já está processando, ignorando...`);
       return;
     }
     
     if (this.queue.length < 2) {
-      console.log(`⏳ [Matchmaking] Fila tem apenas ${this.queue.length} jogador(es), aguardando mais...`);
+      logger.debug(`⏳ [Matchmaking] Fila tem apenas ${this.queue.length} jogador(es), aguardando mais...`);
       return;
     }
     
-    console.log(`🚀 [Matchmaking] Processando fila com ${this.queue.length} jogadores...`);
+    logger.debug(`🚀 [Matchmaking] Processando fila com ${this.queue.length} jogadores...`);
     this.isProcessing = true;
     
     // Yield ao Event Loop ANTES de processar (prioriza HTTP)
@@ -129,22 +142,117 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
       const player2 = this.queue[1];
 
       if (!player1 || !player2) {
-        console.error(`❌ [Matchmaking] Player1 ou Player2 é null!`);
+        logger.error(`❌ [Matchmaking] Player1 ou Player2 é null!`);
         this.isProcessing = false;
         return;
       }
 
-      console.log(`✅ [Matchmaking] Match encontrado! Player1: ${player1.userId}, Player2: ${player2.userId}`);
-      
-      // Remover da fila
-      this.removeFromQueue(player1.userId);
-      this.removeFromQueue(player2.userId);
-      console.log(`🗑️ [Matchmaking] Jogadores removidos da fila. Fila restante: ${this.queue.length}`);
+      // Verificar se ambos ainda estão na fila normal (não foram para a arena)
+      if (!this.isInQueue(player1.userId) || !this.isInQueue(player2.userId)) {
+        logger.debug(`⚠️ [Matchmaking] Um dos jogadores não está mais na fila normal, pulando match`);
+        // Remover da fila se ainda estiverem lá
+        this.removeFromQueue(player1.userId);
+        this.removeFromQueue(player2.userId);
+        this.isProcessing = false;
+        return;
+      }
 
-      // Criar duelo em background (não bloqueia)
-      (async () => {
+      // Verificar se os níveis dos jogadores estão na mesma faixa
+      try {
+        const user1 = await this.usersService.findById(player1.userId);
+        const user2 = await this.usersService.findById(player2.userId);
+
+        if (!user1 || !user2) {
+          logger.warn(`⚠️ [Matchmaking] Um dos usuários não foi encontrado. Removendo da fila.`);
+          this.removeFromQueue(player1.userId);
+          this.removeFromQueue(player2.userId);
+          this.isProcessing = false;
+          return;
+        }
+
+        const level1 = user1.level || 1;
+        const level2 = user2.level || 1;
+
+        // Verificar se podem se enfrentar baseado nas faixas de nível
+        const canMatch = this.randomDuelLevelRangesService.canMatch(level1, level2);
+
+        if (!canMatch) {
+          logger.debug(`⚠️ [Matchmaking] Níveis ${level1} e ${level2} não estão na mesma faixa. Procurando outro match...`);
+          
+          // Tentar encontrar outro jogador compatível na fila
+          let foundMatch = false;
+          for (let i = 2; i < this.queue.length; i++) {
+            const alternativePlayer = this.queue[i];
+            
+            // Verificar se ainda está na fila
+            if (!this.isInQueue(alternativePlayer.userId)) {
+              continue;
+            }
+            
+            const altUser = await this.usersService.findById(alternativePlayer.userId);
+            
+            if (altUser) {
+              const altLevel = altUser.level || 1;
+              if (this.randomDuelLevelRangesService.canMatch(level1, altLevel)) {
+                // Encontrou um match compatível, usar este jogador
+                logger.debug(`✅ [Matchmaking] Match compatível encontrado! Player1: ${player1.userId} (Nível ${level1}), Player2: ${alternativePlayer.userId} (Nível ${altLevel})`);
+                this.removeFromQueue(player1.userId);
+                this.removeFromQueue(alternativePlayer.userId);
+                foundMatch = true;
+                
+                // Processar este match
+                this.createDuelForPlayers(player1, alternativePlayer);
+                this.isProcessing = false;
+                return;
+              }
+            }
+          }
+
+          if (!foundMatch) {
+            // Não encontrou match compatível, manter na fila e processar próximo
+            logger.debug(`⏳ [Matchmaking] Nenhum match compatível encontrado para nível ${level1}. Mantendo na fila.`);
+            this.isProcessing = false;
+            return;
+          }
+        } else {
+          logger.debug(`✅ [Matchmaking] Match encontrado! Player1: ${player1.userId} (Nível ${level1}), Player2: ${player2.userId} (Nível ${level2})`);
+          
+          // Remover da fila
+          this.removeFromQueue(player1.userId);
+          this.removeFromQueue(player2.userId);
+          logger.debug(`🗑️ [Matchmaking] Jogadores removidos da fila. Fila restante: ${this.queue.length}`);
+
+          // Criar duelo
+          this.createDuelForPlayers(player1, player2);
+          this.isProcessing = false;
+          return;
+        }
+      } catch (error) {
+        logger.error(`❌ [Matchmaking] Erro ao verificar níveis:`, error);
+        // Em caso de erro, continuar com o match original (fallback)
+        logger.debug(`⚠️ [Matchmaking] Continuando com match original devido a erro na verificação de níveis`);
+        
+        // Remover da fila
+        this.removeFromQueue(player1.userId);
+        this.removeFromQueue(player2.userId);
+        logger.debug(`🗑️ [Matchmaking] Jogadores removidos da fila. Fila restante: ${this.queue.length}`);
+
+        // Criar duelo
+        this.createDuelForPlayers(player1, player2);
+        this.isProcessing = false;
+        return;
+      }
+    } catch (error) {
+      logger.error('❌ [Matchmaking] Erro:', error);
+      this.isProcessing = false;
+    }
+  }
+
+  private async createDuelForPlayers(player1: PlayerInQueue, player2: PlayerInQueue) {
+    // Criar duelo em background (não bloqueia)
+    (async () => {
         try {
-          console.log(`🎮 [Matchmaking] Criando duelo para P1=${player1.userId} vs P2=${player2.userId}...`);
+          logger.debug(`🎮 [Matchmaking] Criando duelo para P1=${player1.userId} vs P2=${player2.userId}...`);
           const duel = await this.duelsService.createDuel(player1.userId, player2.userId, DuelOrigin.RANDOM);
           
           if (duel && duel.id) {
@@ -154,7 +262,7 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
             const isInDatabase = await this.duelsService.verifyDuelInDatabase(duelIdStr);
             
             if (!isInDatabase) {
-              console.error(`❌ [Matchmaking] Duelo ${duelIdStr} não encontrado no banco!`);
+              logger.warn(`⚠️ [Matchmaking] Duelo ${duelIdStr} não encontrado no banco!`);
               await new Promise(resolve => setTimeout(resolve, 500));
               const retryCheck = await this.duelsService.verifyDuelInDatabase(duelIdStr);
               
@@ -168,12 +276,32 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
               }
             }
             
+            // Buscar duelo completo do banco para garantir que temos os campos player1Field e player2Field
+            const fullDuel = await this.duelsService.findDuelByIdFromDatabase(duelIdStr);
+            if (!fullDuel) {
+              logger.error(`❌ [Matchmaking] Não foi possível buscar duelo completo do banco!`);
+              if (this.server) {
+                this.server.to(`user_${player1.userId}`).emit('duelError', { message: 'Erro ao buscar duelo completo' });
+                this.server.to(`user_${player2.userId}`).emit('duelError', { message: 'Erro ao buscar duelo completo' });
+              }
+              this.isProcessing = false;
+              return;
+            }
+            
+            // Preparar dados com player1Field e player2Field
+            const player1Field = (fullDuel as any).player1Field || {};
+            const player2Field = (fullDuel as any).player2Field || {};
+            
+            logger.debug(`📤 [Matchmaking] Preparando dados - player1Field: ${player1Field?.deck?.length || 0} cartas no deck`);
+            
             // Notificar ambos os jogadores
             const matchData1 = {
               duelId: duelIdStr,
               player1Id: player1.userId,
               player2Id: player2.userId,
               opponent: { id: player2.userId },
+              player1Field: player1Field, // SEMPRE do player1
+              player2Field: player2Field, // SEMPRE do player2
             };
             
             const matchData2 = {
@@ -181,33 +309,32 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
               player1Id: player1.userId,
               player2Id: player2.userId,
               opponent: { id: player1.userId },
+              player1Field: player1Field, // SEMPRE do player1
+              player2Field: player2Field, // SEMPRE do player2
             };
             
             if (this.server) {
               this.server.to(`user_${player1.userId}`).emit('duelFound', matchData1);
               this.server.to(`user_${player2.userId}`).emit('duelFound', matchData2);
-              console.log(`✅ [Matchmaking] Duelo ${duelIdStr} criado e notificado!`);
+              logger.debug(`✅ [Matchmaking] Duelo ${duelIdStr} criado e notificado!`);
             }
           } else {
-            console.error(`❌ [Matchmaking] Duelo retornou null ou sem ID`);
+            logger.error(`❌ [Matchmaking] Duelo retornou null ou sem ID`);
             if (this.server) {
               this.server.to(`user_${player1.userId}`).emit('duelError', { message: 'Erro ao criar duelo' });
               this.server.to(`user_${player2.userId}`).emit('duelError', { message: 'Erro ao criar duelo' });
             }
           }
         } catch (error) {
-          console.error('❌ [Matchmaking] Erro ao criar duelo:', error instanceof Error ? error.message : String(error));
+          const errorMessage = error instanceof Error ? error.message : 'Erro ao criar duelo';
+          logger.error('❌ [Matchmaking] Erro ao criar duelo:', errorMessage);
           if (this.server) {
-            this.server.to(`user_${player1.userId}`).emit('duelError', { message: 'Erro ao criar duelo' });
-            this.server.to(`user_${player2.userId}`).emit('duelError', { message: 'Erro ao criar duelo' });
+            this.server.to(`user_${player1.userId}`).emit('duelError', { message: errorMessage });
+            this.server.to(`user_${player2.userId}`).emit('duelError', { message: errorMessage });
           }
         } finally {
           this.isProcessing = false;
         }
       })();
-    } catch (error) {
-      console.error('❌ [Matchmaking] Erro:', error);
-      this.isProcessing = false;
-    }
   }
 }

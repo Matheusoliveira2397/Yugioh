@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TournamentsController } from './tournaments.controller';
@@ -17,7 +17,7 @@ import { UsersModule } from '../users/users.module';
       TournamentMatch,
     ]),
     ScheduleModule.forRoot(), // Para Cron Jobs
-    DuelsModule,
+    forwardRef(() => DuelsModule),
     UsersModule,
   ],
   controllers: [TournamentsController],

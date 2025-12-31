@@ -1,42 +1,71 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { Duel } from '../duels/entities/duel.entity';
 import { DuelsService } from '../duels/duels.service';
+import { User } from '../users/entities/user.entity';
+import { ArenaService } from './arena.service';
 
 interface ArenaPlayerInQueue {
   userId: number;
   socketId: string;
   level: number;
-  division: string;
+  levelRange: string; // Nome da faixa de nível (ex: "Nível 1-5")
   joinedAt: Date;
 }
 
 @Injectable()
 export class ArenaMatchmakingService {
-  private arenaQueues: Map<string, ArenaPlayerInQueue[]> = new Map(); // division -> players[]
+  private arenaQueues: Map<string, ArenaPlayerInQueue[]> = new Map(); // levelRange -> players[]
   private matchingLock: Set<number> = new Set();
 
   constructor(
     private duelsService: DuelsService,
+    @InjectRepository(User)
+    private usersRepository: Repository<User>,
+    @Inject(forwardRef(() => ArenaService))
+    private arenaService: ArenaService,
   ) {}
 
-  // Determinar divisão baseada no nível
-  getLevelDivision(level: number): string {
-    if (level <= 1) return 'Nível 1';
-    if (level <= 3) return 'Nível 2-3';
-    if (level <= 5) return 'Nível 4-5';
-    if (level <= 10) return 'Nível 6-10';
-    return 'Nível 11+';
+  /**
+   * Determina a faixa de nível do jogador baseado na arena atual
+   */
+  private getLevelRangeForLevel(level: number, levelRanges: Array<{ min: number; max: number; name: string }>): string {
+    for (const range of levelRanges) {
+      if (level >= range.min && level <= range.max) {
+        return range.name;
+      }
+    }
+    // Se não encontrar, retornar a última faixa (geralmente a mais alta)
+    return levelRanges.length > 0 ? levelRanges[levelRanges.length - 1].name : 'Nível 1+';
   }
 
   // Adicionar jogador na fila da arena
-  addToArenaQueue(userId: number, socketId: string, level: number): void {
-    const division = this.getLevelDivision(level);
+  async addToArenaQueue(userId: number, socketId: string, level: number): Promise<void> {
+    // Buscar arena atual
+    const currentArena = await this.arenaService.getCurrentArena();
     
-    if (!this.arenaQueues.has(division)) {
-      this.arenaQueues.set(division, []);
+    if (!currentArena) {
+      console.warn(`[addToArenaQueue] Nenhuma arena ativa no momento`);
+      return;
     }
 
-    const queue = this.arenaQueues.get(division)!;
+    // Buscar faixas de nível configuradas na arena
+    const levelRanges = currentArena.config?.levelRanges || [];
+    
+    if (levelRanges.length === 0) {
+      console.warn(`[addToArenaQueue] Arena não tem faixas de nível configuradas`);
+      return;
+    }
+
+    // Determinar faixa de nível do jogador
+    const levelRange = this.getLevelRangeForLevel(level, levelRanges);
+    
+    if (!this.arenaQueues.has(levelRange)) {
+      this.arenaQueues.set(levelRange, []);
+    }
+
+    const queue = this.arenaQueues.get(levelRange)!;
     const alreadyInQueue = queue.find(p => p.userId === userId);
     
     if (!alreadyInQueue) {
@@ -44,9 +73,10 @@ export class ArenaMatchmakingService {
         userId,
         socketId,
         level,
-        division,
+        levelRange,
         joinedAt: new Date()
       });
+      console.log(`[addToArenaQueue] Jogador ${userId} (Nível ${level}) adicionado à faixa ${levelRange}`);
     }
   }
 
@@ -96,15 +126,16 @@ export class ArenaMatchmakingService {
       return null;
     }
 
-    // Filtrar oponentes da mesma divisão
+    // Filtrar oponentes da mesma faixa de nível
+    // IMPORTANTE: Só encontrar oponentes que também estão procurando pela arena (mesma faixa de nível)
     const availableOpponents = playerQueue.filter(p => {
       return p.userId !== userId && 
-             p.division === currentPlayer!.division && 
+             p.levelRange === currentPlayer!.levelRange && 
              !this.matchingLock.has(p.userId);
     });
 
     if (availableOpponents.length === 0) {
-      console.log(`[findArenaOpponent] Nenhum oponente disponível na divisão ${currentPlayer.division}`);
+      console.log(`[findArenaOpponent] Nenhum oponente disponível na faixa ${currentPlayer.levelRange}`);
       return null;
     }
 
@@ -137,15 +168,20 @@ export class ArenaMatchmakingService {
     this.matchingLock.delete(userId);
     this.matchingLock.delete(opponent.userId);
 
-    return { opponent, duel: null, player1Id: userId, player2Id: opponent.userId }; // Retornar null para duelo (será criado depois)
+    return { 
+      opponent, 
+      duel: null, 
+      player1Id: userId, 
+      player2Id: opponent.userId 
+    }; // Retornar null para duelo (será criado depois)
   }
 
-  // Obter tamanho da fila de uma divisão
-  getQueueSize(division?: string): number {
-    if (division) {
-      return this.arenaQueues.get(division)?.length || 0;
+  // Obter tamanho da fila de uma faixa de nível
+  getQueueSize(levelRange?: string): number {
+    if (levelRange) {
+      return this.arenaQueues.get(levelRange)?.length || 0;
     }
-    // Tamanho total de todas as divisões
+    // Tamanho total de todas as faixas
     let total = 0;
     for (const queue of this.arenaQueues.values()) {
       total += queue.length;
@@ -153,14 +189,24 @@ export class ArenaMatchmakingService {
     return total;
   }
 
-  // Obter todas as divisões (para o processador global)
-  getDivisions(): string[] {
+  // Obter todas as faixas de nível (para o processador global)
+  getLevelRanges(): string[] {
     return Array.from(this.arenaQueues.keys());
   }
 
-  // Obter fila de uma divisão específica (para o processador global)
+  // Obter fila de uma faixa específica (para o processador global)
+  getQueueForLevelRange(levelRange: string): ArenaPlayerInQueue[] {
+    return [...(this.arenaQueues.get(levelRange) || [])]; // Retornar cópia
+  }
+
+  // Método legado para compatibilidade (retorna faixas como divisões)
+  getDivisions(): string[] {
+    return this.getLevelRanges();
+  }
+
   getQueueForDivision(division: string): ArenaPlayerInQueue[] {
-    return [...(this.arenaQueues.get(division) || [])]; // Retornar cópia
+    return this.getQueueForLevelRange(division);
   }
 }
+
 

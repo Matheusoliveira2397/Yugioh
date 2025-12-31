@@ -92,10 +92,11 @@ export class Card {
   id: string; // UUID interno para relações (mantido para compatibilidade)
 
   @Column({ unique: true })
-  idCarta: string; // ID único da carta - IDENTIFICADOR PRINCIPAL usado pelo usuário
+  idCarta: string; // ID único da skin (diferencia cada versão/skin da carta)
 
   @Column()
-  name: string;
+  @Index()
+  name: string; // Nome da carta (compartilhado entre skins - define o efeito)
 
   @Column({ type: 'text', nullable: true })
   description: string;
@@ -167,6 +168,8 @@ export class Card {
   // Índice composto para queries da loja
   @Index(['isActive', 'isForSale'])
   @Index(['rarity', 'createdAt'])
+  // Índice para buscar cartas pelo nome (para pegar efeitos)
+  @Index(['name'])
 
   @CreateDateColumn()
   createdAt: Date;
