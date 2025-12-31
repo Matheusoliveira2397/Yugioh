@@ -1,0 +1,43 @@
+# Exemplo de configuração fly.toml para Fly.io
+# Copie este arquivo para fly.toml e ajuste conforme necessário
+
+app = "yugioh-backend"
+primary_region = "gru"  # Escolha sua região: gru (São Paulo), iad (Virginia), sjc (San Jose), lhr (London)
+
+[build]
+  # Fly.io pode usar buildpacks automáticos ou Dockerfile
+  # Se usar Dockerfile, não precisa especificar builder
+  builder = "paketobuildpacks/builder:base"
+  # Ou use Dockerfile:
+  # dockerfile = "Dockerfile.fly"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/api/docs"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
+
+# Auto-scaling (opcional)
+# [autoscaling]
+#   min_machines = 1
+#   max_machines = 5
+#   balance_multiplier = 1.5
+
