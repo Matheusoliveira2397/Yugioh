@@ -1,3 +1,6 @@
+# Dockerfile para Frontend (Vercel, Netlify, Render.com, etc.)
+# Multi-stage build para reduzir tamanho da imagem final
+
 # Build stage
 FROM node:20-alpine AS builder
 
@@ -21,8 +24,19 @@ FROM nginx:alpine
 # Copiar build do frontend
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copiar configuração customizada do Nginx (se houver)
-# COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copiar configuração customizada do Nginx para SPA
+RUN echo 'server { \
+    listen 80; \
+    server_name _; \
+    root /usr/share/nginx/html; \
+    index index.html; \
+    location / { \
+        try_files $uri $uri/ /index.html; \
+    } \
+    location /api { \
+        return 404; \
+    } \
+}' > /etc/nginx/conf.d/default.conf
 
 # Expor porta 80
 EXPOSE 80

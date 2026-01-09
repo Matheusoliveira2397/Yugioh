@@ -93,3 +93,4 @@ npm run build
 - `DEPLOY_SEPARADO.md` - Guia completo de deploy
 - `SETUP_DEPLOY.md` - Este arquivo (guia rápido)
 
+

@@ -41,3 +41,4 @@ primary_region = "gru"  # Escolha sua região: gru (São Paulo), iad (Virginia),
 #   max_machines = 5
 #   balance_multiplier = 1.5
 
+

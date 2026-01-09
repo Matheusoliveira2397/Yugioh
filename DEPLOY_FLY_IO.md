@@ -612,3 +612,4 @@ flyctl apps restart yugioh-backend
 
 **Boa sorte com o deploy no Fly.io! 🚀**
 
+

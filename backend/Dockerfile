@@ -1,15 +1,21 @@
-FROM node:20-alpine
+# Dockerfile para Backend (Render.com, Railway, etc.)
+# Multi-stage build para reduzir tamanho da imagem final
+
+# Build stage
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Instalar dependências do sistema
+# Instalar dependências do sistema necessárias para compilar
 RUN apk add --no-cache python3 make g++
 
-# Copiar package files
+# Copiar arquivos de dependências
 COPY package*.json ./
+COPY tsconfig.json ./
+COPY nest-cli.json ./
 
-# Instalar dependências e recompilar bcrypt
-RUN npm install --legacy-peer-deps && npm rebuild bcrypt --build-from-source
+# Instalar dependências (incluindo devDependencies para build)
+RUN npm ci --legacy-peer-deps
 
 # Copiar código fonte
 COPY . .
@@ -17,6 +23,33 @@ COPY . .
 # Build da aplicação
 RUN npm run build
 
+# Production stage
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Instalar apenas dependências do sistema necessárias para runtime
+RUN apk add --no-cache python3 make g++
+
+# Copiar arquivos de dependências
+COPY package*.json ./
+
+# Instalar apenas dependências de produção
+RUN npm ci --only=production --legacy-peer-deps && \
+    npm rebuild bcrypt --build-from-source
+
+# Copiar build do stage anterior
+COPY --from=builder /app/dist ./dist
+
+# Criar diretório para uploads
+RUN mkdir -p uploads/avatars uploads/images
+
+# Expor porta
 EXPOSE 3000
 
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/api/docs', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+
+# Comando de start
 CMD ["npm", "run", "start:prod"]

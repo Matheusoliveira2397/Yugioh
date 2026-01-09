@@ -134,3 +134,4 @@ echo "1. Copie backend/.env.example para backend/.env e configure"
 echo "2. Copie frontend/.env.example para frontend/.env.local e configure"
 echo "3. Para produção, use os arquivos .production.example"
 
+

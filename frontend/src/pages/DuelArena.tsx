@@ -3261,19 +3261,19 @@ const DuelArena: React.FC = () => {
           >
             <div className="max-w-5xl mx-auto w-full">
             {/* Linha 1: Perfis dos Duelistas e Timer - Alinhados na mesma linha do topo do playmat */}
-            <div className="relative flex items-start justify-between w-full px-4 mb-2">
+            <div className="relative flex flex-col sm:flex-row items-start justify-between w-full px-2 sm:px-4 mb-2 gap-2 sm:gap-0">
             {/* MEU DUELISTA (Esquerda) - Modernizado */}
             <motion.div 
             transition={{ duration: 0.2 }}
-            className="flex items-center gap-2 bg-black/20 px-4 py-2 rounded-xl border-2 border-blue-400/30 shadow-lg transition-all flex-shrink-0 z-10"
+            className="flex items-center gap-1 sm:gap-2 bg-black/20 px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl border-2 border-blue-400/30 shadow-lg transition-all flex-shrink-0 z-10 w-full sm:w-auto"
           >
             {/* Level - Modernizado */}
             <motion.div 
               whileHover={{ rotate: 5 }}
-              className="flex flex-col items-center bg-transparent px-3 py-2 rounded-lg border-2 border-white/20 shadow-md"
+              className="flex flex-col items-center bg-transparent px-1.5 sm:px-3 py-1 sm:py-2 rounded-lg border-2 border-white/20 shadow-md"
             >
-              <div className="text-white/70 text-[10px] font-bold tracking-wider">LV</div>
-              <div className="text-white text-xl font-bold drop-shadow-lg">{user.level || 1}</div>
+              <div className="text-white/70 text-[8px] sm:text-[10px] font-bold tracking-wider">LV</div>
+              <div className="text-white text-base sm:text-xl font-bold drop-shadow-lg">{user.level || 1}</div>
             </motion.div>
             
             {/* Avatar Quadrado - Modernizado */}
@@ -3286,15 +3286,15 @@ const DuelArena: React.FC = () => {
                   : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.username) + '&background=3b82f6&color=fff&size=128'
               } 
               alt={user.username}
-              className="w-16 h-16 rounded-xl border-2 border-blue-400/70 object-cover shadow-lg shadow-blue-500/30 ring-2 ring-blue-500/20"
+              className="w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-lg sm:rounded-xl border-2 border-blue-400/70 object-cover shadow-lg shadow-blue-500/30 ring-2 ring-blue-500/20"
               onError={(e) => {
                 e.currentTarget.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.username) + '&background=3b82f6&color=fff&size=128';
               }}
             />
             
             {/* Info: Clan + Nick + LP - Modernizado */}
-            <div>
-              <div className="text-xs font-bold text-blue-300 drop-shadow-md">
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] sm:text-xs font-bold text-blue-300 drop-shadow-md truncate">
                 {myClanTag ? `|${myClanTag}| ${user.nickname || user.username}` : (user.nickname || user.username)}
               </div>
               <div className="relative">
@@ -3303,7 +3303,7 @@ const DuelArena: React.FC = () => {
                   initial={{ scale: 1.2, color: "#ef4444" }}
                   animate={{ scale: 1, color: "#93c5fd" }}
                   transition={{ duration: 0.3 }}
-                  className="text-blue-200 font-bold text-base tracking-wide"
+                  className="text-blue-200 font-bold text-sm sm:text-base tracking-wide"
                 >
                   LP: {myLifePoints.toLocaleString()}
                 </motion.div>
@@ -3317,23 +3317,23 @@ const DuelArena: React.FC = () => {
                       transition={{ duration: 0.6, ease: "easeOut" }}
                       className="absolute -top-8 left-0 right-0 text-center pointer-events-none z-50"
                     >
-                      <div className="text-red-400 font-bold text-xl drop-shadow-lg">
+                      <div className="text-red-400 font-bold text-lg sm:text-xl drop-shadow-lg">
                         -{myDamage.toLocaleString()}
                       </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
               </div>
-              <div className="text-[10px] text-blue-300/80 font-medium">
+              <div className="text-[8px] sm:text-[10px] text-blue-300/80 font-medium">
                 S: {user.winsSeason || 0}/{user.lossesSeason || 0} | G: {user.winsGeral || 0}/{user.lossesGeral || 0}
               </div>
             </div>
           </motion.div>
 
           {/* TIMER (Centro) - Modernizado */}
-          <div className="absolute left-1/2 top-0 transform -translate-x-1/2 flex items-center justify-center z-20">
+          <div className="absolute left-1/2 top-0 transform -translate-x-1/2 flex items-center justify-center z-20 w-full sm:w-auto">
             <motion.div 
-              className={`px-4 py-2 rounded-xl border-2 shadow-xl transition-all ${
+              className={`px-2 sm:px-4 py-1 sm:py-2 rounded-lg sm:rounded-xl border-2 shadow-xl transition-all text-xs sm:text-sm ${
                 isMyTurn 
                   ? turnTimeLeft <= 10 
                     ? 'bg-gradient-to-br from-red-900/60 to-red-800/50 border-red-400 shadow-red-500/50' 

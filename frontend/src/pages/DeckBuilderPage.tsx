@@ -48,17 +48,17 @@ export default function DeckBuilderPage() {
   }, []);
 
   return (
-    <div className="min-h-screen py-12 px-4 relative z-10">
+    <div className="min-h-screen py-4 sm:py-8 md:py-12 px-2 sm:px-4 relative z-10">
       <div className="max-w-6xl mx-auto">
         {/* Card Principal com Imagem */}
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.1 }}
-          className="rounded-2xl overflow-hidden mb-8"
+          className="rounded-xl sm:rounded-2xl overflow-hidden mb-4 sm:mb-8"
         >
           {/* Imagem de Fundo com Overlay */}
-          <div className="relative h-64 overflow-hidden">
+          <div className="relative h-32 sm:h-48 md:h-64 overflow-hidden">
             <img
               src="/images/decks/deck.png"
               alt="Yu-Gi-Oh Deck"
@@ -69,30 +69,30 @@ export default function DeckBuilderPage() {
             />
             
             {/* Texto sobre a imagem */}
-            <div className="absolute bottom-6 left-8">
-              <h1 className="text-5xl font-bold text-white mb-2 drop-shadow-2xl">Organize seu deck</h1>
-              <p className="text-xl text-gray-200 drop-shadow-lg">Crie e edite seus baralhos</p>
+            <div className="absolute bottom-3 sm:bottom-6 left-4 sm:left-8">
+              <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-1 sm:mb-2 drop-shadow-2xl">Organize seu deck</h1>
+              <p className="text-sm sm:text-base md:text-lg lg:text-xl text-gray-200 drop-shadow-lg">Crie e edite seus baralhos</p>
             </div>
           </div>
 
           {/* Conteúdo do Card */}
-          <div className="p-8">
+          <div className="p-4 sm:p-6 md:p-8">
 
             {/* Grid com Meus Decks e Criar Novo Deck */}
-            <div className="grid md:grid-cols-3 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-4 sm:mb-8">
               {/* Lista de decks do usuário */}
               <div className="md:col-span-2">
-                <h2 className="text-2xl font-bold text-white mb-3 flex items-center gap-2">
+                <h2 className="text-xl sm:text-2xl font-bold text-white mb-2 sm:mb-3 flex items-center gap-2">
                   <span>📚</span> Meus Decks
                 </h2>
               {loadingDecks ? (
                 <div className="text-gray-300 text-sm py-4">Carregando decks...</div>
               ) : decks.length === 0 ? (
-                <div className="text-gray-400 text-sm py-4">
+                <div className="text-gray-400 text-xs sm:text-sm py-4">
                   Você ainda não tem nenhum deck salvo. Crie um novo para aparecer aqui.
                 </div>
               ) : (
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                   {decks.map((deck) => {
                     const cardsCount = deck.cards?.length ?? 0;
                     const lastDeckCard =

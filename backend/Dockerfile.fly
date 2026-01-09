@@ -53,4 +53,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 # Comando de start
 CMD ["npm", "run", "start:prod"]
-

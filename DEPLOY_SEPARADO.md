@@ -266,3 +266,4 @@ VITE_WS_URL=wss://servidor-backend.com
 
 4. **Uploads**: Arquivos enviados ao backend precisam estar acessíveis via URL pública (ex: `https://seu-backend.com/uploads/...`)
 
+

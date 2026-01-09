@@ -292,3 +292,4 @@ Depois que tudo estiver funcionando:
 3. ✅ Configure variáveis de ambiente no servidor de produção
 4. ✅ Configure SSL/HTTPS para produção
 
+

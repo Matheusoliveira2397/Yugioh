@@ -10,3 +10,4 @@ npm run build
 
 echo "✅ Build concluído!"
 
+

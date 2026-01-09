@@ -32,3 +32,4 @@ services:
       - key: LOG_LEVEL
         value: info
 
+

@@ -67,14 +67,29 @@ export default function Layout({ children }: LayoutProps) {
       <ArenaCountdownBanner />
 
       {/* Container principal com flex para sidebar e conteúdo */}
-      <div className="relative z-10 flex">
+      <div className="relative z-10 flex flex-col lg:flex-row">
         {/* Conteúdo Principal */}
-        <div className="flex-1 relative z-10">
+        <div className="flex-1 relative z-10 min-w-0">
         <nav id="main-nav" className="relative border-b border-purple-500/20 shadow-lg" style={{ backgroundColor: 'transparent' }}>
-          <div className="w-full px-3 md:px-6">
-            <div className="flex items-center h-28 md:h-32 gap-2 md:gap-3">
+          <div className="w-full px-2 sm:px-3 md:px-6">
+            <div className="flex items-center h-20 sm:h-24 md:h-28 lg:h-32 gap-2 md:gap-3">
+              {/* Menu Hamburger - Mobile */}
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="lg:hidden flex-shrink-0 p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
+                aria-label="Toggle menu"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {mobileMenuOpen ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  )}
+                </svg>
+              </button>
+
               {/* Logo */}
-              <div className="flex items-center flex-shrink-0 mr-2">
+              <div className="flex items-center flex-shrink-0 mr-1 sm:mr-2">
                 <Link 
                   to="/" 
                   className="hover:scale-110 transition-all duration-300 group relative"
@@ -83,7 +98,7 @@ export default function Layout({ children }: LayoutProps) {
                     <img 
                       src="/images/yugioh.webp" 
                       alt="Yu-Gi-Oh!" 
-                      className="h-12 md:h-16 object-contain drop-shadow-lg group-hover:drop-shadow-2xl transition-all"
+                      className="h-10 sm:h-12 md:h-14 lg:h-16 object-contain drop-shadow-lg group-hover:drop-shadow-2xl transition-all"
                       onError={(e) => {
                         e.currentTarget.style.display = 'none';
                       }}
@@ -93,11 +108,11 @@ export default function Layout({ children }: LayoutProps) {
                 </Link>
               </div>
               
-              {/* Separador visual */}
-              <div className="h-8 w-px bg-gradient-to-b from-transparent via-purple-500/30 to-transparent flex-shrink-0"></div>
+              {/* Separador visual - Desktop */}
+              <div className="hidden md:block h-8 w-px bg-gradient-to-b from-transparent via-purple-500/30 to-transparent flex-shrink-0"></div>
               
-              {/* Abas de navegação */}
-              <div className="flex items-center gap-1 md:gap-1.5 flex-nowrap flex-1 min-w-0 overflow-x-auto scrollbar-hide">
+              {/* Abas de navegação - Desktop */}
+              <div className="hidden lg:flex items-center gap-1 md:gap-1.5 flex-nowrap flex-1 min-w-0 overflow-x-auto scrollbar-hide">
                 {activeTabs.length > 0 ? (
                   activeTabs.map((tab) => {
                     const isActive = location.pathname === tab.route || 
@@ -166,11 +181,116 @@ export default function Layout({ children }: LayoutProps) {
                   })
                 ) : null}
               </div>
+
+              {/* Abas de navegação - Mobile (scroll horizontal) */}
+              <div className="lg:hidden flex items-center gap-1 flex-nowrap flex-1 min-w-0 overflow-x-auto scrollbar-hide -mx-2 px-2">
+                {activeTabs.slice(0, 4).map((tab) => {
+                  const isActive = location.pathname === tab.route || 
+                                  (tab.route !== '/' && location.pathname.startsWith(tab.route));
+                  
+                  const getColors = (route: string) => {
+                    if (route === '/') return { from: 'from-gray-600', to: 'to-gray-500' };
+                    if (route === '/chat') return { from: 'from-blue-600', to: 'to-cyan-600' };
+                    if (route === '/random-duel') return { from: 'from-red-600', to: 'to-orange-600' };
+                    if (route === '/arena') return { from: 'from-red-700', to: 'to-pink-700' };
+                    return { from: 'from-gray-600', to: 'to-gray-500' };
+                  };
+
+                  const colors = getColors(tab.route);
+
+                  return (
+                    <Link
+                      key={tab.key}
+                      to={tab.route}
+                      className={`group relative flex flex-col items-center justify-center gap-0.5 px-1.5 py-1 rounded-lg text-[10px] sm:text-xs font-semibold whitespace-nowrap flex-shrink-0 transition-all ${
+                        isActive 
+                          ? `bg-gradient-to-r ${colors.from} ${colors.to} text-white shadow-lg` 
+                          : 'text-gray-300 hover:text-white'
+                      }`}
+                    >
+                      {tab.icon && tab.icon.startsWith('/images/') ? (
+                        <img 
+                          src={tab.icon} 
+                          alt={tab.label}
+                          className="h-12 w-12 sm:h-16 sm:w-16 object-contain drop-shadow-lg"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <span className="text-sm sm:text-base drop-shadow-lg">
+                          {tab.icon}
+                        </span>
+                      )}
+                      <span className="text-center leading-tight">{tab.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
           </div>
+
+          {/* Menu Mobile Expandido */}
+          {mobileMenuOpen && (
+            <div className="lg:hidden border-t border-purple-500/20 bg-black/80 backdrop-blur-sm">
+              <div className="px-4 py-3 max-h-[60vh] overflow-y-auto">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {activeTabs.map((tab) => {
+                    const isActive = location.pathname === tab.route || 
+                                    (tab.route !== '/' && location.pathname.startsWith(tab.route));
+                    
+                    const getColors = (route: string) => {
+                      if (route === '/') return { from: 'from-gray-600', to: 'to-gray-500' };
+                      if (route === '/chat') return { from: 'from-blue-600', to: 'to-cyan-600' };
+                      if (route === '/random-duel') return { from: 'from-red-600', to: 'to-orange-600' };
+                      if (route === '/arena') return { from: 'from-red-700', to: 'to-pink-700' };
+                      if (route === '/tournaments') return { from: 'from-yellow-600', to: 'to-amber-600' };
+                      if (route === '/groups') return { from: 'from-cyan-600', to: 'to-teal-600' };
+                      if (route === '/ranking') return { from: 'from-orange-600', to: 'to-red-600' };
+                      if (route === '/missions') return { from: 'from-green-600', to: 'to-emerald-600' };
+                      if (route === '/drops') return { from: 'from-indigo-600', to: 'to-purple-600' };
+                      if (route === '/shop') return { from: 'from-purple-600', to: 'to-pink-600' };
+                      return { from: 'from-gray-600', to: 'to-gray-500' };
+                    };
+
+                    const colors = getColors(tab.route);
+
+                    return (
+                      <Link
+                        key={tab.key}
+                        to={tab.route}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className={`flex flex-col items-center justify-center gap-1 p-3 rounded-lg text-xs font-semibold transition-all ${
+                          isActive 
+                            ? `bg-gradient-to-r ${colors.from} ${colors.to} text-white shadow-lg` 
+                            : 'text-gray-300 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        {tab.icon && tab.icon.startsWith('/images/') ? (
+                          <img 
+                            src={tab.icon} 
+                            alt={tab.label}
+                            className="h-12 w-12 object-contain drop-shadow-lg"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <span className="text-xl drop-shadow-lg">
+                            {tab.icon}
+                          </span>
+                        )}
+                        <span className="text-center">{tab.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
         </nav>
 
-        <main className="pb-8 px-4">{children}</main>
+        <main className="pb-8 px-2 sm:px-4 md:px-6">{children}</main>
           
           {/* Footer */}
           <footer className="border-t border-gray-700/50 py-4 mt-auto">
@@ -181,11 +301,20 @@ export default function Layout({ children }: LayoutProps) {
         </div>
 
         {/* Card Lateral Direito - Perfil do Usuário - Desktop */}
-        <aside id="user-sidebar" className="w-80 z-50 hidden lg:block self-start" style={{ backgroundColor: 'transparent' }}>
-          <div className="p-5" style={{ backgroundColor: 'transparent' }}>
+        <aside id="user-sidebar" className="w-64 xl:w-80 z-50 hidden lg:block self-start" style={{ backgroundColor: 'transparent' }}>
+          <div className="p-3 xl:p-5" style={{ backgroundColor: 'transparent' }}>
             <UserProfileCard />
           </div>
         </aside>
+
+        {/* Card Lateral - Perfil do Usuário - Mobile (Bottom Sheet) */}
+        {mobileMenuOpen && (
+          <div className="lg:hidden fixed inset-x-0 bottom-0 z-50 bg-black/90 backdrop-blur-sm border-t border-purple-500/20">
+            <div className="p-4 max-h-[40vh] overflow-y-auto">
+              <UserProfileCard />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
