@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { DuelsService } from './duels.service';
 import { Server } from 'socket.io';
 import { DuelOrigin } from './entities/duel.entity';
+import { DuelActionType } from './entities/duel-log.entity';
 
 interface DuelCreationTask {
   player1Id: number;
@@ -189,6 +190,20 @@ export class DuelQueueService implements OnModuleInit, OnModuleDestroy {
         };
 
           // Notificar ambos os jogadores
+        // Criar log de início do duelo
+        try {
+          const player1 = await this.duelsService['usersRepository'].findOne({ where: { id: task.player1Id }, select: ['username', 'clanTag'] });
+          const player2 = await this.duelsService['usersRepository'].findOne({ where: { id: task.player2Id }, select: ['username', 'clanTag'] });
+          const player1Name = player1?.clanTag ? `|${player1.clanTag}| ${player1.username}` : player1?.username || 'Jogador 1';
+          const player2Name = player2?.clanTag ? `|${player2.clanTag}| ${player2.username}` : player2?.username || 'Jogador 2';
+          
+          // Salvar log para ambos os jogadores
+          await this.duelsService.saveDuelLog(duelIdStr, task.player1Id, DuelActionType.DUEL_START, `Duelo iniciado: ${player1Name} vs ${player2Name}`);
+          await this.duelsService.saveDuelLog(duelIdStr, task.player2Id, DuelActionType.DUEL_START, `Duelo iniciado: ${player1Name} vs ${player2Name}`);
+        } catch (logError) {
+          console.error(`❌ [DuelQueueService] Erro ao criar log de início do duelo:`, logError);
+        }
+        
         this.server.to(`user_${task.player1Id}`).emit('duelCreated', duelCreatedDataPlayer1);
         this.server.to(`user_${task.player2Id}`).emit('duelCreated', duelCreatedDataPlayer2);
         console.log(`✅ [DuelQueueService] Duelo ${duelIdStr} criado e notificado!`);

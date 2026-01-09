@@ -313,6 +313,20 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
               player2Field: player2Field, // SEMPRE do player2
             };
             
+            // Criar log de início do duelo
+            try {
+              const player1User = await this.duelsService['usersRepository'].findOne({ where: { id: player1.userId }, select: ['username', 'clanTag'] });
+              const player2User = await this.duelsService['usersRepository'].findOne({ where: { id: player2.userId }, select: ['username', 'clanTag'] });
+              const player1Name = player1User?.clanTag ? `|${player1User.clanTag}| ${player1User.username}` : player1User?.username || 'Jogador 1';
+              const player2Name = player2User?.clanTag ? `|${player2User.clanTag}| ${player2User.username}` : player2User?.username || 'Jogador 2';
+              
+              // Salvar log para ambos os jogadores
+              await this.duelsService.saveDuelLog(duelIdStr, player1.userId, 'DUEL_START', `Duelo iniciado: ${player1Name} vs ${player2Name}`);
+              await this.duelsService.saveDuelLog(duelIdStr, player2.userId, 'DUEL_START', `Duelo iniciado: ${player1Name} vs ${player2Name}`);
+            } catch (logError) {
+              logger.error(`❌ [Matchmaking] Erro ao criar log de início do duelo:`, logError);
+            }
+            
             if (this.server) {
               this.server.to(`user_${player1.userId}`).emit('duelFound', matchData1);
               this.server.to(`user_${player2.userId}`).emit('duelFound', matchData2);

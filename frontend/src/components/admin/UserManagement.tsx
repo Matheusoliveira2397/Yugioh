@@ -180,6 +180,51 @@ export default function UserManagement() {
     }
   };
 
+  const handleDeleteUser = async (userId: string | number) => {
+    const user = displayUsers.find(u => u.id === userId);
+    const userName = user ? (user.nickname || user.username) : 'este usuário';
+    
+    const confirmMessage = `⚠️ ATENÇÃO: Esta ação é IRREVERSÍVEL!\n\n` +
+      `Você está prestes a excluir permanentemente a conta de ${userName}.\n\n` +
+      `Isso irá excluir:\n` +
+      `- TODAS AS CARTAS do inventário do duelista\n` +
+      `- TODOS OS DECKS do duelista\n` +
+      `- Todas as transações\n` +
+      `- Rankings de temporada\n` +
+      `- Mensagens privadas\n` +
+      `- Amizades\n` +
+      `- Participações em grupos\n` +
+      `- Participações em torneios\n` +
+      `- Duelos relacionados\n` +
+      `- E todos os outros dados vinculados\n\n` +
+      `Digite "EXCLUIR" para confirmar:`;
+
+    const confirmation = window.prompt(confirmMessage);
+    
+    if (confirmation !== 'EXCLUIR') {
+      return;
+    }
+
+    try {
+      const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : Number(userId);
+      if (isNaN(userIdNum)) {
+        console.error('ID de usuário inválido:', userId);
+        return;
+      }
+      const headers = { Authorization: `Bearer ${token}` };
+      const response = await axios.delete(`${API_URL}/admin/users/${userIdNum}`, { headers });
+      alert(`Usuário ${userName} excluído permanentemente! Dados excluídos: ${JSON.stringify(response.data.deletedCounts)}`);
+      if (view === 'all') {
+        fetchAllUsers();
+      } else {
+        fetchOnlineUsers();
+      }
+    } catch (error: any) {
+      console.error('Erro ao excluir usuário:', error);
+      alert(error.response?.data?.message || 'Erro ao excluir usuário');
+    }
+  };
+
   const displayUsers = view === 'all' ? users : onlineUsers;
 
   return (
@@ -358,6 +403,13 @@ export default function UserManagement() {
                         ⬇️ Rebaixar
                       </button>
                     )}
+                    <button
+                      onClick={() => handleDeleteUser(user.id)}
+                      className="bg-red-800 hover:bg-red-900 text-white px-3 py-1 rounded text-sm"
+                      title="Excluir conta permanentemente (irreversível)"
+                    >
+                      🗑️ Excluir
+                    </button>
                   </div>
                 </div>
               </motion.div>

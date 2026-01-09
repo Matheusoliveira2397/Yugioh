@@ -1181,6 +1181,10 @@ export class DuelsService implements OnModuleInit {
       playerField.hand = playerField.hand || [];
       playerField.hand.push(drawnCard);
       logger.info(`✅ [drawCard] Carta comprada normalmente. Hand do player ${userId}: ${playerField.hand?.length || 0} cartas`);
+      
+      // Salvar log de compra de carta
+      const cardName = drawnCard.name || drawnCard.cardName || 'Carta';
+      await this.saveDuelLog(duelId, userId, DuelActionType.DRAW_CARD, `Comprou ${cardName}`);
     }
     
     // Garantir que o duelo atualizado está no cache
@@ -2306,32 +2310,23 @@ export class DuelsService implements OnModuleInit {
             // Verificar se estamos no turno do oponente na fase END
             if (currentTurn === opponentTurn && duel.currentPhase === TurnPhase.END) {
               // Contar quantos turnos do oponente passaram desde a ativação
-              // Se ativou no turnCounter X no turno T, e estamos no turnCounter Y no turno O (oponente),
-              // precisamos contar quantas vezes o oponente jogou desde então
-              
-              // Se ativou no turno do Player1 (turn=1), o primeiro turno do Player2 (turn=2) é turnCounter+1
-              // O 3º turno do Player2 seria quando turnCounter = activationTurnCounter + 3
-              // Mas como alterna, se ativou no turnCounter X no turno 1:
-              // - TurnCounter X+1: turno 2 (Player2) - 1º turno do oponente
-              // - TurnCounter X+2: turno 1 (Player1)
-              // - TurnCounter X+3: turno 2 (Player2) - 2º turno do oponente
-              // - TurnCounter X+4: turno 1 (Player1)
-              // - TurnCounter X+5: turno 2 (Player2) - 3º turno do oponente
-              
-              // Fórmula: se ativou no turnCounter X no turno T, e estamos no turnCounter Y no turno O:
-              // - Se T=1 e O=2: turnos do oponente = (Y - X + 1) / 2 (arredondado para cima)
-              // - Se T=2 e O=1: turnos do oponente = (Y - X + 1) / 2 (arredondado para cima)
-              
-              // Simplificação: se a diferença de turnCounter é >= 5 e estamos no turno do oponente,
-              // garantimos que pelo menos 3 turnos do oponente passaram
               const turnsSinceActivation = currentTurnCounter - activationTurnCounter;
+              const activationTurn = spellTrap.activationTurn; // 1 ou 2
+              const activatedInOpponentTurn = activationTurn === opponentTurn;
               
-              // Se ativou no turno 1 e estamos no turno 2: turnos do oponente = Math.ceil((turnsSinceActivation + 1) / 2)
-              // Se ativou no turno 2 e estamos no turno 1: turnos do oponente = Math.ceil((turnsSinceActivation + 1) / 2)
-              const opponentTurnsSinceActivation = Math.ceil((turnsSinceActivation + 1) / 2);
+              // Calcular turnos do oponente usando a mesma lógica do bloqueio de ataques
+              let opponentTurnsSinceActivation: number;
+              if (activatedInOpponentTurn) {
+                // Ativou no turno do oponente, então só conta a partir do próximo turno do oponente
+                opponentTurnsSinceActivation = Math.floor((turnsSinceActivation) / 2);
+              } else {
+                // Ativou no turno do outro jogador, então o próximo turno já é do oponente
+                opponentTurnsSinceActivation = Math.floor((turnsSinceActivation) / 2) + 1;
+              }
               
+              // Destruir após 3 turnos do oponente (no final do 3º turno)
               if (opponentTurnsSinceActivation >= 3) {
-                logger.info(`🗡️ [checkAndDestroySwordsOfRevealingLight] Destruindo SwordsOfRevealingLight - ativada no turnCounter ${activationTurnCounter}, atual: ${currentTurnCounter}, turnos desde ativação: ${turnsSinceActivation}`);
+                logger.info(`🗡️ [checkAndDestroySwordsOfRevealingLight] Destruindo SwordsOfRevealingLight - ativada no turnCounter ${activationTurnCounter}, atual: ${currentTurnCounter}, turnos do oponente desde ativação: ${opponentTurnsSinceActivation}/3`);
                 
                 // Mover para o cemitério
                 if (!player1Field.graveyard) {
@@ -2349,7 +2344,9 @@ export class DuelsService implements OnModuleInit {
                 // Atualizar cache
                 this.activeDuels.set(duelIdStr, duel);
                 
-                logger.info(`✅ [checkAndDestroySwordsOfRevealingLight] SwordsOfRevealingLight destruída após 3 turnos do oponente`);
+                logger.info(`✅ [checkAndDestroySwordsOfRevealingLight] SwordsOfRevealingLight movida para o cemitério após 3 turnos do oponente`);
+              } else {
+                logger.info(`ℹ️ [checkAndDestroySwordsOfRevealingLight] SwordsOfRevealingLight ainda ativa - ${opponentTurnsSinceActivation}/3 turnos do oponente passaram`);
               }
             }
           }
@@ -2373,11 +2370,24 @@ export class DuelsService implements OnModuleInit {
             const opponentTurn = activatedByPlayer1 ? 2 : 1;
             
             if (currentTurn === opponentTurn && duel.currentPhase === TurnPhase.END) {
+              // Contar quantos turnos do oponente passaram desde a ativação
               const turnsSinceActivation = currentTurnCounter - activationTurnCounter;
-              const opponentTurnsSinceActivation = Math.ceil((turnsSinceActivation + 1) / 2);
+              const activationTurn = spellTrap.activationTurn; // 1 ou 2
+              const activatedInOpponentTurn = activationTurn === opponentTurn;
               
+              // Calcular turnos do oponente usando a mesma lógica do bloqueio de ataques
+              let opponentTurnsSinceActivation: number;
+              if (activatedInOpponentTurn) {
+                // Ativou no turno do oponente, então só conta a partir do próximo turno do oponente
+                opponentTurnsSinceActivation = Math.floor((turnsSinceActivation) / 2);
+              } else {
+                // Ativou no turno do outro jogador, então o próximo turno já é do oponente
+                opponentTurnsSinceActivation = Math.floor((turnsSinceActivation) / 2) + 1;
+              }
+              
+              // Destruir após 3 turnos do oponente (no final do 3º turno)
               if (opponentTurnsSinceActivation >= 3) {
-                logger.info(`🗡️ [checkAndDestroySwordsOfRevealingLight] Destruindo SwordsOfRevealingLight - ativada no turnCounter ${activationTurnCounter}, atual: ${currentTurnCounter}, turnos desde ativação: ${turnsSinceActivation}`);
+                logger.info(`🗡️ [checkAndDestroySwordsOfRevealingLight] Destruindo SwordsOfRevealingLight - ativada no turnCounter ${activationTurnCounter}, atual: ${currentTurnCounter}, turnos do oponente desde ativação: ${opponentTurnsSinceActivation}/3`);
                 
                 // Mover para o cemitério
                 if (!player2Field.graveyard) {
@@ -2395,7 +2405,9 @@ export class DuelsService implements OnModuleInit {
                 // Atualizar cache
                 this.activeDuels.set(duelIdStr, duel);
                 
-                logger.info(`✅ [checkAndDestroySwordsOfRevealingLight] SwordsOfRevealingLight destruída após 3 turnos do oponente`);
+                logger.info(`✅ [checkAndDestroySwordsOfRevealingLight] SwordsOfRevealingLight movida para o cemitério após 3 turnos do oponente`);
+              } else {
+                logger.info(`ℹ️ [checkAndDestroySwordsOfRevealingLight] SwordsOfRevealingLight ainda ativa - ${opponentTurnsSinceActivation}/3 turnos do oponente passaram`);
               }
             }
           }
@@ -8868,25 +8880,82 @@ export class DuelsService implements OnModuleInit {
       }
     }
 
+    let attackerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    let defenderField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+    
     // Verificar se SwordsOfRevealingLight está bloqueando ataques
-    const opponentField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
-    if (opponentField && opponentField.spellTrap && Array.isArray(opponentField.spellTrap)) {
-      for (const spellTrap of opponentField.spellTrap) {
+    // A carta fica no campo de quem a ativou (quem está sendo defendido), então verificamos no defenderField
+    if (defenderField && defenderField.spellTrap && Array.isArray(defenderField.spellTrap)) {
+      for (const spellTrap of defenderField.spellTrap) {
         if (spellTrap && spellTrap !== null && spellTrap.position === 'face-up') {
-          const cardId = spellTrap.idCarta || spellTrap.id || spellTrap.cardId;
-          const cardName = (spellTrap.name || spellTrap.cardName || '').toLowerCase();
           const isSwordsOfRevealingLight = this.isExactCard(spellTrap, 'SwordsOfRevealingLight');
           
           if (isSwordsOfRevealingLight) {
-            logger.info(`🛡️ [attackMonster] SwordsOfRevealingLight bloqueando ataque do oponente`);
-            return { success: false, message: 'SwordsOfRevealingLight está bloqueando seus ataques!' };
+            // Verificar se ainda está dentro dos 3 turnos do oponente
+            const currentTurnCounter = duel.turnCounter || 1;
+            const currentTurn = duel.currentTurn; // 1 = Player1, 2 = Player2
+            const activationTurnCounter = spellTrap.activationTurnCounter;
+            const activatedByPlayer1 = spellTrap.activatedByPlayer1;
+            
+            // Se não tem informações de ativação, bloquear por segurança
+            if (!activationTurnCounter || activatedByPlayer1 === undefined) {
+              logger.info(`🛡️ [attackMonster] SwordsOfRevealingLight bloqueando ataque (sem info de ativação)`);
+              return { success: false, message: 'SwordsOfRevealingLight está bloqueando seus ataques!' };
+            }
+            
+            // Determinar qual é o turno do oponente
+            // Se Player1 ativou (activatedByPlayer1 = true), o oponente é Player2 (turn=2)
+            // Se Player2 ativou (activatedByPlayer1 = false), o oponente é Player1 (turn=1)
+            const opponentTurn = activatedByPlayer1 ? 2 : 1;
+            
+            // Só bloquear se estamos no turno do oponente
+            if (currentTurn === opponentTurn) {
+              // Calcular quantos turnos do oponente passaram desde a ativação
+              // turnCounter incrementa a cada turno (não alterna)
+              // Se ativou no turnCounter X:
+              // - turnCounter X+1: primeiro turno do oponente (se ativou no turno do outro jogador)
+              // - turnCounter X+3: segundo turno do oponente
+              // - turnCounter X+5: terceiro turno do oponente
+              const turnsSinceActivation = currentTurnCounter - activationTurnCounter;
+              
+              // Contar apenas turnos do oponente
+              // Se a diferença é ímpar e estamos no turno do oponente, significa que já passou pelo menos 1 turno do oponente
+              // Fórmula: se ativou no turnCounter X e estamos no turnCounter Y no turno do oponente:
+              // - Se ativou no turno do outro jogador: turnos do oponente = Math.floor((Y - X) / 2) + 1
+              // - Se ativou no turno do oponente: turnos do oponente = Math.floor((Y - X) / 2) + 1 (mas só conta a partir do próximo turno)
+              
+              // Simplificação: contar turnos do oponente desde a ativação
+              // Se ativou no turnCounter X no turno T, e estamos no turnCounter Y no turno O (oponente):
+              // - Se T != O (ativou no turno do outro jogador): turnos do oponente = Math.floor((Y - X) / 2) + 1
+              // - Se T == O (ativou no turno do oponente): turnos do oponente = Math.floor((Y - X) / 2)
+              
+              const activationTurn = spellTrap.activationTurn; // 1 ou 2
+              const activatedInOpponentTurn = activationTurn === opponentTurn;
+              
+              let opponentTurnsSinceActivation: number;
+              if (activatedInOpponentTurn) {
+                // Ativou no turno do oponente, então só conta a partir do próximo turno do oponente
+                opponentTurnsSinceActivation = Math.floor((turnsSinceActivation) / 2);
+              } else {
+                // Ativou no turno do outro jogador, então o próximo turno já é do oponente
+                opponentTurnsSinceActivation = Math.floor((turnsSinceActivation) / 2) + 1;
+              }
+              
+              // Se ainda não passaram 3 turnos do oponente, bloquear
+              if (opponentTurnsSinceActivation < 3) {
+                logger.info(`🛡️ [attackMonster] SwordsOfRevealingLight bloqueando ataque - turnos do oponente desde ativação: ${opponentTurnsSinceActivation}/3 (turnCounter: ${activationTurnCounter} -> ${currentTurnCounter})`);
+                return { success: false, message: 'SwordsOfRevealingLight está bloqueando seus ataques!' };
+              } else {
+                logger.info(`ℹ️ [attackMonster] SwordsOfRevealingLight expirou - ${opponentTurnsSinceActivation} turnos do oponente passaram`);
+              }
+            } else {
+              // Não estamos no turno do oponente, então não deve bloquear
+              logger.info(`ℹ️ [attackMonster] SwordsOfRevealingLight presente mas não está no turno do oponente (currentTurn: ${currentTurn}, opponentTurn: ${opponentTurn})`);
+            }
           }
         }
       }
     }
-
-    let attackerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
-    let defenderField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
     
     if (!attackerField || !attackerField.monsters) {
       return { success: false, message: 'Campo do atacante não encontrado' };

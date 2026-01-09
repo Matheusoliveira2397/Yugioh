@@ -989,10 +989,26 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       }
       
       // Avançar fase
+      const oldPhase = duel.currentPhase;
       const updatedDuel = await this.duelsService.nextPhase(duelId);
       if (!updatedDuel) {
         client.emit('duelError', { message: 'Erro ao avançar fase' });
         return;
+      }
+      
+      // Criar log de mudança de fase
+      if (updatedDuel.currentPhase !== oldPhase) {
+        const phaseNames: { [key: string]: string } = {
+          'DRAW': 'Draw',
+          'STANDBY': 'Standby',
+          'MAIN1': 'Main 1',
+          'BATTLE': 'Battle',
+          'MAIN2': 'Main 2',
+          'END': 'End'
+        };
+        const oldPhaseName = phaseNames[oldPhase] || oldPhase;
+        const newPhaseName = phaseNames[updatedDuel.currentPhase] || updatedDuel.currentPhase;
+        await this.createAndEmitDuelLog(duelId, numericUserId, 'PHASE_CHANGE', `Fase mudou de ${oldPhaseName} para ${newPhaseName}`);
       }
 
       // Se mudou de turno, verificar se há escolha pendente do jogador que PERDEU o turno
@@ -1405,6 +1421,9 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         return;
       }
 
+      // Criar log de finalização de turno
+      await this.createAndEmitDuelLog(duelId, numericUserId, 'END_TURN', 'Finalizou o turno');
+      
       // Turno finalizado com sucesso - o próximo turno está em DRAW
       // Buscar do banco para garantir dados atualizados
       let updatedDuel: any = result.duel;
@@ -5513,6 +5532,22 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           return;
         }
         
+        // Criar log de ataque
+        if (result.success) {
+          const attackerField = (updatedDuel.currentTurn === 1) ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
+          const attacker = attackerField?.monsters?.[attackerZoneIndex];
+          const attackerName = attacker?.name || attacker?.cardName || 'Monstro';
+          
+          if (targetZoneIndex !== null && targetZoneIndex !== undefined) {
+            const defenderField = (updatedDuel.currentTurn === 1) ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
+            const defender = defenderField?.monsters?.[targetZoneIndex];
+            const defenderName = defender?.name || defender?.cardName || 'Monstro';
+            await this.createAndEmitDuelLog(duelId, userId, 'ATTACK', `${attackerName} atacou ${defenderName}`);
+          } else {
+            await this.createAndEmitDuelLog(duelId, userId, 'DIRECT_ATTACK', `${attackerName} atacou diretamente`);
+          }
+        }
+        
         // Se Mirror Force foi ativada, emitir erro mas TAMBÉM emitir a atualização do duelo
         if (!result.success) {
           client.emit('duelError', { message: result.message || 'Erro ao atacar' });
@@ -5647,12 +5682,9 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         // Processar escolha do The Forceful Sentry
         const { instanceId } = actionData;
         
-        if (!instanceId || instanceId.trim() === '') {
-          client.emit('duelError', { message: 'InstanceId da carta inválido' });
-          return;
-        }
-        
-        const result = await this.duelsService.processForcefulSentryChoice(duelId, userId, instanceId);
+        // instanceId pode ser vazio se o oponente não tem cartas na mão
+        // O service processForcefulSentryChoice já trata esse caso
+        const result = await this.duelsService.processForcefulSentryChoice(duelId, userId, instanceId || '');
         
         if (!result.success) {
           client.emit('duelError', { message: result.message || 'Erro ao processar escolha' });
@@ -5668,6 +5700,21 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
           return;
         }
+        
+        // Emitir evento explícito para fechar o modal ANTES do duelUpdate
+        // Isso garante que o modal seja fechado corretamente
+        console.log(`📤 [FORCEFUL_SENTRY_CHOICE] Emitindo closePendingChoiceModal para fechar o modal`);
+        client.emit('closePendingChoiceModal', { 
+          duelId, 
+          reason: 'choice_completed',
+          cardEffectType: 'forcefulSentry'
+        });
+        // Também emitir para a room inteira caso o jogador tenha múltiplas abas
+        this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', { 
+          duelId, 
+          reason: 'choice_completed',
+          cardEffectType: 'forcefulSentry'
+        });
         
         const player1Field = (updatedDuel as any).player1Field;
         const player2Field = (updatedDuel as any).player2Field;
@@ -5695,6 +5742,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           updatedAt: updatedDuel.updatedAt,
         };
         
+        // Aguardar um pequeno delay antes de emitir duelUpdate para garantir que o modal feche primeiro
+        await new Promise(resolve => setTimeout(resolve, 100));
         this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
       } else if (actionType === 'CONFISCATION_CHOICE') {
         // Processar escolha do Confiscation

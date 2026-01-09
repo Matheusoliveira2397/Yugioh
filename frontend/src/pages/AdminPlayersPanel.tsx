@@ -122,8 +122,8 @@ export default function AdminPlayersPanel() {
     const confirmMessage = `⚠️ ATENÇÃO: Esta ação é IRREVERSÍVEL!\n\n` +
       `Você está prestes a excluir permanentemente a conta de ${playerName}.\n\n` +
       `Isso irá excluir:\n` +
-      `- Todas as cartas do usuário\n` +
-      `- Todos os decks\n` +
+      `- TODAS AS CARTAS do inventário do duelista\n` +
+      `- TODOS OS DECKS do duelista\n` +
       `- Todas as transações\n` +
       `- Rankings de temporada\n` +
       `- Mensagens privadas\n` +

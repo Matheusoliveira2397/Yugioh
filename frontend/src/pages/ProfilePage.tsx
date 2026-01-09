@@ -592,13 +592,52 @@ export const ProfilePage: React.FC = () => {
           className="p-8 mb-8"
           style={{ backgroundColor: 'transparent' }}
         >
-          {/* Foto à esquerda e Informações ao lado */}
-          <div className="flex items-start gap-8 mb-8">
+          {/* Layout: Emblema à esquerda, Foto no centro, Informações à direita */}
+          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 mb-8">
+            {/* Emblema do Ranking (Divisão) - À esquerda */}
+            <div className="flex-shrink-0 order-1 sm:order-1">
+              {(() => {
+                const getDivisionImage = (div: string): string | null => {
+                  if (!div) return null;
+                  const normalized = div.trim().toUpperCase();
+                  const divisionMap: { [key: string]: string } = {
+                    'BRONZE': 'Bronze',
+                    'SILVER': 'Prata',
+                    'GOLD': 'Ouro',
+                    'PLATINUM': 'Ouro',
+                    'DIAMOND': 'Diamante',
+                    'DIAMANTE': 'Diamante',
+                    'MASTER': 'Mestre',
+                    'MESTRE': 'Mestre',
+                    'LEGENDARY': 'Desafiante',
+                    'DESAFIANTE': 'Desafiante',
+                    'PRATA': 'Prata',
+                    'OURO': 'Ouro',
+                  };
+                  const divisionName = divisionMap[normalized];
+                  return divisionName ? `/images/Divisões/${divisionName}.png` : null;
+                };
+                const imagePath = getDivisionImage(division);
+                return imagePath ? (
+                  <motion.img
+                    whileHover={{ scale: 1.1 }}
+                    src={imagePath}
+                    alt={division}
+                    className="w-20 h-20 sm:w-24 sm:h-24 md:w-32 md:h-32 object-contain drop-shadow-2xl"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ) : null;
+              })()}
+            </div>
+
+            {/* Foto do Perfil - No centro */}
             <motion.div
               whileHover={{ scale: 1.02 }}
-              className="relative flex-shrink-0"
+              className="relative flex-shrink-0 order-2 sm:order-2"
             >
-              <div className="w-80 h-80 rounded-xl overflow-hidden border-2 border-purple-500/50 shadow-2xl">
+              <div className="w-64 h-64 sm:w-72 sm:h-72 md:w-80 md:h-80 rounded-xl overflow-hidden border-2 border-purple-500/50 shadow-2xl">
                 <img
                   src={currentImageUrl}
                   alt="Avatar"
@@ -624,33 +663,66 @@ export const ProfilePage: React.FC = () => {
               )}
             </motion.div>
 
-            {/* Nome e Estatísticas */}
-            <div className="flex-1 min-w-0">
-              {/* Nome, ID e Nível */}
-              <div className="mb-4">
-                <h1 className="text-4xl font-bold text-white mb-2 flex items-center gap-3">
-                  {profileUser.clanTag ? `|${profileUser.clanTag}| ${profileUser.nickname}` : profileUser.nickname}
-                </h1>
-                <div className="flex items-center gap-4">
-                  <p className="text-slate-400">ID: #{profileUser.id}</p>
-                  <span 
-                    className="text-sm text-slate-300 flex items-center gap-1 cursor-pointer hover:text-yellow-400 transition-colors"
-                    onClick={() => {
-                      setShowLevelsModal(true);
-                      loadNextLevels(profileUser.level || 1);
-                    }}
-                    title="Clique para ver os próximos níveis"
-                  >
-                    <span>⭐</span> Nível <span className="text-base font-bold text-white ml-1">{profileUser.level || 1}</span>
-                  </span>
-                  {profileUser.lastIpAddress && (
-                    <span className="text-sm text-slate-400 flex items-center gap-1">
-                      <span>🌐</span> IP: <span className="text-blue-400 font-mono">{profileUser.lastIpAddress}</span>
-                    </span>
+            {/* Informações do Duelista - À direita */}
+            <div className="flex-1 min-w-0 text-center sm:text-left order-3 sm:order-3">
+              {/* Data de criação - Em cima do Nick */}
+              {profileUser.createdAt && (
+                <p className="text-sm text-slate-400 mb-1">
+                  Duelista desde {new Date(profileUser.createdAt).toLocaleDateString('pt-BR', { 
+                    day: '2-digit', 
+                    month: '2-digit', 
+                    year: 'numeric' 
+                  })}
+                </p>
+              )}
+              
+              {/* Nick do Duelista */}
+              <h1 className="text-3xl sm:text-4xl font-bold text-white mb-2">
+                {profileUser.nickname || profileUser.username}
+              </h1>
+              
+              {/* Email - Em baixo do Nick */}
+              {profileUser.email && (
+                <p className="text-slate-300 mb-2 text-sm sm:text-base">{profileUser.email}</p>
+              )}
+              
+              {/* Clã - Em baixo do Email */}
+              {profileUser.clanTag && (
+                <p className="text-cyan-400 font-semibold mb-4 text-base sm:text-lg">
+                  {groupInfo?.group?.logo && (
+                    <img 
+                      src={`${API_URL}${groupInfo.group.logo}`}
+                      alt={groupInfo.group.name}
+                      className="w-5 h-5 rounded object-cover inline-block mr-2"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
                   )}
-                </div>
-                <p className="text-slate-500">@{profileUser.username}</p>
+                  |{profileUser.clanTag}|
+                </p>
+              )}
+              
+              {/* Outras informações básicas */}
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 sm:gap-4 text-sm text-slate-400">
+                <p>ID: #{profileUser.id}</p>
+                <span 
+                  className="text-slate-300 flex items-center gap-1 cursor-pointer hover:text-yellow-400 transition-colors"
+                  onClick={() => {
+                    setShowLevelsModal(true);
+                    loadNextLevels(profileUser.level || 1);
+                  }}
+                  title="Clique para ver os próximos níveis"
+                >
+                  <span>⭐</span> Nível <span className="text-base font-bold text-white ml-1">{profileUser.level || 1}</span>
+                </span>
               </div>
+              <p className="text-slate-500 text-sm mt-1">@{profileUser.username}</p>
+            </div>
+          </div>
+
+          {/* Outras informações - Em baixo da foto */}
+          <div className="mt-8">
 
               {/* Estatísticas - Agrupadas */}
               <div className="space-y-4">
@@ -810,7 +882,6 @@ export const ProfilePage: React.FC = () => {
                   )}
                 </div>
               </div>
-            </div>
           </div>
         </motion.div>
 
