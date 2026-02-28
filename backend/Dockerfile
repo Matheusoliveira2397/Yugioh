@@ -15,7 +15,7 @@ COPY tsconfig.json ./
 COPY nest-cli.json ./
 
 # Instalar dependências (incluindo devDependencies para build)
-RUN npm ci --legacy-peer-deps
+RUN npm install --legacy-peer-deps
 
 # Copiar código fonte
 COPY . .
@@ -35,7 +35,7 @@ RUN apk add --no-cache python3 make g++
 COPY package*.json ./
 
 # Instalar apenas dependências de produção
-RUN npm ci --only=production --legacy-peer-deps && \
+RUN npm install --omit=dev --legacy-peer-deps && \
     npm rebuild bcrypt --build-from-source
 
 # Copiar build do stage anterior
