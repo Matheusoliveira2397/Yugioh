@@ -217,17 +217,27 @@ export class FriendsService {
 
   // Listar mensagens com um amigo
   async getMessages(userId: number, friendId: number) {
+    // Calcular data de 24 horas atrás
+    const twentyFourHoursAgo = new Date();
+    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+
     const messages = await this.messageRepository.find({
       where: [
         { sender: { id: userId }, receiver: { id: friendId } },
         { sender: { id: friendId }, receiver: { id: userId } },
       ],
       relations: ['sender', 'receiver'],
-      order: { createdAt: 'ASC' },
+      order: { createdAt: 'DESC' }, // Ordenar do mais recente para o mais antigo
     });
 
+    // Filtrar mensagens com mais de 24 horas, pegar as últimas 20 e reverter ordem
+    const filteredMessages = messages
+      .filter(msg => msg.createdAt >= twentyFourHoursAgo)
+      .slice(0, 20)
+      .reverse(); // Reverter para ordem cronológica (mais antiga primeiro)
+
     // Formatar mensagens para o frontend
-    return messages.map(msg => ({
+    return filteredMessages.map(msg => ({
       id: msg.id,
       senderId: msg.sender.id.toString(),
       receiverId: msg.receiver.id.toString(),

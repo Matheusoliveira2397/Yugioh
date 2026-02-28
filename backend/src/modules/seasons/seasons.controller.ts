@@ -91,6 +91,12 @@ export class SeasonsController {
         third: { trophy: string; credits: number };
       };
     };
+    divisionPromotion?: {
+      [key: string]: {
+        promote: number;
+        demote: number;
+      };
+    };
   }) {
     return this.seasonsService.createSeasonAdmin(createDto);
   }
@@ -112,6 +118,12 @@ export class SeasonsController {
         first: { trophy: string; credits: number };
         second: { trophy: string; credits: number };
         third: { trophy: string; credits: number };
+      };
+    };
+    divisionPromotion?: {
+      [key: string]: {
+        promote: number;
+        demote: number;
       };
     };
   }) {

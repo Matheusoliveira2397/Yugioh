@@ -3,9 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Group } from './entities/group.entity';
 import { GroupMember, GroupRole } from './entities/group-member.entity';
+import { GroupRequest, GroupRequestStatus } from './entities/group-request.entity';
 import { User } from '../users/entities/user.entity';
 import { Achievement } from '../users/entities/achievement.entity';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class GroupsService implements OnModuleInit {
@@ -16,6 +18,8 @@ export class GroupsService implements OnModuleInit {
     private groupRepository: Repository<Group>,
     @InjectRepository(GroupMember)
     private memberRepository: Repository<GroupMember>,
+    @InjectRepository(GroupRequest)
+    private requestRepository: Repository<GroupRequest>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
     @InjectRepository(Achievement)
@@ -93,6 +97,25 @@ export class GroupsService implements OnModuleInit {
           ADD COLUMN IF NOT EXISTS "level" INTEGER DEFAULT 1
         `);
         console.log('✅ [GroupsService] Colunas seasonScore e level adicionadas');
+      }
+
+      // Verificar colunas de divisão de cash
+      const cashDivisionDayExists = await this.groupRepository.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'groups' AND column_name = 'cashDivisionDayOfWeek'
+      `);
+      
+      if (cashDivisionDayExists.length === 0) {
+        console.log('🔧 [GroupsService] Adicionando colunas de divisão de cash...');
+        await this.groupRepository.query(`
+          ALTER TABLE groups 
+          ADD COLUMN IF NOT EXISTS "cashDivisionDayOfWeek" INTEGER NULL,
+          ADD COLUMN IF NOT EXISTS "cashDivisionTime" VARCHAR(10) NULL,
+          ADD COLUMN IF NOT EXISTS "cashDivisionDefaultMembers" INTEGER NULL,
+          ADD COLUMN IF NOT EXISTS "cashDivisionMembers" INTEGER NULL
+        `);
+        console.log('✅ [GroupsService] Colunas de divisão de cash adicionadas');
       }
       
       console.log('✅ [GroupsService] Verificação de colunas concluída');
@@ -186,8 +209,17 @@ export class GroupsService implements OnModuleInit {
     return savedGroup;
   }
 
-  // Entrar em um grupo
-  async joinGroup(userId: number, groupId: string): Promise<GroupMember> {
+  // Entrar em um grupo (ou criar solicitação se privado)
+  async joinGroup(userId: number, groupId: string): Promise<GroupMember | GroupRequest> {
+    this.logger.log(`🔍 [joinGroup] userId: ${userId}, groupId: ${groupId}`);
+    
+    // Validar se groupId é um UUID válido
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(groupId)) {
+      this.logger.warn(`⚠️ [joinGroup] ID do grupo inválido: ${groupId}`);
+      throw new BadRequestException('ID do grupo inválido');
+    }
+
     const group = await this.groupRepository.findOne({
       where: { id: groupId, isActive: true },
       relations: ['members'],
@@ -217,21 +249,56 @@ export class GroupsService implements OnModuleInit {
       throw new NotFoundException('Grupo não encontrado');
     }
 
-    if (!group.isPublic) {
-      throw new ForbiddenException('Grupo privado, necessário convite');
-    }
-
-    if (group.members.filter(m => m.isActive).length >= group.maxMembers) {
-      throw new BadRequestException('Grupo está cheio');
-    }
-
     // Verifica se usuário já está em outro grupo ativo
     const existingActiveMembership = await this.memberRepository.findOne({
       where: { userId, isActive: true }
     });
 
     if (existingActiveMembership) {
+      this.logger.warn(`⚠️ [joinGroup] Usuário ${userId} já pertence ao grupo ${existingActiveMembership.groupId}`);
       throw new BadRequestException('Você já pertence a um grupo');
+    }
+
+    // Se o grupo for privado, criar solicitação
+    if (!group.isPublic) {
+      try {
+        // Verificar se já existe uma solicitação (pendente, aceita ou rejeitada)
+        const existingRequest = await this.requestRepository.findOne({
+          where: { userId, groupId }
+        });
+
+        if (existingRequest) {
+          // Se já existe uma solicitação pendente, retornar erro
+          if (existingRequest.status === GroupRequestStatus.PENDING) {
+            throw new BadRequestException('Você já tem uma solicitação pendente para este grupo');
+          }
+          
+          // Se a solicitação foi rejeitada ou aceita anteriormente, reutilizar e resetar para PENDING
+          existingRequest.status = GroupRequestStatus.PENDING;
+          existingRequest.createdAt = new Date(); // Atualizar data de criação
+          return await this.requestRepository.save(existingRequest);
+        }
+
+        // Criar nova solicitação
+        const request = this.requestRepository.create({
+          userId,
+          groupId,
+          status: GroupRequestStatus.PENDING,
+        });
+
+        return await this.requestRepository.save(request);
+      } catch (error: any) {
+        // Se a tabela não existir, informar para executar a migration
+        if (error.message && error.message.includes('does not exist')) {
+          this.logger.error('❌ Tabela group_requests não existe. Execute a migration: create-group-requests-table.sql');
+          throw new BadRequestException('Sistema de solicitações não está disponível. Contate o administrador.');
+        }
+        throw error;
+      }
+    }
+
+    if (group.members.filter(m => m.isActive).length >= group.maxMembers) {
+      throw new BadRequestException('Grupo está cheio');
     }
 
     // Verificar se o usuário já foi membro deste grupo (mesmo que inativo)
@@ -314,6 +381,153 @@ export class GroupsService implements OnModuleInit {
       where: { userId, groupId, isActive: true }
     });
     return !!member;
+  }
+
+  // Verificar se usuário tem solicitação pendente
+  async hasPendingRequest(userId: number, groupId: string): Promise<boolean> {
+    // Validar se groupId é um UUID válido
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(groupId)) {
+      return false;
+    }
+
+    try {
+      const request = await this.requestRepository.findOne({
+        where: { userId, groupId, status: GroupRequestStatus.PENDING }
+      });
+      return !!request;
+    } catch (error: any) {
+      // Se a tabela não existir, retornar false
+      if (error.message && error.message.includes('does not exist')) {
+        this.logger.warn('⚠️ Tabela group_requests não existe ainda. Execute a migration.');
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  // Listar solicitações pendentes de um grupo
+  async getPendingRequests(groupId: string, userId: number): Promise<GroupRequest[]> {
+    // Validar se groupId é um UUID válido
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(groupId)) {
+      throw new BadRequestException('ID do grupo inválido');
+    }
+
+    // Verificar se o usuário é líder ou co-líder
+    const member = await this.memberRepository.findOne({
+      where: { userId, groupId, isActive: true }
+    });
+
+    if (!member || (member.role !== GroupRole.LEADER && member.role !== GroupRole.CO_LEADER)) {
+      throw new ForbiddenException('Apenas líderes e co-líderes podem ver solicitações');
+    }
+
+    try {
+      return await this.requestRepository.find({
+        where: { groupId, status: GroupRequestStatus.PENDING },
+        relations: ['user'],
+        order: { createdAt: 'DESC' }
+      });
+    } catch (error: any) {
+      // Se a tabela não existir, retornar array vazio
+      if (error.message && error.message.includes('does not exist')) {
+        this.logger.warn('⚠️ Tabela group_requests não existe ainda. Execute a migration.');
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  // Aceitar solicitação
+  async acceptRequest(requestId: string, userId: number): Promise<GroupMember> {
+    const request = await this.requestRepository.findOne({
+      where: { id: requestId, status: GroupRequestStatus.PENDING },
+      relations: ['group']
+    });
+
+    if (!request) {
+      throw new NotFoundException('Solicitação não encontrada');
+    }
+
+    // Verificar se o usuário é líder ou co-líder
+    const member = await this.memberRepository.findOne({
+      where: { userId, groupId: request.groupId, isActive: true }
+    });
+
+    if (!member || (member.role !== GroupRole.LEADER && member.role !== GroupRole.CO_LEADER)) {
+      throw new ForbiddenException('Apenas líderes e co-líderes podem aceitar solicitações');
+    }
+
+    const group = request.group;
+
+    // Verificar se o grupo está cheio
+    const activeMembers = await this.memberRepository.count({
+      where: { groupId: group.id, isActive: true }
+    });
+
+    if (activeMembers >= group.maxMembers) {
+      throw new BadRequestException('Grupo está cheio');
+    }
+
+    // Verificar se o usuário já está em outro grupo
+    const existingMembership = await this.memberRepository.findOne({
+      where: { userId: request.userId, isActive: true }
+    });
+
+    if (existingMembership) {
+      throw new BadRequestException('Usuário já pertence a outro grupo');
+    }
+
+    // Criar membro
+    const newMember = this.memberRepository.create({
+      groupId: group.id,
+      userId: request.userId,
+      role: GroupRole.MEMBER,
+      weeklyScore: 0,
+      seasonScore: 0,
+      totalScore: 0,
+      isActive: true
+    });
+
+    await this.memberRepository.save(newMember);
+
+    // Atualizar clanTag do usuário
+    await this.userRepository.update(request.userId, { clanTag: group.tag });
+
+    // Marcar solicitação como aceita
+    request.status = GroupRequestStatus.ACCEPTED;
+    await this.requestRepository.save(request);
+
+    // Recalcular estatísticas do grupo
+    await this.recalculateGroupStats(group.id);
+
+    return newMember;
+  }
+
+  // Recusar solicitação
+  async rejectRequest(requestId: string, userId: number): Promise<void> {
+    const request = await this.requestRepository.findOne({
+      where: { id: requestId, status: GroupRequestStatus.PENDING },
+      relations: ['group']
+    });
+
+    if (!request) {
+      throw new NotFoundException('Solicitação não encontrada');
+    }
+
+    // Verificar se o usuário é líder ou co-líder
+    const member = await this.memberRepository.findOne({
+      where: { userId, groupId: request.groupId, isActive: true }
+    });
+
+    if (!member || (member.role !== GroupRole.LEADER && member.role !== GroupRole.CO_LEADER)) {
+      throw new ForbiddenException('Apenas líderes e co-líderes podem recusar solicitações');
+    }
+
+    // Marcar solicitação como recusada
+    request.status = GroupRequestStatus.REJECTED;
+    await this.requestRepository.save(request);
   }
 
 
@@ -824,15 +1038,31 @@ export class GroupsService implements OnModuleInit {
   // Recalcular estatísticas de todos os grupos (pode ser chamado periodicamente)
   @Cron(CronExpression.EVERY_HOUR)
   async recalculateAllGroupsStats(): Promise<void> {
-    const groups = await this.groupRepository.find({
-      where: { isActive: true }
-    });
+    try {
+      const groups = await this.groupRepository.find({
+        where: { isActive: true },
+        select: ['id']
+      });
 
-    for (const group of groups) {
-      await this.recalculateGroupStats(group.id);
+      for (const group of groups) {
+        try {
+          // Validar se o ID é um UUID válido antes de processar
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (!uuidRegex.test(group.id)) {
+            this.logger.warn(`⚠️ [recalculateAllGroupsStats] Grupo com ID inválido ignorado: ${group.id}`);
+            continue;
+          }
+          await this.recalculateGroupStats(group.id);
+        } catch (error: any) {
+          this.logger.error(`❌ [recalculateAllGroupsStats] Erro ao recalcular stats do grupo ${group.id}:`, error.message);
+          // Continuar com os outros grupos mesmo se um falhar
+        }
+      }
+      
+      this.logger.log(`✅ Estatísticas de todos os grupos recalculadas (${groups.length} grupos processados)`);
+    } catch (error: any) {
+      this.logger.error('❌ [recalculateAllGroupsStats] Erro ao buscar grupos:', error.message);
     }
-    
-    console.log('✅ Estatísticas de todos os grupos recalculadas');
   }
   
   // Promover membro a oficial (CO_LEADER ou ELDER)
@@ -845,6 +1075,7 @@ export class GroupsService implements OnModuleInit {
       throw new NotFoundException('Grupo não encontrado');
     }
 
+    // Apenas o líder pode promover membros
     if (group.leaderId !== leaderId) {
       throw new ForbiddenException('Apenas o líder pode promover membros');
     }
@@ -865,8 +1096,25 @@ export class GroupsService implements OnModuleInit {
       throw new BadRequestException('Você não pode promover a si mesmo');
     }
 
-    member.role = newRole;
+    // Converter string para GroupRole se necessário
+    let roleToSet: GroupRole;
+    const roleString = String(newRole);
+    if (roleString === 'Co-Leader' || roleString === 'CO_LEADER' || newRole === GroupRole.CO_LEADER) {
+      roleToSet = GroupRole.CO_LEADER;
+    } else if (roleString === 'Elder' || roleString === 'ELDER' || newRole === GroupRole.ELDER) {
+      roleToSet = GroupRole.ELDER;
+    } else if (newRole === GroupRole.MEMBER) {
+      roleToSet = GroupRole.MEMBER;
+    } else if (newRole === GroupRole.LEADER) {
+      roleToSet = GroupRole.LEADER;
+    } else {
+      throw new BadRequestException(`Role inválido: ${newRole}`);
+    }
+
+    this.logger.log(`📈 [promoteMember] Promovendo membro ${memberUserId} do grupo ${groupId} para ${roleToSet}`);
+    member.role = roleToSet;
     await this.memberRepository.save(member);
+    this.logger.log(`✅ [promoteMember] Membro promovido com sucesso`);
   }
   
   // Rebaixar membro a MEMBER
@@ -897,6 +1145,81 @@ export class GroupsService implements OnModuleInit {
 
     member.role = GroupRole.MEMBER;
     await this.memberRepository.save(member);
+  }
+
+  // Remover/Expulsar membro do grupo
+  async removeMember(requesterId: number, groupId: string, memberUserId: number): Promise<void> {
+    const group = await this.groupRepository.findOne({
+      where: { id: groupId },
+      relations: ['members']
+    });
+
+    if (!group) {
+      throw new NotFoundException('Grupo não encontrado');
+    }
+
+    // Verificar se o requester é líder ou oficial
+    const requesterMember = await this.memberRepository.findOne({
+      where: { groupId, userId: requesterId, isActive: true }
+    });
+
+    if (!requesterMember) {
+      throw new ForbiddenException('Você não é membro deste grupo');
+    }
+
+    const isLeader = group.leaderId === requesterId;
+    const isCoLeader = requesterMember.role === GroupRole.CO_LEADER;
+
+    if (!isLeader && !isCoLeader) {
+      throw new ForbiddenException('Apenas líderes e oficiais podem remover membros');
+    }
+
+    // Buscar o membro a ser removido
+    const memberToRemove = await this.memberRepository.findOne({
+      where: { groupId, userId: memberUserId, isActive: true }
+    });
+
+    if (!memberToRemove) {
+      throw new NotFoundException('Membro não encontrado');
+    }
+
+    // Verificar permissões
+    if (memberToRemove.userId === group.leaderId) {
+      throw new BadRequestException('Não é possível remover o líder do grupo');
+    }
+
+    // Se o requester é oficial (não líder), não pode remover outros oficiais
+    if (isCoLeader && !isLeader) {
+      if (memberToRemove.role === GroupRole.CO_LEADER || memberToRemove.role === GroupRole.ELDER) {
+        throw new ForbiddenException('Oficiais não podem remover outros oficiais');
+      }
+    }
+
+    // Remover membro (desativar)
+    memberToRemove.isActive = false;
+    await this.memberRepository.save(memberToRemove);
+
+    // Limpar clanTag do usuário
+    await this.userRepository.update(memberUserId, { clanTag: null as any });
+
+    // Remover ou atualizar solicitações antigas do usuário para este grupo
+    try {
+      const existingRequests = await this.requestRepository.find({
+        where: { userId: memberUserId, groupId }
+      });
+
+      if (existingRequests.length > 0) {
+        // Remover todas as solicitações antigas para permitir nova entrada
+        await this.requestRepository.remove(existingRequests);
+        this.logger.log(`🗑️ [removeMember] Removidas ${existingRequests.length} solicitação(ões) antiga(s) do usuário ${memberUserId} para o grupo ${groupId}`);
+      }
+    } catch (error: any) {
+      // Se a tabela não existir ou houver erro, apenas logar e continuar
+      this.logger.warn(`⚠️ [removeMember] Erro ao remover solicitações antigas: ${error.message}`);
+    }
+
+    // Recalcular estatísticas do grupo
+    await this.recalculateGroupStats(groupId);
   }
   
   // Buscar grupo e ranking do usuário
@@ -951,8 +1274,161 @@ export class GroupsService implements OnModuleInit {
     console.log('✅ Scores da season resetados');
   }
 
+  // Verificar e executar divisão de cash dos grupos (executa a cada minuto)
+  @Cron(CronExpression.EVERY_MINUTE)
+  async checkAndExecuteCashDivision(): Promise<void> {
+    // Converter para horário de Brasília (America/Sao_Paulo)
+    const now = new Date();
+    
+    // Obter horário de Brasília usando Intl.DateTimeFormat
+    const brasiliaFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Sao_Paulo',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      weekday: 'long',
+    });
+    
+    const brasiliaParts = brasiliaFormatter.formatToParts(now);
+    const brasiliaHour = parseInt(brasiliaParts.find(p => p.type === 'hour')?.value || '0', 10);
+    const brasiliaMinute = parseInt(brasiliaParts.find(p => p.type === 'minute')?.value || '0', 10);
+    const brasiliaWeekday = brasiliaParts.find(p => p.type === 'weekday')?.value || '';
+    
+    // Mapear weekday para número (0 = Domingo, 1 = Segunda, ..., 6 = Sábado)
+    const weekdayMap: { [key: string]: number } = {
+      'Sunday': 0,
+      'Monday': 1,
+      'Tuesday': 2,
+      'Wednesday': 3,
+      'Thursday': 4,
+      'Friday': 5,
+      'Saturday': 6,
+    };
+    
+    const currentDayOfWeek = weekdayMap[brasiliaWeekday] ?? now.getDay();
+    const currentTime = `${String(brasiliaHour).padStart(2, '0')}:${String(brasiliaMinute).padStart(2, '0')}`;
+    
+    // Log para debug (apenas a cada 10 minutos)
+    if (brasiliaMinute % 10 === 0) {
+      this.logger.debug(`🕐 [checkAndExecuteCashDivision] Horário de Brasília: ${currentTime} (dia ${currentDayOfWeek})`);
+    }
+
+    // Buscar grupos que devem ter divisão de cash agora
+    const groups = await this.groupRepository.find({
+      where: {
+        isActive: true,
+        cashDivisionDayOfWeek: currentDayOfWeek,
+        cashDivisionTime: currentTime,
+      },
+    });
+
+    if (groups.length === 0) {
+      // Log apenas a cada 10 minutos para não poluir os logs
+      if (now.getMinutes() % 10 === 0) {
+        this.logger.debug(`🔍 [checkAndExecuteCashDivision] Nenhum grupo encontrado para divisão às ${currentTime} (dia ${currentDayOfWeek})`);
+      }
+      return;
+    }
+
+    this.logger.log(`💰 [checkAndExecuteCashDivision] Encontrados ${groups.length} grupo(s) para divisão às ${currentTime} (dia ${currentDayOfWeek})`);
+
+    for (const group of groups) {
+      try {
+        // Buscar o grupo novamente com todos os campos necessários
+        const fullGroup = await this.groupRepository.findOne({
+          where: { id: group.id },
+        });
+
+        if (!fullGroup) {
+          this.logger.warn(`⚠️ [checkAndExecuteCashDivision] Grupo ${group.id} não encontrado`);
+          continue;
+        }
+
+        // Converter totalCash para número (pode vir como string do banco)
+        const totalCash = typeof fullGroup.totalCash === 'string' 
+          ? parseFloat(fullGroup.totalCash) 
+          : Number(fullGroup.totalCash || 0);
+
+        // Verificar se o grupo tem cash para dividir
+        if (!totalCash || totalCash <= 0) {
+          this.logger.debug(`⚠️ [checkAndExecuteCashDivision] Grupo ${fullGroup.name} não tem cash para dividir (totalCash: ${totalCash})`);
+          continue;
+        }
+
+        // Determinar número de membros para divisão
+        // Prioridade: cashDivisionMembers (configurado pelo líder) > cashDivisionDefaultMembers (configurado pelo admin)
+        const divisionMembers = fullGroup.cashDivisionMembers ?? fullGroup.cashDivisionDefaultMembers;
+
+        if (!divisionMembers || divisionMembers <= 0) {
+          this.logger.warn(`⚠️ [checkAndExecuteCashDivision] Grupo ${fullGroup.name} não tem número de membros configurado para divisão`);
+          continue;
+        }
+
+        // Buscar membros ativos do grupo
+        const activeMembers = await this.memberRepository.find({
+          where: {
+            groupId: fullGroup.id,
+            isActive: true,
+          },
+          relations: ['user'],
+        });
+
+        if (activeMembers.length === 0) {
+          this.logger.warn(`⚠️ [checkAndExecuteCashDivision] Grupo ${fullGroup.name} não tem membros ativos`);
+          continue;
+        }
+
+        // Calcular cash por membro (usar o menor entre número configurado e número real de membros)
+        const membersToDivide = Math.min(divisionMembers, activeMembers.length);
+        const cashPerMember = Math.floor(totalCash / membersToDivide);
+        const totalDistributed = cashPerMember * membersToDivide;
+        const remainingCash = totalCash - totalDistributed;
+
+        if (cashPerMember <= 0) {
+          this.logger.warn(`⚠️ [checkAndExecuteCashDivision] Grupo ${fullGroup.name}: cash por membro é 0 ou negativo (${cashPerMember})`);
+          continue;
+        }
+
+        this.logger.log(`💰 [checkAndExecuteCashDivision] Grupo ${fullGroup.name}: Dividindo ${totalCash} cash entre ${membersToDivide} membro(s). ${cashPerMember} por membro. Restante: ${remainingCash}`);
+
+        // Distribuir cash para os membros
+        let distributedCount = 0;
+        for (const member of activeMembers.slice(0, membersToDivide)) {
+          try {
+            const user = await this.userRepository.findOne({ where: { id: member.userId } });
+            if (user) {
+              const currentCash = Number(user.cash || 0);
+              user.cash = currentCash + cashPerMember;
+              await this.userRepository.save(user);
+              distributedCount++;
+              this.logger.debug(`  ✅ Membro ${user.nickname || user.username} recebeu ${cashPerMember} cash (total agora: ${user.cash})`);
+            }
+          } catch (error: any) {
+            this.logger.error(`❌ [checkAndExecuteCashDivision] Erro ao distribuir cash para membro ${member.userId}: ${error.message}`);
+          }
+        }
+
+        // Atualizar cash do grupo (subtrair o que foi distribuído)
+        fullGroup.totalCash = remainingCash;
+        await this.groupRepository.save(fullGroup);
+
+        this.logger.log(`✅ [checkAndExecuteCashDivision] Grupo ${fullGroup.name}: ${cashPerMember} cash distribuído para ${distributedCount}/${membersToDivide} membro(s). Restante no grupo: ${remainingCash}`);
+      } catch (error: any) {
+        this.logger.error(`❌ [checkAndExecuteCashDivision] Erro ao processar grupo ${group.id}: ${error.message}`);
+        this.logger.error(error.stack);
+      }
+    }
+  }
+
   // Buscar grupo por ID
   async getGroup(groupId: string): Promise<Group> {
+    // Validar se groupId é um UUID válido (mas não bloquear se não for, apenas logar)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(groupId)) {
+      this.logger.warn(`⚠️ [getGroup] ID do grupo não é um UUID válido: ${groupId}`);
+      // Não bloquear, apenas tentar buscar mesmo assim (pode ser um ID legado)
+    }
+
     // Usar query builder para evitar erro se colunas não existirem
     try {
       // NÃO recalcular estatísticas toda vez - isso pode causar problemas de performance
@@ -1064,29 +1540,44 @@ export class GroupsService implements OnModuleInit {
         order: { totalScore: 'DESC' }
       });
 
-      // Adicionar contagem de membros ativos
-      return groups.map(group => ({
-        ...group,
-        memberCount: group.members?.filter(m => m.isActive).length || 0,
-      })) as any;
-    } catch (error: any) {
-      // Se houver erro relacionado a colunas faltando, tentar adicionar e buscar novamente
-      if (error.message?.includes('does not exist') || error.message?.includes('column')) {
-        console.log('⚠️ [getAllGroups] Coluna não encontrada, tentando adicionar...');
-        await this.onModuleInit(); // Tentar adicionar colunas
-        // Tentar novamente
-        const groups = await this.groupRepository.find({
-          where,
-          relations: ['members', 'leader'],
-          order: { totalScore: 'DESC' }
-        });
-
-        return groups.map(group => ({
+      // Adicionar contagem de membros ativos e filtrar grupos sem líder
+      return groups
+        .filter(group => group.leader) // Filtrar grupos sem líder
+        .map(group => ({
           ...group,
           memberCount: group.members?.filter(m => m.isActive).length || 0,
         })) as any;
+    } catch (error: any) {
+      this.logger.error('❌ [getAllGroups] Erro ao buscar grupos:', error.message);
+      
+      // Se houver erro relacionado a colunas faltando, tentar adicionar e buscar novamente
+      if (error.message?.includes('does not exist') || error.message?.includes('column')) {
+        this.logger.warn('⚠️ [getAllGroups] Coluna não encontrada, tentando adicionar...');
+        try {
+          await this.onModuleInit(); // Tentar adicionar colunas
+          // Tentar novamente
+          const groups = await this.groupRepository.find({
+            where,
+            relations: ['members', 'leader'],
+            order: { totalScore: 'DESC' }
+          });
+
+          return groups
+            .filter(group => group.leader)
+            .map(group => ({
+              ...group,
+              memberCount: group.members?.filter(m => m.isActive).length || 0,
+            })) as any;
+        } catch (retryError: any) {
+          this.logger.error('❌ [getAllGroups] Erro ao tentar novamente:', retryError.message);
+          // Retornar array vazio em vez de lançar erro
+          return [];
+        }
       }
-      throw error;
+      
+      // Se for outro tipo de erro, retornar array vazio em vez de lançar
+      this.logger.error('❌ [getAllGroups] Erro desconhecido, retornando array vazio');
+      return [];
     }
   }
 
@@ -1315,7 +1806,7 @@ export class GroupsService implements OnModuleInit {
   }
 
   // Atualizar grupo (apenas o líder pode)
-  async updateGroup(userId: number, groupId: string, updateData: { name?: string; tag?: string; description?: string; logo?: string; banner?: string; isPublic?: boolean }): Promise<Group> {
+  async updateGroup(userId: number, groupId: string, updateData: { name?: string; tag?: string; description?: string; logo?: string; banner?: string; isPublic?: boolean; cashDivisionMembers?: number | null }): Promise<Group> {
     const group = await this.groupRepository.findOne({
       where: { id: groupId },
       relations: ['leader']
@@ -1368,8 +1859,63 @@ export class GroupsService implements OnModuleInit {
     if (updateData.logo !== undefined) group.logo = updateData.logo;
     if (updateData.banner !== undefined) group.banner = updateData.banner;
     if (updateData.isPublic !== undefined) group.isPublic = updateData.isPublic;
+    if (updateData.cashDivisionMembers !== undefined) {
+      if (updateData.cashDivisionMembers !== null && updateData.cashDivisionMembers < 1) {
+        throw new BadRequestException('Número de membros para divisão deve ser pelo menos 1');
+      }
+      group.cashDivisionMembers = updateData.cashDivisionMembers;
+    }
 
     return await this.groupRepository.save(group);
+  }
+
+  // Configurar divisão de cash padrão (apenas admin)
+  async setCashDivisionDefault(dayOfWeek: number, time: string, defaultMembers: number): Promise<void> {
+    // Validar dia da semana (0-6)
+    if (dayOfWeek < 0 || dayOfWeek > 6) {
+      throw new BadRequestException('Dia da semana inválido. Use 0 (Domingo) a 6 (Sábado)');
+    }
+
+    // Validar formato de horário (HH:mm)
+    const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
+    if (!timeRegex.test(time)) {
+      throw new BadRequestException('Formato de horário inválido. Use HH:mm (ex: 14:30)');
+    }
+
+    // Validar número de membros
+    if (defaultMembers < 1) {
+      throw new BadRequestException('Número de membros deve ser pelo menos 1');
+    }
+
+    // Atualizar todos os grupos ativos com a configuração padrão
+    await this.groupRepository.update(
+      { isActive: true },
+      {
+        cashDivisionDayOfWeek: dayOfWeek,
+        cashDivisionTime: time,
+        cashDivisionDefaultMembers: defaultMembers,
+      }
+    );
+
+    this.logger.log(`✅ [setCashDivisionDefault] Configuração padrão de divisão de cash atualizada: ${dayOfWeek} às ${time} para ${defaultMembers} membros`);
+  }
+
+  // Obter configuração padrão de divisão de cash
+  async getCashDivisionDefault(): Promise<{ dayOfWeek: number | null; time: string | null; defaultMembers: number | null }> {
+    const group = await this.groupRepository.findOne({
+      where: { isActive: true },
+      order: { updatedAt: 'DESC' },
+    });
+
+    if (!group) {
+      return { dayOfWeek: null, time: null, defaultMembers: null };
+    }
+
+    return {
+      dayOfWeek: group.cashDivisionDayOfWeek,
+      time: group.cashDivisionTime,
+      defaultMembers: group.cashDivisionDefaultMembers,
+    };
   }
 
   // Buscar conquistas do grupo
@@ -1411,7 +1957,7 @@ export class GroupsService implements OnModuleInit {
   }
 
   // Excluir grupo (apenas o líder pode)
-  async deleteGroup(userId: number, groupId: string): Promise<void> {
+  async deleteGroup(userId: number, groupId: string, password?: string): Promise<void> {
     const group = await this.groupRepository.findOne({
       where: { id: groupId },
       relations: ['leader']
@@ -1423,6 +1969,27 @@ export class GroupsService implements OnModuleInit {
 
     if (group.leaderId !== userId) {
       throw new BadRequestException('Apenas o líder pode excluir o grupo');
+    }
+
+    // Validar senha se fornecida
+    if (!password) {
+      throw new BadRequestException('Senha é obrigatória para excluir o grupo');
+    }
+
+    // Buscar o usuário para verificar a senha
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'password']
+    });
+
+    if (!user || !user.password) {
+      throw new NotFoundException('Usuário não encontrado');
+    }
+
+    // Verificar senha
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      throw new BadRequestException('Senha incorreta');
     }
 
     // Desativar grupo (soft delete)

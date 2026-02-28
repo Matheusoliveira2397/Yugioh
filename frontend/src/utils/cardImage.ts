@@ -121,48 +121,106 @@ export const getCardImagePath = (cardId: string | number | undefined | null): st
 };
 
 /**
+ * Gera caminhos possíveis baseados no nome da carta
+ * Formato: card_nome_da_carta_timestamp.extensão
+ * Mas também tenta variações sem timestamp e com nome normalizado
+ */
+const getCardNameBasedPaths = (cardName: string): string[] => {
+  if (!cardName) return [];
+  
+  const paths: string[] = [];
+  const extensions = ['.jpg', '.jpeg', '.png', '.webp'];
+  
+  // 1. Nome sanitizado (lowercase com underscores) com prefixo "card_" - formato mais comum nos arquivos
+  // Formato: card_marshmallon_1769332490741.jpg
+  const sanitized = cardName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  if (sanitized) {
+    // Tentar com prefixo "card_" (formato mais comum nos arquivos salvos)
+    for (const ext of extensions) {
+      paths.push(`/images/cards/card_${sanitized}${ext}`);
+    }
+  }
+  
+  // 2. Nome normalizado (PascalCase) - formato alternativo
+  const normalized = normalizeCardName(cardName);
+  if (normalized && normalized.toLowerCase().replace(/[^a-z0-9]/g, '_') !== sanitized) {
+    for (const ext of extensions) {
+      paths.push(`/images/cards/${normalized}${ext}`);
+    }
+  }
+  
+  // 3. Nome sanitizado sem prefixo "card_"
+  if (sanitized) {
+    for (const ext of extensions) {
+      paths.push(`/images/cards/${sanitized}${ext}`);
+    }
+  }
+  
+  // 4. Variações do nome normalizado
+  if (normalized) {
+    const variations = generateCardNameVariations(normalized);
+    for (const variation of variations) {
+      if (variation !== normalized) {
+        for (const ext of extensions) {
+          paths.push(`/images/cards/${variation}${ext}`);
+        }
+      }
+    }
+  }
+  
+  return paths;
+};
+
+/**
  * Função para obter a imagem da carta, com fallback
  * Retorna o caminho da imagem local se disponível, ou null para usar fallback
+ * AGORA: Todas as imagens são salvas com idCarta como nome do arquivo
  */
 export const getCardImage = (card: any): string | null => {
-  // Verificar se cardImage existe e não é vazio/null
+  // PRIORIDADE 1: Se cardImage existir e começar com /images/, usar diretamente
   const cardImage = card?.cardImage;
-  
-  // Debug temporário
-  if (!card?.idCarta && !cardImage) {
-    console.warn('[getCardImage] Carta sem idCarta e sem cardImage:', card?.name, card);
+  if (cardImage && typeof cardImage === 'string' && cardImage.trim() !== '' && cardImage.startsWith('/images/')) {
+    return cardImage;
   }
   
-  // Se cardImage existir e não for vazio, usar esse valor
-  if (cardImage && typeof cardImage === 'string' && cardImage.trim() !== '') {
-    // Se for um caminho relativo do backend (começa com /uploads/), construir URL completa
-    if (cardImage.startsWith('/uploads/')) {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-      return `${API_URL}${cardImage}`;
-    }
-    
-    // Se já for uma URL completa (http:// ou https://), usar diretamente
-    if (cardImage.startsWith('http://') || cardImage.startsWith('https://')) {
-      return cardImage;
-    }
-    
-    // Se for um caminho relativo do frontend (começa com /images/), usar diretamente
-    if (cardImage.startsWith('/images/')) {
-      return cardImage;
-    }
-    
-    // Caso contrário, assumir que é um caminho relativo do backend
-    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-    return `${API_URL}${cardImage.startsWith('/') ? cardImage : '/' + cardImage}`;
-  }
-  
-  // Se cardImage não existir ou for vazio, tentar usar o ID da carta para buscar a imagem local
-  // Prioridade: idCarta (campo usado pelo backend), depois id, depois cardId
+  // PRIORIDADE 2: Se não tiver cardImage, usar idCarta diretamente (todas as imagens agora são salvas com idCarta)
   const cardId = card?.idCarta || card?.id || card?.cardId;
   if (cardId) {
-    return getCardImagePath(cardId);
+    // Tentar diferentes extensões
+    const extensions = ['.jpg', '.jpeg', '.png', '.webp'];
+    for (const ext of extensions) {
+      const path = `/images/cards/${cardId}${ext}`;
+      // Retornar o primeiro caminho (o componente CardImage vai tentar os outros se falhar)
+      return path;
+    }
   }
   
   return null;
+};
+
+/**
+ * Retorna todos os caminhos possíveis para uma carta (para o componente CardImage tentar)
+ * AGORA: Todas as imagens são salvas com idCarta como nome do arquivo
+ */
+export const getAllCardImagePaths = (card: any): string[] => {
+  const paths: string[] = [];
+  const cardImage = card?.cardImage;
+  const cardId = card?.idCarta || card?.id || card?.cardId;
+  
+  // PRIORIDADE 1: Se cardImage existir e começar com /images/, usar diretamente
+  if (cardImage && typeof cardImage === 'string' && cardImage.trim() !== '' && cardImage.startsWith('/images/')) {
+    paths.push(cardImage);
+  }
+  
+  // PRIORIDADE 2: Caminhos baseados no idCarta (todas as imagens agora são salvas com idCarta)
+  if (cardId) {
+    const extensions = ['.jpg', '.jpeg', '.png', '.webp'];
+    for (const ext of extensions) {
+      paths.push(`/images/cards/${cardId}${ext}`);
+    }
+  }
+  
+  // Remover duplicatas mantendo a ordem
+  return Array.from(new Set(paths));
 };
 

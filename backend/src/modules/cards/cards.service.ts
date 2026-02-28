@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
 import { Card } from './entities/card.entity';
@@ -6,19 +6,42 @@ import { ShopService } from '../shop/shop.service';
 import { CreateCardDto } from './dto/create-card.dto';
 import { UpdateCardDto } from './dto/update-card.dto';
 import { AddEffectDto } from './dto/add-effect.dto';
+import { YugiohApiService } from './services/yugioh-api.service';
 
 @Injectable()
-export class CardsService {
+export class CardsService implements OnModuleInit {
   // Cache simples em memória para cartas da loja
   private shopCardsCache: { data: Card[]; timestamp: number } | null = null;
   private readonly CACHE_TTL = 60000; // 1 minuto
+  private renameImagesExecuted = false;
 
   constructor(
     @InjectRepository(Card)
     private cardsRepository: Repository<Card>,
     @Inject(forwardRef(() => ShopService))
     private shopService: ShopService,
+    private yugiohApiService: YugiohApiService,
   ) {}
+
+  async onModuleInit() {
+    // Executar renomeação de imagens automaticamente na inicialização
+    // Apenas uma vez, com delay para garantir que o módulo está totalmente carregado
+    setTimeout(async () => {
+      if (!this.renameImagesExecuted) {
+        this.renameImagesExecuted = true;
+        console.log('🔄 [CardsService] Iniciando renomeação automática de imagens...');
+        try {
+          // Importar UploadService dinamicamente para evitar dependência circular
+          const { UploadService } = await import('../upload/upload.service');
+          const uploadServiceInstance = new UploadService();
+          await this.renameAllCardImagesInternal(uploadServiceInstance);
+        } catch (error: any) {
+          console.error('❌ [CardsService] Erro ao renomear imagens automaticamente:', error.message);
+          console.error('❌ [CardsService] Stack:', error.stack);
+        }
+      }
+    }, 10000); // Aguardar 10 segundos após inicialização
+  }
 
   async findAll(search?: string, type?: string): Promise<Card[]> {
     const where: any = { isActive: true };
@@ -128,12 +151,19 @@ export class CardsService {
     
     // Depois, adicionar apenas os campos permitidos
     for (const key of this.ALLOWED_FIELDS) {
-      if (cardData[key] !== undefined && cardData[key] !== null) {
-        // CRÍTICO: Se for cardImage e for base64, NÃO incluir
-        if (key === 'cardImage' && typeof cardData[key] === 'string' && cardData[key].startsWith('data:image')) {
-          console.warn(`⚠️ Base64 detectado em cardImage. Removendo. Use upload de arquivo.`);
-          continue; // Não incluir base64
+      // cardImage deve ser incluído mesmo se for string vazia (para permitir limpar a imagem)
+      if (key === 'cardImage') {
+        if (cardData[key] !== undefined) {
+          // CRÍTICO: Se for cardImage e for base64, NÃO incluir
+          if (typeof cardData[key] === 'string' && cardData[key].startsWith('data:image')) {
+            console.warn(`⚠️ Base64 detectado em cardImage. Removendo. Use upload de arquivo.`);
+            continue; // Não incluir base64
+          }
+          // Incluir cardImage mesmo se for string vazia (permite limpar a imagem)
+          cleaned[key] = cardData[key];
+          console.log(`📸 [cleanCardData] cardImage incluído: ${typeof cardData[key] === 'string' ? cardData[key].substring(0, 50) + '...' : cardData[key]}`);
         }
+      } else if (cardData[key] !== undefined && cardData[key] !== null) {
         cleaned[key] = cardData[key];
       }
     }
@@ -170,6 +200,43 @@ export class CardsService {
     
     if (existingCard) {
       throw new BadRequestException(`Carta com idCarta "${cleanedData.idCarta}" já existe. Use outro idCarta.`);
+    }
+
+    // Se é uma nova skin de uma carta existente (mesmo nome), herdar dados compartilhados
+    // Campos compartilhados entre skins: name, description, type, stats, maxCopiesInDeck, isBanned
+    // Campos únicos por skin: idCarta, cardImage, priceCredits, priceCash, isForSale, rarity
+    if (cleanedData.name) {
+      const existingSkins = await this.findSkinsByName(cleanedData.name);
+      if (existingSkins.length > 0) {
+        const originalSkin = existingSkins[0];
+        
+        // Herdar maxCopiesInDeck (limite de deck é compartilhado)
+        const originalMaxCopies = originalSkin.maxCopiesInDeck ?? 3;
+        if (!cleanedData.maxCopiesInDeck || cleanedData.maxCopiesInDeck === 3) {
+          cleanedData.maxCopiesInDeck = originalMaxCopies;
+          console.log(`🔄 Nova skin de "${cleanedData.name}" herdando maxCopiesInDeck: ${originalMaxCopies}`);
+        }
+        
+        // Herdar description (efeito) - todas as skins compartilham o mesmo efeito
+        cleanedData.description = originalSkin.description || cleanedData.description || '';
+        console.log(`🔄 Nova skin de "${cleanedData.name}" herdando description (efeito) da carta original`);
+        
+        // Herdar campos que definem o efeito da carta (compartilhados entre skins)
+        if (!cleanedData.type) cleanedData.type = originalSkin.type;
+        if (!cleanedData.monsterType && originalSkin.monsterType) cleanedData.monsterType = originalSkin.monsterType;
+        if (!cleanedData.attribute && originalSkin.attribute) cleanedData.attribute = originalSkin.attribute;
+        if (!cleanedData.race && originalSkin.race) cleanedData.race = originalSkin.race;
+        if (!cleanedData.spellType && originalSkin.spellType) cleanedData.spellType = originalSkin.spellType;
+        if (!cleanedData.trapType && originalSkin.trapType) cleanedData.trapType = originalSkin.trapType;
+        if (!cleanedData.archetype && originalSkin.archetype) cleanedData.archetype = originalSkin.archetype;
+        if (cleanedData.level === undefined && originalSkin.level !== undefined) cleanedData.level = originalSkin.level;
+        if (cleanedData.rank === undefined && originalSkin.rank !== undefined) cleanedData.rank = originalSkin.rank;
+        if (cleanedData.atk === undefined && originalSkin.atk !== undefined) cleanedData.atk = originalSkin.atk;
+        if (cleanedData.def === undefined && originalSkin.def !== undefined) cleanedData.def = originalSkin.def;
+        if (cleanedData.isBanned === undefined && originalSkin.isBanned !== undefined) cleanedData.isBanned = originalSkin.isBanned;
+        
+        console.log(`🔄 Nova skin de "${cleanedData.name}" herdando todos os dados compartilhados (efeito, tipo, stats, etc.)`);
+      }
     }
 
     // Criar a carta manualmente com apenas os campos permitidos
@@ -273,16 +340,114 @@ export class CardsService {
 
   async update(id: string, cardData: Partial<Card>): Promise<Card> {
     try {
-      console.log('📝 [CardsService] Iniciando atualização da carta:', id);
+      console.log('📝 [CardsService] ========== INICIANDO ATUALIZAÇÃO ==========');
+      console.log('📝 [CardsService] ID recebido:', id);
+      console.log('📝 [CardsService] Tipo do ID:', typeof id);
       
-      // Buscar a carta
+      // Buscar a carta ANTES de atualizar (para garantir que existe e obter dados originais)
       let card: Card;
       try {
         card = await this.findOne(id);
         if (!card) {
           throw new NotFoundException(`Carta com ID ${id} não encontrada`);
         }
-        console.log('✅ [CardsService] Carta encontrada:', card.name);
+        console.log('✅ [CardsService] Carta encontrada:', {
+          id: card.id,
+          idCarta: card.idCarta,
+          name: card.name,
+          description: card.description ? `${card.description.substring(0, 50)}...` : 'vazio'
+        });
+
+        // Se campos compartilhados estão sendo atualizados, atualizar todas as skins da mesma carta
+        // Campos compartilhados: maxCopiesInDeck, description, type, stats, isBanned
+        const fieldsToSync: any = {};
+        let needsSync = false;
+        
+        if (cardData.maxCopiesInDeck !== undefined && cardData.maxCopiesInDeck !== card.maxCopiesInDeck) {
+          fieldsToSync.maxCopiesInDeck = cardData.maxCopiesInDeck;
+          needsSync = true;
+        }
+        
+        if (cardData.isBanned !== undefined && cardData.isBanned !== card.isBanned) {
+          fieldsToSync.isBanned = cardData.isBanned;
+          needsSync = true;
+        }
+        
+        if (cardData.type !== undefined && cardData.type !== card.type) {
+          fieldsToSync.type = cardData.type;
+          needsSync = true;
+        }
+        
+        if (cardData.monsterType !== undefined && cardData.monsterType !== card.monsterType) {
+          fieldsToSync.monsterType = cardData.monsterType;
+          needsSync = true;
+        }
+        
+        if (cardData.attribute !== undefined && cardData.attribute !== card.attribute) {
+          fieldsToSync.attribute = cardData.attribute;
+          needsSync = true;
+        }
+        
+        if (cardData.race !== undefined && cardData.race !== card.race) {
+          fieldsToSync.race = cardData.race;
+          needsSync = true;
+        }
+        
+        if (cardData.spellType !== undefined && cardData.spellType !== card.spellType) {
+          fieldsToSync.spellType = cardData.spellType;
+          needsSync = true;
+        }
+        
+        if (cardData.trapType !== undefined && cardData.trapType !== card.trapType) {
+          fieldsToSync.trapType = cardData.trapType;
+          needsSync = true;
+        }
+        
+        if (cardData.archetype !== undefined && cardData.archetype !== card.archetype) {
+          fieldsToSync.archetype = cardData.archetype;
+          needsSync = true;
+        }
+        
+        if (cardData.level !== undefined && cardData.level !== card.level) {
+          fieldsToSync.level = cardData.level;
+          needsSync = true;
+        }
+        
+        if (cardData.rank !== undefined && cardData.rank !== card.rank) {
+          fieldsToSync.rank = cardData.rank;
+          needsSync = true;
+        }
+        
+        if (cardData.atk !== undefined && cardData.atk !== card.atk) {
+          fieldsToSync.atk = cardData.atk;
+          needsSync = true;
+        }
+        
+        if (cardData.def !== undefined && cardData.def !== card.def) {
+          fieldsToSync.def = cardData.def;
+          needsSync = true;
+        }
+        
+        if (needsSync) {
+          console.log(`🔄 Atualizando campos compartilhados para todas as skins de "${card.name}":`, Object.keys(fieldsToSync));
+          const allSkins = await this.findSkinsByName(card.name);
+          for (const skin of allSkins) {
+            if (skin.id !== card.id) {
+              await this.cardsRepository.update(skin.id, fieldsToSync);
+              console.log(`✅ Skin ${skin.idCarta} atualizada com campos compartilhados`);
+            }
+          }
+        }
+        
+        // CRÍTICO: Garantir que estamos atualizando APENAS esta carta específica
+        // Verificar se o ID passado corresponde ao UUID da carta encontrada
+        if (card.id !== id && card.idCarta !== id) {
+          console.error('❌ [CardsService] ERRO CRÍTICO: ID não corresponde à carta encontrada!');
+          console.error(`   ID recebido: ${id}`);
+          console.error(`   ID da carta encontrada: ${card.id}`);
+          console.error(`   idCarta da carta encontrada: ${card.idCarta}`);
+          throw new BadRequestException('ID não corresponde à carta encontrada. Isso pode causar atualização de múltiplas cartas!');
+        }
       } catch (error) {
         console.error('❌ [CardsService] Erro ao buscar carta:', error);
         throw error;
@@ -291,7 +456,7 @@ export class CardsService {
       const wasForSale = card.isForSale;
       
       console.log('📝 [CardsService] Atualizando carta:', id);
-      console.log('🆔 [CardsService] idCarta recebido para atualização:', cardData.idCarta);
+      console.log('🆔 [CardsService] idCarta atual da carta:', card.idCarta);
       
       // Log dos dados sem cardImage completo (pode ser muito grande)
       const logData = { ...cardData };
@@ -337,7 +502,13 @@ export class CardsService {
       const cleanData: any = {};
       try {
         for (const [key, value] of Object.entries(cleanedData)) {
-          if (value !== undefined && value !== null) {
+          // cardImage deve ser preservado mesmo se for string vazia (permite limpar a imagem)
+          if (key === 'cardImage') {
+            if (value !== undefined) {
+              cleanData[key] = value;
+              console.log(`📸 [CardsService] cardImage preservado no cleanData: ${typeof value === 'string' ? (value.length > 0 ? value.substring(0, 50) + '...' : '(vazio)') : value}`);
+            }
+          } else if (value !== undefined && value !== null) {
             // Se for idCarta, validar que não está vazio
             if (key === 'idCarta') {
               if (typeof value === 'string' && value.trim() === '') {
@@ -361,21 +532,71 @@ export class CardsService {
             throw new BadRequestException('ID da carta (idCarta) é obrigatório e não pode estar vazio');
           }
           
-          // Verificar se o novo idCarta já existe em outra carta
-          const existingCard = await this.cardsRepository.findOne({
-            where: { 
-              idCarta: cleanData.idCarta.trim()
-            }
-          });
+          const newIdCarta = cleanData.idCarta.trim();
           
-          if (existingCard && existingCard.id !== id) {
-            throw new BadRequestException(`Carta com idCarta "${cleanData.idCarta}" já existe. Use outro idCarta.`);
+          // CRÍTICO: Se o idCarta mudou, criar uma nova skin em vez de atualizar
+          if (newIdCarta !== card.idCarta) {
+            console.log('🔄 [CardsService] idCarta mudou! Criando nova skin em vez de atualizar.');
+            console.log(`   idCarta antigo: ${card.idCarta}`);
+            console.log(`   idCarta novo: ${newIdCarta}`);
+            
+            // Verificar se o novo idCarta já existe
+            const existingCardWithNewId = await this.cardsRepository.findOne({
+              where: { idCarta: newIdCarta }
+            });
+            
+            if (existingCardWithNewId) {
+              throw new BadRequestException(`Carta com idCarta "${newIdCarta}" já existe. Use outro idCarta para criar uma nova skin.`);
+            }
+            
+            // Criar nova skin com os dados atualizados
+            const newSkinData = {
+              ...cleanData,
+              name: cleanData.name || card.name, // Garantir que o nome seja o mesmo
+              idCarta: newIdCarta,
+            };
+            
+            console.log('✨ [CardsService] Criando nova skin com idCarta:', newSkinData.idCarta);
+            return await this.create(newSkinData);
           }
           
-          cleanData.idCarta = cleanData.idCarta.trim();
+          // Se o idCarta não mudou, continuar com a atualização normal
+          cleanData.idCarta = newIdCarta;
         } catch (error) {
           console.error('❌ [CardsService] Erro ao validar idCarta:', error);
           throw error;
+        }
+      }
+      
+      // CRÍTICO: Se o name está sendo atualizado, verificar se não vai afetar outras cartas
+      // O name é compartilhado entre skins, então atualizar o name de uma skin afeta todas as skins
+      if ('name' in cleanData && cleanData.name !== card.name) {
+        console.log(`⚠️ [CardsService] ATENÇÃO: Nome da carta está sendo alterado!`);
+        console.log(`   Nome antigo: "${card.name}"`);
+        console.log(`   Nome novo: "${cleanData.name}"`);
+        console.log(`   ⚠️ Isso afetará TODAS as skins desta carta (cartas com o mesmo nome)`);
+        
+        // Verificar quantas cartas têm o mesmo nome (outras skins)
+        const otherSkins = await this.findSkinsByName(card.name);
+        if (otherSkins.length > 1) {
+          console.log(`   ⚠️ Existem ${otherSkins.length} skins desta carta. Todas serão afetadas.`);
+        }
+      }
+      
+      // CRÍTICO: Se a description está sendo atualizada, atualizar todas as skins da mesma carta
+      // A description (efeito) é compartilhada entre todas as skins da mesma carta
+      if ('description' in cleanData && cleanData.description !== undefined) {
+        console.log(`📝 [CardsService] Atualizando description (efeito) para todas as skins de "${card.name}"`);
+        console.log(`   Descrição antiga: ${card.description ? `${card.description.substring(0, 50)}...` : 'vazio'}`);
+        console.log(`   Descrição nova: ${cleanData.description ? `${String(cleanData.description).substring(0, 50)}...` : 'vazio'}`);
+        
+        // Atualizar description em todas as skins da mesma carta (efeito é compartilhado)
+        const allSkins = await this.findSkinsByName(card.name);
+        for (const skin of allSkins) {
+          if (skin.id !== card.id) {
+            await this.cardsRepository.update(skin.id, { description: cleanData.description });
+            console.log(`✅ Skin ${skin.idCarta} atualizada com nova description (efeito)`);
+          }
         }
       }
       
@@ -456,21 +677,57 @@ export class CardsService {
         }
         console.log('💾 [CardsService] Dados para atualização no banco:', JSON.stringify(logUpdateData, null, 2));
         
-        // Atualizar usando update do repositório (mais seguro para atualizações parciais)
+        // CRÍTICO: Garantir que estamos atualizando APENAS a carta com o UUID correto
+        // Usar o UUID da carta encontrada (não confiar no ID passado)
+        const cardUUID = card.id;
         console.log('🔄 [CardsService] Executando update no banco...');
-        const updateResult = await this.cardsRepository.update(id, updateData);
+        console.log('🔒 [CardsService] UUID da carta a ser atualizada:', cardUUID);
+        console.log('🔒 [CardsService] Garantindo que apenas esta carta será atualizada');
+        
+        // Verificar quantas cartas serão afetadas ANTES de atualizar
+        const cardsBeforeUpdate = await this.cardsRepository.find({
+          where: { id: cardUUID }
+        });
+        if (cardsBeforeUpdate.length !== 1) {
+          console.error(`❌ [CardsService] ERRO CRÍTICO: Encontradas ${cardsBeforeUpdate.length} cartas com UUID ${cardUUID}! Deveria ser apenas 1.`);
+          throw new BadRequestException(`Erro: Múltiplas cartas encontradas com o mesmo UUID. Isso não deveria acontecer!`);
+        }
+        
+        // Atualizar usando update do repositório com UUID garantido
+        const updateResult = await this.cardsRepository.update(cardUUID, updateData);
         console.log('📊 [CardsService] Resultado do update:', updateResult);
         
-        // Buscar a carta atualizada
+        // Verificar quantas cartas foram afetadas
+        if (updateResult.affected !== 1) {
+          console.error(`❌ [CardsService] ERRO CRÍTICO: Update afetou ${updateResult.affected} cartas! Deveria ser apenas 1.`);
+          console.error(`   UUID usado: ${cardUUID}`);
+          console.error(`   Dados atualizados:`, JSON.stringify(updateData, null, 2));
+          throw new BadRequestException(`Erro: Update afetou ${updateResult.affected} cartas ao invés de 1. Isso pode ter corrompido outras cartas!`);
+        }
+        
+        console.log('✅ [CardsService] Update afetou exatamente 1 carta (correto)');
+        
+        // Buscar a carta atualizada usando o UUID garantido
         console.log('🔍 [CardsService] Buscando carta atualizada...');
-        updatedCard = await this.findOne(id);
+        updatedCard = await this.findOne(cardUUID);
         
         if (!updatedCard) {
           throw new NotFoundException('Carta não encontrada após atualização');
         }
         
+        // Verificar se a carta atualizada é realmente a mesma que atualizamos
+        if (updatedCard.id !== cardUUID) {
+          console.error(`❌ [CardsService] ERRO CRÍTICO: Carta retornada não corresponde ao UUID atualizado!`);
+          console.error(`   UUID esperado: ${cardUUID}`);
+          console.error(`   UUID retornado: ${updatedCard.id}`);
+          throw new BadRequestException('Erro: Carta retornada não corresponde à carta atualizada!');
+        }
+        
         console.log('✅ [CardsService] Carta atualizada no banco com sucesso');
         console.log('🆔 [CardsService] idCarta salvo no banco:', updatedCard.idCarta);
+        console.log('🆔 [CardsService] Nome salvo no banco:', updatedCard.name);
+        console.log('🆔 [CardsService] Descrição salva no banco:', updatedCard.description ? `${updatedCard.description.substring(0, 50)}...` : 'vazio');
+        console.log('📝 [CardsService] ========== ATUALIZAÇÃO CONCLUÍDA ==========');
       } catch (error: any) {
         console.error('❌ [CardsService] Erro ao salvar no banco de dados:', error);
         console.error('❌ [CardsService] Tipo do erro:', error.constructor.name);
@@ -692,6 +949,8 @@ export class CardsService {
             'priceCredits',
             'priceCash',
             'isForSale',
+            'maxCopiesInDeck',
+            'isBanned',
           ],
           order: { 
             rarity: 'DESC',
@@ -721,6 +980,7 @@ export class CardsService {
   // Invalidar cache quando uma carta for atualizada
   invalidateShopCache() {
     this.shopCardsCache = null;
+    console.log('🔄 Cache da loja invalidado');
   }
 
   // ==================== BUSCAR CARTA POR NOME ====================
@@ -893,4 +1153,278 @@ export class CardsService {
       },
     };
   }
+
+  /**
+   * Atualiza todas as cartas do banco com informações da API YGOPRODeck
+   * - Atualiza maxCopiesInDeck baseado na banlist
+   * - Traduz descrições para português
+   */
+  async updateAllCardsFromApi(): Promise<{ updated: number; errors: number; details: any[] }> {
+    console.log('🔄 [updateAllCardsFromApi] Iniciando atualização em massa de cartas da API...');
+    
+    const results = {
+      updated: 0,
+      errors: 0,
+      details: [] as any[],
+    };
+
+    try {
+      // Verificar se YugiohApiService está disponível
+      if (!this.yugiohApiService) {
+        throw new Error('YugiohApiService não está disponível');
+      }
+      console.log('✅ [updateAllCardsFromApi] YugiohApiService verificado');
+      // Buscar todas as cartas ativas (apenas uma skin de cada nome para evitar duplicatas)
+      const allCards = await this.cardsRepository.find({
+        where: { isActive: true },
+        order: { name: 'ASC', createdAt: 'ASC' },
+      });
+
+      // Agrupar por nome (pegar apenas a primeira skin de cada carta)
+      const uniqueCards = new Map<string, Card>();
+      for (const card of allCards) {
+        if (!uniqueCards.has(card.name)) {
+          uniqueCards.set(card.name, card);
+        }
+      }
+
+      const cardsToUpdate = Array.from(uniqueCards.values());
+      console.log(`📊 Total de cartas únicas para atualizar: ${cardsToUpdate.length}`);
+
+      // Processar em lotes para não sobrecarregar a API
+      const BATCH_SIZE = 10;
+      const DELAY_BETWEEN_BATCHES = 2000; // 2 segundos entre lotes
+
+      for (let i = 0; i < cardsToUpdate.length; i += BATCH_SIZE) {
+        const batch = cardsToUpdate.slice(i, i + BATCH_SIZE);
+        console.log(`\n📦 Processando lote ${Math.floor(i / BATCH_SIZE) + 1} (${batch.length} cartas)...`);
+
+        const batchPromises = batch.map(async (card) => {
+          try {
+            // Buscar informações atualizadas da API
+            const apiData = await this.yugiohApiService.getCardWithBanlist(card.name);
+            
+            if (!apiData) {
+              results.errors++;
+              results.details.push({
+                cardName: card.name,
+                status: 'error',
+                message: 'Carta não encontrada na API',
+              });
+              return;
+            }
+
+            // Preparar atualizações
+            const updates: any = {};
+            let hasUpdates = false;
+
+            // Atualizar maxCopiesInDeck
+            if (apiData.maxCopies !== card.maxCopiesInDeck) {
+              updates.maxCopiesInDeck = apiData.maxCopies;
+              hasUpdates = true;
+              console.log(`  ✅ ${card.name}: maxCopiesInDeck ${card.maxCopiesInDeck} → ${apiData.maxCopies}`);
+            }
+
+            // Atualizar isBanned
+            if (apiData.isBanned !== card.isBanned) {
+              updates.isBanned = apiData.isBanned;
+              hasUpdates = true;
+              console.log(`  ✅ ${card.name}: isBanned ${card.isBanned} → ${apiData.isBanned}`);
+            }
+
+            // Atualizar descrição se estiver em inglês ou vazia
+            const currentDescription = card.description || '';
+            const needsTranslation = !currentDescription || 
+              (!this.yugiohApiService.isPortuguese(currentDescription) && apiData.description !== currentDescription);
+            
+            if (needsTranslation && apiData.description) {
+              updates.description = apiData.description;
+              hasUpdates = true;
+              console.log(`  ✅ ${card.name}: Descrição traduzida/atualizada`);
+            }
+
+            if (hasUpdates) {
+              // Atualizar todas as skins da mesma carta
+              const allSkins = await this.findSkinsByName(card.name);
+              
+              for (const skin of allSkins) {
+                await this.cardsRepository.update(skin.id, updates);
+              }
+
+              results.updated++;
+              results.details.push({
+                cardName: card.name,
+                status: 'updated',
+                updates: Object.keys(updates),
+              });
+            } else {
+              results.details.push({
+                cardName: card.name,
+                status: 'no_changes',
+                message: 'Carta já está atualizada',
+              });
+            }
+          } catch (error: any) {
+            results.errors++;
+            results.details.push({
+              cardName: card.name,
+              status: 'error',
+              message: error.message || 'Erro desconhecido',
+            });
+            console.error(`  ❌ Erro ao atualizar ${card.name}:`, error.message);
+          }
+        });
+
+        await Promise.all(batchPromises);
+
+        // Aguardar entre lotes para não sobrecarregar a API
+        if (i + BATCH_SIZE < cardsToUpdate.length) {
+          console.log(`⏳ Aguardando ${DELAY_BETWEEN_BATCHES / 1000}s antes do próximo lote...`);
+          await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
+        }
+      }
+
+      // Invalidar cache
+      this.invalidateShopCache();
+
+      console.log(`\n✅ Atualização concluída!`);
+      console.log(`   - Cartas atualizadas: ${results.updated}`);
+      console.log(`   - Erros: ${results.errors}`);
+      console.log(`   - Sem alterações: ${cardsToUpdate.length - results.updated - results.errors}`);
+
+      return results;
+    } catch (error: any) {
+      console.error('❌ [updateAllCardsFromApi] Erro ao atualizar cartas:', error);
+      console.error('❌ [updateAllCardsFromApi] Stack:', error.stack);
+      console.error('❌ [updateAllCardsFromApi] Tipo:', error.constructor.name);
+      
+      // Retornar resultados parciais se houver algum progresso
+      if (results.updated > 0 || results.errors > 0) {
+        console.warn('⚠️ [updateAllCardsFromApi] Retornando resultados parciais');
+        return results;
+      }
+      
+      // Se não houve progresso, lançar erro
+      throw new BadRequestException(`Erro ao atualizar cartas: ${error.message || 'Erro desconhecido'}`);
+    }
+  }
+
+  /**
+   * Renomeia todas as imagens de cartas para usar idCarta como nome
+   * Executado automaticamente na inicialização do módulo
+   */
+  async renameAllCardImages(): Promise<{ success: boolean; total: number; renamed: number; skipped: number; errors: number; message: string }> {
+    const { UploadService } = await import('../upload/upload.service');
+    const uploadServiceInstance = new UploadService();
+    return this.renameAllCardImagesInternal(uploadServiceInstance);
+  }
+
+  private async renameAllCardImagesInternal(uploadService: any): Promise<{ success: boolean; total: number; renamed: number; skipped: number; errors: number; message: string }> {
+    try {
+      // Buscar TODAS as cartas (incluindo inativas) com cardImage
+      const allCards = await this.getAllAdmin();
+      const cardsWithImage = allCards.filter(card => card.cardImage && card.cardImage.trim() !== '');
+      
+      console.log(`🔄 [renameAllCardImages] Iniciando renomeação de ${cardsWithImage.length} imagens...`);
+      
+      let renamed = 0;
+      let skipped = 0;
+      let errors = 0;
+      const errorDetails: string[] = [];
+      const path = require('path');
+      
+      for (const card of cardsWithImage) {
+        try {
+          if (!card.idCarta) {
+            const msg = `⚠️ Carta "${card.name}" não tem idCarta, pulando...`;
+            console.warn(msg);
+            errorDetails.push(msg);
+            skipped++;
+            continue;
+          }
+          
+          // Extrair nome do arquivo atual do cardImage
+          const currentImagePath = card.cardImage;
+          if (!currentImagePath || typeof currentImagePath !== 'string') {
+            const msg = `⚠️ Carta "${card.name}" tem cardImage inválido: ${currentImagePath}`;
+            console.warn(msg);
+            errorDetails.push(msg);
+            skipped++;
+            continue;
+          }
+          
+          // Extrair nome do arquivo (pode ser /images/cards/nome.jpg ou apenas nome.jpg)
+          let currentFileName: string;
+          if (currentImagePath.includes('/')) {
+            currentFileName = currentImagePath.split('/').pop() || currentImagePath;
+          } else {
+            currentFileName = currentImagePath;
+          }
+          
+          // Verificar se já está com o nome correto (idCarta)
+          const fileExtension = path.extname(currentFileName);
+          const expectedFileName = `${card.idCarta}${fileExtension}`;
+          
+          if (currentFileName === expectedFileName) {
+            console.log(`✅ Carta "${card.name}" já tem nome correto: ${currentFileName}`);
+            skipped++;
+            continue;
+          }
+          
+          console.log(`🔄 Renomeando carta "${card.name}": ${currentFileName} -> ${expectedFileName}`);
+          
+          // Renomear arquivo FÍSICO na pasta
+          const newPath = await uploadService.renameCardImage(currentImagePath, card.idCarta);
+          
+          if (newPath) {
+            // Atualizar cardImage no banco
+            await this.update(card.id, { cardImage: newPath });
+            console.log(`✅ Carta "${card.name}" renomeada com sucesso: ${currentFileName} -> ${path.basename(newPath)}`);
+            renamed++;
+          } else {
+            const msg = `⚠️ Falha ao renomear arquivo físico da carta "${card.name}" (${currentFileName})`;
+            console.warn(msg);
+            errorDetails.push(msg);
+            errors++;
+          }
+        } catch (error: any) {
+          const msg = `❌ Erro ao processar carta "${card.name}": ${error.message}`;
+          console.error(msg);
+          console.error('Stack:', error.stack);
+          errorDetails.push(msg);
+          errors++;
+        }
+      }
+      
+      console.log(`\n📊 [renameAllCardImages] Resumo da renomeação:`);
+      console.log(`   ✅ Renomeadas: ${renamed}`);
+      console.log(`   ⏭️  Puladas: ${skipped}`);
+      console.log(`   ❌ Erros: ${errors}`);
+      
+      if (errorDetails.length > 0 && errorDetails.length <= 20) {
+        console.log(`\n⚠️ Detalhes dos erros:`);
+        errorDetails.forEach((detail, index) => {
+          console.log(`   ${index + 1}. ${detail}`);
+        });
+      } else if (errorDetails.length > 20) {
+        console.log(`\n⚠️ ${errorDetails.length} erros encontrados (mostrando apenas os primeiros 20)`);
+        errorDetails.slice(0, 20).forEach((detail, index) => {
+          console.log(`   ${index + 1}. ${detail}`);
+        });
+      }
+      
+      return {
+        success: errors === 0,
+        total: cardsWithImage.length,
+        renamed,
+        skipped,
+        errors,
+        message: `Renomeação concluída: ${renamed} renomeadas, ${skipped} puladas, ${errors} erros`
+      };
+    } catch (error: any) {
+      console.error('❌ [renameAllCardImages] Erro ao renomear imagens:', error);
+      throw new BadRequestException(`Erro ao renomear imagens: ${error.message}`);
+    }
+  }
+
 }

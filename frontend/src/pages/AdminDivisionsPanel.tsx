@@ -6,6 +6,36 @@ import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
+// Função para obter o caminho da imagem da divisão
+const getDivisionImage = (division: string): string | null => {
+  if (!division) return null;
+  
+  // Normalizar o nome da divisão (remover espaços, converter para maiúsculas)
+  const normalizedDivision = division.trim().toUpperCase();
+  
+  // Mapear nomes das divisões para os nomes dos arquivos
+  const divisionMap: { [key: string]: string } = {
+    'BRONZE': 'Bronze',
+    'SILVER': 'Prata',
+    'GOLD': 'Ouro',
+    'PLATINUM': 'Ouro', // Se houver Platinum, usar Ouro como fallback
+    'DIAMOND': 'Diamante',
+    'DIAMANTE': 'Diamante',
+    'MASTER': 'Mestre',
+    'MESTRE': 'Mestre',
+    'LEGENDARY': 'Desafiante',
+    'DESAFIANTE': 'Desafiante',
+    'PRATA': 'Prata',
+    'OURO': 'Ouro',
+  };
+  
+  const divisionName = divisionMap[normalizedDivision];
+  if (!divisionName) return null;
+  
+  // Retornar apenas PNG
+  return `/images/Divisões/${divisionName}.png`;
+};
+
 interface Division {
   id: string;
   name: string;
@@ -15,6 +45,7 @@ interface Division {
   desce: number;
   premiacao?: string;
   premiacaoJson?: any;
+  isAvailable?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -38,6 +69,7 @@ export default function AdminDivisionsPanel() {
     desce: 10,
     premiacao: '',
     premiacaoJson: null as any,
+    isAvailable: true,
   });
 
   // Proteção: apenas ADMIN ou MASTER
@@ -76,6 +108,7 @@ export default function AdminDivisionsPanel() {
       desce: 10,
       premiacao: '',
       premiacaoJson: null,
+      isAvailable: true,
     });
     setShowCreateModal(true);
     setResponseMessage(null);
@@ -91,9 +124,35 @@ export default function AdminDivisionsPanel() {
       desce: division.desce,
       premiacao: division.premiacao || '',
       premiacaoJson: division.premiacaoJson || null,
+      isAvailable: division.isAvailable !== undefined ? division.isAvailable : true,
     });
     setShowEditModal(true);
     setResponseMessage(null);
+  };
+
+  const handleToggleAvailability = async (division: Division) => {
+    try {
+      setLoading(true);
+      const newAvailability = !(division.isAvailable !== false);
+      await axios.put(
+        `${API_URL}/admin/divisions/${division.id}`,
+        { isAvailable: newAvailability },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setResponseMessage({
+        type: 'success',
+        text: `✅ Divisão ${division.name} ${newAvailability ? 'ativada' : 'desativada'} com sucesso!`,
+      });
+      fetchDivisions();
+    } catch (error: any) {
+      console.error('Erro ao alterar disponibilidade da divisão:', error);
+      setResponseMessage({
+        type: 'error',
+        text: error.response?.data?.message || 'Erro ao alterar disponibilidade da divisão',
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -137,6 +196,10 @@ export default function AdminDivisionsPanel() {
         payload.premiacaoJson = formData.premiacaoJson;
       }
 
+      if (formData.isAvailable !== undefined) {
+        payload.isAvailable = formData.isAvailable;
+      }
+
       if (editingDivision) {
         await axios.put(`${API_URL}/admin/divisions/${editingDivision.id}`, payload, {
           headers: { Authorization: `Bearer ${token}` },
@@ -174,7 +237,7 @@ export default function AdminDivisionsPanel() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+    <div className="min-h-screen p-8 relative z-10">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
@@ -201,10 +264,10 @@ export default function AdminDivisionsPanel() {
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`mb-6 p-4 rounded-lg ${
+            className={`mb-6 p-4 rounded-lg border border-black/50 ${
               responseMessage.type === 'success'
-                ? 'bg-green-500/20 text-green-300 border border-green-500/50'
-                : 'bg-red-500/20 text-red-300 border border-red-500/50'
+                ? 'bg-green-500/20 text-green-300'
+                : 'bg-red-500/20 text-red-300'
             }`}
           >
             {responseMessage.text}
@@ -225,14 +288,38 @@ export default function AdminDivisionsPanel() {
                 key={division.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-6 border border-purple-500/20 hover:border-purple-500/40 transition-all"
+                className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-6 border border-black/50 hover:border-black/70 transition-all"
               >
                 <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h3 className="text-2xl font-bold text-white mb-1">{division.name}</h3>
-                    <p className="text-sm text-gray-400">Ordem: {division.order}</p>
+                  <div className="flex items-center gap-3">
+                    {/* Emblema da Divisão */}
+                    {getDivisionImage(division.name) && (
+                      <img
+                        src={getDivisionImage(division.name) || ''}
+                        alt={division.name}
+                        className="w-12 h-12 md:w-16 md:h-16 object-contain"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    )}
+                    <div>
+                      <h3 className="text-2xl font-bold text-white mb-1">{division.name}</h3>
+                      <p className="text-sm text-gray-400">Ordem: {division.order}</p>
+                    </div>
                   </div>
                   <div className="flex gap-2">
+                    <button
+                      onClick={() => handleToggleAvailability(division)}
+                      className={`px-3 py-1 rounded text-sm transition-colors ${
+                        division.isAvailable !== false
+                          ? 'bg-green-600/50 hover:bg-green-600 text-white'
+                          : 'bg-gray-600/50 hover:bg-gray-600 text-white'
+                      }`}
+                      title={division.isAvailable !== false ? 'Desativar divisão' : 'Ativar divisão'}
+                    >
+                      {division.isAvailable !== false ? '✓ Ativa' : '✗ Inativa'}
+                    </button>
                     <button
                       onClick={() => handleEdit(division)}
                       className="px-3 py-1 bg-blue-600/50 hover:bg-blue-600 text-white rounded text-sm transition-colors"
@@ -249,6 +336,16 @@ export default function AdminDivisionsPanel() {
                 </div>
 
                 <div className="space-y-2 text-sm">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-400">Disponível:</span>
+                    <span className={`px-2 py-1 rounded text-xs font-semibold border border-black/50 ${
+                      division.isAvailable !== false
+                        ? 'bg-green-500/20 text-green-400'
+                        : 'bg-red-500/20 text-red-400'
+                    }`}>
+                      {division.isAvailable !== false ? '✓ Liberada' : '✗ Bloqueada'}
+                    </span>
+                  </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Máx. Duelistas:</span>
                     <span className="text-white font-semibold">{division.maxDuelistas}</span>
@@ -279,7 +376,7 @@ export default function AdminDivisionsPanel() {
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="bg-slate-800 rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-purple-500/30"
+              className="bg-slate-800 rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-black/50"
             >
               <h2 className="text-2xl font-bold text-white mb-6">
                 {editingDivision ? 'Editar Divisão' : 'Nova Divisão'}
@@ -369,6 +466,22 @@ export default function AdminDivisionsPanel() {
                     placeholder='{"credits": 1000, "cards": 5, "items": []}'
                   />
                   <p className="text-xs text-gray-500 mt-1">Formato JSON estruturado para premiação</p>
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <input
+                    type="checkbox"
+                    id="isAvailable"
+                    checked={formData.isAvailable}
+                    onChange={(e) => setFormData({ ...formData, isAvailable: e.target.checked })}
+                    className="w-5 h-5 rounded border-gray-600 bg-slate-700 text-purple-600 focus:ring-purple-500 focus:ring-2"
+                  />
+                  <label htmlFor="isAvailable" className="text-gray-300 cursor-pointer">
+                    <span className="font-semibold">Divisão disponível para novos jogadores</span>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Se desmarcado, novos jogadores não receberão esta divisão. Apenas a divisão mais baixa disponível será atribuída.
+                    </p>
+                  </label>
                 </div>
 
                 <div className="flex gap-4 pt-4">

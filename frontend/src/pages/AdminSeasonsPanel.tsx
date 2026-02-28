@@ -21,6 +21,12 @@ interface Season {
       third: { trophy: string; credits: number };
     };
   };
+  divisionPromotion?: {
+    [key: string]: {
+      promote: number;
+      demote: number;
+    };
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -44,6 +50,7 @@ export default function AdminSeasonsPanel() {
       third: { trophy: '🥉 Troféu Bronze', credits: 100 },
     },
     divisionPrizes: {} as { [key: string]: { first: { trophy: string; credits: number }; second: { trophy: string; credits: number }; third: { trophy: string; credits: number } } },
+    divisionPromotion: {} as { [key: string]: { promote: number; demote: number } },
   });
 
   useEffect(() => {
@@ -74,6 +81,7 @@ export default function AdminSeasonsPanel() {
         endDate: new Date(formData.endDate).toISOString(),
         prizes: formData.prizes,
         divisionPrizes: Object.keys(formData.divisionPrizes).length > 0 ? formData.divisionPrizes : undefined,
+        divisionPromotion: Object.keys(formData.divisionPromotion).length > 0 ? formData.divisionPromotion : undefined,
       };
 
       if (editingSeason) {
@@ -108,6 +116,7 @@ export default function AdminSeasonsPanel() {
         third: { trophy: '🥉 Troféu Bronze', credits: 100 },
       },
       divisionPrizes: season.divisionPrizes || {},
+      divisionPromotion: season.divisionPromotion || {},
     });
     setShowModal(true);
   };
@@ -149,6 +158,7 @@ export default function AdminSeasonsPanel() {
         third: { trophy: '🥉 Troféu Bronze', credits: 100 },
       },
       divisionPrizes: {},
+      divisionPromotion: {},
     });
   };
 
@@ -163,6 +173,19 @@ export default function AdminSeasonsPanel() {
             ...prev.divisionPrizes[division]?.[position],
             [field]: value,
           },
+        },
+      },
+    }));
+  };
+
+  const updateDivisionPromotion = (division: string, field: 'promote' | 'demote', value: number) => {
+    setFormData(prev => ({
+      ...prev,
+      divisionPromotion: {
+        ...prev.divisionPromotion,
+        [division]: {
+          ...prev.divisionPromotion[division],
+          [field]: value,
         },
       },
     }));
@@ -395,6 +418,66 @@ export default function AdminSeasonsPanel() {
                       ))}
                     </div>
                   ))}
+                </div>
+
+                <div className="border-t border-slate-700 pt-6">
+                  <h3 className="text-xl font-bold text-white mb-2">📊 Configuração de Promoção/Rebaixamento</h3>
+                  <p className="text-slate-400 text-sm mb-4">
+                    Configure quantos jogadores sobem e descem de cada divisão ao final da season.
+                    Os jogadores são ordenados por score da season dentro de cada divisão.
+                  </p>
+                  {DIVISIONS.map((division, index) => {
+                    const isLowest = index === DIVISIONS.length - 1; // Bronze é a menor
+                    const isHighest = index === 0; // Legendary é a maior
+                    
+                    return (
+                      <div key={division} className="mb-4 p-4 bg-slate-700/50 rounded-lg">
+                        <h4 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
+                          {division}
+                          {isHighest && <span className="text-xs text-yellow-400">(Divisão Máxima)</span>}
+                          {isLowest && <span className="text-xs text-orange-400">(Divisão Mínima)</span>}
+                        </h4>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-slate-300 mb-1 text-sm">
+                              ⬆️ Quantos sobem {!isHighest && `(para ${DIVISIONS[index - 1]})`}
+                              {isHighest && <span className="text-slate-500"> (Não aplicável)</span>}
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={formData.divisionPromotion[division]?.promote || 0}
+                              onChange={(e) => updateDivisionPromotion(division, 'promote', parseInt(e.target.value) || 0)}
+                              className="w-full px-3 py-2 bg-slate-600 text-white rounded-lg text-sm"
+                              disabled={isHighest}
+                              placeholder="Ex: 10"
+                            />
+                            <p className="text-xs text-slate-500 mt-1">
+                              Top {formData.divisionPromotion[division]?.promote || 0} jogadores sobem
+                            </p>
+                          </div>
+                          <div>
+                            <label className="block text-slate-300 mb-1 text-sm">
+                              ⬇️ Quantos descem {!isLowest && `(para ${DIVISIONS[index + 1]})`}
+                              {isLowest && <span className="text-slate-500"> (Não aplicável)</span>}
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={formData.divisionPromotion[division]?.demote || 0}
+                              onChange={(e) => updateDivisionPromotion(division, 'demote', parseInt(e.target.value) || 0)}
+                              className="w-full px-3 py-2 bg-slate-600 text-white rounded-lg text-sm"
+                              disabled={isLowest}
+                              placeholder="Ex: 5"
+                            />
+                            <p className="text-xs text-slate-500 mt-1">
+                              Últimos {formData.divisionPromotion[division]?.demote || 0} jogadores descem
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <div className="flex gap-4">

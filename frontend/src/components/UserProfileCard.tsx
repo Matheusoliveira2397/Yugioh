@@ -3,6 +3,7 @@ import { useAuthStore } from '../stores/authStore';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import NotificationBell from './NotificationBell';
+import MessageIcon from './MessageIcon';
 
 interface UserProfileCardProps {
   onLinkClick?: () => void; // Para fechar o menu mobile quando um link é clicado
@@ -62,9 +63,10 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({ onLinkClick })
             </h3>
           </div>
 
-          {/* Sino de notificação */}
-          <div className="absolute top-0 right-0">
+          {/* Ícones de notificação */}
+          <div className="absolute top-0 right-0 flex flex-col gap-2">
             <NotificationBell />
+            <MessageIcon />
           </div>
         </div>
       </div>
@@ -188,16 +190,6 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({ onLinkClick })
         {user?.group && (
           <Link to={`/groups/${user.group.id}`} className="flex justify-between items-center hover:bg-purple-500/20 -mx-2 px-3 py-2 rounded-lg transition-colors mt-2 border-t border-purple-500/30 pt-2" onClick={handleLinkClick}>
             <span className="text-sm text-purple-200 flex items-center gap-2">
-              {user.group.logo && (
-                <img 
-                  src={`http://localhost:3000${user.group.logo}`}
-                  alt={user.group.name}
-                  className="w-5 h-5 rounded object-cover"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
-              )}
               <span className="text-base">👥</span> <span className="font-medium">Clã</span>
             </span>
             <span className="text-sm font-bold text-purple-400 truncate ml-2">[{user.group.tag}]</span>

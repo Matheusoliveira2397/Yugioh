@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { getCardImage, getCardImagePaths } from '../utils/cardImage';
+import { getCardImage, getAllCardImagePaths } from '../utils/cardImage';
 
 interface CardImageProps {
   card: any;
@@ -18,16 +18,16 @@ export default function CardImage({ card, className = '', style = {}, fallback =
     return card?.idCarta || card?.id || card?.cardId;
   }, [card?.idCarta, card?.id, card?.cardId]);
 
-  // Memoizar os caminhos possíveis - só recalcular se cardId mudar
-  const possiblePaths = useMemo(() => {
-    if (!cardId) return [];
-    return getCardImagePaths(cardId);
-  }, [cardId]);
-  
-  // Memoizar cardImageUrl para evitar recálculos
+  // Memoizar cardImageUrl para evitar recálculos - PRIORIDADE MÁXIMA
   const cardImageUrl = useMemo(() => {
     return getCardImage(card);
-  }, [card?.idCarta, card?.id, card?.cardId, card?.cardImage]);
+  }, [card?.idCarta, card?.id, card?.cardId, card?.cardImage, card?.name]);
+  
+  // Memoizar TODOS os caminhos possíveis (incluindo baseados no nome da carta)
+  // Isso é importante porque o cardImage pode conter YGOPRO_ mas o arquivo real tem nome diferente
+  const possiblePaths = useMemo(() => {
+    return getAllCardImagePaths(card);
+  }, [card?.idCarta, card?.id, card?.cardId, card?.cardImage, card?.name]);
 
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -59,27 +59,29 @@ export default function CardImage({ card, className = '', style = {}, fallback =
       lastImageSrcRef.current = null;
     }
     
-    // PRIORIDADE 1: Usar cardImageUrl memoizado (pode vir de cardImage ou idCarta)
-    if (cardImageUrl) {
-      console.log(`[CardImage] ✅ Usando cardImageUrl para "${card?.name}":`, cardImageUrl);
-      setImageSrc(cardImageUrl);
-      imageSrcRef.current = cardImageUrl;
-      lastImageSrcRef.current = cardImageUrl;
-      setAttemptedPaths(new Set([cardImageUrl]));
-      return;
-    }
-    
-    // PRIORIDADE 2: Se não tiver cardImageUrl mas tiver cardId, tentar caminhos possíveis
-    if (cardId && possiblePaths.length > 0) {
-      console.log(`[CardImage] 🔍 Tentando caminhos locais para "${card?.name}" (idCarta: ${cardId}):`, possiblePaths);
-      // Usar o primeiro caminho possível
-      setImageSrc(possiblePaths[0]);
-      imageSrcRef.current = possiblePaths[0];
-      lastImageSrcRef.current = possiblePaths[0];
-      setAttemptedPaths(new Set([possiblePaths[0]]));
+    // PRIORIDADE 1: Usar o primeiro caminho possível (já ordenado por prioridade)
+    // O getAllCardImagePaths retorna caminhos na ordem: nome da carta -> idCarta (YGOPRO_ ignorado)
+    if (possiblePaths.length > 0) {
+      const firstPath = possiblePaths[0];
+      console.log(`[CardImage] 🎯 Tentando primeiro caminho para "${card?.name}":`, firstPath, `(total: ${possiblePaths.length} caminhos)`);
+      setImageSrc(firstPath);
+      imageSrcRef.current = firstPath;
+      lastImageSrcRef.current = firstPath;
+      setAttemptedPaths(new Set([firstPath]));
       setCurrentIndex(0);
       currentIndexRef.current = 0;
       return;
+    }
+    
+    // Debug: Logar apenas se não conseguir encontrar imagem
+    if (!cardImageUrl && !cardId) {
+      console.warn(`[CardImage] ⚠️ Não foi possível encontrar imagem para "${card?.name}":`, {
+        idCarta: card?.idCarta,
+        id: card?.id,
+        cardId: card?.cardId,
+        cardImage: card?.cardImage,
+        cardImageUrl: cardImageUrl,
+      });
     }
     
     // Se não tiver nem cardImageUrl nem cardId, mostrar erro
@@ -97,7 +99,7 @@ export default function CardImage({ card, className = '', style = {}, fallback =
     imageSrcRef.current = null;
     lastImageSrcRef.current = null;
     setHasError(true);
-  }, [cardId, cardImageUrl, possiblePaths.length]); // Só executar quando cardId, cardImageUrl ou número de paths mudarem
+  }, [cardId, cardImageUrl, possiblePaths.length, card?.name, card?.cardImage]); // Só executar quando cardId, cardImageUrl ou número de paths mudarem
 
   const handleImageError = () => {
     const currentSrc = imageSrcRef.current;
@@ -107,14 +109,16 @@ export default function CardImage({ card, className = '', style = {}, fallback =
       const newAttempted = new Set(prev);
       if (currentSrc) {
         newAttempted.add(currentSrc);
+        console.log(`[CardImage] ❌ Falhou ao carregar "${card?.name}":`, currentSrc);
       }
       
-      // Tentar próximo caminho disponível
+      // Tentar próximo caminho se houver
       const nextIndex = currentIdx + 1;
       if (nextIndex < possiblePaths.length) {
         const nextPath = possiblePaths[nextIndex];
         // Verificar se já tentamos este caminho
         if (!newAttempted.has(nextPath)) {
+          console.log(`[CardImage] 🔄 Tentando próximo caminho (${nextIndex + 1}/${possiblePaths.length}) para "${card?.name}":`, nextPath);
           // Atualizar refs e estado
           currentIndexRef.current = nextIndex;
           imageSrcRef.current = nextPath;
@@ -123,11 +127,13 @@ export default function CardImage({ card, className = '', style = {}, fallback =
           newAttempted.add(nextPath);
         } else {
           // Já tentamos todos os caminhos
+          console.warn(`[CardImage] ⚠️ Todos os caminhos falharam para "${card?.name}" (${newAttempted.size} tentativas)`);
           setHasError(true);
           if (onError) onError();
         }
       } else {
         // Todas as extensões falharam
+        console.warn(`[CardImage] ⚠️ Todos os caminhos falharam para "${card?.name}" (${possiblePaths.length} caminhos tentados)`);
         setHasError(true);
         if (onError) onError();
       }
@@ -208,14 +214,27 @@ export default function CardImage({ card, className = '', style = {}, fallback =
           pointerEvents: 'none',
           visibility: 'hidden',
         }}
-                onError={(e) => {
-                  // Tentar próximo caminho se houver
-                  handleImageError();
-                }}
-                onLoad={() => {
-                  // Imagem carregou com sucesso
-                  setHasError(false);
-                }}
+        onError={async (e) => {
+          // Verificar se a resposta é HTML (index.html do SPA)
+          try {
+            const response = await fetch(imageSrc || '', { method: 'HEAD' });
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('text/html')) {
+              // Servidor retornou HTML em vez de imagem - tentar fallback
+              console.warn(`[CardImage] ⚠️ Servidor retornou HTML para "${card?.name}":`, imageSrc);
+              handleImageError();
+              return;
+            }
+          } catch (fetchError) {
+            // Se fetch falhar, continuar com handleImageError normal
+          }
+          // Tentar próximo caminho se houver
+          handleImageError();
+        }}
+        onLoad={() => {
+          // Imagem carregou com sucesso
+          setHasError(false);
+        }}
       />
     </div>
   );

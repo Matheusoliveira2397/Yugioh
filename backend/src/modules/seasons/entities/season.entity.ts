@@ -37,6 +37,14 @@ export class Season {
     };
   };
 
+  @Column({ type: 'jsonb', nullable: true })
+  divisionPromotion: {
+    [key: string]: { // Bronze, Silver, Gold, Platinum, Diamond, Master, Legendary
+      promote: number; // Quantidade de jogadores que sobem para a divisão superior
+      demote: number; // Quantidade de jogadores que descem para a divisão inferior
+    };
+  };
+
   @OneToMany(() => SeasonRanking, ranking => ranking.season)
   rankings: SeasonRanking[];
 

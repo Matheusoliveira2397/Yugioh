@@ -145,9 +145,12 @@ export class DecksService implements OnModuleInit {
     const startTime = Date.now();
     logger.debug('💾 [saveCurrentDeck] Salvando deck atual para usuário:', userId, 'cartas:', saveDeckDto.cardIds.length);
     
-    // Validar tamanho do deck principal (0-60 cartas, permitir deck vazio)
+    // Validar tamanho do deck principal (mínimo 40 cartas, máximo 60 cartas)
     if (saveDeckDto.cardIds.length > 60) {
       throw new BadRequestException('Deck principal não pode ter mais de 60 cartas');
+    }
+    if (saveDeckDto.cardIds.length < 40) {
+      throw new BadRequestException('Deck principal não pode ter menos de 40 cartas');
     }
 
     // Validar tamanho do Extra Deck (0-15 cartas)
@@ -196,6 +199,8 @@ export class DecksService implements OnModuleInit {
     const allCardIds = [...saveDeckDto.cardIds, ...validExtraDeckCardIds];
     if (allCardIds.length > 0) {
       await this.validateUserCardQuantities(userId, allCardIds, deckName);
+      // Validar limite de cópias por nome da carta (considera todas as skins)
+      await this.validateCardLimitsByName(userId, allCardIds, deckName);
     }
     let deck = await this.decksRepository.findOne({
       where: { userId, name: deckName },
@@ -729,6 +734,127 @@ export class DecksService implements OnModuleInit {
     }
   }
 
+  /**
+   * Valida o limite de cópias por nome da carta (maxCopiesInDeck)
+   * Considera todas as skins da mesma carta como a mesma carta
+   */
+  private async validateCardLimitsByName(
+    userId: number,
+    newDeckCardIds: string[],
+    deckName: string,
+  ): Promise<void> {
+    if (newDeckCardIds.length === 0) {
+      return;
+    }
+
+    // 1) Converter todos os cardIds para UUIDs e buscar informações das cartas
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const potentialUuids: string[] = [];
+    const idCartas: string[] = [];
+    const uniqueCardIds = [...new Set(newDeckCardIds.filter(id => id && id.trim() !== ''))];
+
+    for (const id of uniqueCardIds) {
+      if (uuidRegex.test(id.trim())) {
+        potentialUuids.push(id.trim());
+      } else {
+        idCartas.push(id.trim());
+      }
+    }
+
+    // Buscar cartas por UUID
+    const cardsById: any[] = [];
+    if (potentialUuids.length > 0) {
+      const found = await this.cardsRepository.find({
+        where: { id: In(potentialUuids) },
+        select: ['id', 'name', 'maxCopiesInDeck'],
+      });
+      cardsById.push(...found);
+    }
+
+    // Buscar cartas por idCarta
+    if (idCartas.length > 0) {
+      const found = await this.cardsRepository.find({
+        where: { idCarta: In(idCartas) },
+        select: ['id', 'idCarta', 'name', 'maxCopiesInDeck'],
+      });
+      cardsById.push(...found);
+    }
+
+    // Criar mapa de cardId -> carta
+    const cardMap = new Map<string, any>();
+    for (const card of cardsById) {
+      cardMap.set(card.id, card);
+      if (card.idCarta) {
+        cardMap.set(card.idCarta, card);
+      }
+    }
+
+    // 2) Buscar todos os decks do usuário (exceto o deck atual)
+    const otherDecks = await this.decksRepository.find({
+      where: { userId },
+      relations: ['cards', 'cards.card'],
+    });
+
+    const otherDecksFiltered = otherDecks.filter((d) => d.name !== deckName);
+
+    // 3) Contar cartas por nome em outros decks
+    const countByNameInOtherDecks = new Map<string, number>();
+    for (const deck of otherDecksFiltered) {
+      for (const dc of deck.cards || []) {
+        if (dc.card && dc.card.name) {
+          const currentCount = countByNameInOtherDecks.get(dc.card.name) || 0;
+          countByNameInOtherDecks.set(dc.card.name, currentCount + 1);
+        }
+      }
+    }
+
+    // 4) Contar cartas por nome no novo deck
+    const countByNameInNewDeck = new Map<string, number>();
+    for (const cardId of newDeckCardIds) {
+      const trimmed = cardId.trim();
+      if (!trimmed) continue;
+      
+      const card = cardMap.get(trimmed);
+      if (card && card.name) {
+        const currentCount = countByNameInNewDeck.get(card.name) || 0;
+        countByNameInNewDeck.set(card.name, currentCount + 1);
+      }
+    }
+
+    // 5) Validar limite para cada carta
+    const errors: string[] = [];
+    for (const [cardName, countInNew] of countByNameInNewDeck.entries()) {
+      // Buscar uma carta com esse nome para pegar o maxCopiesInDeck
+      const sampleCard = cardsById.find(c => c.name === cardName);
+      if (!sampleCard) continue;
+
+      const maxCopies = sampleCard.maxCopiesInDeck ?? 3;
+      
+      // Se maxCopies é 0, a carta está banida
+      if (maxCopies === 0) {
+        errors.push(`A carta "${cardName}" está banida e não pode ser adicionada ao deck.`);
+        continue;
+      }
+
+      const countInOther = countByNameInOtherDecks.get(cardName) || 0;
+      const totalCount = countInOther + countInNew;
+
+      if (totalCount > maxCopies) {
+        errors.push(
+          `A carta "${cardName}" está sendo usada em ${totalCount} cópia(s), ` +
+          `mas o limite máximo é ${maxCopies}. Remova pelo menos ${totalCount - maxCopies} cópia(s) deste ou de outros decks.`,
+        );
+      }
+    }
+
+    if (errors.length > 0) {
+      throw new BadRequestException(
+        'Limite de cópias excedido (considerando todas as skins da mesma carta):\n' +
+          errors.slice(0, 5).join('\n'),
+      );
+    }
+  }
+
   async getCurrentDeck(userId: number, deckName: string = 'Meu Deck'): Promise<Deck | null> {
     const startTime = Date.now();
     try {
@@ -736,39 +862,42 @@ export class DecksService implements OnModuleInit {
       const cleanDeckName = deckName?.trim() || 'Meu Deck';
       logger.debug('🔍 [getCurrentDeck] Buscando deck para usuário:', userId, 'nome:', cleanDeckName);
       
-      // Buscar deck usando findOne com relations e select explícito para garantir isExtraDeck
-      let deck = await this.decksRepository.findOne({
-        where: { userId, name: cleanDeckName },
-        relations: ['cards', 'cards.card'],
-        select: {
-          id: true,
-          name: true,
-          userId: true,
-          createdAt: true,
-          updatedAt: true,
-          cards: {
-            id: true,
-            deckId: true,
-            cardId: true,
-            isExtraDeck: true, // CRÍTICO: garantir que isExtraDeck seja selecionado
-            card: {
-              id: true,
-              idCarta: true,
-              name: true,
-              type: true,
-              monsterType: true,
-              attribute: true, // CRÍTICO: atributo necessário para efeitos de cartas
-              race: true, // CRÍTICO: raça necessária para efeitos de cartas
-              cardImage: true,
-              description: true,
-              atk: true,
-              def: true,
-              level: true,
-              rarity: true,
-            },
-          },
-        },
-      });
+      // CRÍTICO: Buscar deck com TODAS as relações carregadas
+      // Usar query builder para garantir que todas as cartas sejam carregadas
+      let deck = await this.decksRepository
+        .createQueryBuilder('deck')
+        .leftJoinAndSelect('deck.cards', 'deckCard')
+        .leftJoinAndSelect('deckCard.card', 'card')
+        .where('deck.userId = :userId', { userId })
+        .andWhere('deck.name = :deckName', { deckName: cleanDeckName })
+        .getOne();
+      
+      // Log para verificar se o deck foi encontrado e se tem cartas
+      if (deck) {
+        logger.info(`✅ [getCurrentDeck] Deck encontrado: ${deck.name}, total de cartas: ${deck.cards?.length || 0}`);
+        if (deck.cards && deck.cards.length > 0) {
+          const cardsWithRelation = deck.cards.filter((dc: any) => dc.card).length;
+          const cardsWithoutRelation = deck.cards.filter((dc: any) => !dc.card).length;
+          logger.info(`🔍 [getCurrentDeck] Cartas com relação 'card': ${cardsWithRelation}, sem relação: ${cardsWithoutRelation}`);
+          
+          if (cardsWithoutRelation > 0) {
+            logger.error(`❌ [getCurrentDeck] PROBLEMA: ${cardsWithoutRelation} cartas não têm relação 'card' carregada!`);
+          }
+        }
+      }
+      
+      // Se não encontrou com query builder, tentar findOne normal
+      if (!deck) {
+        logger.debug('⚠️ [getCurrentDeck] Deck não encontrado com query builder, tentando findOne...');
+        deck = await this.decksRepository.findOne({
+          where: { userId, name: cleanDeckName },
+          relations: ['cards', 'cards.card'],
+        });
+        
+        if (deck) {
+          logger.info(`✅ [getCurrentDeck] Deck encontrado com findOne: ${deck.name}, total de cartas: ${deck.cards?.length || 0}`);
+        }
+      }
       
       // Se não encontrou, tentar busca case-insensitive (apenas se necessário)
       if (!deck) {
@@ -783,36 +912,21 @@ export class DecksService implements OnModuleInit {
         );
         
         if (caseInsensitiveDeck) {
-          deck = await this.decksRepository.findOne({
-            where: { id: caseInsensitiveDeck.id },
-            relations: ['cards', 'cards.card'],
-            select: {
-              id: true,
-              name: true,
-              userId: true,
-              createdAt: true,
-              updatedAt: true,
-              cards: {
-                id: true,
-                deckId: true,
-                cardId: true,
-                isExtraDeck: true, // CRÍTICO: garantir que isExtraDeck seja selecionado
-                card: {
-                  id: true,
-                  idCarta: true,
-                  name: true,
-                  type: true,
-                  monsterType: true,
-                  cardImage: true,
-                  description: true,
-                  atk: true,
-                  def: true,
-                  level: true,
-                  rarity: true,
-                },
-              },
-            },
-          });
+          // Usar query builder para garantir que todas as cartas sejam carregadas
+          deck = await this.decksRepository
+            .createQueryBuilder('deck')
+            .leftJoinAndSelect('deck.cards', 'deckCard')
+            .leftJoinAndSelect('deckCard.card', 'card')
+            .where('deck.id = :deckId', { deckId: caseInsensitiveDeck.id })
+            .getOne();
+          
+          // Se não encontrou com query builder, tentar findOne normal
+          if (!deck) {
+            deck = await this.decksRepository.findOne({
+              where: { id: caseInsensitiveDeck.id },
+              relations: ['cards', 'cards.card'],
+            });
+          }
         }
       }
       
@@ -835,7 +949,7 @@ export class DecksService implements OnModuleInit {
               monsterType: true,
               attribute: true, // CRÍTICO: atributo necessário para efeitos de cartas
               race: true, // CRÍTICO: raça necessária para efeitos de cartas
-              cardImage: true,
+              cardImage: true, // CRÍTICO: cardImage necessário para exibir imagens
               description: true,
               atk: true,
               def: true,
@@ -847,14 +961,19 @@ export class DecksService implements OnModuleInit {
         deck.cards = directCards;
       }
 
-      // Debug: Verificar se isExtraDeck está presente nas cartas
+      // Debug: Verificar se isExtraDeck está presente nas cartas e se cardImage está sendo carregado
       if (deck && deck.cards && deck.cards.length > 0) {
         const sampleCard = deck.cards[0];
+        const sampleCardCard = sampleCard?.card;
         logger.info(`🔍 [getCurrentDeck] Exemplo de carta retornada:`, {
           hasIsExtraDeck: 'isExtraDeck' in sampleCard,
           isExtraDeck: sampleCard.isExtraDeck,
           isExtraDeckType: typeof sampleCard.isExtraDeck,
           cardKeys: Object.keys(sampleCard),
+          hasCard: !!sampleCardCard,
+          cardImage: sampleCardCard?.cardImage,
+          idCarta: sampleCardCard?.idCarta,
+          type: sampleCardCard?.type, // Usar 'type' em vez de 'cardType' (campo correto da entidade)
           fullCard: JSON.stringify(sampleCard).substring(0, 300),
         });
         

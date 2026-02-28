@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { useCosmeticsStore } from '../stores/cosmeticsStore';
 import api from '../api/axios';
@@ -14,9 +15,68 @@ export default function InventoryPage() {
     unequipPlaymat,
     equipSkin,
     unequipSkin,
+    addPlaymat,
+    addSkin,
   } = useCosmeticsStore();
+  const [loading, setLoading] = useState(true);
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+  // Buscar playmats e skins comprados do backend
+  useEffect(() => {
+    const fetchInventory = async () => {
+      try {
+        setLoading(true);
+        
+        // Buscar inventário (playmats e skins comprados)
+        const inventoryResponse = await api.get('/shop/inventory');
+        const inventoryData = inventoryResponse.data;
+        
+        // Se a resposta tem playmats e skins separados
+        if (inventoryData.playmats && Array.isArray(inventoryData.playmats)) {
+          inventoryData.playmats.forEach((playmat: any) => {
+            addPlaymat({
+              id: playmat.id,
+              name: playmat.name || `Playmat ${playmat.id}`,
+              image: playmat.image
+            });
+          });
+        }
+        
+        if (inventoryData.skins && Array.isArray(inventoryData.skins)) {
+          inventoryData.skins.forEach((skin: any) => {
+            addSkin({
+              id: skin.id,
+              name: skin.name || `Skin ${skin.id}`,
+              image: skin.image
+            });
+          });
+        }
+        
+        // Buscar dados do usuário para sincronizar playmats e skins equipados
+        try {
+          const userResponse = await api.get('/users/me');
+          const userData = userResponse.data;
+          
+          if (userData.equippedPlaymatId) {
+            equipPlaymat(userData.equippedPlaymatId);
+          }
+          
+          if (userData.equippedSkinId) {
+            equipSkin(userData.equippedSkinId);
+          }
+        } catch (userError) {
+          console.error('Erro ao buscar dados do usuário:', userError);
+        }
+      } catch (error) {
+        console.error('Erro ao buscar inventário:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchInventory();
+  }, [addPlaymat, addSkin, equipPlaymat, equipSkin]);
 
   const handleTogglePlaymat = async (playmatId: string, imageSrc: string, isEquipped: boolean) => {
     if (isEquipped) {
@@ -74,15 +134,9 @@ export default function InventoryPage() {
       >
         {/* Header */}
         <div className="rounded-lg p-6 mb-8 border border-green-500/30">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-4xl font-bold mb-2">🎒 Inventário</h1>
-              <p className="text-gray-300">Gerencie suas cartas e cosméticos visuais</p>
-            </div>
-            <div className="text-right px-6 py-4 rounded-lg border border-white/20">
-              <p className="text-gray-400 text-sm">💎 Créditos</p>
-              <p className="text-4xl font-bold text-green-400">{user?.credits || 0}</p>
-            </div>
+          <div>
+            <h1 className="text-4xl font-bold mb-2">🎒 Inventário</h1>
+            <p className="text-gray-300">Gerencie suas cartas e cosméticos visuais</p>
           </div>
         </div>
 

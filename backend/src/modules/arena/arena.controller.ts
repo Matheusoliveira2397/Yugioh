@@ -129,7 +129,8 @@ export class ArenaController {
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Put('admin/config/level-ranges')
   async updateLevelRanges(@Body() levelRanges: Array<{ min: number; max: number; name: string }>) {
-    return await this.arenaService.updateLevelRanges(levelRanges);
+    await this.arenaService.updateLevelRanges(levelRanges);
+    return { message: 'Faixas de nível atualizadas com sucesso', levelRanges: await this.arenaService.getLevelRanges() };
   }
 
   // ==================== HORÁRIOS RECORRENTES ====================

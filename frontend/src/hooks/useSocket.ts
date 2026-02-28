@@ -575,6 +575,11 @@ export const useSocket = () => {
     setIsSearching(false);
   };
 
+  /** Limpa o estado "partida encontrada" para permitir fechar a tela e voltar a procurar. */
+  const clearDuelFound = () => {
+    setDuelFound(null);
+  };
+
   const sendChatMessage = (duelId: string, userId: string | number, message: string) => {
     const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : Number(userId);
     if (isNaN(userIdNum)) {
@@ -615,6 +620,7 @@ export const useSocket = () => {
     console.log(`📤 [useSocket] Socket disponível: ${socketRef.current ? 'SIM' : 'NÃO'}, Conectado: ${socketRef.current?.connected}`);
     
     if (socketRef.current && socketRef.current.connected) {
+      // Não limpar logs aqui: duelLogsLoaded substituirá com os logs persistidos ao reabrir o duelo
       socketRef.current.emit('joinDuelRoom', payload);
       console.log(`✅ [useSocket] Evento joinDuelRoom emitido com sucesso!`);
     } else {
@@ -635,6 +641,7 @@ export const useSocket = () => {
     isConnected,
     isSearching,
     duelFound,
+    clearDuelFound,
     chatMessages,
     duelLogs,
     currentTurn,

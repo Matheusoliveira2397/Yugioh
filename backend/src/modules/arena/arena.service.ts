@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, LessThan, Between, In } from 'typeorm';
 import { ChallengeArena } from './arena.entity';
+import { ArenaLevelRange } from './entities/arena-level-range.entity';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Duel, DuelStatus, DuelResult } from '../duels/entities/duel.entity';
 import { User } from '../users/entities/user.entity';
@@ -9,10 +10,12 @@ import { Group } from '../groups/entities/group.entity';
 import { GroupMember } from '../groups/entities/group-member.entity';
 
 @Injectable()
-export class ArenaService {
+export class ArenaService implements OnModuleInit {
   constructor(
     @InjectRepository(ChallengeArena)
     private arenaRepository: Repository<ChallengeArena>,
+    @InjectRepository(ArenaLevelRange)
+    private levelRangeRepository: Repository<ArenaLevelRange>,
     @InjectRepository(Duel)
     private duelRepository: Repository<Duel>,
     @InjectRepository(User)
@@ -23,17 +26,68 @@ export class ArenaService {
     private groupMemberRepository: Repository<GroupMember>,
   ) {}
 
-  private levelRanges: Array<{ min: number; max: number; name: string }> = [
-    { min: 1, max: 1, name: 'Nível 1' },
-    { min: 2, max: 3, name: 'Nível 2-3' },
-    { min: 4, max: 5, name: 'Nível 4-5' },
-    { min: 6, max: 10, name: 'Nível 6-10' },
-    { min: 11, max: 999, name: 'Nível 11+' },
+  async onModuleInit() {
+    // Verificar e criar tabela arena_level_ranges se não existir
+    try {
+      console.log('🔧 [ArenaService] Verificando tabela arena_level_ranges...');
+      
+      const tableExists = await this.levelRangeRepository.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_name = 'arena_level_ranges'
+      `);
+      
+      if (tableExists.length === 0) {
+        console.log('🔧 [ArenaService] Tabela arena_level_ranges não existe. Criando automaticamente...');
+        
+        await this.levelRangeRepository.query(`
+          CREATE TABLE IF NOT EXISTS "arena_level_ranges" (
+            "id" SERIAL PRIMARY KEY,
+            "min" INTEGER NOT NULL,
+            "max" INTEGER NOT NULL,
+            "name" VARCHAR(100) NOT NULL,
+            "order" INTEGER NOT NULL DEFAULT 0,
+            "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        
+        console.log('✅ [ArenaService] Tabela arena_level_ranges criada com sucesso!');
+      } else {
+        console.log('✅ [ArenaService] Tabela arena_level_ranges já existe');
+      }
+    } catch (error: any) {
+      console.error('❌ [ArenaService] Erro ao verificar/criar tabela arena_level_ranges:', error);
+    }
+
+    // Verificar se existem faixas de nível no banco, se não, criar as padrão
+    try {
+      const count = await this.levelRangeRepository.count();
+      if (count === 0) {
+        console.log('🔧 [ArenaService] Criando faixas de nível padrão...');
+        const defaultRanges = [
+          { min: 1, max: 1, name: 'Nível 1', order: 1 },
+          { min: 2, max: 3, name: 'Nível 2-3', order: 2 },
+          { min: 4, max: 5, name: 'Nível 4-5', order: 3 },
+          { min: 6, max: 10, name: 'Nível 6-10', order: 4 },
+          { min: 11, max: 999, name: 'Nível 11+', order: 5 },
   ];
+        
+        for (const range of defaultRanges) {
+          const levelRange = this.levelRangeRepository.create(range);
+          await this.levelRangeRepository.save(levelRange);
+        }
+        console.log('✅ [ArenaService] Faixas de nível padrão criadas com sucesso!');
+      }
+    } catch (error: any) {
+      console.error('❌ [ArenaService] Erro ao criar faixas de nível padrão:', error);
+    }
+  }
 
   // Determinar divisão baseada no nível
-  getLevelDivision(level: number): string {
-    for (const range of this.levelRanges) {
+  async getLevelDivision(level: number): Promise<string> {
+    const ranges = await this.getLevelRanges();
+    for (const range of ranges) {
       if (level >= range.min && level <= range.max) {
         return range.name;
       }
@@ -41,12 +95,28 @@ export class ArenaService {
     return 'Nível 11+';
   }
 
-  getLevelRanges(): Array<{ min: number; max: number; name: string }> {
-    return this.levelRanges;
+  async getLevelRanges(): Promise<Array<{ min: number; max: number; name: string }>> {
+    const ranges = await this.levelRangeRepository.find({
+      order: { order: 'ASC' },
+    });
+    return ranges.map(r => ({ min: r.min, max: r.max, name: r.name }));
   }
 
-  updateLevelRanges(ranges: Array<{ min: number; max: number; name: string }>): void {
-    this.levelRanges = ranges;
+  async updateLevelRanges(ranges: Array<{ min: number; max: number; name: string }>): Promise<void> {
+    // Deletar todas as faixas existentes usando query SQL
+    await this.levelRangeRepository.query('DELETE FROM arena_level_ranges');
+    
+    // Criar novas faixas
+    const newRanges = ranges.map((range, index) => 
+      this.levelRangeRepository.create({
+        ...range,
+        order: index + 1,
+      })
+    );
+    
+    if (newRanges.length > 0) {
+      await this.levelRangeRepository.save(newRanges);
+    }
   }
 
   async getCurrentArena(): Promise<ChallengeArena | null> {
@@ -338,7 +408,8 @@ export class ArenaService {
   // Buscar todos os rankings por divisão de uma arena - OTIMIZADO
   async getAllArenaRankings(arenaId: string) {
     try {
-      const divisions = this.levelRanges.map(r => r.name);
+      const levelRanges = await this.getLevelRanges();
+      const divisions = levelRanges.map(r => r.name);
       
       // Executar todas as queries em paralelo com timeout
       const rankingsPromises = divisions.map(division => 
@@ -389,20 +460,53 @@ export class ArenaService {
   async createArenaAdmin(data: {
     name: string;
     description?: string;
-    startTime: Date;
-    endTime: Date;
+    startTime: Date | null;
+    endTime: Date | null;
     scoreMultiplier?: number;
     bonusGems?: number;
     config?: any;
   }): Promise<ChallengeArena> {
+    const config = data.config || {};
+    
+    // Se não tem levelRangeRewards mas tem top5Rewards e levelRanges, gerar automaticamente
+    if (!config.rewards?.levelRangeRewards && config.rewards?.top5Rewards && config.levelRanges?.length > 0) {
+      config.rewards.levelRangeRewards = config.levelRanges.map((range: any) => ({
+        levelRange: range.name || range,
+        top1: config.rewards.top5Rewards.top1 || { cash: 0, score: 0, additionalScore: 0 },
+        top2: config.rewards.top5Rewards.top2 || { cash: 0, score: 0, additionalScore: 0 },
+        top3: config.rewards.top5Rewards.top3 || { cash: 0, score: 0, additionalScore: 0 },
+        top4: config.rewards.top5Rewards.top4 || { cash: 0, score: 0, additionalScore: 0 },
+        top5: config.rewards.top5Rewards.top5 || { cash: 0, score: 0, additionalScore: 0 },
+      }));
+    }
+    
+    // Se é uma arena recorrente (isRecurring = true), usar datas placeholder
+    // As datas reais serão criadas automaticamente pelo sistema de horários
+    let startTime: Date;
+    let endTime: Date;
+    
+    if (config.isRecurring && config.dailyStartTime && config.durationMinutes) {
+      // Para arenas recorrentes, criar uma data placeholder (hoje no horário configurado)
+      // Isso serve apenas como referência, as arenas reais serão criadas automaticamente
+      const now = new Date();
+      const [hours, minutes] = config.dailyStartTime.split(':').map(Number);
+      startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0);
+      endTime = new Date(startTime);
+      endTime.setMinutes(endTime.getMinutes() + config.durationMinutes);
+    } else {
+      // Para arenas normais, usar as datas fornecidas
+      startTime = data.startTime ? new Date(data.startTime) : new Date();
+      endTime = data.endTime ? new Date(data.endTime) : new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 horas padrão
+    }
+    
     const arena = this.arenaRepository.create({
       name: data.name,
       description: data.description,
-      startTime: new Date(data.startTime),
-      endTime: new Date(data.endTime),
+      startTime: startTime,
+      endTime: endTime,
       scoreMultiplier: data.scoreMultiplier || 1.5,
       bonusGems: data.bonusGems || 50,
-      config: data.config || {},
+      config: config,
       isActive: true,
       participants: 0,
     });
@@ -458,7 +562,7 @@ export class ArenaService {
         return;
       }
 
-      const levelRanges = arena.config?.levelRanges || this.levelRanges;
+      const levelRanges = arena.config?.levelRanges || await this.getLevelRanges();
       let totalDistributed = 0;
 
       // Para cada faixa de nível configurada

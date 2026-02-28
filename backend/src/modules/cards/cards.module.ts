@@ -6,6 +6,7 @@ import { Card } from './entities/card.entity';
 import { UploadModule } from '../upload/upload.module';
 import { ShopModule } from '../shop/shop.module';
 import { CardsDbMigrationService } from './cards-db-migration.service';
+import { YugiohApiService } from './services/yugioh-api.service';
 
 @Module({
   imports: [
@@ -14,7 +15,7 @@ import { CardsDbMigrationService } from './cards-db-migration.service';
     forwardRef(() => ShopModule),
   ],
   controllers: [CardsController],
-  providers: [CardsService, CardsDbMigrationService],
+  providers: [CardsService, CardsDbMigrationService, YugiohApiService],
   exports: [CardsService],
 })
 export class CardsModule {}

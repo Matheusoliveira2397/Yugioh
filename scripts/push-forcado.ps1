@@ -1,5 +1,7 @@
 $ErrorActionPreference = "Stop"
-Set-Location "c:\Yugioh"
+# Ir para a raiz do projeto (funciona em C: ou D:)
+$projectRoot = Split-Path $PSScriptRoot -Parent
+Set-Location $projectRoot
 
 Write-Host "=== INICIANDO PUSH ===" -ForegroundColor Cyan
 

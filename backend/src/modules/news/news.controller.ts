@@ -37,6 +37,20 @@ export class NewsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post(':id/view')
+  markAsViewed(@Param('id') id: string, @Request() req: any) {
+    const userId = Number(req.user.id);
+    return this.newsService.markAsViewed(id, userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('views/user')
+  getViewedNewsIds(@Request() req: any) {
+    const userId = Number(req.user.id);
+    return this.newsService.getViewedNewsIds(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Patch(':id')
   update(
     @Param('id') id: string,

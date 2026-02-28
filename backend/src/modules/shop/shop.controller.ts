@@ -74,7 +74,11 @@ export class ShopController {
     const userId = req.user.id;
     console.log('🔍 UserId extraído:', userId);
     const inventory = await this.shopService.getUserInventory(userId);
-    console.log('🔍 Inventário retornado:', inventory.length, 'itens');
+    console.log('🔍 Inventário retornado:', {
+      cards: inventory.cards?.length || 0,
+      playmats: inventory.playmats?.length || 0,
+      skins: inventory.skins?.length || 0
+    });
     return inventory;
   }
 

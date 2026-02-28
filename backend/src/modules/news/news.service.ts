@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { News } from './news.entity';
+import { NewsView } from './news-view.entity';
 import { CreateNewsDto } from './dto/create-news.dto';
 import { UpdateNewsDto } from './dto/update-news.dto';
 
@@ -10,6 +11,8 @@ export class NewsService {
   constructor(
     @InjectRepository(News)
     private newsRepository: Repository<News>,
+    @InjectRepository(NewsView)
+    private newsViewRepository: Repository<NewsView>,
   ) {}
 
   async create(createNewsDto: CreateNewsDto, userId: number): Promise<News> {
@@ -199,5 +202,47 @@ export class NewsService {
       },
       take: limit,
     });
+  }
+
+  async markAsViewed(newsId: string, userId: number): Promise<void> {
+    try {
+      // Verificar se já existe primeiro (otimização)
+      const existingView = await this.newsViewRepository.findOne({
+        where: { newsId, userId },
+      });
+
+      if (existingView) {
+        // Já foi marcado como vista, retornar silenciosamente
+        return;
+      }
+
+      // Tentar criar o registro
+      const newsView = this.newsViewRepository.create({
+        newsId,
+        userId,
+      });
+      await this.newsViewRepository.save(newsView);
+    } catch (error: any) {
+      // Se o erro for de duplicata (race condition), ignorar silenciosamente
+      // Isso pode acontecer se duas requisições chegarem ao mesmo tempo
+      if (
+        error?.code === '23505' || 
+        error?.message?.includes('duplicate key') ||
+        error?.message?.includes('UQ_news_views_user_news')
+      ) {
+        // Registro já existe (outra requisição criou primeiro), tudo bem
+        return;
+      }
+      // Se for outro erro, relançar
+      throw error;
+    }
+  }
+
+  async getViewedNewsIds(userId: number): Promise<string[]> {
+    const views = await this.newsViewRepository.find({
+      where: { userId },
+      select: ['newsId'],
+    });
+    return views.map((view) => view.newsId);
   }
 }

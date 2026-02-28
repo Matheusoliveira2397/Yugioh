@@ -22,6 +22,9 @@ export default function RegisterPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [verificationLink, setVerificationLink] = useState<string | null>(null);
+  const [emailSent, setEmailSent] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState<string>('');
 
   const [nicknameValidation, setNicknameValidation] = useState<ValidationState>({
     isValid: null,
@@ -191,7 +194,7 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      await axios.post(`${API_URL}/auth/register`, {
+      const response = await axios.post(`${API_URL}/auth/register`, {
         nickname: nickname.trim(),
         username: username.trim().toLowerCase(),
         email: email.trim().toLowerCase(),
@@ -200,10 +203,15 @@ export default function RegisterPage() {
         confirmPassword,
       });
 
+      setEmailSent(response.data.emailSent || false);
+      setVerificationLink(response.data.verificationLink || null);
+      setRegisteredEmail(response.data.email || email.trim().toLowerCase());
       setSuccess(true);
-      setTimeout(() => {
-        navigate('/login');
-      }, 3000);
+      
+      // Não redirecionar automaticamente - deixar usuário ver a mensagem
+      // setTimeout(() => {
+      //   navigate('/login');
+      // }, 3000);
     } catch (err: any) {
       setLoading(false);
       if (err.response?.data?.message) {
@@ -231,23 +239,68 @@ export default function RegisterPage() {
           animate={{ opacity: 1, scale: 1 }}
           className="max-w-md w-full relative z-10"
         >
-          <div className="bg-gray-800 rounded-lg shadow-2xl p-8 border border-green-500 text-center">
+          <div className="bg-gray-800 rounded-lg shadow-2xl p-8 border border-green-500">
+            <div className="text-center mb-6">
             <div className="text-6xl mb-4">✅</div>
             <h1 className="text-3xl font-bold mb-4 text-green-400">
               Cadastro Realizado!
             </h1>
-            <p className="text-gray-300 mb-6">
-              Sua conta foi criada com sucesso!
+            </div>
+            
+            {emailSent ? (
+              <>
+                <div className="bg-blue-500/20 border border-blue-500/50 rounded-lg p-4 mb-6">
+                  <p className="text-blue-200 mb-2">
+                    📧 <strong>Email de verificação enviado!</strong>
+                  </p>
+                  <p className="text-gray-300 text-sm">
+                    Verifique sua caixa de entrada (e pasta de spam) no email: <strong>{registeredEmail}</strong>
+                  </p>
+                </div>
+                <p className="text-gray-300 mb-4 text-center">
+                  Clique no link no email para ativar sua conta.
+                </p>
+                <p className="text-yellow-300 mb-6 text-center text-sm">
+                  ⚠️ <strong>Importante:</strong> Você só poderá fazer login após verificar seu email!
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-4 mb-6">
+                  <p className="text-yellow-200 mb-2">
+                    ⚠️ <strong>Email não foi enviado automaticamente</strong>
             </p>
-            <p className="text-gray-400 mb-8">
-              Redirecionando para o login...
+                  <p className="text-gray-300 text-sm mb-3">
+                    Use o link abaixo para verificar sua conta:
+                  </p>
+                  {verificationLink && (
+                    <div className="bg-gray-900 rounded p-3 mb-3">
+                      <p className="text-xs text-gray-400 mb-2">Link de verificação:</p>
+                      <a 
+                        href={verificationLink} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 break-all text-sm underline"
+                      >
+                        {verificationLink}
+                      </a>
+                    </div>
+                  )}
+                </div>
+                <p className="text-yellow-300 mb-6 text-center text-sm">
+                  ⚠️ <strong>Importante:</strong> Você só poderá fazer login após verificar seu email!
             </p>
+              </>
+            )}
+            
+            <div className="text-center">
             <Link
               to="/login"
               className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg transition-colors"
             >
               Ir para Login
             </Link>
+            </div>
           </div>
         </motion.div>
       </div>

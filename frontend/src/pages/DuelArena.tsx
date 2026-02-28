@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
@@ -75,6 +74,9 @@ const DuelArena: React.FC = () => {
   // Refs para rastrear cartas antes do ataque
   const previousMyMonsters = useRef<any[]>(Array(5).fill(null));
   const previousOpponentMonstersRef = useRef<any[]>(Array(5).fill(null));
+  
+  // Ref para o container do campo de duelo (para centralizar a animação)
+  const duelFieldContainerRef = useRef<HTMLDivElement>(null);
   
   // Função para acionar animação de ataque imediatamente
   const triggerAttackAnimation = (attackerZoneIndex: number, targetZoneIndex: number | null) => {
@@ -164,7 +166,7 @@ const DuelArena: React.FC = () => {
       }
     }
     
-    setTimeout(() => setAttackAnimation(null), 3000);
+    setTimeout(() => setAttackAnimation(null), 1200);
   };
   const [isMyTurn, setIsMyTurn] = useState(false);
   const [currentPhase, setCurrentPhase] = useState<string>('DRAW');
@@ -238,13 +240,25 @@ const DuelArena: React.FC = () => {
   const [selectedMonsterReborn, setSelectedMonsterReborn] = useState<{ 
     graveyard: 'player' | 'opponent'; 
     index: number;
-    instanceId?: string;
-    graveyardIndex?: number;
   } | null>(null);
+  
+  // Estado para Premature Burial (só cemitério do jogador)
+  const [showPrematureBurialModal, setShowPrematureBurialModal] = useState(false);
+  const [prematureBurialGraveyard, setPrematureBurialGraveyard] = useState<any[]>([]);
+  const [selectedPrematureBurialIndex, setSelectedPrematureBurialIndex] = useState<number | null>(null);
+  
+  // Estado para Monster Reincarnation
+  const [showMonsterReincarnationDiscardModal, setShowMonsterReincarnationDiscardModal] = useState(false);
+  const [monsterReincarnationHand, setMonsterReincarnationHand] = useState<any[]>([]);
+  const [selectedMonsterReincarnationCard, setSelectedMonsterReincarnationCard] = useState<string | null>(null);
+  const [showMonsterReincarnationGraveyardModal, setShowMonsterReincarnationGraveyardModal] = useState(false);
+  const [monsterReincarnationGraveyard, setMonsterReincarnationGraveyard] = useState<any[]>([]);
+  const [selectedMonsterReincarnationMonster, setSelectedMonsterReincarnationMonster] = useState<number | null>(null);
   
   // Estado para ChaosSorcerer Special Summon
   const [showChaosSorcererModal, setShowChaosSorcererModal] = useState(false);
   const [chaosSorcererData, setChaosSorcererData] = useState<{
+    cardId?: string;
     cardName?: string;
     lightMonsters: any[];
     darkMonsters: any[];
@@ -330,6 +344,26 @@ const DuelArena: React.FC = () => {
   } | null>(null);
   const [selectedSoulTakerMonster, setSelectedSoulTakerMonster] = useState<number | null>(null);
   
+  // Estado para Chaos Sorcerer Effect
+  const [showChaosSorcererEffectModal, setShowChaosSorcererEffectModal] = useState(false);
+  const [chaosSorcererEffectData, setChaosSorcererEffectData] = useState<{
+    availableMonsters: Array<{ monster: any; zoneIndex: number; player: 'player' | 'opponent' }>;
+    monsterZoneIndex?: number;
+  } | null>(null);
+  const [selectedChaosSorcererEffectMonster, setSelectedChaosSorcererEffectMonster] = useState<{
+    zoneIndex: number;
+    player: 'player' | 'opponent';
+  } | null>(null);
+  
+  // Estado para Black Luster Soldier - Envoy of the Beginning (efeito 1: banir monstro / efeito 2: segundo ataque se destruir)
+  const [showBlsEffectModal, setShowBlsEffectModal] = useState(false);
+  const [blsEffectData, setBlsEffectData] = useState<{
+    availableMonsters: Array<{ monster: any; zoneIndex: number; player: 'player' | 'opponent' }>;
+    monsterZoneIndex?: number;
+  } | null>(null);
+  const [blsEffectChoice, setBlsEffectChoice] = useState<1 | 2 | null>(null);
+  const [selectedBlsEffectMonster, setSelectedBlsEffectMonster] = useState<{ zoneIndex: number; player: 'player' | 'opponent' } | null>(null);
+  
   // Estado para Exiled Force
   const [showExiledForceModal, setShowExiledForceModal] = useState(false);
   const [exiledForceData, setExiledForceData] = useState<{
@@ -368,6 +402,13 @@ const DuelArena: React.FC = () => {
   
   // Estado para Mystical Space Typhoon
   const [isSelectingMSTTarget, setIsSelectingMSTTarget] = useState(false);
+  const [showMysticalSpaceTyphoonModal, setShowMysticalSpaceTyphoonModal] = useState(false);
+  const [mysticalSpaceTyphoonData, setMysticalSpaceTyphoonData] = useState<{
+    playerSpellTraps: Array<{ card: any; zoneIndex: number; player: 'player' | 'opponent' }>;
+    opponentSpellTraps: Array<{ card: any; zoneIndex: number; player: 'player' | 'opponent' }>;
+    spellTrapZoneIndex: number;
+  } | null>(null);
+  const [selectedMSTTarget, setSelectedMSTTarget] = useState<{ player: 'player' | 'opponent'; zoneIndex: number } | null>(null);
   const [isSelectingSnowmanEaterTarget, setIsSelectingSnowmanEaterTarget] = useState(false);
   
   // Estado para Breaker The Magical Warrior
@@ -420,6 +461,7 @@ const DuelArena: React.FC = () => {
   // Estado para rastrear se já fez invocação normal neste turno
   const [normalSummonUsed, setNormalSummonUsed] = useState(false);
   const [positionChangedThisTurn, setPositionChangedThisTurn] = useState(false);
+  const [myTurnCounter, setMyTurnCounter] = useState<number>(1); // Contador global de turnos do campo do jogador
   
   // Estado para modal de seleção de tributos
   const [showTributeModal, setShowTributeModal] = useState(false);
@@ -675,6 +717,10 @@ const DuelArena: React.FC = () => {
           setMyMonsters(player1Monsters);
           setMySpellTraps(player1SpellTraps);
           
+          // Armazenar turnCounter do campo do jogador
+          const turnCounterValue = data.player1Field?.turnCounter || data.turnCounter || 1;
+          setMyTurnCounter(turnCounterValue);
+          
           // Armazenar flag monsterDestroyedThisTurn para Last Will
           const monsterDestroyedFlag = data.player1Field?.monsterDestroyedThisTurn || false;
           console.log(`🔍 [handleDuelUpdate] Player1 - monsterDestroyedThisTurn: ${monsterDestroyedFlag}`);
@@ -696,6 +742,10 @@ const DuelArena: React.FC = () => {
           setMyBanished(player2Banished);
           setMyMonsters(player2Monsters);
           setMySpellTraps(player2SpellTraps);
+          
+          // Armazenar turnCounter do campo do jogador
+          const turnCounterValue = data.player2Field?.turnCounter || data.turnCounter || 1;
+          setMyTurnCounter(turnCounterValue);
           
           // Armazenar flag monsterDestroyedThisTurn para Last Will
           const monsterDestroyedFlag = data.player2Field?.monsterDestroyedThisTurn || false;
@@ -960,7 +1010,53 @@ const DuelArena: React.FC = () => {
           targetProfileImage: myProfileImage // Minha imagem de perfil como alvo
         });
         
-        setTimeout(() => setAttackAnimation(null), 3000);
+        setTimeout(() => setAttackAnimation(null), 1200);
+      });
+      
+      // Listener para quando um ataque é cancelado por uma armadilha
+      socket.on('attackCancelled', (data: {
+        duelId: string | number;
+        attackerZoneIndex: number;
+        targetZoneIndex: number | null;
+        attackerCard: any;
+        targetCard: any | null;
+        message: string;
+        isDirectAttack: boolean;
+      }) => {
+        console.log('🛡️ [DuelArena] Ataque cancelado por armadilha - acionando animação:', data);
+        
+        // Verificar se é para este duelo
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) {
+          return;
+        }
+        
+        // Acionar animação mesmo que o ataque tenha sido cancelado
+        if (data.isDirectAttack) {
+          // Ataque direto cancelado
+          const targetProfileImage = opponent?.profileImage 
+            ? (opponent.profileImage.startsWith('http') ? opponent.profileImage : `${API_URL}${opponent.profileImage}`)
+            : '/images/default.png';
+          
+          setAttackAnimation({
+            attackerCard: data.attackerCard,
+            targetCard: null,
+            damage: 0, // Sem dano pois foi cancelado
+            isDirectAttack: true,
+            isMyAttack: true,
+            targetProfileImage: targetProfileImage
+          });
+        } else {
+          // Ataque a monstro cancelado
+          setAttackAnimation({
+            attackerCard: data.attackerCard,
+            targetCard: data.targetCard,
+            damage: 0, // Sem dano pois foi cancelado
+            isDirectAttack: false,
+            isMyAttack: true
+          });
+        }
+        
+        setTimeout(() => setAttackAnimation(null), 1200);
       });
       
       // Listener para quando o duelo é encerrado
@@ -1095,6 +1191,54 @@ const DuelArena: React.FC = () => {
       };
       socket.on('monsterRebornShowGraveyards', monsterRebornListener);
       console.log('✅ [DuelArena] Listener monsterRebornShowGraveyards registrado');
+      
+      // Listener para Premature Burial (escolher monstro do próprio cemitério)
+      const prematureBurialListener = (data: { playerGraveyard: any[]; duelId: string | number }) => {
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) return;
+        setPrematureBurialGraveyard(data.playerGraveyard || []);
+        setShowPrematureBurialModal(true);
+        setSelectedPrematureBurialIndex(null);
+      };
+      socket.on('prematureBurialShowGraveyard', prematureBurialListener);
+      console.log('✅ [DuelArena] Listener prematureBurialShowGraveyard registrado');
+      
+      // Listener para Monster Reincarnation - descartar carta da mão
+      const monsterReincarnationDiscardListener = (data: { playerHand: any[]; duelId: string | number }) => {
+        console.log('✨ [MonsterReincarnation Discard Listener] Evento recebido!', data);
+        
+        // Verificar se é para este duelo
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) {
+          console.warn('⚠️ [MonsterReincarnation Discard Listener] Evento não é para este duelo - ignorando');
+          return;
+        }
+        
+        console.log('✨ [MonsterReincarnation Discard Listener] Abrindo modal para descartar carta');
+        const handArray = data.playerHand || [];
+        setMonsterReincarnationHand(handArray);
+        setShowMonsterReincarnationDiscardModal(true);
+        setSelectedMonsterReincarnationCard(null);
+      };
+      socket.on('monsterReincarnationShowHand', monsterReincarnationDiscardListener);
+      console.log('✅ [DuelArena] Listener monsterReincarnationShowHand registrado');
+      
+      // Listener para Monster Reincarnation - escolher monstro do cemitério
+      const monsterReincarnationGraveyardListener = (data: { monsters: any[]; duelId: string | number }) => {
+        console.log('✨ [MonsterReincarnation Graveyard Listener] Evento recebido!', data);
+        
+        // Verificar se é para este duelo
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) {
+          console.warn('⚠️ [MonsterReincarnation Graveyard Listener] Evento não é para este duelo - ignorando');
+          return;
+        }
+        
+        console.log('✨ [MonsterReincarnation Graveyard Listener] Abrindo modal para escolher monstro do cemitério');
+        const monstersArray = data.monsters || [];
+        setMonsterReincarnationGraveyard(monstersArray);
+        setShowMonsterReincarnationGraveyardModal(true);
+        setSelectedMonsterReincarnationMonster(null);
+      };
+      socket.on('monsterReincarnationShowGraveyard', monsterReincarnationGraveyardListener);
+      console.log('✅ [DuelArena] Listener monsterReincarnationShowGraveyard registrado');
       
       // Listener para ChangeOfHeart
       const changeOfHeartListener = (data: { opponentMonsters: any[]; duelId: string | number }) => {
@@ -1237,6 +1381,7 @@ const DuelArena: React.FC = () => {
         console.log('✨ [ChaosSorcererSummon Listener] Abrindo modal');
         if (data.data) {
           setChaosSorcererData({
+            cardId: data.data.cardId,
             cardName: data.data.cardName || 'Carta Chaos',
             lightMonsters: data.data.lightMonsters || [],
             darkMonsters: data.data.darkMonsters || [],
@@ -1250,20 +1395,36 @@ const DuelArena: React.FC = () => {
       console.log('✅ [DuelArena] Listener chaosSorcererSummonShowMonsters registrado');
 
       // Listener para Chaos Sorcerer Effect
-      const chaosSorcererEffectListener = (data: { duelId: string | number; data: any }) => {
+      const chaosSorcererEffectListener = (data: { duelId: string | number; availableMonsters?: Array<{ monster: any; zoneIndex: number; player: 'player' | 'opponent' }>; data: any }) => {
         console.log('✨ [ChaosSorcererEffect Listener] Evento recebido!', data);
         if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) {
           console.warn('⚠️ [ChaosSorcererEffect Listener] Evento não é para este duelo - ignorando');
           return;
         }
-        console.log('✨ [ChaosSorcererEffect Listener] Iniciando seleção de alvo');
-        setIsSelectingChaosSorcererTarget(true);
-        if (data.data?.monsterZoneIndex !== undefined) {
-          setChaosSorcererMonsterZoneIndex(data.data.monsterZoneIndex);
-        }
+        console.log('✨ [ChaosSorcererEffect Listener] Abrindo modal');
+        setChaosSorcererEffectData({
+          availableMonsters: data.availableMonsters || [],
+          monsterZoneIndex: data.data?.monsterZoneIndex,
+        });
+        setShowChaosSorcererEffectModal(true);
+        setSelectedChaosSorcererEffectMonster(null);
       };
       socket.on('chaosSorcererEffectShowTargets', chaosSorcererEffectListener);
       console.log('✅ [DuelArena] Listener chaosSorcererEffectShowTargets registrado');
+
+      // Listener para Black Luster Soldier - Envoy of the Beginning
+      const blsEffectListener = (data: { duelId: string | number; data: { monsterZoneIndex?: number; availableMonsters?: Array<{ monster: any; zoneIndex: number; player: 'player' | 'opponent' }> } }) => {
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) return;
+        setBlsEffectData({
+          availableMonsters: data.data?.availableMonsters || [],
+          monsterZoneIndex: data.data?.monsterZoneIndex,
+        });
+        setBlsEffectChoice(null);
+        setSelectedBlsEffectMonster(null);
+        setShowBlsEffectModal(true);
+      };
+      socket.on('blsEffectShowTargets', blsEffectListener);
+      console.log('✅ [DuelArena] Listener blsEffectShowTargets registrado');
 
       // Listener para Dark Armed Dragon Summon
       const darkArmedDragonSummonListener = (data: { duelId: string | number; data: any }) => {
@@ -1383,14 +1544,85 @@ const DuelArena: React.FC = () => {
 
       // Listener para Mystical Space Typhoon
       const mysticalSpaceTyphoonListener = (data: { duelId: string | number; playerSpellTraps: any[]; opponentSpellTraps: any[]; spellTrapZoneIndex: number }) => {
-        console.log('✨ [MysticalSpaceTyphoon Listener] Evento recebido!', data);
+        console.log('✨ [MysticalSpaceTyphoon Listener] ========== EVENTO RECEBIDO ==========');
+        console.log('✨ [MysticalSpaceTyphoon Listener] Dados completos:', JSON.stringify(data, null, 2));
+        console.log('✨ [MysticalSpaceTyphoon Listener] playerSpellTraps:', data.playerSpellTraps?.length || 0);
+        console.log('✨ [MysticalSpaceTyphoon Listener] opponentSpellTraps:', data.opponentSpellTraps?.length || 0);
+        console.log('✨ [MysticalSpaceTyphoon Listener] opponentSpellTraps é array:', Array.isArray(data.opponentSpellTraps));
+        console.log('✨ [MysticalSpaceTyphoon Listener] opponentSpellTraps tipo:', typeof data.opponentSpellTraps);
+        console.log('✨ [MysticalSpaceTyphoon Listener] Detalhes opponentSpellTraps:', data.opponentSpellTraps);
         if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) {
           console.warn('⚠️ [MysticalSpaceTyphoon Listener] Evento não é para este duelo - ignorando');
           return;
         }
-        console.log('✨ [MysticalSpaceTyphoon Listener] Iniciando seleção de alvo');
+        console.log('✨ [MysticalSpaceTyphoon Listener] Abrindo modal');
+        const playerSpellTraps = Array.isArray(data.playerSpellTraps) ? data.playerSpellTraps : [];
+        // CRÍTICO: Garantir que opponentSpellTraps é sempre um array válido
+        let opponentSpellTraps = Array.isArray(data.opponentSpellTraps) ? data.opponentSpellTraps : [];
+        
+        // CRÍTICO: Verificar se os dados estão na estrutura correta
+        // Se opponentSpellTraps tem itens mas não têm a propriedade 'card', pode ser que os dados estejam em formato diferente
+        if (opponentSpellTraps.length > 0 && opponentSpellTraps[0] && !opponentSpellTraps[0].card) {
+          console.warn('⚠️ [MysticalSpaceTyphoon Listener] opponentSpellTraps não tem estrutura card - tentando corrigir...');
+          // Tentar corrigir a estrutura se os dados vieram em formato diferente
+          opponentSpellTraps = opponentSpellTraps.map((item: any, idx: number) => {
+            if (item.card) {
+              return item; // Já está na estrutura correta
+            }
+            // Se não tem card, pode ser que o item inteiro seja a carta
+            return {
+              card: item,
+              zoneIndex: item.zoneIndex || idx,
+              player: item.player || 'opponent'
+            };
+          });
+        }
+        
+        console.log('✨ [MysticalSpaceTyphoon Listener] playerSpellTraps processadas:', playerSpellTraps.length);
+        console.log('✨ [MysticalSpaceTyphoon Listener] opponentSpellTraps processadas:', opponentSpellTraps.length);
+        console.log('✨ [MysticalSpaceTyphoon Listener] opponentSpellTraps é array após processamento:', Array.isArray(opponentSpellTraps));
+        console.log('✨ [MysticalSpaceTyphoon Listener] Detalhes das opponentSpellTraps processadas:', opponentSpellTraps.map((st: any) => ({
+          name: st?.card?.name || st?.card?.cardName || st?.name || 'Desconhecida',
+          zoneIndex: st?.zoneIndex,
+          player: st?.player,
+          hasCard: !!st?.card,
+          cardId: st?.card?.idCarta || st?.card?.id || st?.card?.cardId || st?.idCarta || st?.id || st?.cardId,
+          estrutura: Object.keys(st || {})
+        })));
+        console.log('✨ [MysticalSpaceTyphoon Listener] Definindo mysticalSpaceTyphoonData com opponentSpellTraps:', opponentSpellTraps.length);
+        console.log('✨ [MysticalSpaceTyphoon Listener] opponentSpellTraps completo:', JSON.stringify(opponentSpellTraps, null, 2));
+        
+        // CRÍTICO: Criar objeto de dados com estrutura garantida
+        const modalData = {
+          playerSpellTraps: playerSpellTraps,
+          opponentSpellTraps: opponentSpellTraps, // Garantir que sempre é um array
+          spellTrapZoneIndex: data.spellTrapZoneIndex,
+        };
+        
+        console.log('✨ [MysticalSpaceTyphoon Listener] modalData criado:', {
+          playerSpellTraps: modalData.playerSpellTraps.length,
+          opponentSpellTraps: modalData.opponentSpellTraps.length,
+          opponentSpellTrapsIsArray: Array.isArray(modalData.opponentSpellTraps),
+          opponentSpellTrapsFirstItem: modalData.opponentSpellTraps[0]
+        });
+        
+        // Definir estado de forma síncrona
+        setMysticalSpaceTyphoonData(modalData);
+        setShowMysticalSpaceTyphoonModal(true);
+        setSelectedMSTTarget(null);
         setIsSelectingMSTTarget(true);
-        // Os dados necessários já estão disponíveis no estado do componente
+        
+        console.log('✨ [MysticalSpaceTyphoon Listener] ========== MODAL ABERTO ==========');
+        console.log('✨ [MysticalSpaceTyphoon Listener] Estados definidos - modalData:', {
+          playerSpellTraps: modalData.playerSpellTraps.length,
+          opponentSpellTraps: modalData.opponentSpellTraps.length,
+          opponentSpellTrapsStructure: modalData.opponentSpellTraps.map((st: any) => ({
+            hasCard: !!st?.card,
+            cardName: st?.card?.name || st?.card?.cardName || 'N/A',
+            zoneIndex: st?.zoneIndex,
+            player: st?.player
+          }))
+        });
       };
       socket.on('mysticalSpaceTyphoonShowTargets', mysticalSpaceTyphoonListener);
       console.log('✅ [DuelArena] Listener mysticalSpaceTyphoonShowTargets registrado');
@@ -1503,6 +1735,11 @@ const DuelArena: React.FC = () => {
             setMonsterRebornData(null);
             setSelectedMonsterReborn(null);
           }
+          if (showPrematureBurialModal) {
+            setShowPrematureBurialModal(false);
+            setPrematureBurialGraveyard([]);
+            setSelectedPrematureBurialIndex(null);
+          }
           if (showChaosSorcererModal) {
             console.log('🔒 [closePendingChoiceModal] Fechando modal ChaosSorcerer');
             setShowChaosSorcererModal(false);
@@ -1548,6 +1785,13 @@ const DuelArena: React.FC = () => {
             setShowBrainControlModal(false);
             setBrainControlData(null);
             setSelectedBrainControlMonster(null);
+          }
+          if (showMysticalSpaceTyphoonModal) {
+            console.log('🔒 [closePendingChoiceModal] Fechando modal Mystical Space Typhoon');
+            setShowMysticalSpaceTyphoonModal(false);
+            setMysticalSpaceTyphoonData(null);
+            setSelectedMSTTarget(null);
+            setIsSelectingMSTTarget(false);
           }
           if (showSoulTakerModal) {
             console.log('🔒 [closePendingChoiceModal] Fechando modal SoulTaker');
@@ -1724,6 +1968,7 @@ const DuelArena: React.FC = () => {
         currentSocket.off('closePendingChoiceModal', closePendingChoiceModalListener);
         currentSocket.off('chaosSorcererSummonShowMonsters', chaosSorcererSummonListener);
         currentSocket.off('chaosSorcererEffectShowTargets', chaosSorcererEffectListener);
+        currentSocket.off('blsEffectShowTargets', blsEffectListener);
         currentSocket.off('darkArmedDragonSummonShowZones', darkArmedDragonSummonListener);
         currentSocket.off('darkArmedDragonEffectShowModal', darkArmedDragonEffectListener);
         currentSocket.off('redEyesDarknessMetalDragonSummonShowDragons', redEyesDarknessMetalDragonSummonListener);
@@ -1733,6 +1978,8 @@ const DuelArena: React.FC = () => {
         currentSocket.off('snowmanEaterShowTargets', snowmanEaterListener);
         currentSocket.off('soulTakerShowOpponentMonsters', soulTakerListener);
         currentSocket.off('exiledForceShowTargets', exiledForceListener);
+        currentSocket.off('directAttackAnimation');
+        currentSocket.off('attackCancelled');
         // Remover listener de conexão se ainda estiver ativo
         if (connectListener) {
           currentSocket.off('connect', connectListener);
@@ -1786,10 +2033,65 @@ const DuelArena: React.FC = () => {
       setOpponentHandRevealed(currentPendingChoice.data.opponentHand);
       setShowOpponentHandRevealed(true);
       setCardEffectType('forcefulSentry');
+    } else if (currentPendingChoice.type === 'MYSTICAL_SPACE_TYPHOON') {
+      // Restaurar modal do Mystical Space Typhoon
+      console.log(`✅ [useEffect pendingChoice] Restaurando modal Mystical Space Typhoon`);
+      
+      // Coletar spell/trap do campo atual (próprio e oponente)
+      const playerSpellTrapsArray: Array<{ card: any; zoneIndex: number; player: 'player' | 'opponent' }> = [];
+      const opponentSpellTrapsArray: Array<{ card: any; zoneIndex: number; player: 'player' | 'opponent' }> = [];
+      
+      // Coletar do próprio campo
+      if (mySpellTraps && Array.isArray(mySpellTraps)) {
+        mySpellTraps.forEach((card: any, index: number) => {
+          if (card && card !== null) {
+            // Não incluir a própria Mystical Space Typhoon se estiver no campo
+            const cardId = card.idCarta || card.id || card.cardId;
+            const isMST = cardId === 'MysticalSpaceTyphoon' || 
+                         cardId === 'mysticalspacetyphoon' ||
+                         (typeof cardId === 'string' && cardId.toLowerCase().includes('mysticalspacetyphoon'));
+            if (!isMST) {
+              playerSpellTrapsArray.push({ card, zoneIndex: index, player: 'player' });
+            }
+          }
+        });
+      }
+      
+      // Coletar do campo do oponente
+      // CRÍTICO: Usar o estado opponentSpellTraps do componente (linha 436), não o array que está sendo construído
+      // O estado opponentSpellTraps vem das props/dados do duelo
+      const opponentSpellTrapsFromState = opponentSpellTraps; // Estado do componente (linha 436)
+      if (opponentSpellTrapsFromState && Array.isArray(opponentSpellTrapsFromState)) {
+        opponentSpellTrapsFromState.forEach((card: any, index: number) => {
+          if (card && card !== null) {
+            opponentSpellTrapsArray.push({ card, zoneIndex: index, player: 'opponent' });
+          }
+        });
+      }
+      
+      const spellTrapZoneIndex = currentPendingChoice.data?.zoneIndex ?? null;
+      
+      console.log(`✅ [useEffect pendingChoice] Mystical Space Typhoon - playerSpellTraps: ${playerSpellTrapsArray.length}, opponentSpellTraps: ${opponentSpellTrapsArray.length}`);
+      
+      // Se ambas as listas estão vazias, a ação já foi processada (ex: MST destruiu a última spell) — não reabrir modal para evitar "Nenhuma carta encontrada"
+      if (playerSpellTrapsArray.length === 0 && opponentSpellTrapsArray.length === 0) {
+        console.log('✅ [useEffect pendingChoice] MST: listas vazias (ação já processada) - fechando modal');
+        setShowMysticalSpaceTyphoonModal(false);
+        setMysticalSpaceTyphoonData(null);
+        setSelectedMSTTarget(null);
+      } else {
+        setMysticalSpaceTyphoonData({
+          playerSpellTraps: playerSpellTrapsArray,
+          opponentSpellTraps: opponentSpellTrapsArray,
+          spellTrapZoneIndex: spellTrapZoneIndex,
+        });
+        setShowMysticalSpaceTyphoonModal(true);
+        setSelectedMSTTarget(null);
+      }
     } else {
       console.warn(`⚠️ [useEffect pendingChoice] Tipo de pendingChoice desconhecido ou dados faltando:`, currentPendingChoice);
     }
-  }, [currentPendingChoice, user?.id]);
+  }, [currentPendingChoice, user?.id, mySpellTraps, opponentSpellTraps]);
 
   // Debug: verificar estados do Confiscation
   useEffect(() => {
@@ -1946,6 +2248,29 @@ const DuelArena: React.FC = () => {
     if (duelUpdate.player1Field && duelUpdate.player2Field) {
       const player1Deck = duelUpdate.player1Field.deck || [];
       const player1Hand = duelUpdate.player1Field.hand || [];
+      const player1Graveyard = duelUpdate.player1Field.graveyard || [];
+      const player1ExtraDeck = duelUpdate.player1Field.extraDeck || [];
+      const player1Banished = duelUpdate.player1Field.banished || [];
+      
+      // Debug: Verificar se cardImage está presente nas cartas
+      if (player1Hand.length > 0) {
+        const firstCard = player1Hand[0];
+        console.log(`🔍 [handleDuelUpdate] Primeira carta da mão Player1:`, {
+          name: firstCard?.name,
+          idCarta: firstCard?.idCarta,
+          hasCardImage: !!firstCard?.cardImage,
+          cardImage: firstCard?.cardImage,
+        });
+      }
+      if (player1ExtraDeck.length > 0) {
+        const firstExtraCard = player1ExtraDeck[0];
+        console.log(`🔍 [handleDuelUpdate] Primeira carta do Extra Deck Player1:`, {
+          name: firstExtraCard?.name,
+          idCarta: firstExtraCard?.idCarta,
+          hasCardImage: !!firstExtraCard?.cardImage,
+          cardImage: firstExtraCard?.cardImage,
+        });
+      }
       // Garantir que monsters e spellTraps sejam arrays de 5 elementos
       const player1MonstersRaw = duelUpdate.player1Field.monsters || [];
       const player1Monsters = Array.isArray(player1MonstersRaw) 
@@ -1958,6 +2283,9 @@ const DuelArena: React.FC = () => {
       
       const player2Deck = duelUpdate.player2Field.deck || [];
       const player2Hand = duelUpdate.player2Field.hand || [];
+      const player2Graveyard = duelUpdate.player2Field.graveyard || [];
+      const player2ExtraDeck = duelUpdate.player2Field.extraDeck || [];
+      const player2Banished = duelUpdate.player2Field.banished || [];
       // Garantir que monsters e spellTraps sejam arrays de 5 elementos
       const player2MonstersRaw = duelUpdate.player2Field.monsters || [];
       const player2Monsters = Array.isArray(player2MonstersRaw)
@@ -1979,12 +2307,12 @@ const DuelArena: React.FC = () => {
         // Detectar apenas mudanças de life points para mostrar dano (sem animação de ataque)
         if (opponentLPChange > 0) {
           setOpponentDamage(opponentLPChange);
-          setTimeout(() => setOpponentDamage(null), 2000);
+          setTimeout(() => setOpponentDamage(null), 1000);
         }
         
         if (myLPChange > 0) {
           setMyDamage(myLPChange);
-          setTimeout(() => setMyDamage(null), 2000);
+          setTimeout(() => setMyDamage(null), 1000);
         }
         
         previousMyLifePoints.current = newMyLP;
@@ -1994,6 +2322,9 @@ const DuelArena: React.FC = () => {
         setOpponentLifePoints(newOpponentLP);
         setMyDeck(player1Deck);
         setMyHand(player1Hand);
+        setMyGraveyard(player1Graveyard);
+        setMyExtraDeck(player1ExtraDeck);
+        setMyBanished(player1Banished);
         
         // Detectar invocação (nova carta no campo)
         const newMonsters = player1Monsters;
@@ -2004,7 +2335,7 @@ const DuelArena: React.FC = () => {
             setShowSummonOverlay(true);
             setTimeout(() => {
               setShowSummonOverlay(false);
-            }, 1000);
+            }, 500);
             break;
           }
         }
@@ -2015,6 +2346,9 @@ const DuelArena: React.FC = () => {
         setMySpellTraps(player1SpellTraps);
         setOpponentDeck(player2Deck);
         setOpponentHand(player2Hand);
+        setOpponentGraveyard(player2Graveyard);
+        setOpponentExtraDeck(player2ExtraDeck);
+        setOpponentBanished(player2Banished);
         setOpponentMonsters(player2Monsters);
         setOpponentSpellTraps(player2SpellTraps);
         // Atualizar flag de invocação normal
@@ -2032,12 +2366,12 @@ const DuelArena: React.FC = () => {
         // Detectar apenas mudanças de life points para mostrar dano (sem animação de ataque)
         if (opponentLPChange > 0) {
           setOpponentDamage(opponentLPChange);
-          setTimeout(() => setOpponentDamage(null), 2000);
+          setTimeout(() => setOpponentDamage(null), 1000);
         }
         
         if (myLPChange > 0) {
           setMyDamage(myLPChange);
-          setTimeout(() => setMyDamage(null), 2000);
+          setTimeout(() => setMyDamage(null), 1000);
         }
         
         previousMyLifePoints.current = newMyLP;
@@ -2047,6 +2381,9 @@ const DuelArena: React.FC = () => {
         setOpponentLifePoints(newOpponentLP);
         setMyDeck(player2Deck);
         setMyHand(player2Hand);
+        setMyGraveyard(player2Graveyard);
+        setMyExtraDeck(player2ExtraDeck);
+        setMyBanished(player2Banished);
         
         // Detectar invocação (nova carta no campo)
         const newMonsters = player2Monsters;
@@ -2057,7 +2394,7 @@ const DuelArena: React.FC = () => {
             setShowSummonOverlay(true);
             setTimeout(() => {
               setShowSummonOverlay(false);
-            }, 1000);
+            }, 500);
             break;
           }
         }
@@ -2068,6 +2405,9 @@ const DuelArena: React.FC = () => {
         setMySpellTraps(player2SpellTraps);
         setOpponentDeck(player1Deck);
         setOpponentHand(player1Hand);
+        setOpponentGraveyard(player1Graveyard);
+        setOpponentExtraDeck(player1ExtraDeck);
+        setOpponentBanished(player1Banished);
         setOpponentMonsters(player1Monsters);
         setOpponentSpellTraps(player1SpellTraps);
         // Atualizar flag de invocação normal
@@ -2101,10 +2441,10 @@ const DuelArena: React.FC = () => {
         setPhaseOverlaySubtext(phaseInfo.sub);
         setShowPhaseOverlay(true);
         
-        // Esconder após 1 segundo
+        // Esconder após breve exibição
         setTimeout(() => {
           setShowPhaseOverlay(false);
-        }, 1000);
+        }, 600);
       }
     }
     
@@ -2387,6 +2727,7 @@ const DuelArena: React.FC = () => {
   };
 
   // Função para finalizar turno (só funciona na fase END)
+  // Agora chama nextPhase que descarta automaticamente e avança o turno
   const handleEndTurn = () => {
     if (!duelId || !user?.id) {
       console.error('❌ DuelId ou UserId não encontrados');
@@ -2398,17 +2739,13 @@ const DuelArena: React.FC = () => {
       return;
     }
 
-    // Se tem mais de 6 cartas, não pode finalizar ainda
-    if (myHand.length > 6) {
-      return;
-    }
-
+    // O descarte será feito automaticamente pelo backend se tiver mais de 6 cartas
+    // Usar nextPhase para manter consistência com o clique no botão da fase
     const socket = getSocket();
     if (socket && socket.connected) {
-      socket.emit('endTurn', { 
+      socket.emit('nextPhase', { 
         duelId, 
-        userId: user.id,
-        cardIdsToDiscard: selectedCardsToDiscard
+        userId: user.id
       });
     }
     
@@ -2615,9 +2952,35 @@ const DuelArena: React.FC = () => {
       return;
     }
 
+    // Se estiver em STANDBY e tentar invocar, mudar automaticamente para MAIN1
+    if (currentPhase === 'STANDBY') {
+      console.log(`🔄 [handlePlaceCardOnField] Tentativa de invocar na STANDBY - mudando automaticamente para MAIN1`);
+      const socket = getSocket();
+      if (socket && socket.connected) {
+        // Mudar para MAIN1 e continuar com a invocação
+        // O backend vai validar se a fase está correta
+        socket.emit('goToPhase', { duelId, userId: user.id, targetPhase: 'MAIN1' });
+        // Aguardar um pouco para o backend processar a mudança de fase
+        await new Promise(resolve => setTimeout(resolve, 80));
+        // Continuar com a invocação - o backend vai validar a fase
+      } else {
+        alert('Erro: Socket não conectado. Não foi possível mudar a fase.');
+        return;
+      }
+    }
+
     // Validar que está nas fases principais (MAIN1 ou MAIN2)
-    if (currentPhase !== 'MAIN1' && currentPhase !== 'MAIN2') {
-      alert('Você só pode colocar cartas no campo nas fases principais (MP1 ou MP2)!');
+    // Bloquear invocação em DRAW, BATTLE ou END
+    // Nota: Se estava em STANDBY, já mudamos para MAIN1 acima, então podemos continuar
+    if (currentPhase !== 'MAIN1' && currentPhase !== 'MAIN2' && currentPhase !== 'STANDBY') {
+      const phaseNames: { [key: string]: string } = {
+        'DRAW': 'Fase de Compras',
+        'BATTLE': 'Fase de Batalha',
+        'END': 'Fase Final'
+      };
+      const phaseName = phaseNames[currentPhase] || currentPhase;
+      console.warn(`⚠️ [handlePlaceCardOnField] Tentativa de invocar na fase ${currentPhase} (${phaseName}) - bloqueada!`);
+      alert(`Você só pode colocar cartas no campo nas fases principais (MP1 ou MP2)! Você está na ${phaseName}.`);
       return;
     }
 
@@ -2686,6 +3049,21 @@ const DuelArena: React.FC = () => {
         return;
       }
 
+      // Chaos Sorcerer, Chaos Emperor Dragon e BLS só podem ser invocados por invocação especial (banir LIGHT + DARK do cemitério)
+      const cardIdPlace = (card.idCarta || card.id || card.cardId || '').toString().toLowerCase();
+      const cardNamePlace = (card.name || card.cardName || '').toString().toLowerCase();
+      const isChaosSorcererPlace = cardIdPlace.includes('chaossorcerer') || cardNamePlace.includes('chaos sorcerer');
+      const isChaosEmperorDragonPlace = cardIdPlace.includes('chaosemperordragon') || cardNamePlace.includes('chaos emperor dragon');
+      const isBlackLusterSoldierPlace = cardIdPlace.includes('blacklustersoldier') || cardNamePlace.includes('black luster soldier');
+      if (isChaosSorcererPlace || isChaosEmperorDragonPlace || isBlackLusterSoldierPlace) {
+        const namePlace = isChaosSorcererPlace ? 'Chaos Sorcerer' : isChaosEmperorDragonPlace ? 'Chaos Emperor Dragon' : 'Black Luster Soldier - Envoy of the Beginning';
+        performAction(duelId, user.id, 'START_CHAOS_SORCERER_SPECIAL_SUMMON', {
+          cardId: card.id || card.cardId || card.idCarta,
+        });
+        setSelectedCardForField(null);
+        return;
+      }
+
       // Acionar animação apenas se não foi arrastada (foi clicada)
       if (!isDragged) {
         await triggerCardPlacementAnimation(card, zoneIndex, true);
@@ -2740,6 +3118,32 @@ const DuelArena: React.FC = () => {
     // Limpar seleção
     setSelectedCardForField(null);
   };
+
+  // Função auxiliar para verificar se uma carta é Mystical Space Typhoon
+  const isMysticalSpaceTyphoon = (card: any): boolean => {
+    if (!card) return false;
+    const cardName = (card.name || card.cardName || '').toLowerCase().replace(/\s+/g, '');
+    return cardName.includes('mysticalspacetyphoon') || cardName === 'mysticalspacetyphoon';
+  };
+
+  // Filtrar mySpellTraps para ocultar Mystical Space Typhoon quando o modal está aberto
+  const filteredMySpellTraps = useMemo(() => {
+    if (!showMysticalSpaceTyphoonModal || !currentPendingChoice || currentPendingChoice.type !== 'MYSTICAL_SPACE_TYPHOON') {
+      return mySpellTraps;
+    }
+    
+    // Se o modal está aberto, ocultar a Mystical Space Typhoon no campo
+    const spellTrapZoneIndex = currentPendingChoice.data?.zoneIndex;
+    if (spellTrapZoneIndex !== undefined && spellTrapZoneIndex !== null) {
+      const filtered = [...mySpellTraps];
+      if (filtered[spellTrapZoneIndex] && isMysticalSpaceTyphoon(filtered[spellTrapZoneIndex])) {
+        filtered[spellTrapZoneIndex] = null;
+      }
+      return filtered;
+    }
+    
+    return mySpellTraps;
+  }, [mySpellTraps, showMysticalSpaceTyphoonModal, currentPendingChoice]);
 
   if (!user) {
     return <Navigate to="/" />;
@@ -3008,160 +3412,6 @@ const DuelArena: React.FC = () => {
             
             {/* Container centralizado alinhado com os campos de batalha */}
             <div className="flex-1">
-              {/* Animação de Ataque */}
-      <AnimatePresence>
-        {attackAnimation && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 flex items-center justify-center z-[10000] pointer-events-none"
-          >
-            <motion.div
-              initial={{ scale: 0.8, y: 50 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.8, y: 50 }}
-              transition={{ type: "spring", stiffness: 200, damping: 20 }}
-              className="flex items-center gap-8 bg-black/80 backdrop-blur-md rounded-2xl p-8 border-2 border-yellow-400/50 shadow-2xl"
-            >
-              {/* Carta Atacante */}
-              <motion.div
-                initial={{ x: -100, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.1, duration: 0.5 }}
-                className="relative"
-                style={{ width: '150px', height: '219px' }}
-              >
-                <CardImage
-                  card={attackAnimation.attackerCard}
-                  className="w-full h-full rounded-lg border-2 border-yellow-400 shadow-lg"
-                  fallback="/images/fundoCarta.webp"
-                />
-                <div className="absolute -bottom-6 left-0 right-0 text-center">
-                  <div className="text-xs text-yellow-300 font-semibold bg-black/70 px-2 py-1 rounded">
-                    ATACANTE
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* X */}
-              <motion.div
-                initial={{ scale: 0, rotate: -180 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ delay: 0.3, type: "spring", stiffness: 300 }}
-                className="text-6xl font-bold text-red-500 drop-shadow-2xl"
-                style={{ textShadow: '0 0 20px rgba(239, 68, 68, 0.8)' }}
-              >
-                ✕
-              </motion.div>
-
-              {/* Carta Alvo ou Perfil do Duelista Alvo (Ataque Direto) */}
-              {attackAnimation.isDirectAttack ? (
-                <motion.div
-                  initial={{ x: 100, opacity: 0, scale: 0.8 }}
-                  animate={{ x: 0, opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.2, duration: 0.5 }}
-                  className="relative flex flex-col items-center justify-center"
-                >
-                  {attackAnimation.targetProfileImage ? (
-                    <div className="relative">
-                      <div className="rounded-full border-4 border-red-400 shadow-2xl overflow-hidden bg-gradient-to-br from-red-900/50 to-red-800/30 p-2">
-                        <img
-                          src={attackAnimation.targetProfileImage}
-                          alt="Duelista Alvo"
-                          className="w-32 h-32 md:w-40 md:h-40 lg:w-48 lg:h-48 rounded-full object-cover"
-                          onError={(e) => {
-                            e.currentTarget.src = '/images/default.png';
-                          }}
-                        />
-                      </div>
-                      <div className="absolute -bottom-4 left-0 right-0 text-center">
-                        <div className="text-xs md:text-sm text-red-300 font-semibold bg-black/70 px-3 py-1 rounded">
-                          ALVO
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="w-32 h-32 md:w-40 md:h-40 lg:w-48 lg:h-48 bg-gradient-to-br from-red-900/50 to-red-800/30 rounded-full border-4 border-red-400 flex items-center justify-center shadow-2xl">
-                      <div className="text-center">
-                        <div className="text-3xl md:text-4xl mb-2">⚔️</div>
-                        <div className="text-xs md:text-sm text-red-300 font-bold">ATAQUE DIRETO</div>
-                      </div>
-                    </div>
-                  )}
-                  {/* Dano */}
-                  <motion.div
-                    initial={{ scale: 0, y: 20 }}
-                    animate={{ scale: 1.2, y: 0 }}
-                    transition={{ delay: 0.5, type: "spring", stiffness: 200 }}
-                    className="absolute -bottom-12 md:-bottom-16 left-0 right-0 text-center"
-                  >
-                    <div className="text-2xl md:text-3xl lg:text-4xl font-bold text-red-400 drop-shadow-lg bg-black/80 px-4 py-2 rounded-lg border-2 border-red-500">
-                      -{attackAnimation.damage.toLocaleString()}
-                    </div>
-                  </motion.div>
-                </motion.div>
-              ) : attackAnimation.targetCard ? (
-                <motion.div
-                  initial={{ x: 100, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  transition={{ delay: 0.2, duration: 0.5 }}
-                  className="relative"
-                  style={{ width: '150px', height: '219px' }}
-                >
-                  <CardImage
-                    card={attackAnimation.targetCard}
-                    className="w-full h-full rounded-lg border-2 border-red-400 shadow-lg"
-                    fallback="/images/fundoCarta.webp"
-                  />
-                  <div className="absolute -bottom-6 left-0 right-0 text-center">
-                    <div className="text-xs text-red-300 font-semibold bg-black/70 px-2 py-1 rounded">
-                      ALVO
-                    </div>
-                  </div>
-                  {/* Dano */}
-                  <motion.div
-                    initial={{ scale: 0, y: 20 }}
-                    animate={{ scale: 1.2, y: 0 }}
-                    transition={{ delay: 0.5, type: "spring", stiffness: 200 }}
-                    className="absolute -bottom-8 left-0 right-0 text-center"
-                  >
-                    <div className="text-3xl font-bold text-red-400 drop-shadow-lg bg-black/80 px-4 py-2 rounded-lg border-2 border-red-500">
-                      -{attackAnimation.damage.toLocaleString()}
-                    </div>
-                  </motion.div>
-                </motion.div>
-              ) : (
-                <motion.div
-                  initial={{ x: 100, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  transition={{ delay: 0.2, duration: 0.5 }}
-                  className="relative flex flex-col items-center justify-center"
-                  style={{ width: '150px', height: '219px' }}
-                >
-                  <div className="w-full h-full bg-gradient-to-br from-red-900/50 to-red-800/30 rounded-lg border-2 border-red-400 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="text-4xl mb-2">⚔️</div>
-                      <div className="text-sm text-red-300 font-bold">ATAQUE</div>
-                    </div>
-                  </div>
-                  {/* Dano */}
-                  <motion.div
-                    initial={{ scale: 0, y: 20 }}
-                    animate={{ scale: 1.2, y: 0 }}
-                    transition={{ delay: 0.5, type: "spring", stiffness: 200 }}
-                    className="absolute -bottom-8 left-0 right-0 text-center"
-                  >
-                    <div className="text-3xl font-bold text-red-400 drop-shadow-lg bg-black/80 px-4 py-2 rounded-lg border-2 border-red-500">
-                      -{attackAnimation.damage.toLocaleString()}
-                    </div>
-                  </motion.div>
-                </motion.div>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
             </div>
           </div>
         </motion.div>
@@ -3254,10 +3504,11 @@ const DuelArena: React.FC = () => {
 
           {/* Arena Principal - Modernizado */}
           <motion.div 
+            ref={duelFieldContainerRef}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
-            className="flex-1 space-y-1 overflow-y-auto pb-1"
+            className="flex-1 space-y-1 overflow-y-auto pb-1 relative"
           >
             <div className="max-w-5xl mx-auto w-full">
             {/* Linha 1: Perfis dos Duelistas e Timer - Alinhados na mesma linha do topo do playmat */}
@@ -3503,10 +3754,81 @@ const DuelArena: React.FC = () => {
               cardBackImage={opponentSkinImageUrl}
               onGraveyardClick={() => setShowOpponentGraveyardModal(true)}
               onExtraDeckClick={() => setShowOpponentExtraDeckModal(true)}
-              onMonsterClick={(targetZoneIndex) => {
+              onMonsterClick={async (targetZoneIndex) => {
                 if (attackingMonsterIndex !== null) {
-                  // Processar ataque
-                  const targetIndex = targetZoneIndex === -1 ? null : targetZoneIndex;
+                  // Validações - MESMAS do onMonsterDrop para garantir consistência
+                  // Verificar se é o turno do jogador
+                  if (!isMyTurn) {
+                    setAttackingMonsterIndex(null);
+                    return;
+                  }
+                  
+                  // Verificar se está em uma fase que permite ataque (BATTLE, STANDBY ou MAIN1)
+                  if (currentPhase !== 'BATTLE' && currentPhase !== 'STANDBY' && currentPhase !== 'MAIN1') {
+                    setAttackingMonsterIndex(null);
+                    return;
+                  }
+                  
+                  // Verificar se o monstro atacante existe e está em posição de ataque
+                  const attackerMonster = myMonsters[attackingMonsterIndex];
+                  if (!attackerMonster || attackerMonster.position !== 'attack') {
+                    setAttackingMonsterIndex(null);
+                    return;
+                  }
+                  
+                  // Verificar se o monstro não pode atacar neste turno (ex: ChaosSorcerer após usar efeito)
+                  if (attackerMonster.cannotAttackThisTurn === true) {
+                    setAttackingMonsterIndex(null);
+                    return;
+                  }
+                  
+                  // Verificar se o monstro já atacou neste turno
+                  const monsterCardId = attackerMonster.idCarta || attackerMonster.id || attackerMonster.cardId;
+                  const monsterName = (attackerMonster.name || attackerMonster.cardName || '').toLowerCase();
+                  const isMatazaTheZapper = monsterCardId === 'MatazaTheZapper' || 
+                                            monsterCardId === 'matazathezapper' ||
+                                            monsterName === 'mataza the zapper';
+                  const isCyberTwinDragon = monsterCardId === 'CyberTwinDragon' || 
+                                           monsterCardId === 'cybertwindragon' ||
+                                           monsterName === 'cyber twin dragon';
+                  
+                  const isBLS = (monsterCardId && String(monsterCardId).toLowerCase().includes('blacklustersoldier')) || (monsterName && monsterName.includes('black luster soldier'));
+                  if (isMatazaTheZapper || isCyberTwinDragon) {
+                    const attacksThisTurn = attackerMonster.attacksThisTurn || 0;
+                    if (attacksThisTurn >= 2) {
+                      setAttackingMonsterIndex(null);
+                      return;
+                    }
+                  } else if (isBLS && !!attackerMonster.canAttackAgainThisTurn) {
+                    const attacksThisTurn = attackerMonster.attacksThisTurn || 0;
+                    if (attacksThisTurn >= 2) {
+                      setAttackingMonsterIndex(null);
+                      return;
+                    }
+                  } else {
+                    if (attackerMonster.attackedThisTurn === true) {
+                      setAttackingMonsterIndex(null);
+                      return;
+                    }
+                  }
+                  
+                  // Se estiver em STANDBY ou MAIN1, mudar automaticamente para BATTLE antes de atacar
+                  if ((currentPhase === 'STANDBY' || currentPhase === 'MAIN1') && isMyTurn) {
+                    console.log(`🔄 [onMonsterClick] Tentativa de atacar na ${currentPhase} - mudando automaticamente para BATTLE`);
+                    const socket = getSocket();
+                    if (socket && socket.connected) {
+                      socket.emit('goToPhase', { duelId, userId: user.id, targetPhase: 'BATTLE' });
+                      // Aguardar um pouco para o backend processar a mudança de fase
+                      await new Promise(resolve => setTimeout(resolve, 80));
+                    } else {
+                      alert('Erro: Socket não conectado. Não foi possível mudar a fase.');
+                      setAttackingMonsterIndex(null);
+                      return;
+                    }
+                  }
+                  
+                  // Processar ataque - EXATAMENTE a mesma lógica do onMonsterDrop
+                  const targetIndex = targetZoneIndex === -1 || targetZoneIndex === null ? null : targetZoneIndex;
                   
                   // Acionar animação imediatamente
                   triggerAttackAnimation(attackingMonsterIndex, targetIndex);
@@ -3518,18 +3840,88 @@ const DuelArena: React.FC = () => {
                   setAttackingMonsterIndex(null);
                 }
               }}
-              onMonsterDrop={(attackerZoneIndex, targetZoneIndex) => {
-                // Processar ataque via drag and drop
-                // Se está em STANDBY ou MAIN1, mudar automaticamente para BATTLE antes de atacar
-                if ((currentPhase === 'STANDBY' || currentPhase === 'MAIN1' || currentPhase === 'BATTLE') && isMyTurn) {
-                  // Acionar animação imediatamente
-                  triggerAttackAnimation(attackerZoneIndex, targetZoneIndex);
-                  
-                  performAction(duelId, user.id, 'ATTACK', {
-                    attackerZoneIndex,
-                    targetZoneIndex,
-                  });
+              onMonsterDrop={async (attackerZoneIndex, targetZoneIndex) => {
+                // Processar ataque via drag and drop - EXATAMENTE o mesmo fluxo do clique
+                // Simular o comportamento de clicar no botão de ataque e depois no monstro alvo
+                
+                // Validações iniciais - mesmas do onAttackClick e onMonsterClick
+                if (attackerZoneIndex === null || attackerZoneIndex === undefined) {
+                  return;
                 }
+                
+                // Verificar se é o turno do jogador e se pode atacar (mesmas condições do canAttack)
+                if (!isMyTurn) {
+                  return;
+                }
+                
+                // Verificar se está em uma fase que permite ataque (BATTLE, STANDBY ou MAIN1)
+                if (currentPhase !== 'BATTLE' && currentPhase !== 'STANDBY' && currentPhase !== 'MAIN1') {
+                  return;
+                }
+                
+                // Verificar se o monstro atacante existe e está em posição de ataque
+                const attackerMonster = myMonsters[attackerZoneIndex];
+                if (!attackerMonster || attackerMonster.position !== 'attack') {
+                  return;
+                }
+                
+                // Verificar se o monstro não pode atacar neste turno (ex: ChaosSorcerer após usar efeito)
+                // (mesma validação do botão de ataque)
+                if (attackerMonster.cannotAttackThisTurn === true) {
+                  return;
+                }
+                
+                // Verificar se o monstro já atacou neste turno
+                // (mesma validação do drag no DuelField.tsx)
+                const monsterCardId = attackerMonster.idCarta || attackerMonster.id || attackerMonster.cardId;
+                const monsterName = (attackerMonster.name || attackerMonster.cardName || '').toLowerCase();
+                const isMatazaTheZapper = monsterCardId === 'MatazaTheZapper' || 
+                                          monsterCardId === 'matazathezapper' ||
+                                          monsterName === 'mataza the zapper';
+                const isCyberTwinDragon = monsterCardId === 'CyberTwinDragon' || 
+                                         monsterCardId === 'cybertwindragon' ||
+                                         monsterName === 'cyber twin dragon';
+                
+                const isBLSDrop = (monsterCardId && String(monsterCardId).toLowerCase().includes('blacklustersoldier')) || (monsterName && monsterName.includes('black luster soldier'));
+                if (isMatazaTheZapper || isCyberTwinDragon) {
+                  const attacksThisTurn = attackerMonster.attacksThisTurn || 0;
+                  if (attacksThisTurn >= 2) return;
+                } else if (isBLSDrop && !!attackerMonster.canAttackAgainThisTurn) {
+                  const attacksThisTurn = attackerMonster.attacksThisTurn || 0;
+                  if (attacksThisTurn >= 2) return;
+                } else {
+                  if (attackerMonster.attackedThisTurn === true) return;
+                }
+                
+                // Se estiver em STANDBY ou MAIN1, mudar automaticamente para BATTLE antes de atacar
+                // (mesma lógica do onAttackClick e onMonsterClick)
+                if ((currentPhase === 'STANDBY' || currentPhase === 'MAIN1') && isMyTurn) {
+                  console.log(`🔄 [onMonsterDrop] Tentativa de atacar na ${currentPhase} - mudando automaticamente para BATTLE`);
+                  const socket = getSocket();
+                  if (socket && socket.connected) {
+                    socket.emit('goToPhase', { duelId, userId: user.id, targetPhase: 'BATTLE' });
+                    // Aguardar um pouco para o backend processar a mudança de fase
+                    await new Promise(resolve => setTimeout(resolve, 80));
+                  } else {
+                    alert('Erro: Socket não conectado. Não foi possível mudar a fase.');
+                    return;
+                  }
+                }
+                
+                // Processar ataque - EXATAMENTE a mesma lógica do onMonsterClick
+                const targetIndex = targetZoneIndex === -1 || targetZoneIndex === null ? null : targetZoneIndex;
+                
+                // Acionar animação imediatamente (mesma lógica do onMonsterClick)
+                triggerAttackAnimation(attackerZoneIndex, targetIndex);
+                
+                // Enviar ação de ataque (mesma lógica do onMonsterClick)
+                performAction(duelId, user.id, 'ATTACK', {
+                  attackerZoneIndex,
+                  targetZoneIndex: targetIndex,
+                });
+                
+                // Limpar o estado de ataque (mesmo comportamento do clique)
+                setAttackingMonsterIndex(null);
               }}
               isSelectingTarget={attackingMonsterIndex !== null && currentPhase === 'BATTLE' && isMyTurn}
               canAttack={currentPhase === 'BATTLE' && isMyTurn}
@@ -3619,13 +4011,180 @@ const DuelArena: React.FC = () => {
             />
             </div>
 
+            {/* Animação de Ataque - Centralizada no campo de duelo */}
+            <AnimatePresence>
+              {attackAnimation && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 flex items-center justify-center z-[10000] pointer-events-none"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10000,
+                    pointerEvents: 'none'
+                  }}
+                >
+                  <motion.div
+                    initial={{ scale: 0.8, y: 50 }}
+                    animate={{ scale: 1, y: 0 }}
+                    exit={{ scale: 0.8, y: 50 }}
+                    transition={{ type: "spring", stiffness: 200, damping: 20 }}
+                    className="flex items-center gap-8 bg-black/80 backdrop-blur-md rounded-2xl p-8 border-2 border-yellow-400/50 shadow-2xl"
+                  >
+                    {/* Carta Atacante */}
+                    <motion.div
+                      initial={{ x: -100, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ delay: 0.1, duration: 0.5 }}
+                      className="relative"
+                      style={{ width: '150px', height: '219px' }}
+                    >
+                      <CardImage
+                        card={attackAnimation.attackerCard}
+                        className="w-full h-full rounded-lg border-2 border-yellow-400 shadow-lg"
+                        fallback="/images/fundoCarta.webp"
+                      />
+                      <div className="absolute -bottom-6 left-0 right-0 text-center">
+                        <div className="text-xs text-yellow-300 font-semibold bg-black/70 px-2 py-1 rounded">
+                          ATACANTE
+                        </div>
+                      </div>
+                    </motion.div>
+
+                    {/* X */}
+                    <motion.div
+                      initial={{ scale: 0, rotate: -180 }}
+                      animate={{ scale: 1, rotate: 0 }}
+                      transition={{ delay: 0.3, type: "spring", stiffness: 300 }}
+                      className="text-6xl font-bold text-red-500 drop-shadow-2xl"
+                      style={{ textShadow: '0 0 20px rgba(239, 68, 68, 0.8)' }}
+                    >
+                      ✕
+                    </motion.div>
+
+                    {/* Carta Alvo ou Perfil do Duelista Alvo (Ataque Direto) */}
+                    {attackAnimation.isDirectAttack ? (
+                      <motion.div
+                        initial={{ x: 100, opacity: 0, scale: 0.8 }}
+                        animate={{ x: 0, opacity: 1, scale: 1 }}
+                        transition={{ delay: 0.2, duration: 0.5 }}
+                        className="relative flex flex-col items-center justify-center"
+                      >
+                        {attackAnimation.targetProfileImage ? (
+                          <div className="relative">
+                            <div className="rounded-full border-4 border-red-400 shadow-2xl overflow-hidden bg-gradient-to-br from-red-900/50 to-red-800/30 p-2">
+                              <img
+                                src={attackAnimation.targetProfileImage}
+                                alt="Duelista Alvo"
+                                className="w-32 h-32 md:w-40 md:h-40 lg:w-48 lg:h-48 rounded-full object-cover"
+                                onError={(e) => {
+                                  e.currentTarget.src = '/images/default.png';
+                                }}
+                              />
+                            </div>
+                            <div className="absolute -bottom-4 left-0 right-0 text-center">
+                              <div className="text-xs md:text-sm text-red-300 font-semibold bg-black/70 px-3 py-1 rounded">
+                                ALVO
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="w-32 h-32 md:w-40 md:h-40 lg:w-48 lg:h-48 bg-gradient-to-br from-red-900/50 to-red-800/30 rounded-full border-4 border-red-400 flex items-center justify-center shadow-2xl">
+                            <div className="text-center">
+                              <div className="text-3xl md:text-4xl mb-2">⚔️</div>
+                              <div className="text-xs md:text-sm text-red-300 font-bold">ATAQUE DIRETO</div>
+                            </div>
+                          </div>
+                        )}
+                        {/* Dano */}
+                        <motion.div
+                          initial={{ scale: 0, y: 20 }}
+                          animate={{ scale: 1.2, y: 0 }}
+                          transition={{ delay: 0.5, type: "spring", stiffness: 200 }}
+                          className="absolute -bottom-12 md:-bottom-16 left-0 right-0 text-center"
+                        >
+                          <div className="text-2xl md:text-3xl lg:text-4xl font-bold text-red-400 drop-shadow-lg bg-black/80 px-4 py-2 rounded-lg border-2 border-red-500">
+                            -{attackAnimation.damage.toLocaleString()}
+                          </div>
+                        </motion.div>
+                      </motion.div>
+                    ) : attackAnimation.targetCard ? (
+                      <motion.div
+                        initial={{ x: 100, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        transition={{ delay: 0.2, duration: 0.5 }}
+                        className="relative"
+                        style={{ width: '150px', height: '219px' }}
+                      >
+                        <CardImage
+                          card={attackAnimation.targetCard}
+                          className="w-full h-full rounded-lg border-2 border-red-400 shadow-lg"
+                          fallback="/images/fundoCarta.webp"
+                        />
+                        <div className="absolute -bottom-6 left-0 right-0 text-center">
+                          <div className="text-xs text-red-300 font-semibold bg-black/70 px-2 py-1 rounded">
+                            ALVO
+                          </div>
+                        </div>
+                        {/* Dano */}
+                        <motion.div
+                          initial={{ scale: 0, y: 20 }}
+                          animate={{ scale: 1.2, y: 0 }}
+                          transition={{ delay: 0.5, type: "spring", stiffness: 200 }}
+                          className="absolute -bottom-8 left-0 right-0 text-center"
+                        >
+                          <div className="text-3xl font-bold text-red-400 drop-shadow-lg bg-black/80 px-4 py-2 rounded-lg border-2 border-red-500">
+                            -{attackAnimation.damage.toLocaleString()}
+                          </div>
+                        </motion.div>
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        initial={{ x: 100, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        transition={{ delay: 0.2, duration: 0.5 }}
+                        className="relative flex flex-col items-center justify-center"
+                        style={{ width: '150px', height: '219px' }}
+                      >
+                        <div className="w-full h-full bg-gradient-to-br from-red-900/50 to-red-800/30 rounded-lg border-2 border-red-400 flex items-center justify-center">
+                          <div className="text-center">
+                            <div className="text-4xl mb-2">⚔️</div>
+                            <div className="text-sm text-red-300 font-bold">ATAQUE</div>
+                          </div>
+                        </div>
+                        {/* Dano */}
+                        <motion.div
+                          initial={{ scale: 0, y: 20 }}
+                          animate={{ scale: 1.2, y: 0 }}
+                          transition={{ delay: 0.5, type: "spring", stiffness: 200 }}
+                          className="absolute -bottom-8 left-0 right-0 text-center"
+                        >
+                          <div className="text-3xl font-bold text-red-400 drop-shadow-lg bg-black/80 px-4 py-2 rounded-lg border-2 border-red-500">
+                            -{attackAnimation.damage.toLocaleString()}
+                          </div>
+                        </motion.div>
+                      </motion.div>
+                    )}
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Meu Campo */}
             <DuelField 
               isOpponent={false} 
               deckCount={myDeck.length} 
               handCount={myHand.length}
               monsters={myMonsters}
-              spellTraps={mySpellTraps}
+              spellTraps={filteredMySpellTraps}
               graveyard={myGraveyard}
               extraDeck={myExtraDeck}
               playmatImage={myPlaymatImageUrl}
@@ -3633,8 +4192,8 @@ const DuelArena: React.FC = () => {
               onGraveyardClick={() => setShowGraveyardModal(true)}
               monsterDestroyedThisTurn={monsterDestroyedThisTurn}
               onExtraDeckClick={() => setShowExtraDeckModal(true)}
-              onAttackClick={(zoneIndex) => {
-                // Iniciar seleção de alvo
+              onAttackClick={async (zoneIndex) => {
+                // Iniciar seleção de alvo (botão só aparece em BATTLE)
                 setAttackingMonsterIndex(zoneIndex);
               }}
               canAttack={currentPhase === 'BATTLE' && isMyTurn}
@@ -3694,10 +4253,33 @@ const DuelArena: React.FC = () => {
                                      (typeof cardId === 'string' && cardId.toLowerCase().includes('exiledforce')) ||
                                      (typeof cardName === 'string' && cardName.includes('exiled force'));
                 
+                // Verificar se é Chaos Emperor Dragon
+                const isChaosEmperorDragon = cardId === 'ChaosEmperorDragon' || 
+                                            cardId === 'chaosemperordragon' ||
+                                            cardId === 'Chaos-EmperorDragon' ||
+                                            cardId === 'ChaosEmperor-Dragon' ||
+                                            cardName === 'chaos emperor dragon' ||
+                                            cardName === 'chaos-emperor dragon' ||
+                                            cardName === 'chaosemperordragon' ||
+                                            (typeof cardId === 'string' && cardId.toLowerCase().includes('chaosemperordragon')) ||
+                                            (typeof cardName === 'string' && cardName.includes('chaos emperor dragon'));
+                
+                // Verificar se é Black Luster Soldier - Envoy of the Beginning
+                const isBlackLusterSoldier = cardId === 'BlackLusterSoldierEnvoyOfTheBeginning' ||
+                                            (typeof cardId === 'string' && cardId.toLowerCase().includes('blacklustersoldier')) ||
+                                            (typeof cardName === 'string' && cardName.includes('black luster soldier'));
+                
                 if (duelId && user?.id) {
-                  if (isChaosSorcerer) {
+                  if (isBlackLusterSoldier) {
+                    performAction(duelId, user.id, 'START_BLS_EFFECT', { monsterZoneIndex });
+                  } else if (isChaosSorcerer) {
                     // Ativar efeito do ChaosSorcerer
                     performAction(duelId, user.id, 'START_CHAOS_SORCERER_EFFECT', {
+                      monsterZoneIndex,
+                    });
+                  } else if (isChaosEmperorDragon) {
+                    // Ativar efeito do Chaos Emperor Dragon (não precisa de escolha, descarta todas as cartas automaticamente)
+                    performAction(duelId, user.id, 'ACTIVATE_CHAOS_EMPEROR_DRAGON_EFFECT', {
                       monsterZoneIndex,
                     });
                   } else if (isRedEyesDarknessMetalDragon) {
@@ -3743,6 +4325,7 @@ const DuelArena: React.FC = () => {
               isMyTurn={isMyTurn}
               currentPhase={currentPhase}
               currentTurn={currentTurn}
+              turnCounter={myTurnCounter}
               positionChangedThisTurn={positionChangedThisTurn}
               onSpellTrapSlotClick={(zoneIndex) => {
                 if (selectingSpellTrapSlot) {
@@ -3755,8 +4338,36 @@ const DuelArena: React.FC = () => {
                   setSelectingSpellTrapSlot(null);
                 }
               }}
-              onSpellTrapDrop={(card, zoneIndex, position) => {
-                if (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') {
+              onSpellTrapDrop={async (card, zoneIndex, position) => {
+                // Se estiver em STANDBY, mudar automaticamente para MAIN1
+                if (currentPhase === 'STANDBY') {
+                  console.log(`🔄 [onSpellTrapDrop] Tentativa de invocar na STANDBY - mudando automaticamente para MAIN1`);
+                  const socket = getSocket();
+                  if (socket && socket.connected) {
+                    socket.emit('goToPhase', { duelId, userId: user.id, targetPhase: 'MAIN1' });
+                    await new Promise(resolve => setTimeout(resolve, 80));
+                  }
+                }
+                
+                if (currentPhase === 'MAIN1' || currentPhase === 'MAIN2' || currentPhase === 'STANDBY') {
+                  // Passar isDragged=true porque a carta foi arrastada, não clicada
+                  handlePlaceCardOnField(card, position, zoneIndex, card.type || card.cardType, true);
+                }
+              }}
+              onMonsterFromHandDrop={async (card, zoneIndex, position) => {
+                // Se estiver em STANDBY, mudar automaticamente para MAIN1
+                if (currentPhase === 'STANDBY') {
+                  console.log(`🔄 [onMonsterFromHandDrop] Tentativa de invocar na STANDBY - mudando automaticamente para MAIN1`);
+                  const socket = getSocket();
+                  if (socket && socket.connected) {
+                    socket.emit('goToPhase', { duelId, userId: user.id, targetPhase: 'MAIN1' });
+                    await new Promise(resolve => setTimeout(resolve, 80));
+                  }
+                }
+                
+                // Invocar monstro em modo de ataque quando arrastado da mão
+                // position já vem como 'attack' do DuelField
+                if (currentPhase === 'MAIN1' || currentPhase === 'MAIN2' || currentPhase === 'STANDBY') {
                   // Passar isDragged=true porque a carta foi arrastada, não clicada
                   handlePlaceCardOnField(card, position, zoneIndex, card.type || card.cardType, true);
                 }
@@ -3959,35 +4570,7 @@ const DuelArena: React.FC = () => {
               </motion.div>
             )}
 
-            {/* Aviso de seleção de alvo para efeito do ChaosSorcerer */}
-            {isSelectingChaosSorcererTarget && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') && (
-              <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-gradient-to-r from-indigo-600/95 to-purple-600/95 text-white px-6 py-3 rounded-lg shadow-2xl border-2 border-indigo-400/70"
-              >
-                <div className="flex items-center gap-4">
-                  <span className="text-2xl">🌟</span>
-                  <div>
-                    <p className="font-bold text-lg">Efeito do ChaosSorcerer</p>
-                    <p className="text-sm opacity-90">Selecione 1 monstro face-up do oponente para banir (você não poderá atacar neste turno)</p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setIsSelectingChaosSorcererTarget(false);
-                      setChaosSorcererMonsterZoneIndex(null);
-                      // Cancelar a escolha pendente no backend
-                      if (duelId && user?.id) {
-                        performAction(duelId, user.id, 'CANCEL_EFFECT', {});
-                      }
-                    }}
-                    className="ml-4 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-all"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </motion.div>
-            )}
+            {/* Aviso de seleção de alvo para efeito do ChaosSorcerer - REMOVIDO (agora usa modal) */}
 
             {/* Overlay de Fase - Aparece rapidamente quando muda */}
             <AnimatePresence>
@@ -4146,13 +4729,9 @@ const DuelArena: React.FC = () => {
                       return;
                     }
                     
-                    // Se clicou na fase atual (END), avançar fase (que vai verificar se precisa descartar ou avançar turno)
+                    // Se clicou na fase atual (END), descartar automaticamente e avançar turno
                     if (isActive && phase === 'END') {
-                      // Se tem mais de 6 cartas, não pode avançar ainda - precisa descartar primeiro
-                      if (myHand.length > 6) {
-                        return;
-                      }
-                      // Se tem 6 ou menos cartas, avançar fase (que vai avançar o turno automaticamente)
+                      // O backend vai descartar automaticamente se tiver mais de 6 cartas e avançar o turno
                       socket.emit('nextPhase', { duelId, userId: user.id });
                       return;
                     }
@@ -4174,19 +4753,16 @@ const DuelArena: React.FC = () => {
                     <React.Fragment key={phase}>
                       {isMyTurn ? (
                         <>
-                          {phase === 'END' && isActive && myHand.length <= 6 ? (
+                          {phase === 'END' && isActive ? (
                             <motion.button
                               whileHover={{ y: -2 }}
                               whileTap={{ scale: 0.95 }}
                               onClick={() => handleEndTurn()}
                               className="px-6 py-2.5 rounded-xl font-bold text-sm transition-all border-2 min-w-[120px]  bg-gradient-to-r from-green-600 to-emerald-600 text-white border-green-300 shadow-xl shadow-green-500/60 hover:from-green-500 hover:to-emerald-500 cursor-pointer ring-2 ring-green-400/50"
-                              title="Finalizar Turno"
+                              title={myHand.length > 6 ? `Finalizar Turno (${myHand.length - 6} cartas serão descartadas automaticamente)` : "Finalizar Turno"}
                             >
                               ✓ Finalizar
                             </motion.button>
-                          ) : phase === 'END' && isActive && myHand.length > 6 ? (
-                            // Não mostrar botão quando tem mais de 6 cartas - apenas o aviso de descarte
-                            null
                           ) : (
                             <motion.button
                               whileHover={!isPast && phase !== 'DRAW' && !isBattlePhaseDisabled ? { y: -2, scale: 1.05 } : {}}
@@ -4324,7 +4900,9 @@ const DuelArena: React.FC = () => {
                   
                   const cardType = card.type || card.cardType;
                   const isSpellOrTrap = cardType === 'Spell' || cardType === 'Trap';
-                  const canDrag = isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') && isSpellOrTrap;
+                  const isMonster = cardType === 'Monster';
+                  // Permitir arrastar monstros e spells/traps nas fases principais ou STANDBY
+                  const canDrag = isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2' || currentPhase === 'STANDBY') && (isMonster || isSpellOrTrap);
                   
                   return (
                   <motion.div
@@ -4385,44 +4963,17 @@ const DuelArena: React.FC = () => {
                       fallback="/images/fundoCarta.webp"
                     />
                     
-                    {/* Botões de ação - Mostra caveira na fase END quando precisa descartar, senão mostra botões normais */}
+                    {/* Botões de ação - Mostra botões de invocar */}
                     {(() => {
                       const isZoomed = zoomedCard && isSameCard(zoomedCard, card);
                       const shouldShow = isMyTurn && !isZoomed;
-                      const needsDiscard = currentPhase === 'END' && myHand.length > 6;
                       const cardType = card.type || card.cardType;
                       const isMonster = cardType === 'Monster';
                       const isSpellOrTrap = cardType === 'Spell' || cardType === 'Trap';
                       
                       if (!shouldShow) return null;
                       
-                      // Se precisa descartar, mostrar botão de caveira
-                      if (needsDiscard) {
-                        return (
-                          <div 
-                            className="absolute top-1 left-1 pointer-events-auto z-50"
-                            style={{ 
-                              zIndex: 10000
-                            }}
-                          >
-                                    <motion.button
-                                      whileHover={{ y: -2 }}
-                                      whileTap={{ scale: 0.9 }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDiscardCard(card);
-                                setZoomedCard(null);
-                              }}
-                              className="w-10 h-10 bg-gradient-to-br from-red-700/90 to-red-800/90 hover:from-red-600 hover:to-red-700 border-2 border-red-500/70 rounded-lg flex items-center justify-center transition-all cursor-pointer shadow-lg shadow-red-500/50  hover:shadow-red-500/70"
-                              title="Descartar para o Cemitério"
-                            >
-                              <span className="text-xl">💀</span>
-                            </motion.button>
-                          </div>
-                        );
-                      }
-                      
-                      // Senão, mostrar botões normais de invocar
+                      // Mostrar botões normais de invocar
                       if (isMonster || isSpellOrTrap) {
                         return (
                           <div 
@@ -4435,8 +4986,14 @@ const DuelArena: React.FC = () => {
                               <>
                                 {(() => {
                                   const cardLevel = card.level || 0;
-                                  const isInMainPhase = (currentPhase === 'MAIN1' || currentPhase === 'MAIN2');
+                                  // Permitir invocação em MAIN1, MAIN2 ou STANDBY (STANDBY muda automaticamente para MAIN1)
+                                  const isInMainPhase = (currentPhase === 'MAIN1' || currentPhase === 'MAIN2' || currentPhase === 'STANDBY');
                                   const availableMonstersCount = myMonsters.filter(m => m !== null && m !== undefined).length;
+                                  
+                                  // Debug: Log quando não pode invocar
+                                  if (!isInMainPhase && isMonster) {
+                                    console.log(`🔍 [DuelArena] Não está em fase principal - currentPhase: ${currentPhase}, isInMainPhase: ${isInMainPhase}`);
+                                  }
                                   
                                   // Verificar se é Dark Armed Dragon (não pode ser invocado normalmente)
                                   const cardIdCarta = card.idCarta || card.id || card.cardId || '';
@@ -4482,11 +5039,25 @@ const DuelArena: React.FC = () => {
                                   const canSummonWithoutTribute = (cardLevel <= 4 || canSummonSwiftGaiaWithoutTribute) && !normalSummonUsed && isInMainPhase;
                                   const canSummonWithTribute = requiredTributes > 0 && !normalSummonUsed && isInMainPhase && availableMonstersCount >= requiredTributes;
                                   const canSummon = canSummonWithoutTribute || canSummonWithTribute;
+                                  
                                   // isDisabled será true quando normalSummonUsed é true, mas os botões ainda devem aparecer
                                   // SEMPRE mostrar os botões quando isMonster é true, independente de isDisabled
                                   const isDisabled = !canSummon;
                                   
                                   const handleSummonClick = async (position: 'attack' | 'defense' | 'set') => {
+                                    // Se estiver em STANDBY, mudar automaticamente para MAIN1
+                                    if (currentPhase === 'STANDBY') {
+                                      console.log(`🔄 [handleSummonClick] Tentativa de invocar na STANDBY - mudando automaticamente para MAIN1`);
+                                      const socket = getSocket();
+                                      if (socket && socket.connected) {
+                                        socket.emit('goToPhase', { duelId, userId: user.id, targetPhase: 'MAIN1' });
+                                        await new Promise(resolve => setTimeout(resolve, 80));
+                                      } else {
+                                        alert('Erro: Socket não conectado. Não foi possível mudar a fase.');
+                                        return;
+                                      }
+                                    }
+                                    
                                     if (isDisabled) {
                                       if (normalSummonUsed) {
                                         alert('Você já usou sua invocação normal neste turno!');
@@ -4498,13 +5069,14 @@ const DuelArena: React.FC = () => {
                                       return;
                                     }
                                     
+                                    // Só exigir zona vazia quando NÃO for invocação por tributo (por tributo, as zonas são liberadas ao escolher os monstros)
                                     const emptyZoneIndex = myMonsters.findIndex(m => m === null || m === undefined);
-                                    if (emptyZoneIndex === -1) {
+                                    if (requiredTributes === 0 && emptyZoneIndex === -1) {
                                       alert('Todas as zonas de monstro estão ocupadas!');
                                       return;
                                     }
                                     
-                                    // Se precisa de tributo, mostrar modal
+                                    // Se precisa de tributo, mostrar modal (pode abrir mesmo com 5 monstros - ao tributar, libera zona)
                                     if (requiredTributes > 0) {
                                       setTributeModalData({
                                         card,
@@ -4590,18 +5162,6 @@ const DuelArena: React.FC = () => {
                                                                        cardNameForCheck.includes('red-eyes darkness metal dragon') ||
                                                                        (typeof cardIdForCheck === 'string' && cardIdForCheck.toLowerCase().includes('redeyesdarknessmetaldragon')) ||
                                                                        (typeof cardNameForCheck === 'string' && cardNameForCheck.includes('red-eyes darkness metal dragon'));
-                                  
-                                  // Log detalhado de TODAS as cartas na mão para debug
-                                  console.log('🔍 [DuelArena] Verificando carta na mão:', {
-                                    name: card.name || card.cardName,
-                                    idCarta: card.idCarta,
-                                    id: card.id,
-                                    cardId: card.cardId,
-                                    cardName: cardName,
-                                    cardIdCheck: cardIdCheck,
-                                    cardIdForCheck: cardIdForCheck,
-                                    type: card.type || card.cardType
-                                  });
                                   
                                   // Verificação exata como no backend (isExactCard)
                                   // Log se detectou carta Chaos
@@ -4997,24 +5557,42 @@ const DuelArena: React.FC = () => {
 
                                   return (
                                     <>
-                                      {/* Botão de Invocação Especial do Cyber Dragon (se condições forem atendidas) - sempre invoca em ataque */}
+                                      {/* Botões de Invocação Especial do Cyber Dragon: Ataque ou Defesa */}
                                       {canSpecialSummonCyberDragon && (
-                                        <motion.button
-                                          whileHover={{ y: -2 }}
-                                          whileTap={{ scale: 0.9 }}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleSpecialSummonCyberDragon('attack');
-                                          }}
-                                          className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-black/30 border-yellow-400/70 cursor-pointer"
-                                          title={`Invocação Especial - Cyber Dragon em Ataque (ATK: ${card.atk || 0}) - Não conta como invocação normal - Pode mudar para defesa no mesmo turno`}
-                                        >
-                                          <img 
-                                            src="/images/Duelo/SpecialSummon.png" 
-                                            alt="Special Summon" 
-                                            className="w-6 h-6 object-contain"
-                                          />
-                                        </motion.button>
+                                        <>
+                                          <motion.button
+                                            whileHover={{ y: -2 }}
+                                            whileTap={{ scale: 0.9 }}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleSpecialSummonCyberDragon('attack');
+                                            }}
+                                            className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-black/30 border-red-400/70 cursor-pointer"
+                                            title={`Invocação Especial em Ataque (ATK: ${card.atk || 0}) - Não conta como invocação normal`}
+                                          >
+                                            <img 
+                                              src="/images/Duelo/SpecialSummon.png" 
+                                              alt="Special Summon ATK" 
+                                              className="w-6 h-6 object-contain"
+                                            />
+                                          </motion.button>
+                                          <motion.button
+                                            whileHover={{ y: -2 }}
+                                            whileTap={{ scale: 0.9 }}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleSpecialSummonCyberDragon('defense');
+                                            }}
+                                            className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-black/30 border-blue-400/70 cursor-pointer"
+                                            title={`Invocação Especial em Defesa (DEF: ${card.def || 0}) - Não conta como invocação normal`}
+                                          >
+                                            <img 
+                                              src="/images/Duelo/SpecialSummon.png" 
+                                              alt="Special Summon DEF" 
+                                              className="w-6 h-6 object-contain"
+                                            />
+                                          </motion.button>
+                                        </>
                                       )}
                                       
                                       {/* Botão de Invocação Normal em Ataque (face-up) */}
@@ -5085,27 +5663,67 @@ const DuelArena: React.FC = () => {
                             ) : (
                               <>
                                 {/* Botão "Ativar" - apenas para Spell cards (ativar da mão) */}
-                                {(cardType === 'Spell' || card.type === 'Spell' || card.cardType === 'Spell') && (
+                                {(cardType === 'Spell' || card.type === 'Spell' || card.cardType === 'Spell') && (() => {
+                                  // Verificar se é Last Will
+                                  const cardId = (card.id || card.cardId || card.idCarta || '').toLowerCase();
+                                  const cardName = (card.name || card.cardName || '').toLowerCase();
+                                  const isLastWill = cardId.includes('lastwill') || cardName.includes('last will');
+                                  
+                                  // Para Last Will, verificar se um monstro foi destruído neste turno
+                                  if (isLastWill && !monsterDestroyedThisTurn) {
+                                    return null; // Não mostrar botão se Last Will e nenhum monstro foi destruído
+                                  }
+                                  
+                                  return (
                                   <motion.button
                                     whileHover={{ y: -2 }}
                                     whileTap={{ scale: 0.9 }}
                                     onClick={async (e) => {
                                       e.stopPropagation();
-                                      // Encontrar primeiro slot vazio à esquerda
-                                      const emptyZoneIndex = mySpellTraps.findIndex(s => s === null || s === undefined);
-                                      if (emptyZoneIndex !== -1) {
-                                        // Acionar animação antes de ativar
-                                        await triggerCardPlacementAnimation(card, emptyZoneIndex, false);
-                                        // Ativar Spell da mão (vai direto para face-up)
+                                      
+                                      // Verificar se a carta precisa de modal antes de revelar
+                                      // Essas cartas não vão para o campo - vão direto para o cemitério após ativação
+                                      const cardName = (card.name || card.cardName || '').toLowerCase().replace(/\s+/g, '');
+                                      const cardId = (card.id || card.cardId || card.idCarta || '').toLowerCase();
+                                      const needsModal = 
+                                        cardName.includes('mysticalspacetyphoon') ||
+                                        cardName.includes('mysticalspacetyphoon') ||
+                                        cardId.includes('mysticalspacetyphoon') ||
+                                        cardName.includes('monsterreborn') ||
+                                        cardName.includes('changeofheart') ||
+                                        cardName.includes('braincontrol') ||
+                                        cardName.includes('snowmaneater') ||
+                                        cardName.includes('lastwill') ||
+                                        cardId.includes('lastwill');
+                                      
+                                      if (needsModal) {
+                                        // Carta precisa de modal - não precisa de zona vazia (não vai para o campo)
+                                        // Enviar zoneIndex como null ou undefined - o backend vai ignorar
                                         performAction(duelId, user.id, 'ACTIVATE_SPELL_TRAP', {
                                           cardId: card.id || card.cardId || card.idCarta,
                                           cardName: card.name,
-                                          zoneIndex: emptyZoneIndex,
+                                          zoneIndex: null, // null porque não vai para o campo
                                           position: 'face-up',
+                                          instanceId: card.instanceId,
                                         });
                                         setZoomedCard(null);
                                       } else {
-                                        alert('Todas as zonas de spell/trap estão ocupadas!');
+                                        // Carta normal - precisa de zona vazia
+                                        const emptyZoneIndex = mySpellTraps.findIndex(s => s === null || s === undefined);
+                                        if (emptyZoneIndex !== -1) {
+                                          // Acionar animação antes de ativar
+                                          await triggerCardPlacementAnimation(card, emptyZoneIndex, false);
+                                          // Ativar Spell da mão (vai direto para face-up)
+                                          performAction(duelId, user.id, 'ACTIVATE_SPELL_TRAP', {
+                                            cardId: card.id || card.cardId || card.idCarta,
+                                            cardName: card.name,
+                                            zoneIndex: emptyZoneIndex,
+                                            position: 'face-up',
+                                          });
+                                          setZoomedCard(null);
+                                        } else {
+                                          alert('Todas as zonas de spell/trap estão ocupadas!');
+                                        }
                                       }
                                     }}
                                     className="w-8 h-8 bg-gradient-to-br from-green-600/90 to-green-700/90 hover:from-green-500 hover:to-green-600 border-2 border-green-400/70 rounded-lg flex items-center justify-center transition-all cursor-pointer shadow-lg shadow-green-500/40  hover:shadow-green-500/60"
@@ -5113,7 +5731,8 @@ const DuelArena: React.FC = () => {
                                   >
                                     <span className="text-sm">✨</span>
                                   </motion.button>
-                                )}
+                                  );
+                                })()}
                                 
                                 {/* Botão "Setar" - para Spell e Trap cards (colocar no campo em set) */}
                                 <motion.button
@@ -5158,9 +5777,9 @@ const DuelArena: React.FC = () => {
 
       {/* Aviso de Descarte (quando está na fase END com mais de 6 cartas) */}
       {currentPhase === 'END' && isMyTurn && myHand.length > 6 && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[9999] bg-gradient-to-r from-red-600 to-orange-600 text-white px-6 py-3 rounded-xl border-2 border-red-400 shadow-2xl ">
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[9999] bg-gradient-to-r from-yellow-600 to-orange-600 text-white px-6 py-3 rounded-xl border-2 border-yellow-400 shadow-2xl ">
           <p className="text-lg font-bold text-center">
-            💀 Você tem {myHand.length} cartas na mão! Clique nas cartas com 💀 para descartá-las até ficar com 6.
+            ⚠️ Você tem {myHand.length} cartas na mão! {myHand.length - 6} carta(s) serão descartadas automaticamente ao finalizar o turno.
           </p>
         </div>
       )}
@@ -5773,10 +6392,12 @@ const DuelArena: React.FC = () => {
       {showGracefulCharityModal && (
         <div
           id="graceful-charity-overlay"
-          className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+          className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-lg"
           style={{ 
             zIndex: 10000,
-            pointerEvents: 'auto'
+            pointerEvents: 'auto',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
           } as React.CSSProperties}
         >
             <motion.div
@@ -5930,7 +6551,7 @@ const DuelArena: React.FC = () => {
       <AnimatePresence>
         {showMonsterRebornModal && monsterRebornData && (
           <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-xl"
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
@@ -5940,14 +6561,14 @@ const DuelArena: React.FC = () => {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl border-2 border-purple-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+              className="bg-gradient-to-br from-gray-900/80 via-gray-800/80 to-gray-900/80 backdrop-blur-lg rounded-2xl border-2 border-purple-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
             >
               <div className="p-8">
                 {/* Header */}
                 <div className="flex justify-between items-center mb-6 border-b-2 border-purple-500/30 pb-4">
                   <div>
                     <h2 className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-purple-600 bg-clip-text text-transparent">
-                      ⚰️ Monster Reborn
+                      Monster Reborn
                     </h2>
                     <p className="text-gray-300 mt-2">
                       Escolha um monstro do seu cemitério ou do cemitério do oponente para reviver
@@ -6155,6 +6776,119 @@ const DuelArena: React.FC = () => {
         )}
       </AnimatePresence>
 
+      {/* Modal de Premature Burial - escolher 1 monstro do próprio cemitério */}
+      <AnimatePresence>
+        {showPrematureBurialModal && prematureBurialGraveyard.length > 0 && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-xl"
+            onClick={(e) => {}}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-gradient-to-br from-gray-900/80 via-amber-900/30 to-gray-900/80 backdrop-blur-lg rounded-2xl border-2 border-amber-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              <div className="p-8">
+                <div className="flex justify-between items-center mb-6 border-b-2 border-amber-500/30 pb-4">
+                  <div>
+                    <h2 className="text-4xl font-bold bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent">
+                      Premature Burial
+                    </h2>
+                    <p className="text-gray-300 mt-2">
+                      Escolha um monstro do seu cemitério para reviver em modo de ataque (Premature Burial será equipada ao monstro)
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id) {
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
+                      setShowPrematureBurialModal(false);
+                      setPrematureBurialGraveyard([]);
+                      setSelectedPrematureBurialIndex(null);
+                    }}
+                    className="text-gray-400 hover:text-red-400 text-4xl font-bold transition-colors hover:scale-110 transform"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="mb-6">
+                  <h3 className="text-2xl font-bold text-white mb-4">Meu Cemitério</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    {prematureBurialGraveyard.map((monster: any, index: number) => {
+                      const isSelected = selectedPrematureBurialIndex === index;
+                      return (
+                        <motion.div
+                          key={`premature-burial-gy-${index}`}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => setSelectedPrematureBurialIndex(index)}
+                          className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                            isSelected ? 'border-amber-400 ring-4 ring-amber-400/50 shadow-lg shadow-amber-500/50' : 'border-gray-600 hover:border-amber-500/50'
+                          }`}
+                          style={{ width: '120px', height: '175px' }}
+                        >
+                          <CardImage card={monster} className="w-full h-full" fallback="/images/fundoCarta.webp" />
+                          {isSelected && (
+                            <div className="absolute inset-0 bg-amber-400/30 flex items-center justify-center">
+                              <div className="bg-amber-400/95 text-black px-3 py-1.5 rounded-lg font-bold text-sm">Selecionado</div>
+                            </div>
+                          )}
+                          <div className="absolute bottom-1 left-1 right-1 text-center">
+                            <p className="text-white text-xs font-semibold bg-black/70 px-2 py-1 rounded truncate">
+                              {monster.name || 'Monstro'}
+                            </p>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="flex justify-center gap-4 mt-6">
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id) {
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
+                      setShowPrematureBurialModal(false);
+                      setPrematureBurialGraveyard([]);
+                      setSelectedPrematureBurialIndex(null);
+                    }}
+                    className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id && selectedPrematureBurialIndex !== null) {
+                        performAction(duelId, user.id, 'PREMATURE_BURIAL_CHOICE', {
+                          chosenMonster: { index: selectedPrematureBurialIndex },
+                        });
+                        setShowPrematureBurialModal(false);
+                        setPrematureBurialGraveyard([]);
+                        setSelectedPrematureBurialIndex(null);
+                      }
+                    }}
+                    disabled={selectedPrematureBurialIndex === null}
+                    className={`px-8 py-3 rounded-lg font-bold transition-colors ${
+                      selectedPrematureBurialIndex !== null
+                        ? 'bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white cursor-pointer'
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {selectedPrematureBurialIndex !== null ? '✅ Reviver e Equipar' : 'Selecione um monstro'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Animação de carta saindo da mão para o campo */}
       <AnimatePresence>
         {cardPlacementAnimation && (
@@ -6187,7 +6921,7 @@ const DuelArena: React.FC = () => {
                 scale: 0.8,
               }}
               transition={{
-                duration: 0.5,
+                duration: 0.25,
                 ease: [0.25, 0.46, 0.45, 0.94], // easeOutQuad
               }}
               style={{
@@ -6208,22 +6942,20 @@ const DuelArena: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Modal de ChaosSorcerer Special Summon */}
-      {/* Debug: Log do estado do modal */}
-      {(() => {
-        console.log(`🔍 [DuelArena Render] Estado do modal ChaosSorcerer:`, {
-          showChaosSorcererModal,
-          hasChaosSorcererData: !!chaosSorcererData,
-          lightMonstersCount: chaosSorcererData?.lightMonsters?.length || 0,
-          darkMonstersCount: chaosSorcererData?.darkMonsters?.length || 0,
-          shouldRender: showChaosSorcererModal && chaosSorcererData
-        });
-        return null;
-      })()}
+      {/* Modal de Invocação Especial Chaos (Chaos Sorcerer / Chaos Emperor Dragon / Black Luster Soldier) */}
       <AnimatePresence>
-        {showChaosSorcererModal && chaosSorcererData && (
+        {showChaosSorcererModal && chaosSorcererData && (() => {
+          const cardId = (chaosSorcererData?.cardId ?? '').toString();
+          const rawName = chaosSorcererData?.cardName || 'Carta Chaos';
+          const idLower = cardId.toLowerCase();
+          const nameLower = typeof rawName === 'string' ? rawName.toLowerCase().replace(/\s+/g, '') : '';
+          const isCED = idLower === 'chaosemperordragon' || nameLower === 'chaosemperordragon' || nameLower.includes('chaosemperordragon');
+          const isChaosSorcerer = idLower === 'chaossorcerer' || nameLower === 'chaossorcerer';
+          const isBLS = idLower.includes('blacklustersoldier') || nameLower.includes('blacklustersoldier') || nameLower.includes('envoy of the beginning');
+          const displayName = isCED ? 'Chaos Emperor Dragon' : isChaosSorcerer ? 'Chaos Sorcerer' : isBLS ? 'Black Luster Soldier - Envoy of the Beginning' : rawName;
+          return (
           <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-xl"
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher os monstros
             }}
@@ -6233,13 +6965,13 @@ const DuelArena: React.FC = () => {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-2 border-purple-500/50"
+              className="bg-gray-900/70 backdrop-blur-xl rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-2 border-purple-500/50"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
                   <div>
                     <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-indigo-400">
-                      ✨ {chaosSorcererData?.cardName || 'Carta Chaos'} - Invocação Especial
+                      {displayName} - Invocação Especial
                     </h2>
                     <p className="text-gray-300 mt-2">
                       Escolha 1 monstro LIGHT e 1 monstro DARK do seu cemitério para banir
@@ -6248,7 +6980,6 @@ const DuelArena: React.FC = () => {
                   <button
                     onClick={() => {
                       if (duelId && user?.id) {
-                        // Cancelar ativação da carta no backend
                         performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
                       }
                       setShowChaosSorcererModal(false);
@@ -6256,16 +6987,16 @@ const DuelArena: React.FC = () => {
                       setSelectedLightMonster(null);
                       setSelectedDarkMonster(null);
                     }}
-                    className="text-gray-400 hover:text-red-400 text-4xl font-bold transition-colors hover:scale-110 transform"
+                    className="text-gray-400 hover:text-red-400 text-2xl font-bold transition-colors hover:scale-110 transform px-2"
                   >
-                    ✕
+                    X
                   </button>
                 </div>
 
                 {/* Seção: Monstros LIGHT */}
                 {chaosSorcererData.lightMonsters.length > 0 && (
                   <div className="mb-6">
-                    <h3 className="text-2xl font-bold text-yellow-400 mb-4">💡 Monstros LIGHT</h3>
+                    <h3 className="text-2xl font-bold text-yellow-400 mb-4">Monstros LIGHT</h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                       {chaosSorcererData.lightMonsters.map((monster: any, index: number) => {
                         // Usar instanceId ou graveyardIndex como identificador único
@@ -6300,7 +7031,7 @@ const DuelArena: React.FC = () => {
                             />
                             {isSelected && (
                               <div className="absolute top-2 right-2 bg-yellow-500 text-black text-xs font-bold px-2 py-1 rounded-full">
-                                ✓
+                                OK
                               </div>
                             )}
                           </motion.div>
@@ -6313,7 +7044,7 @@ const DuelArena: React.FC = () => {
                 {/* Seção: Monstros DARK */}
                 {chaosSorcererData.darkMonsters.length > 0 && (
                   <div className="mb-6">
-                    <h3 className="text-2xl font-bold text-purple-400 mb-4">🌑 Monstros DARK</h3>
+                    <h3 className="text-2xl font-bold text-purple-400 mb-4">Monstros DARK</h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                       {chaosSorcererData.darkMonsters.map((monster: any, index: number) => {
                         // Usar instanceId ou graveyardIndex como identificador único
@@ -6348,7 +7079,7 @@ const DuelArena: React.FC = () => {
                             />
                             {isSelected && (
                               <div className="absolute top-2 right-2 bg-purple-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                                ✓
+                                OK
                               </div>
                             )}
                           </motion.div>
@@ -6393,25 +7124,56 @@ const DuelArena: React.FC = () => {
                         setSelectedLightMonster(null);
                         setSelectedDarkMonster(null);
                       }}
-                      className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                      className="px-8 py-3 bg-gray-700/80 hover:bg-gray-600/80 text-white rounded-lg font-bold transition-colors backdrop-blur-sm"
                     >
                       Cancelar
                     </button>
                     <button
                       onClick={async () => {
                         if (duelId && user?.id && selectedLightMonster !== null && selectedDarkMonster !== null) {
-                          // Encontrar zona vazia
                           const emptyZoneIndex = myMonsters.findIndex(m => m === null || m === undefined);
                           if (emptyZoneIndex === -1) {
                             alert('Todas as zonas de monstro estão ocupadas!');
                             return;
                           }
                           
-                          // Fechar modal de seleção de monstros primeiro
                           setShowChaosSorcererModal(false);
                           
-                          // Mostrar popup para escolher posição
-                          const position = window.confirm('✨ Invocar ChaosSorcerer em Posição de ATAQUE?\n\nOK = Ataque\nCancelar = Defesa') ? 'attack' : 'defense';
+                          const cardId = chaosSorcererData.cardId || '';
+                          const cardName = chaosSorcererData?.cardName || 'Carta Chaos';
+                          const cardNameLower = cardName.toLowerCase();
+                          const isChaosEmperorDragon = cardId === 'ChaosEmperorDragon' || 
+                                                      cardId === 'chaosemperordragon' ||
+                                                      cardId === 'Chaos-EmperorDragon' ||
+                                                      cardId === 'ChaosEmperor-Dragon' ||
+                                                      cardNameLower === 'chaos emperor dragon' ||
+                                                      cardNameLower === 'chaos-emperor dragon' ||
+                                                      cardNameLower === 'chaosemperordragon' ||
+                                                      (typeof cardId === 'string' && cardId.toLowerCase().includes('chaosemperordragon')) ||
+                                                      (typeof cardNameLower === 'string' && cardNameLower.includes('chaos emperor dragon'));
+                          const isChaosSorcerer = cardId === 'ChaosSorcerer' || 
+                                                  cardId === 'chaossorcerer' ||
+                                                  cardNameLower === 'chaos sorcerer' ||
+                                                  cardNameLower === 'chaossorcerer' ||
+                                                  (typeof cardId === 'string' && cardId.toLowerCase().includes('chaossorcerer')) ||
+                                                  (typeof cardNameLower === 'string' && cardNameLower.includes('chaos sorcerer'));
+                          const isBlackLusterSoldier = cardId === 'BlackLusterSoldierEnvoyOfTheBeginning' ||
+                                                      cardId === 'blacklustersoldierenvoyofthebeginning' ||
+                                                      cardId === 'Black-LusterSoldierEnvoyOfTheBeginning' ||
+                                                      cardNameLower === 'black luster soldier - envoy of the beginning' ||
+                                                      cardNameLower === 'black luster soldier envoy of the beginning' ||
+                                                      cardNameLower === 'blacklustersoldierenvoyofthebeginning' ||
+                                                      (typeof cardId === 'string' && cardId.toLowerCase().includes('blacklustersoldierenvoyofthebeginning')) ||
+                                                      (typeof cardNameLower === 'string' && cardNameLower.includes('black luster soldier'));
+                          
+                          // Se for uma dessas cartas Chaos, sempre invocar em ataque sem mostrar modal
+                          // Caso contrário, mostrar popup para escolher posição
+                          let position: 'attack' | 'defense';
+                          if (isChaosEmperorDragon || isChaosSorcerer || isBlackLusterSoldier) {
+                            position = 'attack';
+                          } else {
+                            position = window.confirm(`✨ Invocar ${displayName} em Posição de ATAQUE?\n\nOK = Ataque\nCancelar = Defesa`) ? 'attack' : 'defense';
+                          }
                           
                           // Obter os monstros selecionados com seus identificadores únicos
                           const selectedLightMonsterData = chaosSorcererData.lightMonsters[selectedLightMonster.arrayIndex];
@@ -6422,6 +7184,7 @@ const DuelArena: React.FC = () => {
                           // Enviar ação para banir monstros e invocar
                           // Usar instanceId ou graveyardIndex para identificar cada carta única
                           performAction(duelId, user.id, 'CHAOS_SORCERER_SUMMON_CHOICE', {
+                            cardId: chaosSorcererData.cardId,
                             lightMonsterIndex: selectedLightMonster.arrayIndex,
                             darkMonsterIndex: selectedDarkMonster.arrayIndex,
                             lightMonsterInstanceId: selectedLightMonster.instanceId || selectedLightMonsterData?.instanceId,
@@ -6447,10 +7210,279 @@ const DuelArena: React.FC = () => {
                           : 'bg-gray-600 text-gray-400 cursor-not-allowed'
                       }`}
                     >
-                      {selectedLightMonster !== null && selectedDarkMonster !== null ? `✅ Invocar ${chaosSorcererData?.cardName || 'Carta Chaos'}` : 'Selecione 1 LIGHT e 1 DARK'}
+                      {selectedLightMonster !== null && selectedDarkMonster !== null ? `Invocar ${displayName}` : 'Selecione 1 LIGHT e 1 DARK'}
                     </button>
                   </div>
                 ) : null}
+              </div>
+            </motion.div>
+          </div>
+          );
+        })()}
+      </AnimatePresence>
+
+      {/* Modal de Monster Reincarnation - Descartar Carta da Mão */}
+      <AnimatePresence>
+        {showMonsterReincarnationDiscardModal && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-xl"
+            onClick={(e) => {
+              // Não fechar ao clicar fora - precisa escolher uma carta
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-gradient-to-br from-gray-900/80 via-gray-800/80 to-gray-900/80 backdrop-blur-lg rounded-2xl border-2 border-yellow-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              <div className="p-8">
+                {/* Header */}
+                <div className="flex justify-between items-center mb-6 border-b-2 border-yellow-500/30 pb-4">
+                  <div>
+                    <h2 className="text-4xl font-bold bg-gradient-to-r from-yellow-400 to-yellow-600 bg-clip-text text-transparent">
+                      Monster Reincarnation
+                    </h2>
+                    <p className="text-gray-300 mt-2">
+                      Descartar 1 carta da sua mão
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id) {
+                        // Cancelar ativação da carta no backend
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
+                      setShowMonsterReincarnationDiscardModal(false);
+                      setMonsterReincarnationHand([]);
+                      setSelectedMonsterReincarnationCard(null);
+                    }}
+                    className="text-gray-400 hover:text-red-400 text-4xl font-bold transition-colors hover:scale-110 transform"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Grid de Cartas */}
+                {monsterReincarnationHand.length === 0 ? (
+                  <div className="text-center py-8 text-slate-400">
+                    <p className="text-lg mb-4">Você não tem cartas na mão</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4 mb-6">
+                    {monsterReincarnationHand.map((card: any, index: number) => {
+                      const cardInstanceId = card.instanceId || `card-${index}`;
+                      const uniqueKey = `monster-reincarnation-discard-card-${index}-${cardInstanceId}`;
+                      const isSelected = selectedMonsterReincarnationCard === cardInstanceId;
+                      
+                      return (
+                        <motion.div
+                          key={uniqueKey}
+                          initial={{ opacity: 0, scale: 0.8, y: 20 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          transition={{ delay: index * 0.03 }}
+                          onClick={() => {
+                            setSelectedMonsterReincarnationCard(cardInstanceId);
+                          }}
+                          className={`relative cursor-pointer group ${
+                            isSelected ? 'ring-4 ring-yellow-500 scale-105' : 'hover:scale-105'
+                          } transition-all duration-200`}
+                        >
+                          <img
+                            src={card.imageUrl || card.cardImage || '/card-back.jpg'}
+                            alt={card.name || card.cardName || 'Carta'}
+                            className="w-full h-auto rounded-lg shadow-lg"
+                          />
+                          {isSelected && (
+                            <div className="absolute inset-0 bg-yellow-500/30 rounded-lg flex items-center justify-center">
+                              <div className="bg-yellow-500 text-white px-3 py-1 rounded-full font-bold text-sm">
+                                Selecionada
+                              </div>
+                            </div>
+                          )}
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Botões */}
+                <div className="flex justify-end gap-4 mt-6">
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id) {
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
+                      setShowMonsterReincarnationDiscardModal(false);
+                      setMonsterReincarnationHand([]);
+                      setSelectedMonsterReincarnationCard(null);
+                    }}
+                    className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id && selectedMonsterReincarnationCard) {
+                        console.log(`🎯 Monster Reincarnation: Descartando carta:`, selectedMonsterReincarnationCard);
+                        
+                        performAction(duelId, user.id, 'MONSTER_REINCARNATION_DISCARD_CHOICE', {
+                          instanceIdToDiscard: selectedMonsterReincarnationCard,
+                        });
+                        
+                        // Fechar modal de descarte (o modal de cemitério será aberto pelo backend)
+                        setShowMonsterReincarnationDiscardModal(false);
+                        setMonsterReincarnationHand([]);
+                        setSelectedMonsterReincarnationCard(null);
+                      }
+                    }}
+                    disabled={!selectedMonsterReincarnationCard}
+                    className={`px-8 py-3 rounded-lg font-bold transition-colors ${
+                      selectedMonsterReincarnationCard
+                        ? 'bg-gradient-to-r from-yellow-600 to-yellow-700 hover:from-yellow-500 hover:to-yellow-600 text-white cursor-pointer'
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {selectedMonsterReincarnationCard ? '✅ Descartar Carta' : 'Selecione uma carta'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Monster Reincarnation - Escolher Monstro do Cemitério */}
+      <AnimatePresence>
+        {showMonsterReincarnationGraveyardModal && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-xl"
+            onClick={(e) => {
+              // Não fechar ao clicar fora - precisa escolher um monstro
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-gradient-to-br from-gray-900/80 via-gray-800/80 to-gray-900/80 backdrop-blur-lg rounded-2xl border-2 border-yellow-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              <div className="p-8">
+                {/* Header */}
+                <div className="flex justify-between items-center mb-6 border-b-2 border-yellow-500/30 pb-4">
+                  <div>
+                    <h2 className="text-4xl font-bold bg-gradient-to-r from-yellow-400 to-yellow-600 bg-clip-text text-transparent">
+                      Monster Reincarnation
+                    </h2>
+                    <p className="text-gray-300 mt-2">
+                      Escolha 1 monstro do seu cemitério para devolver à sua mão
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id) {
+                        // Cancelar ativação da carta no backend
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
+                      setShowMonsterReincarnationGraveyardModal(false);
+                      setMonsterReincarnationGraveyard([]);
+                      setSelectedMonsterReincarnationMonster(null);
+                    }}
+                    className="text-gray-400 hover:text-red-400 text-4xl font-bold transition-colors hover:scale-110 transform"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Grid de Monstros */}
+                {monsterReincarnationGraveyard.length === 0 ? (
+                  <div className="text-center py-8 text-slate-400">
+                    <p className="text-lg mb-4">Não há monstros no seu cemitério</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4 mb-6">
+                    {monsterReincarnationGraveyard.map((monster: any, index: number) => {
+                      const uniqueKey = `monster-reincarnation-graveyard-${index}-${monster.idCarta || monster.id || monster.cardId || index}`;
+                      const isSelected = selectedMonsterReincarnationMonster === index;
+                      
+                      return (
+                        <motion.div
+                          key={uniqueKey}
+                          initial={{ opacity: 0, scale: 0.8, y: 20 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          transition={{ delay: index * 0.03 }}
+                          onClick={() => {
+                            setSelectedMonsterReincarnationMonster(index);
+                          }}
+                          className={`relative cursor-pointer group ${
+                            isSelected ? 'ring-4 ring-yellow-500 scale-105' : 'hover:scale-105'
+                          } transition-all duration-200`}
+                        >
+                          <img
+                            src={monster.imageUrl || monster.cardImage || '/card-back.jpg'}
+                            alt={monster.name || monster.cardName || 'Monstro'}
+                            className="w-full h-auto rounded-lg shadow-lg"
+                          />
+                          {isSelected && (
+                            <div className="absolute inset-0 bg-yellow-500/30 rounded-lg flex items-center justify-center">
+                              <div className="bg-yellow-500 text-white px-3 py-1 rounded-full font-bold text-sm">
+                                Selecionado
+                              </div>
+                            </div>
+                          )}
+                          <div className="absolute bottom-1 left-1 right-1 text-center pointer-events-none">
+                            <p className="text-white text-xs font-semibold bg-black/70 px-2 py-1 rounded truncate">
+                              {monster.name || monster.cardName || 'Monstro'}
+                            </p>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Botões */}
+                <div className="flex justify-end gap-4 mt-6">
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id) {
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
+                      setShowMonsterReincarnationGraveyardModal(false);
+                      setMonsterReincarnationGraveyard([]);
+                      setSelectedMonsterReincarnationMonster(null);
+                    }}
+                    className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id && selectedMonsterReincarnationMonster !== null) {
+                        console.log(`🎯 Monster Reincarnation: Escolhendo monstro do cemitério:`, selectedMonsterReincarnationMonster);
+                        
+                        performAction(duelId, user.id, 'MONSTER_REINCARNATION_GRAVEYARD_CHOICE', {
+                          graveyardIndex: selectedMonsterReincarnationMonster,
+                        });
+                        
+                        // Resetar estados
+                        setShowMonsterReincarnationGraveyardModal(false);
+                        setMonsterReincarnationGraveyard([]);
+                        setSelectedMonsterReincarnationMonster(null);
+                      }
+                    }}
+                    disabled={selectedMonsterReincarnationMonster === null}
+                    className={`px-8 py-3 rounded-lg font-bold transition-colors ${
+                      selectedMonsterReincarnationMonster !== null
+                        ? 'bg-gradient-to-r from-yellow-600 to-yellow-700 hover:from-yellow-500 hover:to-yellow-600 text-white cursor-pointer'
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {selectedMonsterReincarnationMonster !== null ? '✅ Devolver à Mão' : 'Selecione um monstro'}
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
@@ -6462,25 +7494,36 @@ const DuelArena: React.FC = () => {
         {showChangeOfHeartModal && changeOfHeartData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            style={{ 
+              pointerEvents: 'auto', 
+              zIndex: 9999, 
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0
+            } as React.CSSProperties}
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher um monstro
+              e.stopPropagation();
             }}
           >
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl border-2 border-pink-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+              className="bg-transparent rounded-2xl border-2 border-pink-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+              style={{ backgroundColor: 'transparent', background: 'transparent', pointerEvents: 'auto' }}
             >
-              <div className="p-8">
+              <div className="p-8 bg-transparent">
                 {/* Header */}
-                <div className="flex justify-between items-center mb-6 border-b-2 border-pink-500/30 pb-4">
-                  <div>
+                <div className="flex justify-between items-center mb-6 border-b-2 border-pink-500/30 pb-4 bg-transparent">
+                  <div className="bg-transparent">
                     <h2 className="text-4xl font-bold bg-gradient-to-r from-pink-400 to-pink-600 bg-clip-text text-transparent">
-                      💖 Change of Heart
+                      Change of Heart
                     </h2>
-                    <p className="text-gray-300 mt-2">
+                    <p className="text-white/90 mt-2 bg-transparent">
                       Escolha um monstro do campo do oponente para controlar durante este turno (qualquer posição)
                     </p>
                   </div>
@@ -6502,13 +7545,23 @@ const DuelArena: React.FC = () => {
 
                 {/* Seção: Monstros do Oponente */}
                 {changeOfHeartData.opponentMonsters.length > 0 ? (
-                  <div className="mb-6">
-                    <h3 className="text-2xl font-bold text-white mb-4">Monstros do Oponente</h3>
+                  <div className="mb-6 bg-transparent">
+                    <h3 className="text-2xl font-bold text-white/90 mb-4 bg-transparent">Monstros do Oponente</h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                       {changeOfHeartData.opponentMonsters.map((monster: any, index: number) => {
                         // O backend envia os monstros com zoneIndex no objeto
-                        const realZoneIndex = monster.zoneIndex !== undefined ? monster.zoneIndex : index;
+                        const realZoneIndex = monster.zoneIndex !== undefined && monster.zoneIndex !== null ? monster.zoneIndex : index;
                         const isSelected = selectedChangeOfHeartMonster === realZoneIndex;
+                        
+                        // Debug: verificar se zoneIndex está presente
+                        if (index === 0) {
+                          console.log('🔍 [ChangeOfHeart Modal] Primeiro monstro:', {
+                            monster,
+                            zoneIndex: monster.zoneIndex,
+                            realZoneIndex,
+                            index
+                          });
+                        }
                         const isFaceDown = monster.position === 'set';
                         const isDefense = monster.position === 'defense';
                         const isAttack = monster.position === 'attack';
@@ -6530,7 +7583,13 @@ const DuelArena: React.FC = () => {
                             animate={{ opacity: 1, y: 0 }}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              console.log('🖱️ [ChangeOfHeart] Clicou no monstro:', {
+                                realZoneIndex,
+                                monster: monster.name || monster.cardName,
+                                zoneIndex: monster.zoneIndex
+                              });
                               setSelectedChangeOfHeartMonster(realZoneIndex);
                             }}
                             className={`relative cursor-pointer rounded-xl border-2 transition-all ${
@@ -6579,21 +7638,16 @@ const DuelArena: React.FC = () => {
                               )}
                             </div>
                             {isSelected && (
-                              <div className="absolute inset-0 bg-pink-400/30 flex items-center justify-center pointer-events-none rounded-xl">
-                                <div className="bg-pink-400/95 text-black px-3 py-1.5 rounded-lg font-bold text-sm">
+                              <div className="absolute inset-0 bg-pink-400/20 flex items-center justify-center pointer-events-none rounded-xl backdrop-blur-sm">
+                                <div className="bg-pink-400/60 backdrop-blur-md text-white px-3 py-1.5 rounded-lg font-bold text-sm border border-pink-300/50">
                                   Selecionado
                                 </div>
                               </div>
                             )}
                             <div className="absolute bottom-1 left-1 right-1 text-center pointer-events-none">
-                              <p className="text-white text-xs font-semibold bg-black/70 px-2 py-1 rounded truncate">
+                              <p className="text-white text-xs font-semibold bg-black/40 backdrop-blur-sm px-2 py-1 rounded truncate border border-white/20">
                                 {isFaceDown ? 'Monstro Face Down' : (monster.name || monster.cardName || 'Monstro')}
                               </p>
-                            </div>
-                            <div className="absolute top-1 right-1 pointer-events-none">
-                              <div className="bg-pink-500/90 text-white text-xs px-2 py-1 rounded font-bold">
-                                {monster.position === 'attack' ? 'ATK' : monster.position === 'defense' ? 'DEF' : 'SET'}
-                              </div>
                             </div>
                           </motion.div>
                         );
@@ -6601,15 +7655,15 @@ const DuelArena: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-gray-400">
-                    <p className="text-lg">Não há monstros no campo do oponente para controlar</p>
+                  <div className="text-center py-8 text-white/80 bg-transparent">
+                    <p className="text-lg bg-transparent">Não há monstros no campo do oponente para controlar</p>
                     <button
                       onClick={() => {
                         setShowChangeOfHeartModal(false);
                         setChangeOfHeartData(null);
                         setSelectedChangeOfHeartMonster(null);
                       }}
-                      className="mt-4 bg-pink-600 hover:bg-pink-700 text-white px-6 py-2 rounded-lg font-bold transition-colors text-sm"
+                      className="mt-4 bg-pink-600/70 hover:bg-pink-700/80 backdrop-blur-sm text-white px-6 py-2 rounded-lg font-bold transition-colors text-sm border border-pink-400/50"
                     >
                       Fechar
                     </button>
@@ -6618,7 +7672,7 @@ const DuelArena: React.FC = () => {
 
                 {/* Botões */}
                 {changeOfHeartData.opponentMonsters.length > 0 ? (
-                  <div className="flex justify-center gap-4 mt-6">
+                  <div className="flex justify-center gap-4 mt-6 bg-transparent">
                     <button
                       onClick={() => {
                         if (duelId && user?.id) {
@@ -6629,7 +7683,7 @@ const DuelArena: React.FC = () => {
                         setChangeOfHeartData(null);
                         setSelectedChangeOfHeartMonster(null);
                       }}
-                      className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                      className="px-8 py-3 bg-gray-700/60 hover:bg-gray-600/70 backdrop-blur-sm text-white rounded-lg font-bold transition-colors border border-gray-500/50"
                     >
                       Cancelar
                     </button>
@@ -6648,14 +7702,14 @@ const DuelArena: React.FC = () => {
                         }
                       }}
                       disabled={selectedChangeOfHeartMonster === null}
-                      className={`px-8 py-3 rounded-lg font-bold transition-colors text-sm ${
+                      className={`px-8 py-3 rounded-lg font-bold transition-colors text-sm border ${
                         selectedChangeOfHeartMonster !== null
-                          ? 'bg-pink-600 hover:bg-pink-700 text-white'
-                          : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                          ? 'bg-pink-600/70 hover:bg-pink-700/80 backdrop-blur-sm text-white border-pink-400/50'
+                          : 'bg-gray-600/60 text-gray-400 cursor-not-allowed border-gray-500/50'
                       }`}
                     >
                       {selectedChangeOfHeartMonster !== null 
-                        ? '✅ Controlar Monstro' 
+                        ? 'Controlar Monstro' 
                         : 'Selecione um monstro'}
                     </button>
                   </div>
@@ -6666,11 +7720,759 @@ const DuelArena: React.FC = () => {
         )}
       </AnimatePresence>
 
+      {/* Modal de Chaos Sorcerer Effect */}
+      <AnimatePresence>
+        {showChaosSorcererEffectModal && chaosSorcererEffectData && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            style={{ 
+              pointerEvents: 'auto', 
+              zIndex: 9999, 
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0
+            } as React.CSSProperties}
+            onClick={(e) => {
+              // Não fechar ao clicar fora - precisa escolher um monstro
+              e.stopPropagation();
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-transparent rounded-2xl border-2 border-indigo-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+              style={{ backgroundColor: 'transparent', background: 'transparent', pointerEvents: 'auto' }}
+            >
+              <div className="p-8 bg-transparent">
+                {/* Header */}
+                <div className="flex justify-between items-center mb-6 border-b-2 border-indigo-500/30 pb-4 bg-transparent">
+                  <div className="bg-transparent">
+                    <h2 className="text-4xl font-bold bg-gradient-to-r from-indigo-400 to-purple-600 bg-clip-text text-transparent">
+                      Chaos Sorcerer - Efeito
+                    </h2>
+                    <p className="text-white/90 mt-2 bg-transparent">
+                      Escolha 1 monstro face-up do campo para banir (você não poderá atacar neste turno)
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowChaosSorcererEffectModal(false);
+                      setChaosSorcererEffectData(null);
+                      setSelectedChaosSorcererEffectMonster(null);
+                      setIsSelectingChaosSorcererTarget(false);
+                    }}
+                    className="text-gray-400 hover:text-red-400 text-4xl font-bold transition-colors hover:scale-110 transform"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Seção: Monstros Disponíveis */}
+                {chaosSorcererEffectData.availableMonsters && chaosSorcererEffectData.availableMonsters.length > 0 ? (
+                  <div className="mb-6 bg-transparent">
+                    {/* Separar monstros do oponente e do próprio jogador */}
+                    {(() => {
+                      const opponentMonsters = chaosSorcererEffectData.availableMonsters.filter((m: any) => m.player === 'opponent');
+                      const playerMonsters = chaosSorcererEffectData.availableMonsters.filter((m: any) => m.player === 'player');
+                      
+                      return (
+                        <>
+                          {/* Seção: Monstros do Oponente (em cima) */}
+                          {opponentMonsters.length > 0 && (
+                            <div className="mb-8 bg-transparent">
+                              <h3 className="text-2xl font-bold text-red-400/90 mb-4 bg-transparent">Monstros do Oponente</h3>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                                {opponentMonsters.map((monsterData: any, index: number) => {
+                        const { monster, zoneIndex, player } = monsterData;
+                        const isSelected = selectedChaosSorcererEffectMonster?.zoneIndex === zoneIndex && 
+                                         selectedChaosSorcererEffectMonster?.player === player;
+                        const isFaceDown = monster.position === 'set';
+                        const isDefense = monster.position === 'defense';
+                        const isAttack = monster.position === 'attack';
+                        const needsRotation = isDefense || isFaceDown;
+                        const cardWidth = '120px';
+                        const cardHeight = '175px';
+                        const containerSize = needsRotation ? '175px' : '120px';
+                        const containerHeight = needsRotation ? '175px' : '175px';
+                        
+                        return (
+                          <motion.div
+                            key={`chaos-sorcerer-monster-${player}-${zoneIndex}-${index}`}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              console.log('🖱️ [ChaosSorcererEffect] Clicou no monstro:', {
+                                zoneIndex,
+                                player,
+                                monster: monster.name || monster.cardName
+                              });
+                              setSelectedChaosSorcererEffectMonster({ zoneIndex, player });
+                            }}
+                            className={`relative cursor-pointer rounded-xl border-2 transition-all ${
+                              isSelected
+                                ? 'border-indigo-400 ring-4 ring-indigo-400/50 shadow-lg shadow-indigo-500/50'
+                                : 'border-gray-600 hover:border-indigo-500/50'
+                            }`}
+                            style={{ 
+                              width: containerSize, 
+                              height: containerHeight,
+                              overflow: 'visible',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            <div
+                              className="relative"
+                              style={{
+                                width: cardWidth,
+                                height: cardHeight,
+                                transform: needsRotation ? 'rotate(90deg)' : 'none',
+                                transformOrigin: 'center center',
+                                overflow: 'hidden',
+                                borderRadius: '8px',
+                              }}
+                            >
+                              {isFaceDown ? (
+                                <div
+                                  className="w-full h-full"
+                                  style={{
+                                    backgroundImage: `url(${player === 'opponent' ? opponentSkinImageUrl : playerSkinImageUrl})`,
+                                    backgroundSize: 'cover',
+                                    backgroundPosition: 'center',
+                                    backgroundRepeat: 'no-repeat',
+                                  }}
+                                />
+                              ) : (
+                                <CardImage
+                                  card={monster}
+                                  className="w-full h-full"
+                                  fallback="/images/fundoCarta.webp"
+                                />
+                              )}
+                            </div>
+                            {isSelected && (
+                              <div className="absolute inset-0 bg-indigo-400/20 flex items-center justify-center pointer-events-none rounded-xl backdrop-blur-sm">
+                                <div className="bg-indigo-400/60 backdrop-blur-md text-white px-3 py-1.5 rounded-lg font-bold text-sm border border-indigo-300/50">
+                                  Selecionado
+                                </div>
+                              </div>
+                            )}
+                            <div className="absolute bottom-1 left-1 right-1 text-center pointer-events-none">
+                              <p className="text-white text-xs font-semibold bg-black/40 backdrop-blur-sm px-2 py-1 rounded truncate border border-white/20">
+                                {isFaceDown ? 'Monstro Face Down' : (monster.name || monster.cardName || 'Monstro')}
+                              </p>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Seção: Monstros do Próprio Jogador (em baixo) */}
+                          {playerMonsters.length > 0 && (
+                            <div className="mb-6 bg-transparent">
+                              <h3 className="text-2xl font-bold text-blue-400/90 mb-4 bg-transparent">Seus Monstros</h3>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                                {playerMonsters.map((monsterData: any, index: number) => {
+                                  const { monster, zoneIndex, player } = monsterData;
+                                  const isSelected = selectedChaosSorcererEffectMonster?.zoneIndex === zoneIndex && 
+                                                   selectedChaosSorcererEffectMonster?.player === player;
+                                  const isFaceDown = monster.position === 'set';
+                                  const isDefense = monster.position === 'defense';
+                                  const isAttack = monster.position === 'attack';
+                                  const needsRotation = isDefense || isFaceDown;
+                                  const cardWidth = '120px';
+                                  const cardHeight = '175px';
+                                  const containerSize = needsRotation ? '175px' : '120px';
+                                  const containerHeight = needsRotation ? '175px' : '175px';
+                                  
+                                  return (
+                                    <motion.div
+                                      key={`chaos-sorcerer-monster-${player}-${zoneIndex}-${index}`}
+                                      initial={{ opacity: 0, y: 20 }}
+                                      animate={{ opacity: 1, y: 0 }}
+                                      whileHover={{ scale: 1.05 }}
+                                      whileTap={{ scale: 0.95 }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        console.log('🖱️ [ChaosSorcererEffect] Clicou no monstro:', {
+                                          zoneIndex,
+                                          player,
+                                          monster: monster.name || monster.cardName
+                                        });
+                                        setSelectedChaosSorcererEffectMonster({ zoneIndex, player });
+                                      }}
+                                      className={`relative cursor-pointer rounded-xl border-2 transition-all ${
+                                        isSelected
+                                          ? 'border-indigo-400 ring-4 ring-indigo-400/50 shadow-lg shadow-indigo-500/50'
+                                          : 'border-gray-600 hover:border-indigo-500/50'
+                                      }`}
+                                      style={{ 
+                                        width: containerSize, 
+                                        height: containerHeight,
+                                        overflow: 'visible',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                      }}
+                                    >
+                                      <div
+                                        className="relative"
+                                        style={{
+                                          width: cardWidth,
+                                          height: cardHeight,
+                                          transform: needsRotation ? 'rotate(90deg)' : 'none',
+                                          transformOrigin: 'center center',
+                                          overflow: 'hidden',
+                                          borderRadius: '8px',
+                                        }}
+                                      >
+                                        {isFaceDown ? (
+                                          <div
+                                            className="w-full h-full"
+                                            style={{
+                                              backgroundImage: `url(${player === 'opponent' ? opponentSkinImageUrl : playerSkinImageUrl})`,
+                                              backgroundSize: 'cover',
+                                              backgroundPosition: 'center',
+                                              backgroundRepeat: 'no-repeat',
+                                            }}
+                                          />
+                                        ) : (
+                                          <CardImage
+                                            card={monster}
+                                            className="w-full h-full"
+                                            fallback="/images/fundoCarta.webp"
+                                          />
+                                        )}
+                                      </div>
+                                      {isSelected && (
+                                        <div className="absolute inset-0 bg-indigo-400/20 flex items-center justify-center pointer-events-none rounded-xl backdrop-blur-sm">
+                                          <div className="bg-indigo-400/60 backdrop-blur-md text-white px-3 py-1.5 rounded-lg font-bold text-sm border border-indigo-300/50">
+                                            Selecionado
+                                          </div>
+                                        </div>
+                                      )}
+                                      <div className="absolute bottom-1 left-1 right-1 text-center pointer-events-none">
+                                        <p className="text-white text-xs font-semibold bg-black/40 backdrop-blur-sm px-2 py-1 rounded truncate border border-white/20">
+                                          {isFaceDown ? 'Monstro Face Down' : (monster.name || monster.cardName || 'Monstro')}
+                                        </p>
+                                      </div>
+                                    </motion.div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-white/80 bg-transparent">
+                    <p className="text-lg bg-transparent">Não há monstros face-up no campo para banir</p>
+                    <button
+                      onClick={() => {
+                        setShowChaosSorcererEffectModal(false);
+                        setChaosSorcererEffectData(null);
+                        setSelectedChaosSorcererEffectMonster(null);
+                        setIsSelectingChaosSorcererTarget(false);
+                      }}
+                      className="mt-4 bg-indigo-600/70 hover:bg-indigo-700/80 backdrop-blur-sm text-white px-6 py-2 rounded-lg font-bold transition-colors text-sm border border-indigo-400/50"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                )}
+
+                {/* Botões */}
+                {chaosSorcererEffectData.availableMonsters && chaosSorcererEffectData.availableMonsters.length > 0 ? (
+                  <div className="flex justify-center gap-4 mt-6 bg-transparent">
+                    <button
+                      onClick={() => {
+                        setShowChaosSorcererEffectModal(false);
+                        setChaosSorcererEffectData(null);
+                        setSelectedChaosSorcererEffectMonster(null);
+                        setIsSelectingChaosSorcererTarget(false);
+                      }}
+                      className="px-8 py-3 bg-gray-700/60 hover:bg-gray-600/70 backdrop-blur-sm text-white rounded-lg font-bold transition-colors border border-gray-500/50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (selectedChaosSorcererEffectMonster && duelId && user?.id && chaosSorcererEffectData.monsterZoneIndex !== undefined) {
+                          console.log('✨ [ChaosSorcererEffect] Enviando escolha:', {
+                            monsterZoneIndex: chaosSorcererEffectData.monsterZoneIndex,
+                            targetPlayer: selectedChaosSorcererEffectMonster.player,
+                            targetZoneIndex: selectedChaosSorcererEffectMonster.zoneIndex
+                          });
+                          performAction(duelId, user.id, 'CHAOS_SORCERER_EFFECT_CHOICE', {
+                            monsterZoneIndex: chaosSorcererEffectData.monsterZoneIndex,
+                            targetPlayer: selectedChaosSorcererEffectMonster.player,
+                            targetZoneIndex: selectedChaosSorcererEffectMonster.zoneIndex,
+                          });
+                          
+                          // Resetar estados
+                          setShowChaosSorcererEffectModal(false);
+                          setChaosSorcererEffectData(null);
+                          setSelectedChaosSorcererEffectMonster(null);
+                          setIsSelectingChaosSorcererTarget(false);
+                        }
+                      }}
+                      disabled={selectedChaosSorcererEffectMonster === null}
+                      className={`px-8 py-3 rounded-lg font-bold transition-colors text-sm border ${
+                        selectedChaosSorcererEffectMonster !== null
+                          ? 'bg-indigo-600/70 hover:bg-indigo-700/80 backdrop-blur-sm text-white border-indigo-400/50'
+                          : 'bg-gray-600/60 text-gray-400 cursor-not-allowed border-gray-500/50'
+                      }`}
+                    >
+                      {selectedChaosSorcererEffectMonster !== null 
+                        ? 'Banir Monstro' 
+                        : 'Selecione um monstro'}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal Black Luster Soldier - Envoy of the Beginning: escolher efeito 1 (banir) ou 2 (segundo ataque) */}
+      <AnimatePresence>
+        {showBlsEffectModal && blsEffectData && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md" style={{ pointerEvents: 'auto', zIndex: 9999 }} onClick={(e) => e.stopPropagation()}>
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} onClick={(e) => e.stopPropagation()} className="bg-gray-900/90 backdrop-blur-xl rounded-2xl border-2 border-amber-500/50 shadow-2xl max-w-2xl w-full overflow-y-auto p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-amber-400">Black Luster Soldier - Envoy of the Beginning</h2>
+                <button onClick={() => { setShowBlsEffectModal(false); setBlsEffectData(null); setBlsEffectChoice(null); setSelectedBlsEffectMonster(null); }} className="text-gray-400 hover:text-red-400 text-2xl font-bold">✕</button>
+              </div>
+              <p className="text-gray-300 mb-4">Uma vez por turno, escolha 1 efeito para ativar:</p>
+              {blsEffectChoice === null ? (
+                <div className="flex flex-col gap-3">
+                  <button onClick={() => setBlsEffectChoice(1)} className="p-4 rounded-xl border-2 border-amber-500/50 bg-amber-900/30 hover:bg-amber-800/40 text-left text-white">
+                    <span className="font-bold text-amber-400">Efeito 1:</span> Escolha 1 monstro no campo; bana-o. Este card não pode atacar no turno em que este efeito for ativado.
+                  </button>
+                  <button onClick={() => {
+                    if (duelId && user?.id && blsEffectData.monsterZoneIndex !== undefined) {
+                      performAction(duelId, user.id, 'BLS_EFFECT_CHOICE', { monsterZoneIndex: blsEffectData.monsterZoneIndex, effectNumber: 2 });
+                      setShowBlsEffectModal(false);
+                      setBlsEffectData(null);
+                      setBlsEffectChoice(null);
+                    }
+                  }} className="p-4 rounded-xl border-2 border-amber-500/50 bg-amber-900/30 hover:bg-amber-800/40 text-left text-white">
+                    <span className="font-bold text-amber-400">Efeito 2:</span> Se este card que estiver atacando destruir um monstro do oponente em batalha: ele pode realizar um segundo ataque em seguida.
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p className="text-amber-300 mb-3">Escolha 1 monstro no campo para banir (BLS não poderá atacar este turno):</p>
+                  {blsEffectData.availableMonsters && blsEffectData.availableMonsters.length > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-4">
+                      {blsEffectData.availableMonsters.map((monsterData: any, index: number) => {
+                        const { monster, zoneIndex, player } = monsterData;
+                        const isSelected = selectedBlsEffectMonster?.zoneIndex === zoneIndex && selectedBlsEffectMonster?.player === player;
+                        return (
+                          <motion.div key={`bls-${player}-${zoneIndex}-${index}`} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                            onClick={() => setSelectedBlsEffectMonster({ zoneIndex, player })}
+                            className={`cursor-pointer rounded-xl border-2 overflow-hidden ${isSelected ? 'border-amber-400 ring-2 ring-amber-400/50' : 'border-gray-600 hover:border-amber-500/50'}`}
+                            style={{ width: '100px', height: '146px' }}
+                          >
+                            <CardImage card={monster} className="w-full h-full object-cover" />
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-gray-400 mb-4">Nenhum monstro face-up no campo.</p>
+                  )}
+                  <div className="flex gap-3 justify-end">
+                    <button onClick={() => setBlsEffectChoice(null)} className="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-500 text-white">Voltar</button>
+                    <button onClick={() => {
+                      if (selectedBlsEffectMonster && duelId && user?.id && blsEffectData.monsterZoneIndex !== undefined) {
+                        performAction(duelId, user.id, 'BLS_EFFECT_CHOICE', {
+                          monsterZoneIndex: blsEffectData.monsterZoneIndex,
+                          effectNumber: 1,
+                          targetPlayer: selectedBlsEffectMonster.player,
+                          targetZoneIndex: selectedBlsEffectMonster.zoneIndex,
+                        });
+                        setShowBlsEffectModal(false);
+                        setBlsEffectData(null);
+                        setBlsEffectChoice(null);
+                        setSelectedBlsEffectMonster(null);
+                      }
+                    }} disabled={selectedBlsEffectMonster === null} className={`px-6 py-2 rounded-lg font-bold ${selectedBlsEffectMonster !== null ? 'bg-amber-600 hover:bg-amber-500 text-white' : 'bg-gray-600 text-gray-400 cursor-not-allowed'}`}>
+                      Banir monstro
+                    </button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Mystical Space Typhoon */}
+      <AnimatePresence>
+        {showMysticalSpaceTyphoonModal && mysticalSpaceTyphoonData && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-xl"
+            onClick={(e) => {
+              // Não fechar ao clicar fora - precisa escolher uma carta
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-gradient-to-br from-gray-900/80 via-gray-800/80 to-gray-900/80 backdrop-blur-lg rounded-2xl border-2 border-yellow-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              <div className="p-8">
+                {/* Header */}
+                <div className="flex justify-between items-center mb-6 border-b-2 border-yellow-500/30 pb-4">
+                  <div>
+                    <h2 className="text-4xl font-bold bg-gradient-to-r from-yellow-400 to-yellow-600 bg-clip-text text-transparent">
+                      Mystical Space Typhoon
+                    </h2>
+                    <p className="text-gray-300 mt-2">
+                      Escolha uma Spell/Trap no campo para destruir
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id) {
+                        // Cancelar ativação da carta no backend
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
+                      setShowMysticalSpaceTyphoonModal(false);
+                      setMysticalSpaceTyphoonData(null);
+                      setSelectedMSTTarget(null);
+                      setIsSelectingMSTTarget(false);
+                    }}
+                    className="text-gray-400 hover:text-red-400 text-4xl font-bold transition-colors hover:scale-110 transform"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Seção: Spell/Trap do Próprio Campo */}
+                {mysticalSpaceTyphoonData.playerSpellTraps.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="text-2xl font-bold text-white mb-4">Seu Campo</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                      {mysticalSpaceTyphoonData.playerSpellTraps.map((spellTrap: any, index: number) => {
+                        const card = spellTrap.card;
+                        const realZoneIndex = spellTrap.zoneIndex;
+                        const isSelected = selectedMSTTarget?.player === 'player' && selectedMSTTarget?.zoneIndex === realZoneIndex;
+                        const isFaceDown = card.position === 'set';
+                        
+                        return (
+                          <motion.div
+                            key={`player-spelltrap-${index}`}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => {
+                              setSelectedMSTTarget({ player: 'player', zoneIndex: realZoneIndex });
+                            }}
+                            className={`relative cursor-pointer rounded-xl border-2 transition-all ${
+                              isSelected
+                                ? 'border-yellow-400 ring-4 ring-yellow-400/50 shadow-lg shadow-yellow-500/50'
+                                : 'border-gray-600 hover:border-yellow-500/50'
+                            }`}
+                            style={{ 
+                              width: '120px', 
+                              height: '175px',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {isFaceDown ? (
+                              <div
+                                className="w-full h-full"
+                                style={{
+                                  backgroundImage: `url(${mySkinImageUrl})`,
+                                  backgroundSize: 'cover',
+                                  backgroundPosition: 'center',
+                                  backgroundRepeat: 'no-repeat',
+                                }}
+                              />
+                            ) : (
+                              <CardImage
+                                card={card}
+                                className="w-full h-full"
+                                fallback="/images/fundoCarta.webp"
+                              />
+                            )}
+                            {isSelected && (
+                              <div className="absolute inset-0 bg-yellow-400/30 flex items-center justify-center pointer-events-none rounded-xl">
+                                <div className="bg-yellow-400/95 text-black px-3 py-1.5 rounded-lg font-bold text-sm">
+                                  Selecionado
+                                </div>
+                              </div>
+                            )}
+                            <div className="absolute bottom-1 left-1 right-1 text-center pointer-events-none">
+                              <p className="text-white text-xs font-semibold bg-black/70 px-2 py-1 rounded truncate">
+                                {isFaceDown ? 'Spell/Trap Set' : (card.name || card.cardName || 'Spell/Trap')}
+                              </p>
+                            </div>
+                            <div className="absolute top-1 right-1 pointer-events-none">
+                              <div className="bg-yellow-500/90 text-white text-xs px-2 py-1 rounded font-bold">
+                                {card.position === 'face-up' ? 'UP' : 'SET'}
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Seção: Spell/Trap do Campo do Oponente */}
+                {(() => {
+                  const opponentSpellTraps = mysticalSpaceTyphoonData?.opponentSpellTraps;
+                  const isArray = Array.isArray(opponentSpellTraps);
+                  const hasLength = opponentSpellTraps?.length > 0;
+                  
+                  console.log('🔍 [MysticalSpaceTyphoon Modal] Verificando renderização do oponente:', {
+                    opponentSpellTraps,
+                    isArray,
+                    hasLength,
+                    length: opponentSpellTraps?.length,
+                    type: typeof opponentSpellTraps,
+                    keys: opponentSpellTraps ? Object.keys(opponentSpellTraps) : null,
+                    firstItem: opponentSpellTraps?.[0],
+                    fullData: mysticalSpaceTyphoonData
+                  });
+                  
+                  if (!isArray) {
+                    console.error('❌ [MysticalSpaceTyphoon Modal] opponentSpellTraps não é array!', opponentSpellTraps);
+                    return false;
+                  }
+                  
+                  if (!hasLength) {
+                    console.warn('⚠️ [MysticalSpaceTyphoon Modal] opponentSpellTraps está vazio!', opponentSpellTraps);
+                    // Ainda assim, tentar renderizar se houver dados mesmo que vazios
+                    return false;
+                  }
+                  
+                  console.log('✅ [MysticalSpaceTyphoon Modal] Renderizando cartas do oponente:', opponentSpellTraps.length);
+                  return true;
+                })() ? (
+                  <div className="mb-6">
+                    <h3 className="text-2xl font-bold text-white mb-4">Campo do Oponente</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                      {mysticalSpaceTyphoonData.opponentSpellTraps.map((spellTrap: any, index: number) => {
+                        console.log(`🔍 [MysticalSpaceTyphoon Modal] Renderizando carta do oponente ${index}:`, {
+                          spellTrap,
+                          hasCard: !!spellTrap?.card,
+                          cardKeys: spellTrap?.card ? Object.keys(spellTrap.card) : null,
+                          zoneIndex: spellTrap?.zoneIndex,
+                          player: spellTrap?.player
+                        });
+                        
+                        // CRÍTICO: Verificar estrutura dos dados
+                        let card = null;
+                        let realZoneIndex = index;
+                        
+                        if (spellTrap?.card) {
+                          // Estrutura correta: { card: {...}, zoneIndex: 0, player: 'opponent' }
+                          card = spellTrap.card;
+                          realZoneIndex = spellTrap.zoneIndex ?? index;
+                        } else if (spellTrap?.name || spellTrap?.cardName) {
+                          // Estrutura alternativa: a carta está diretamente no objeto
+                          console.warn(`⚠️ [MysticalSpaceTyphoon Modal] Carta do oponente ${index} não tem estrutura card - usando objeto direto`);
+                          card = spellTrap;
+                          realZoneIndex = spellTrap.zoneIndex ?? index;
+                        } else {
+                          console.error(`❌ [MysticalSpaceTyphoon Modal] Carta do oponente ${index} está em formato inválido:`, spellTrap);
+                          return null;
+                        }
+                        
+                        if (!card || (!card.name && !card.cardName)) {
+                          console.warn(`⚠️ [MysticalSpaceTyphoon Modal] Carta do oponente ${index} está vazia ou inválida:`, card);
+                          return null;
+                        }
+                        
+                        const isSelected = selectedMSTTarget?.player === 'opponent' && selectedMSTTarget?.zoneIndex === realZoneIndex;
+                        const isFaceDown = card?.position === 'set';
+                        
+                        return (
+                          <motion.div
+                            key={`opponent-spelltrap-${index}`}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => {
+                              setSelectedMSTTarget({ player: 'opponent', zoneIndex: realZoneIndex });
+                            }}
+                            className={`relative cursor-pointer rounded-xl border-2 transition-all ${
+                              isSelected
+                                ? 'border-yellow-400 ring-4 ring-yellow-400/50 shadow-lg shadow-yellow-500/50'
+                                : 'border-gray-600 hover:border-yellow-500/50'
+                            }`}
+                            style={{ 
+                              width: '120px', 
+                              height: '175px',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {isFaceDown ? (
+                              <div
+                                className="w-full h-full"
+                                style={{
+                                  backgroundImage: `url(${opponentSkinImageUrl})`,
+                                  backgroundSize: 'cover',
+                                  backgroundPosition: 'center',
+                                  backgroundRepeat: 'no-repeat',
+                                }}
+                              />
+                            ) : (
+                              <CardImage
+                                card={card}
+                                className="w-full h-full"
+                                fallback="/images/fundoCarta.webp"
+                              />
+                            )}
+                            {isSelected && (
+                              <div className="absolute inset-0 bg-yellow-400/30 flex items-center justify-center pointer-events-none rounded-xl">
+                                <div className="bg-yellow-400/95 text-black px-3 py-1.5 rounded-lg font-bold text-sm">
+                                  Selecionado
+                                </div>
+                              </div>
+                            )}
+                            <div className="absolute bottom-1 left-1 right-1 text-center pointer-events-none">
+                              <p className="text-white text-xs font-semibold bg-black/70 px-2 py-1 rounded truncate">
+                                {isFaceDown ? 'Spell/Trap Set' : (card.name || card.cardName || 'Spell/Trap')}
+                              </p>
+                            </div>
+                            <div className="absolute top-1 right-1 pointer-events-none">
+                              <div className="bg-yellow-500/90 text-white text-xs px-2 py-1 rounded font-bold">
+                                {card.position === 'face-up' ? 'UP' : 'SET'}
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  // Sem cartas do oponente: pode ser ação já processada (ex: MST destruiu a carta) — mostrar mensagem amigável e fechar
+                  <div className="mb-6 p-4 bg-stone-800/50 border border-stone-600/50 rounded">
+                    <h3 className="text-xl font-bold text-white mb-2">Campo do Oponente</h3>
+                    <p className="text-stone-300">
+                      {mysticalSpaceTyphoonData.playerSpellTraps.length === 0 && mysticalSpaceTyphoonData.opponentSpellTraps.length === 0
+                        ? 'Spell/Trap já foi processada. Pode fechar.'
+                        : (() => {
+                            const opponentSpellTraps = mysticalSpaceTyphoonData?.opponentSpellTraps;
+                            if (!opponentSpellTraps || !Array.isArray(opponentSpellTraps) || opponentSpellTraps.length === 0) {
+                              return 'Nenhuma Spell/Trap do oponente no campo.';
+                            }
+                            return null;
+                          })()}
+                    </p>
+                    <button
+                      onClick={() => {
+                        setShowMysticalSpaceTyphoonModal(false);
+                        setMysticalSpaceTyphoonData(null);
+                        setSelectedMSTTarget(null);
+                        setIsSelectingMSTTarget(false);
+                      }}
+                      className="mt-3 bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg font-bold transition-colors text-sm"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                )}
+
+                {/* Mensagem e botão quando não há spell/trap (antes de escolher ou já processado) */}
+                {mysticalSpaceTyphoonData.playerSpellTraps.length === 0 && mysticalSpaceTyphoonData.opponentSpellTraps.length === 0 && (
+                  <div className="text-center py-6 text-gray-400">
+                    <p className="text-lg">Não há Spell/Trap no campo para destruir</p>
+                    <button
+                      onClick={() => {
+                        setShowMysticalSpaceTyphoonModal(false);
+                        setMysticalSpaceTyphoonData(null);
+                        setSelectedMSTTarget(null);
+                        setIsSelectingMSTTarget(false);
+                      }}
+                      className="mt-4 bg-yellow-600 hover:bg-yellow-700 text-white px-6 py-2 rounded-lg font-bold transition-colors text-sm"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                )}
+
+                {/* Botões */}
+                {(mysticalSpaceTyphoonData.playerSpellTraps.length > 0 || mysticalSpaceTyphoonData.opponentSpellTraps.length > 0) && (
+                  <div className="flex justify-center gap-4 mt-6">
+                    <button
+                      onClick={() => {
+                        if (duelId && user?.id) {
+                          // Cancelar ativação da carta no backend
+                          performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                        }
+                        setShowMysticalSpaceTyphoonModal(false);
+                        setMysticalSpaceTyphoonData(null);
+                        setSelectedMSTTarget(null);
+                        setIsSelectingMSTTarget(false);
+                      }}
+                      className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (selectedMSTTarget && duelId && user?.id && mysticalSpaceTyphoonData) {
+                          console.log('✨ [MysticalSpaceTyphoon] Enviando escolha:', selectedMSTTarget, 'spellTrapZoneIndex:', mysticalSpaceTyphoonData.spellTrapZoneIndex);
+                          performAction(duelId, user.id, 'MYSTICAL_SPACE_TYPHOON_CHOICE', {
+                            targetPlayer: selectedMSTTarget.player,
+                            targetZoneIndex: selectedMSTTarget.zoneIndex,
+                            spellTrapZoneIndex: mysticalSpaceTyphoonData.spellTrapZoneIndex,
+                          });
+                          
+                          // Resetar estados
+                          setShowMysticalSpaceTyphoonModal(false);
+                          setMysticalSpaceTyphoonData(null);
+                          setSelectedMSTTarget(null);
+                          setIsSelectingMSTTarget(false);
+                        }
+                      }}
+                      disabled={selectedMSTTarget === null}
+                      className={`px-8 py-3 rounded-lg font-bold transition-colors text-sm ${
+                        selectedMSTTarget !== null
+                          ? 'bg-yellow-600 hover:bg-yellow-700 text-white'
+                          : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                      }`}
+                    >
+                      {selectedMSTTarget !== null 
+                        ? '✅ Destruir Spell/Trap' 
+                        : 'Selecione uma Spell/Trap'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Modal de UnitedWeStand */}
       <AnimatePresence>
         {showUnitedWeStandModal && unitedWeStandData && (
           <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-xl"
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
@@ -6680,14 +8482,14 @@ const DuelArena: React.FC = () => {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl border-2 border-yellow-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+              className="bg-gradient-to-br from-gray-900/80 via-gray-800/80 to-gray-900/80 backdrop-blur-lg rounded-2xl border-2 border-yellow-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
             >
               <div className="p-8">
                 {/* Header */}
                 <div className="flex justify-between items-center mb-6 border-b-2 border-yellow-500/30 pb-4">
                   <div>
                     <h2 className="text-4xl font-bold bg-gradient-to-r from-yellow-400 to-yellow-600 bg-clip-text text-transparent">
-                      ⚔️ United We Stand
+                      United We Stand
                     </h2>
                     <p className="text-gray-300 mt-2">
                       Escolha um monstro face-up do seu campo para equipar. O monstro ganha 800 de ATK para cada monstro face-up no seu campo (incluindo ele mesmo).
@@ -6846,7 +8648,7 @@ const DuelArena: React.FC = () => {
                       }`}
                     >
                       {selectedUnitedWeStandMonster !== null 
-                        ? '✅ Equipar Monstro' 
+                        ? 'Equipar Monstro' 
                         : 'Selecione um monstro'}
                     </button>
                   </div>
@@ -6861,7 +8663,7 @@ const DuelArena: React.FC = () => {
       <AnimatePresence>
         {showMagePowerModal && magePowerData && (
           <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-xl"
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
@@ -6871,14 +8673,14 @@ const DuelArena: React.FC = () => {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl border-2 border-purple-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+              className="bg-gradient-to-br from-gray-900/80 via-gray-800/80 to-gray-900/80 backdrop-blur-lg rounded-2xl border-2 border-purple-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
             >
               <div className="p-8">
                 {/* Header */}
                 <div className="flex justify-between items-center mb-6 border-b-2 border-purple-500/30 pb-4">
                   <div>
                     <h2 className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-purple-600 bg-clip-text text-transparent">
-                      ⚡ Mage Power
+                      Mage Power
                     </h2>
                     <p className="text-gray-300 mt-2">
                       Escolha um monstro face-up do seu campo para equipar. O monstro ganha 500 de ATK para cada carta na sua zona de spell/trap (incluindo esta carta).
@@ -7037,7 +8839,7 @@ const DuelArena: React.FC = () => {
                       }`}
                     >
                       {selectedMagePowerMonster !== null 
-                        ? '✅ Equipar Monstro' 
+                        ? 'Equipar Monstro' 
                         : 'Selecione um monstro'}
                     </button>
                   </div>
@@ -7053,25 +8855,36 @@ const DuelArena: React.FC = () => {
         {showBrainControlModal && brainControlData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            style={{ 
+              pointerEvents: 'auto', 
+              zIndex: 9999, 
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0
+            } as React.CSSProperties}
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher um monstro
+              e.stopPropagation();
             }}
           >
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl border-2 border-blue-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+              className="bg-transparent rounded-2xl border-2 border-blue-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+              style={{ backgroundColor: 'transparent', background: 'transparent', pointerEvents: 'auto' }}
             >
-              <div className="p-8">
+              <div className="p-8 bg-transparent">
                 {/* Header */}
-                <div className="flex justify-between items-center mb-6 border-b-2 border-blue-500/30 pb-4">
-                  <div>
+                <div className="flex justify-between items-center mb-6 border-b-2 border-blue-500/30 pb-4 bg-transparent">
+                  <div className="bg-transparent">
                     <h2 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">
-                      🧠 Brain Control
+                      Brain Control
                     </h2>
-                    <p className="text-gray-300 mt-2">
+                    <p className="text-white/90 mt-2 bg-transparent">
                       Escolha um monstro face-up do campo do oponente para controlar durante este turno (custo: 800 LP)
                     </p>
                   </div>
@@ -7093,13 +8906,23 @@ const DuelArena: React.FC = () => {
 
                 {/* Seção: Monstros Face-Up do Oponente */}
                 {brainControlData.opponentMonsters.length > 0 ? (
-                  <div className="mb-6">
-                    <h3 className="text-2xl font-bold text-white mb-4">Monstros Face-Up do Oponente</h3>
+                  <div className="mb-6 bg-transparent">
+                    <h3 className="text-2xl font-bold text-white/90 mb-4 bg-transparent">Monstros Face-Up do Oponente</h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                       {brainControlData.opponentMonsters.map((monster: any, index: number) => {
                         // O backend envia os monstros com zoneIndex no objeto
-                        const realZoneIndex = monster.zoneIndex !== undefined ? monster.zoneIndex : index;
+                        const realZoneIndex = monster.zoneIndex !== undefined && monster.zoneIndex !== null ? monster.zoneIndex : index;
                         const isSelected = selectedBrainControlMonster === realZoneIndex;
+                        
+                        // Debug: verificar se zoneIndex está presente
+                        if (index === 0) {
+                          console.log('🔍 [BrainControl Modal] Primeiro monstro:', {
+                            monster,
+                            zoneIndex: monster.zoneIndex,
+                            realZoneIndex,
+                            index
+                          });
+                        }
                         const isDefense = monster.position === 'defense';
                         const isAttack = monster.position === 'attack';
                         
@@ -7119,7 +8942,13 @@ const DuelArena: React.FC = () => {
                             animate={{ opacity: 1, y: 0 }}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              console.log('🖱️ [BrainControl] Clicou no monstro:', {
+                                realZoneIndex,
+                                monster: monster.name || monster.cardName,
+                                zoneIndex: monster.zoneIndex
+                              });
                               setSelectedBrainControlMonster(realZoneIndex);
                             }}
                             className={`relative cursor-pointer rounded-xl border-2 transition-all ${
@@ -7154,19 +8983,19 @@ const DuelArena: React.FC = () => {
                               />
                             </div>
                             {isSelected && (
-                              <div className="absolute inset-0 bg-blue-400/30 flex items-center justify-center pointer-events-none rounded-xl">
-                                <div className="bg-blue-400/95 text-black px-3 py-1.5 rounded-lg font-bold text-sm">
+                              <div className="absolute inset-0 bg-blue-400/20 flex items-center justify-center pointer-events-none rounded-xl backdrop-blur-sm">
+                                <div className="bg-blue-400/60 backdrop-blur-md text-white px-3 py-1.5 rounded-lg font-bold text-sm border border-blue-300/50">
                                   Selecionado
                                 </div>
                               </div>
                             )}
                             <div className="absolute bottom-1 left-1 right-1 text-center pointer-events-none">
-                              <p className="text-white text-xs font-semibold bg-black/70 px-2 py-1 rounded truncate">
+                              <p className="text-white text-xs font-semibold bg-black/40 backdrop-blur-sm px-2 py-1 rounded truncate border border-white/20">
                                 {monster.name || monster.cardName || 'Monstro'}
                               </p>
                             </div>
                             <div className="absolute top-1 right-1 pointer-events-none">
-                              <div className="bg-blue-500/90 text-white text-xs px-2 py-1 rounded font-bold">
+                              <div className="bg-blue-500/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded font-bold border border-blue-300/50">
                                 {monster.position === 'attack' ? 'ATK' : 'DEF'}
                               </div>
                             </div>
@@ -7176,15 +9005,15 @@ const DuelArena: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-gray-400">
-                    <p className="text-lg">Não há monstros face-up no campo do oponente para controlar</p>
+                  <div className="text-center py-8 text-white/80 bg-transparent">
+                    <p className="text-lg bg-transparent">Não há monstros face-up no campo do oponente para controlar</p>
                     <button
                       onClick={() => {
                         setShowBrainControlModal(false);
                         setBrainControlData(null);
                         setSelectedBrainControlMonster(null);
                       }}
-                      className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-bold transition-colors text-sm"
+                      className="mt-4 bg-blue-600/70 hover:bg-blue-700/80 backdrop-blur-sm text-white px-6 py-2 rounded-lg font-bold transition-colors text-sm border border-blue-400/50"
                     >
                       Fechar
                     </button>
@@ -7193,7 +9022,7 @@ const DuelArena: React.FC = () => {
 
                 {/* Botões */}
                 {brainControlData.opponentMonsters.length > 0 ? (
-                  <div className="flex justify-center gap-4 mt-6">
+                  <div className="flex justify-center gap-4 mt-6 bg-transparent">
                     <button
                       onClick={() => {
                         if (duelId && user?.id) {
@@ -7204,7 +9033,7 @@ const DuelArena: React.FC = () => {
                         setBrainControlData(null);
                         setSelectedBrainControlMonster(null);
                       }}
-                      className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                      className="px-8 py-3 bg-gray-700/60 hover:bg-gray-600/70 backdrop-blur-sm text-white rounded-lg font-bold transition-colors border border-gray-500/50"
                     >
                       Cancelar
                     </button>
@@ -7223,14 +9052,14 @@ const DuelArena: React.FC = () => {
                         }
                       }}
                       disabled={selectedBrainControlMonster === null}
-                      className={`px-8 py-3 rounded-lg font-bold transition-colors text-sm ${
+                      className={`px-8 py-3 rounded-lg font-bold transition-colors text-sm border ${
                         selectedBrainControlMonster !== null
-                          ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                          : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                          ? 'bg-blue-600/70 hover:bg-blue-700/80 backdrop-blur-sm text-white border-blue-400/50'
+                          : 'bg-gray-600/60 text-gray-400 cursor-not-allowed border-gray-500/50'
                       }`}
                     >
                       {selectedBrainControlMonster !== null 
-                        ? '✅ Controlar Monstro' 
+                        ? 'Controlar Monstro' 
                         : 'Selecione um monstro'}
                     </button>
                   </div>
@@ -7245,24 +9074,31 @@ const DuelArena: React.FC = () => {
       <AnimatePresence>
         {showSoulTakerModal && soulTakerData && (
           <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-lg"
+            style={{ 
+              zIndex: 9999,
+              pointerEvents: 'auto',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+            } as React.CSSProperties}
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
           >
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl border-2 border-red-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+              className="bg-transparent rounded-2xl border-2 border-red-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+              style={{ backgroundColor: 'transparent', background: 'transparent', pointerEvents: 'auto' }}
             >
               <div className="p-8">
                 {/* Header */}
                 <div className="flex justify-between items-center mb-6 border-b-2 border-red-500/30 pb-4">
                   <div>
                     <h2 className="text-4xl font-bold bg-gradient-to-r from-red-400 to-red-600 bg-clip-text text-transparent">
-                      💀 Soul Taker
+                      Soul Taker
                     </h2>
                     <p className="text-gray-300 mt-2">
                       Escolha 1 monstro face-up que seu oponente controla; destrua o alvo e, depois, seu oponente ganha 1000 PV.
@@ -7421,7 +9257,7 @@ const DuelArena: React.FC = () => {
                       }`}
                     >
                       {selectedSoulTakerMonster !== null 
-                        ? '💀 Destruir Monstro' 
+                        ? 'Destruir Monstro' 
                         : 'Selecione um monstro'}
                     </button>
                   </div>
@@ -7436,7 +9272,7 @@ const DuelArena: React.FC = () => {
       <AnimatePresence>
         {showExiledForceModal && exiledForceData && (
           <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-xl"
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
@@ -7446,14 +9282,14 @@ const DuelArena: React.FC = () => {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl border-2 border-orange-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+              className="bg-gradient-to-br from-gray-900/80 via-gray-800/80 to-gray-900/80 backdrop-blur-lg rounded-2xl border-2 border-orange-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
             >
               <div className="p-8">
                 {/* Header */}
                 <div className="flex justify-between items-center mb-6 border-b-2 border-orange-500/30 pb-4">
                   <div>
                     <h2 className="text-4xl font-bold bg-gradient-to-r from-orange-400 to-red-600 bg-clip-text text-transparent">
-                      💥 Exiled Force
+                      Exiled Force
                     </h2>
                     <p className="text-gray-300 mt-2">
                       Você pode tributar este monstro; destrua 1 monstro no campo.
@@ -7471,92 +9307,138 @@ const DuelArena: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Seção: Monstros Disponíveis */}
+                {/* Seção: Monstros Disponíveis - oponente como no campo (5 zonas, posição e face); depois seus monstros */}
                 {exiledForceData.availableMonsters.length > 0 ? (
                   <div className="mb-6">
                     <h3 className="text-2xl font-bold text-white mb-4">Selecione um Monstro para Destruir</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                      {exiledForceData.availableMonsters.map((item: any, index: number) => {
-                        const { monster, zoneIndex, player } = item;
-                        const isSelected = selectedExiledForceMonster?.zoneIndex === zoneIndex && 
-                                          selectedExiledForceMonster?.player === player;
-                        const isDefense = monster.position === 'defense';
-                        const isAttack = monster.position === 'attack';
-                        
-                        // Para monstros em defesa, precisamos rotacionar 90 graus
-                        const needsRotation = isDefense;
-                        const containerSize = needsRotation ? '175px' : '120px';
-                        const containerHeight = needsRotation ? '175px' : '175px';
-                        const cardWidth = '120px';
-                        const cardHeight = '175px';
-                        
-                        return (
-                          <motion.div
-                            key={`exiled-force-monster-${player}-${zoneIndex}-${index}`}
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => {
-                              setSelectedExiledForceMonster({ zoneIndex, player });
-                            }}
-                            className={`relative cursor-pointer rounded-xl border-2 transition-all ${
-                              isSelected
-                                ? 'border-orange-400 ring-4 ring-orange-400/50 shadow-lg shadow-orange-500/50'
-                                : 'border-gray-600 hover:border-orange-500/50'
-                            }`}
-                            style={{ 
-                              width: containerSize, 
-                              height: containerHeight,
-                              overflow: 'visible',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center'
-                            }}
-                          >
-                            <div
-                              className="relative"
-                              style={{
-                                width: cardWidth,
-                                height: cardHeight,
-                                transform: needsRotation ? 'rotate(90deg)' : 'none',
-                                transformOrigin: 'center center',
-                                overflow: 'hidden',
-                                borderRadius: '8px',
-                              }}
-                            >
-                              <CardImage
-                                card={monster}
-                                className="w-full h-full"
-                                fallback="/images/fundoCarta.webp"
-                              />
-                            </div>
-                            {isSelected && (
-                              <div className="absolute inset-0 bg-orange-400/30 flex items-center justify-center pointer-events-none rounded-xl">
-                                <div className="bg-orange-400/95 text-black px-3 py-1.5 rounded-lg font-bold text-sm">
-                                  Selecionado
-                                </div>
-                              </div>
-                            )}
-                            <div className="absolute bottom-1 left-1 right-1 text-center pointer-events-none">
-                              <p className="text-white text-xs font-semibold bg-black/70 px-2 py-1 rounded truncate">
-                                {monster.name || monster.cardName || 'Monstro'}
-                              </p>
-                            </div>
-                            <div className="absolute top-1 right-1 pointer-events-none">
-                              <div className={`${player === 'player' ? 'bg-blue-500/90' : 'bg-red-500/90'} text-white text-xs px-2 py-1 rounded font-bold`}>
-                                {player === 'player' ? 'SEU' : 'OPONENTE'}
-                              </div>
-                            </div>
-                            <div className="absolute top-1 left-1 pointer-events-none">
-                              <div className="bg-orange-500/90 text-white text-xs px-2 py-1 rounded font-bold">
-                                {monster.position === 'attack' ? 'ATK' : 'DEF'}
-                              </div>
-                            </div>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
+                    {/* Monstros do oponente: só as cartas na posição em que estão (sem zonas vazias) */}
+                    {(() => {
+                      const opponentItems = exiledForceData.availableMonsters
+                        .filter((item: any) => item.player === 'opponent')
+                        .sort((a: any, b: any) => a.zoneIndex - b.zoneIndex);
+                      return opponentItems.length > 0 ? (
+                        <div className="mb-6">
+                          <h4 className="text-lg font-semibold text-orange-200 mb-3">Monstros do Oponente</h4>
+                          <div className="flex flex-wrap gap-4 justify-center items-center">
+                            {opponentItems.map((item: any) => {
+                              const { monster, zoneIndex } = item;
+                              const isSelected = selectedExiledForceMonster?.player === 'opponent' && selectedExiledForceMonster?.zoneIndex === zoneIndex;
+                              const isDefense = monster?.position === 'defense' || monster?.position === 'defence';
+                              const isFaceDown = monster?.position === 'set';
+                              const needsRotation = isDefense || isFaceDown;
+                              const cardW = 100;
+                              const cardH = 146;
+                              const containerW = needsRotation ? cardH : cardW;
+                              const containerH = needsRotation ? cardW : cardH;
+                              return (
+                                <motion.div
+                                  key={`exiled-opponent-${zoneIndex}`}
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.95 }}
+                                  onClick={() => setSelectedExiledForceMonster({ zoneIndex, player: 'opponent' })}
+                                  className={`relative rounded-lg border-2 transition-all flex items-center justify-center cursor-pointer overflow-hidden ${
+                                    isSelected ? 'border-orange-400 ring-4 ring-orange-400/50 shadow-lg shadow-orange-500/50' : 'border-gray-600 hover:border-orange-500/50'
+                                  }`}
+                                  style={{ width: containerW, height: containerH, minWidth: containerW, minHeight: containerH }}
+                                >
+                                  <div
+                                    className="absolute inset-0 flex items-center justify-center"
+                                    style={{
+                                      width: cardW,
+                                      height: cardH,
+                                      transform: needsRotation ? 'rotate(90deg)' : 'none',
+                                      transformOrigin: 'center center',
+                                      left: '50%',
+                                      top: '50%',
+                                      marginLeft: -cardW / 2,
+                                      marginTop: -cardH / 2,
+                                    }}
+                                  >
+                                    {isFaceDown ? (
+                                      <div
+                                        className="w-full h-full bg-cover bg-center bg-no-repeat rounded"
+                                        style={{ backgroundImage: `url(${opponentSkinImageUrl})`, width: cardW, height: cardH }}
+                                      />
+                                    ) : (
+                                      <CardImage card={monster} className="w-full h-full rounded" fallback="/images/fundoCarta.webp" style={{ width: cardW, height: cardH }} />
+                                    )}
+                                  </div>
+                                  {isSelected && (
+                                    <div className="absolute inset-0 bg-orange-400/30 flex items-center justify-center pointer-events-none rounded-lg">
+                                      <span className="bg-orange-400/95 text-black px-2 py-1 rounded font-bold text-xs">Selecionado</span>
+                                    </div>
+                                  )}
+                                </motion.div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : null;
+                    })()}
+                    {/* Seus monstros: só as cartas na posição em que estão (sem zonas vazias) */}
+                    {(() => {
+                      const playerItems = exiledForceData.availableMonsters
+                        .filter((item: any) => item.player === 'player')
+                        .sort((a: any, b: any) => a.zoneIndex - b.zoneIndex);
+                      return playerItems.length > 0 ? (
+                        <div>
+                          <h4 className="text-lg font-semibold text-orange-200 mb-3">Seus Monstros</h4>
+                          <div className="flex flex-wrap gap-4 justify-center items-center">
+                            {playerItems.map((item: any) => {
+                              const { monster, zoneIndex } = item;
+                              const isSelected = selectedExiledForceMonster?.player === 'player' && selectedExiledForceMonster?.zoneIndex === zoneIndex;
+                              const isDefense = monster?.position === 'defense' || monster?.position === 'defence';
+                              const isFaceDown = monster?.position === 'set';
+                              const needsRotation = isDefense || isFaceDown;
+                              const cardW = 100;
+                              const cardH = 146;
+                              const containerW = needsRotation ? cardH : cardW;
+                              const containerH = needsRotation ? cardW : cardH;
+                              return (
+                                <motion.div
+                                  key={`exiled-player-${zoneIndex}`}
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.95 }}
+                                  onClick={() => setSelectedExiledForceMonster({ zoneIndex, player: 'player' })}
+                                  className={`relative rounded-lg border-2 transition-all flex items-center justify-center cursor-pointer overflow-hidden ${
+                                    isSelected ? 'border-orange-400 ring-4 ring-orange-400/50 shadow-lg shadow-orange-500/50' : 'border-gray-600 hover:border-orange-500/50'
+                                  }`}
+                                  style={{ width: containerW, height: containerH, minWidth: containerW, minHeight: containerH }}
+                                >
+                                  <div
+                                    className="absolute flex items-center justify-center"
+                                    style={{
+                                      width: cardW,
+                                      height: cardH,
+                                      transform: needsRotation ? 'rotate(90deg)' : 'none',
+                                      transformOrigin: 'center center',
+                                      left: '50%',
+                                      top: '50%',
+                                      marginLeft: -cardW / 2,
+                                      marginTop: -cardH / 2,
+                                    }}
+                                  >
+                                    {isFaceDown ? (
+                                      <div
+                                        className="w-full h-full bg-cover bg-center bg-no-repeat rounded"
+                                        style={{ backgroundImage: `url(${mySkinImageUrl})`, width: cardW, height: cardH }}
+                                      />
+                                    ) : (
+                                      <CardImage card={monster} className="w-full h-full rounded" fallback="/images/fundoCarta.webp" style={{ width: cardW, height: cardH }} />
+                                    )}
+                                  </div>
+                                  {isSelected && (
+                                    <div className="absolute inset-0 bg-orange-400/30 flex items-center justify-center pointer-events-none rounded-lg">
+                                      <span className="bg-orange-400/95 text-black px-2 py-1 rounded font-bold text-xs">Selecionado</span>
+                                    </div>
+                                  )}
+                                </motion.div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                 ) : (
                   <div className="text-center py-8 text-gray-400">
@@ -7611,7 +9493,7 @@ const DuelArena: React.FC = () => {
                       }`}
                     >
                       {selectedExiledForceMonster !== null 
-                        ? '💥 Destruir Monstro' 
+                        ? 'Destruir Monstro' 
                         : 'Selecione um monstro'}
                     </button>
                   </div>
@@ -7629,7 +9511,7 @@ const DuelArena: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-xl"
             onClick={(e) => {
               if (e.target === e.currentTarget) {
                 setShowDarkArmedDragonEffectModal(false);
@@ -7643,7 +9525,7 @@ const DuelArena: React.FC = () => {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-gradient-to-br from-purple-900/95 to-indigo-900/95 border-2 border-purple-400/70 rounded-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+              className="bg-gray-900/70 backdrop-blur-xl border-2 border-purple-400/70 rounded-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="text-center mb-6">
@@ -7673,7 +9555,7 @@ const DuelArena: React.FC = () => {
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             onClick={() => setSelectedDarkMonsterToBanish(index)}
-                            className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                            className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all w-[120px] h-[175px] mx-auto ${
                               isSelected
                                 ? 'border-purple-400 shadow-lg shadow-purple-500/50'
                                 : 'border-purple-600/50 hover:border-purple-400'
@@ -7681,7 +9563,7 @@ const DuelArena: React.FC = () => {
                           >
                             <CardImage
                               card={monster}
-                              className="w-full h-48 object-cover"
+                              className="w-full h-full object-contain bg-black/20"
                             />
                             {isSelected && (
                               <div className="absolute inset-0 bg-purple-400/30 flex items-center justify-center pointer-events-none rounded-xl">
@@ -7706,11 +9588,12 @@ const DuelArena: React.FC = () => {
                   )}
                 </div>
               ) : selectedCardToDestroy === null ? (
-                // Segunda etapa: Selecionar carta no campo para destruir
+                // Segunda etapa: Selecionar carta no campo para destruir (só mostra seções que têm cartas)
                 <div>
                   <h3 className="text-lg font-semibold text-white mb-4">Selecione uma carta no campo para destruir:</h3>
                   <div className="space-y-6">
-                    {/* Monstros do jogador */}
+                    {/* Monstros do jogador - só mostra se tiver pelo menos 1 */}
+                    {myMonsters.some((m: any) => m != null) && (
                     <div>
                       <h4 className="text-md font-semibold text-purple-200 mb-3">Seus Monstros:</h4>
                       <div className="grid grid-cols-5 gap-2">
@@ -7725,7 +9608,7 @@ const DuelArena: React.FC = () => {
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}
                               onClick={() => setSelectedCardToDestroy({ player: 'player', type: 'monster', zoneIndex: index })}
-                              className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                              className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all w-[80px] h-[117px] ${
                                 isSelected
                                   ? 'border-purple-400 shadow-lg shadow-purple-500/50'
                                   : 'border-purple-600/50 hover:border-purple-400'
@@ -7733,7 +9616,7 @@ const DuelArena: React.FC = () => {
                             >
                               <CardImage
                                 card={monster}
-                                className="w-full h-32 object-cover"
+                                className="w-full h-full object-contain bg-black/20"
                               />
                               {isSelected && (
                                 <div className="absolute inset-0 bg-purple-400/30 flex items-center justify-center pointer-events-none rounded-xl">
@@ -7747,8 +9630,10 @@ const DuelArena: React.FC = () => {
                         })}
                       </div>
                     </div>
+                    )}
 
-                    {/* Spell/Trap do jogador */}
+                    {/* Spell/Trap do jogador - só mostra se tiver pelo menos 1 */}
+                    {mySpellTraps.some((s: any) => s != null) && (
                     <div>
                       <h4 className="text-md font-semibold text-purple-200 mb-3">Suas Magias/Armadilhas:</h4>
                       <div className="grid grid-cols-5 gap-2">
@@ -7763,7 +9648,7 @@ const DuelArena: React.FC = () => {
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}
                               onClick={() => setSelectedCardToDestroy({ player: 'player', type: 'spellTrap', zoneIndex: index })}
-                              className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                              className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all w-[80px] h-[117px] ${
                                 isSelected
                                   ? 'border-purple-400 shadow-lg shadow-purple-500/50'
                                   : 'border-purple-600/50 hover:border-purple-400'
@@ -7771,7 +9656,7 @@ const DuelArena: React.FC = () => {
                             >
                               <CardImage
                                 card={spellTrap}
-                                className="w-full h-32 object-cover"
+                                className="w-full h-full object-contain bg-black/20"
                               />
                               {isSelected && (
                                 <div className="absolute inset-0 bg-purple-400/30 flex items-center justify-center pointer-events-none rounded-xl">
@@ -7785,8 +9670,10 @@ const DuelArena: React.FC = () => {
                         })}
                       </div>
                     </div>
+                    )}
 
-                    {/* Monstros do oponente */}
+                    {/* Monstros do oponente - só mostra se tiver pelo menos 1 */}
+                    {opponentMonsters.some((m: any) => m != null) && (
                     <div>
                       <h4 className="text-md font-semibold text-purple-200 mb-3">Monstros do Oponente:</h4>
                       <div className="grid grid-cols-5 gap-2">
@@ -7795,22 +9682,32 @@ const DuelArena: React.FC = () => {
                           const isSelected = selectedCardToDestroy?.player === 'opponent' && 
                                            selectedCardToDestroy?.type === 'monster' && 
                                            selectedCardToDestroy?.zoneIndex === index;
+                          const isFaceDown = monster.position === 'set';
                           return (
                             <motion.div
                               key={`opponent-monster-${index}`}
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}
                               onClick={() => setSelectedCardToDestroy({ player: 'opponent', type: 'monster', zoneIndex: index })}
-                              className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                              className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all w-[80px] h-[117px] ${
                                 isSelected
                                   ? 'border-purple-400 shadow-lg shadow-purple-500/50'
                                   : 'border-purple-600/50 hover:border-purple-400'
                               }`}
                             >
-                              <CardImage
-                                card={monster}
-                                className="w-full h-32 object-cover"
-                              />
+                              {isFaceDown ? (
+                                <div
+                                  className="w-full h-full bg-cover bg-center bg-no-repeat"
+                                  style={{
+                                    backgroundImage: `url(${opponentSkinImageUrl})`,
+                                  }}
+                                />
+                              ) : (
+                                <CardImage
+                                  card={monster}
+                                  className="w-full h-full object-contain bg-black/20"
+                                />
+                              )}
                               {isSelected && (
                                 <div className="absolute inset-0 bg-purple-400/30 flex items-center justify-center pointer-events-none rounded-xl">
                                   <div className="bg-purple-400/95 text-black px-2 py-1 rounded-lg font-bold text-xs">
@@ -7823,8 +9720,10 @@ const DuelArena: React.FC = () => {
                         })}
                       </div>
                     </div>
+                    )}
 
-                    {/* Spell/Trap do oponente */}
+                    {/* Spell/Trap do oponente - só mostra se tiver pelo menos 1 */}
+                    {opponentSpellTraps.some((s: any) => s != null) && (
                     <div>
                       <h4 className="text-md font-semibold text-purple-200 mb-3">Magias/Armadilhas do Oponente:</h4>
                       <div className="grid grid-cols-5 gap-2">
@@ -7833,22 +9732,32 @@ const DuelArena: React.FC = () => {
                           const isSelected = selectedCardToDestroy?.player === 'opponent' && 
                                            selectedCardToDestroy?.type === 'spellTrap' && 
                                            selectedCardToDestroy?.zoneIndex === index;
+                          const isFaceDown = spellTrap.position === 'set';
                           return (
                             <motion.div
                               key={`opponent-spelltrap-${index}`}
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}
                               onClick={() => setSelectedCardToDestroy({ player: 'opponent', type: 'spellTrap', zoneIndex: index })}
-                              className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                              className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all w-[80px] h-[117px] ${
                                 isSelected
                                   ? 'border-purple-400 shadow-lg shadow-purple-500/50'
                                   : 'border-purple-600/50 hover:border-purple-400'
                               }`}
                             >
-                              <CardImage
-                                card={spellTrap}
-                                className="w-full h-32 object-cover"
-                              />
+                              {isFaceDown ? (
+                                <div
+                                  className="w-full h-full bg-cover bg-center bg-no-repeat"
+                                  style={{
+                                    backgroundImage: `url(${opponentSkinImageUrl})`,
+                                  }}
+                                />
+                              ) : (
+                                <CardImage
+                                  card={spellTrap}
+                                  className="w-full h-full object-contain bg-black/20"
+                                />
+                              )}
                               {isSelected && (
                                 <div className="absolute inset-0 bg-purple-400/30 flex items-center justify-center pointer-events-none rounded-xl">
                                   <div className="bg-purple-400/95 text-black px-2 py-1 rounded-lg font-bold text-xs">
@@ -7861,6 +9770,7 @@ const DuelArena: React.FC = () => {
                         })}
                       </div>
                     </div>
+                    )}
                   </div>
                 </div>
               ) : null}
@@ -7883,7 +9793,7 @@ const DuelArena: React.FC = () => {
                       setSelectedCardToDestroy(null);
                     }
                   }}
-                  className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                  className="px-8 py-3 bg-gray-700/80 hover:bg-gray-600/80 backdrop-blur-sm text-white rounded-lg font-bold transition-colors"
                 >
                   {selectedDarkMonsterToBanish === null ? 'Cancelar' : selectedCardToDestroy === null ? 'Voltar' : 'Voltar'}
                 </button>
@@ -7932,10 +9842,10 @@ const DuelArena: React.FC = () => {
                       }
                     }}
                     disabled={selectedCardToDestroy === null}
-                    className={`px-8 py-3 rounded-lg font-bold transition-colors text-sm ${
+                    className={`px-8 py-3 rounded-lg font-bold transition-colors text-sm backdrop-blur-sm ${
                       selectedCardToDestroy !== null
-                        ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                        ? 'bg-purple-600/90 hover:bg-purple-700/90 text-white'
+                        : 'bg-gray-600/80 text-gray-400 cursor-not-allowed'
                     }`}
                   >
                     {selectedCardToDestroy === null
@@ -8083,27 +9993,25 @@ const DuelArena: React.FC = () => {
         onConfirm={async (selectedTributes) => {
           if (!tributeModalData || !duelId || !user?.id) return;
           
-          const emptyZoneIndex = myMonsters.findIndex(m => m === null || m === undefined);
-          if (emptyZoneIndex === -1) {
-            alert('Todas as zonas de monstro estão ocupadas!');
-            setShowTributeModal(false);
-            setTributeModalData(null);
-            return;
+          const requiredTributes = tributeModalData?.requiredTributes || 0;
+          // Com tributo: o backend exige que zoneIndex seja uma das zonas liberadas pelo tributo
+          let zoneIndex: number;
+          if (requiredTributes > 0 && selectedTributes.length > 0) {
+            zoneIndex = selectedTributes[0];
+          } else {
+            zoneIndex = myMonsters.findIndex(m => m === null || m === undefined);
+            if (zoneIndex === -1) zoneIndex = 0;
           }
           
-          // Atualizar estado local imediatamente para que os botões fiquem desabilitados
           setNormalSummonUsed(true);
+          await triggerCardPlacementAnimation(tributeModalData.card, zoneIndex, true);
           
-          // Acionar animação antes de invocar com tributos
-          await triggerCardPlacementAnimation(tributeModalData.card, emptyZoneIndex, true);
-          
-          // Invocar com tributos
           performAction(duelId, user.id, 'SUMMON_MONSTER', {
             cardId: tributeModalData.card.id || tributeModalData.card.cardId || tributeModalData.card.idCarta,
             cardName: tributeModalData.card.name,
-            zoneIndex: emptyZoneIndex,
+            zoneIndex,
             position: tributeModalData.position,
-            tributeZoneIndices: selectedTributes, // Índices dos monstros a serem tributados
+            tributeZoneIndices: selectedTributes,
           });
           
           setZoomedCard(null);
@@ -8120,7 +10028,7 @@ const DuelArena: React.FC = () => {
       <AnimatePresence>
         {showRedEyesDarknessMetalDragonModal && redEyesDarknessMetalDragonData && (
           <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-xl"
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher o dragão
             }}
@@ -8130,13 +10038,13 @@ const DuelArena: React.FC = () => {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-2 border-red-500/50"
+              className="bg-gray-900/70 backdrop-blur-xl rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-2 border-red-500/50"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
                   <div>
                     <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-orange-400">
-                      🐉 Red-Eyes Darkness Metal Dragon - Invocação Especial
+                      Red-Eyes Darkness Metal Dragon - Invocação Especial
                     </h2>
                     <p className="text-gray-300 mt-2">
                       Escolha 1 monstro do Tipo Dragão face-up que você controla para banir
@@ -8148,16 +10056,16 @@ const DuelArena: React.FC = () => {
                       setRedEyesDarknessMetalDragonData(null);
                       setSelectedDragonToBanish(null);
                     }}
-                    className="text-gray-400 hover:text-red-400 text-4xl font-bold transition-colors hover:scale-110 transform"
+                    className="text-gray-400 hover:text-red-400 text-2xl font-bold transition-colors hover:scale-110 transform px-2"
                   >
-                    ✕
+                    X
                   </button>
                 </div>
 
                 {/* Monstros Dragão disponíveis */}
                 {redEyesDarknessMetalDragonData.dragonMonsters.length > 0 ? (
                   <div className="mb-6">
-                    <h3 className="text-2xl font-bold text-red-400 mb-4">🐉 Monstros Dragão no Campo</h3>
+                    <h3 className="text-2xl font-bold text-red-400 mb-4">Monstros Dragão no Campo</h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                       {redEyesDarknessMetalDragonData.dragonMonsters.map((monster: any, index: number) => {
                         const isSelected = selectedDragonToBanish === index;
@@ -8184,7 +10092,7 @@ const DuelArena: React.FC = () => {
                             />
                             {isSelected && (
                               <div className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                                ✓
+                                OK
                               </div>
                             )}
                           </motion.div>
@@ -8203,14 +10111,13 @@ const DuelArena: React.FC = () => {
                   <button
                     onClick={() => {
                       if (duelId && user?.id) {
-                        // Cancelar ativação da carta no backend
                         performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
                       }
                       setShowRedEyesDarknessMetalDragonModal(false);
                       setRedEyesDarknessMetalDragonData(null);
                       setSelectedDragonToBanish(null);
                     }}
-                    className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                    className="px-6 py-3 bg-gray-700/80 hover:bg-gray-600/80 text-white rounded-lg font-bold transition-colors backdrop-blur-sm"
                   >
                     Cancelar
                   </button>
@@ -8227,22 +10134,14 @@ const DuelArena: React.FC = () => {
                         return;
                       }
                       
-                      // Fechar modal de seleção de dragão
                       setShowRedEyesDarknessMetalDragonModal(false);
-                      
-                      // Sempre invocar em ataque
                       const position = 'attack';
-                      
-                      console.log(`🎯 [Red-Eyes Darkness Metal Dragon Modal] Confirmando invocação - Banindo dragão (índice ${selectedDragon.zoneIndex}), posição: ${position}`);
-                      
-                      // Enviar ação de invocação especial
                       performAction(duelId, user.id, 'RED_EYES_DARKNESS_METAL_DRAGON_SUMMON_CHOICE', {
                         cardId: redEyesDarknessMetalDragonData.cardId,
                         dragonZoneIndex: selectedDragon.zoneIndex,
                         zoneIndex: emptyZoneIndex,
                         position,
                       });
-                      
                       setRedEyesDarknessMetalDragonData(null);
                       setSelectedDragonToBanish(null);
                     }}
@@ -8253,7 +10152,7 @@ const DuelArena: React.FC = () => {
                         : 'bg-gray-600 text-gray-400 cursor-not-allowed'
                     }`}
                   >
-                    {selectedDragonToBanish !== null ? '✅ Confirmar Invocação' : 'Selecione um Dragão'}
+                    {selectedDragonToBanish !== null ? 'Confirmar Invocação' : 'Selecione um Dragão'}
                   </button>
                 </div>
               </div>
@@ -8266,7 +10165,7 @@ const DuelArena: React.FC = () => {
       <AnimatePresence>
         {showRedEyesDarknessMetalDragonEffectModal && redEyesDarknessMetalDragonEffectData && (
           <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-xl"
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher o dragão
             }}
@@ -8276,13 +10175,13 @@ const DuelArena: React.FC = () => {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-2 border-red-500/50"
+              className="bg-gray-900/70 backdrop-blur-xl rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-2 border-red-500/50"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
                   <div>
                     <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-orange-400">
-                      🐉 Red-Eyes Darkness Metal Dragon - Efeito
+                      Red-Eyes Darkness Metal Dragon - Efeito
                     </h2>
                     <p className="text-gray-300 mt-2">
                       Uma vez por turno: invoque por invocação especial 1 monstro do Tipo Dragão da sua mão ou Cemitério (exceto Red-Eyes Darkness Metal Dragon)
@@ -8296,16 +10195,16 @@ const DuelArena: React.FC = () => {
                       setSelectedDragonIndex(null);
                       setSelectedDragonId(null);
                     }}
-                    className="text-gray-400 hover:text-red-400 text-4xl font-bold transition-colors hover:scale-110 transform"
+                    className="text-gray-400 hover:text-red-400 text-2xl font-bold transition-colors hover:scale-110 transform px-2"
                   >
-                    ✕
+                    X
                   </button>
                 </div>
 
                 {/* Dragões na mão */}
                 {redEyesDarknessMetalDragonEffectData.dragonsInHand.length > 0 && (
                   <div className="mb-6">
-                    <h3 className="text-2xl font-bold text-blue-400 mb-4">🃏 Dragões na Mão ({redEyesDarknessMetalDragonEffectData.dragonsInHand.length})</h3>
+                    <h3 className="text-2xl font-bold text-blue-400 mb-4">Dragões na Mão ({redEyesDarknessMetalDragonEffectData.dragonsInHand.length})</h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                       {redEyesDarknessMetalDragonEffectData.dragonsInHand.map((dragon: any, index: number) => {
                         const dragonId = `hand-${index}`;
@@ -8335,7 +10234,7 @@ const DuelArena: React.FC = () => {
                             />
                             {isSelected && (
                               <div className="absolute top-2 right-2 bg-blue-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                                ✓
+                                OK
                               </div>
                             )}
                             <div className="absolute bottom-2 left-2 bg-blue-600/80 text-white text-xs font-bold px-2 py-1 rounded">
@@ -8351,7 +10250,7 @@ const DuelArena: React.FC = () => {
                 {/* Dragões no cemitério */}
                 {redEyesDarknessMetalDragonEffectData.dragonsInGraveyard.length > 0 && (
                   <div className="mb-6">
-                    <h3 className="text-2xl font-bold text-purple-400 mb-4">⚰️ Dragões no Cemitério ({redEyesDarknessMetalDragonEffectData.dragonsInGraveyard.length})</h3>
+                    <h3 className="text-2xl font-bold text-purple-400 mb-4">Dragões no Cemitério ({redEyesDarknessMetalDragonEffectData.dragonsInGraveyard.length})</h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                       {redEyesDarknessMetalDragonEffectData.dragonsInGraveyard.map((dragon: any, index: number) => {
                         const dragonId = `graveyard-${index}`;
@@ -8381,7 +10280,7 @@ const DuelArena: React.FC = () => {
                             />
                             {isSelected && (
                               <div className="absolute top-2 right-2 bg-purple-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                                ✓
+                                OK
                               </div>
                             )}
                             <div className="absolute bottom-2 left-2 bg-purple-600/80 text-white text-xs font-bold px-2 py-1 rounded">
@@ -8406,7 +10305,6 @@ const DuelArena: React.FC = () => {
                   <button
                     onClick={() => {
                       if (duelId && user?.id) {
-                        // Cancelar ativação da carta no backend
                         performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
                       }
                       setShowRedEyesDarknessMetalDragonEffectModal(false);
@@ -8415,7 +10313,7 @@ const DuelArena: React.FC = () => {
                       setSelectedDragonIndex(null);
                       setSelectedDragonId(null);
                     }}
-                    className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                    className="px-6 py-3 bg-gray-700/80 hover:bg-gray-600/80 text-white rounded-lg font-bold transition-colors backdrop-blur-sm"
                   >
                     Cancelar
                   </button>
@@ -8429,7 +10327,6 @@ const DuelArena: React.FC = () => {
                         return;
                       }
                       
-                      // Enviar ação de efeito
                       performAction(duelId, user.id, 'RED_EYES_DARKNESS_METAL_DRAGON_EFFECT_CHOICE', {
                         monsterZoneIndex: redEyesDarknessMetalDragonEffectData.monsterZoneIndex,
                         source: selectedDragonSource,
@@ -8453,7 +10350,7 @@ const DuelArena: React.FC = () => {
                         : 'bg-gray-600 text-gray-400 cursor-not-allowed'
                     }`}
                   >
-                    {selectedDragonSource !== null && selectedDragonIndex !== null ? '✅ Confirmar Invocação (Ataque)' : 'Selecione um Dragão'}
+                    {selectedDragonSource !== null && selectedDragonIndex !== null ? 'Confirmar Invocação (Ataque)' : 'Selecione um Dragão'}
                   </button>
                 </div>
               </div>
@@ -8466,7 +10363,7 @@ const DuelArena: React.FC = () => {
       <AnimatePresence>
         {showCyberSteinModal && cyberSteinData && (
           <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-lg"
             onClick={(e) => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
@@ -8476,13 +10373,13 @@ const DuelArena: React.FC = () => {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-2 border-cyan-500/50"
+              className="bg-gray-900/80 backdrop-blur-md rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-2 border-cyan-500/50"
             >
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
                   <div>
                     <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400">
-                      ⚡ Cyber-Stein - Efeito
+                      Cyber-Stein - Efeito
                     </h2>
                     <p className="text-gray-300 mt-2">
                       Pague 5000 LP; invoque por invocação especial 1 monstro do seu Extra Deck em modo de ataque
@@ -8506,7 +10403,7 @@ const DuelArena: React.FC = () => {
                 {/* Monstros do Extra Deck */}
                 {cyberSteinData.extraDeckMonsters.length > 0 ? (
                   <div className="mb-6">
-                    <h3 className="text-2xl font-bold text-cyan-400 mb-4">📦 Monstros do Extra Deck ({cyberSteinData.extraDeckMonsters.length})</h3>
+                    <h3 className="text-2xl font-bold text-cyan-400 mb-4">Monstros do Extra Deck</h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                       {cyberSteinData.extraDeckMonsters.map((monster: any, index: number) => {
                         const extraDeckIndex = monster.extraDeckIndex !== undefined ? monster.extraDeckIndex : index;
@@ -8589,7 +10486,7 @@ const DuelArena: React.FC = () => {
                         : 'bg-gray-600 text-gray-400 cursor-not-allowed'
                     }`}
                   >
-                    {selectedCyberSteinMonster !== null ? '⚡ Confirmar (Pagar 5000 LP)' : 'Selecione um Monstro'}
+                    {selectedCyberSteinMonster !== null ? 'Confirmar (Pagar 5000 LP)' : 'Selecione um Monstro'}
                   </button>
                 </div>
               </div>
@@ -8605,7 +10502,7 @@ const DuelArena: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-xl"
             onClick={(e) => {
               if (e.target === e.currentTarget) {
                 setShowReinforcementOfTheArmyModal(false);
@@ -8618,7 +10515,7 @@ const DuelArena: React.FC = () => {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-gradient-to-br from-yellow-900/95 to-orange-900/95 border-2 border-yellow-400/70 rounded-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+              className="bg-gray-900/70 backdrop-blur-xl border-2 border-yellow-400/50 rounded-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="text-center mb-6">
@@ -8665,11 +10562,6 @@ const DuelArena: React.FC = () => {
                             <p className="text-white text-xs font-semibold bg-black/70 px-2 py-1 rounded truncate">
                               {monster.name || monster.cardName || 'Monstro'}
                             </p>
-                          </div>
-                          <div className="absolute top-1 left-1 pointer-events-none">
-                            <div className="bg-yellow-500/90 text-black text-xs px-2 py-1 rounded font-bold">
-                              Lv.{monster.level || monster.cardLevel || '?'}
-                            </div>
                           </div>
                         </motion.div>
                       );
@@ -8745,7 +10637,7 @@ const DuelArena: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[10000] flex items-center justify-center p-4"
+            className="fixed inset-0 bg-black/20 backdrop-blur-md z-[10000] flex items-center justify-center p-4"
             onClick={(e) => {
               if (e.target === e.currentTarget) {
                 setShowLastWillModal(false);
@@ -8758,7 +10650,7 @@ const DuelArena: React.FC = () => {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 border-2 border-purple-500/50 rounded-xl shadow-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+              className="bg-gray-900/80 backdrop-blur-lg border-2 border-purple-500/50 rounded-xl shadow-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <h2 className="text-2xl font-bold text-white mb-4 text-center">
@@ -8878,6 +10770,7 @@ const DuelArena: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
     </div>
   );
 };

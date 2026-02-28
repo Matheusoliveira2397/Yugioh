@@ -45,6 +45,11 @@ JWT_EXPIRES_IN=7d
 # Upload
 MAX_FILE_SIZE=10485760
 
+# Email (Opcional - para verificação de email)
+EMAIL_USER=seu-email@gmail.com
+EMAIL_PASSWORD=sua-senha-de-app-do-gmail
+FRONTEND_URL=http://localhost:5173
+
 # Configurações
 HTTP_TIMEOUT=30000
 MAX_CONNECTIONS=2000
@@ -72,6 +77,11 @@ REDIS_URL=redis://host:6379
 # JWT - GERE UMA CHAVE FORTE!
 JWT_SECRET=SUA-CHAVE-SECRETA-SUPER-FORTE-AQUI
 JWT_EXPIRES_IN=7d
+
+# Email (Opcional - para verificação de email)
+EMAIL_USER=seu-email@gmail.com
+EMAIL_PASSWORD=sua-senha-de-app-do-gmail
+FRONTEND_URL=https://seu-frontend.com
 ```
 
 ### Frontend `.env.local` (Desenvolvimento)
@@ -119,6 +129,7 @@ Após criar os arquivos:
 - ✅ Os arquivos `.env*` já estão no `.gitignore`
 - ✅ Use variáveis de ambiente do servidor em produção quando possível
 - ✅ Mantenha `JWT_SECRET` seguro e único
+- 📧 **Para configurar email**: Veja o arquivo `CONFIGURAR_EMAIL.md` para instruções detalhadas
 
 ## Scripts Alternativos
 

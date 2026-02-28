@@ -25,8 +25,10 @@ import { SiteTab } from './entities/site-tab.entity';
 import { Division } from './entities/division.entity';
 import { RandomDuelLevelRange } from './entities/random-duel-level-range.entity';
 import { SocialMedia } from './entities/social-media.entity';
+import { NewAccountSettings } from './entities/new-account-settings.entity';
 import { DeckCard } from '../decks/entities/deck-card.entity';
 import { InitialDecksModule } from '../initial-decks/initial-decks.module';
+import { NewAccountSettingsModule } from '../new-account-settings/new-account-settings.module';
 import { DuelsModule } from '../duels/duels.module';
 import { ChatModule } from '../chat/chat.module';
 import { FriendsModule } from '../friends/friends.module';
@@ -34,11 +36,14 @@ import { Achievement } from '../users/entities/achievement.entity';
 import { UploadModule } from '../upload/upload.module';
 import { UsersModule } from '../users/users.module';
 import { RandomDuelLevelRangesService } from './random-duel-level-ranges.service';
+import { PublicStatsService } from './public-stats.service';
+import { Card } from '../cards/entities/card.entity';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       User,
+      Card,
       UserCard,
       Deck,
       DeckCard,
@@ -64,6 +69,7 @@ import { RandomDuelLevelRangesService } from './random-duel-level-ranges.service
     ]),
     RedisModule,
     InitialDecksModule,
+    NewAccountSettingsModule,
     forwardRef(() => DuelsModule),
     ChatModule,
     FriendsModule,
@@ -71,7 +77,7 @@ import { RandomDuelLevelRangesService } from './random-duel-level-ranges.service
     UsersModule,
   ],
   controllers: [AdminController, PublicController],
-  providers: [AdminService, RandomDuelLevelRangesService],
+  providers: [AdminService, RandomDuelLevelRangesService, PublicStatsService],
   exports: [AdminService, RandomDuelLevelRangesService],
 })
 export class AdminModule {}

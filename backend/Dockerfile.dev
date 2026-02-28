@@ -1,0 +1,23 @@
+# Dockerfile de desenvolvimento: todas as deps + nest start --watch
+FROM node:20-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache python3 make g++
+
+COPY package*.json ./
+COPY tsconfig.json ./
+COPY nest-cli.json ./
+
+# Instalar todas as dependências (incluindo dev para nest CLI)
+RUN npm ci --legacy-peer-deps && npm rebuild bcrypt --build-from-source
+
+# Código fonte é montado via volume no docker-compose
+COPY . .
+
+RUN mkdir -p uploads/avatars uploads/images
+
+EXPOSE 3000
+
+# Desenvolvimento: watch mode (npx garante que nest seja encontrado)
+CMD ["npx", "nest", "start", "--watch"]

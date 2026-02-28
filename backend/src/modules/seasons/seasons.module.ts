@@ -5,9 +5,13 @@ import { SeasonsController } from './seasons.controller';
 import { Season } from './entities/season.entity';
 import { SeasonRanking } from './entities/season-ranking.entity';
 import { User } from '../users/entities/user.entity';
+import { DivisionsModule } from '../divisions/divisions.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Season, SeasonRanking, User])],
+  imports: [
+    TypeOrmModule.forFeature([Season, SeasonRanking, User]),
+    DivisionsModule,
+  ],
   controllers: [SeasonsController],
   providers: [SeasonsService],
   exports: [SeasonsService],

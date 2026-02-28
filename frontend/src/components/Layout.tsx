@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore';
 import ActiveDuelBanner from './ActiveDuelBanner';
 import ArenaCountdownBanner from './ArenaCountdownBanner';
 import { UserProfileCard } from './UserProfileCard';
+import { getSocialIcon } from './SocialMediaIcons';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -20,10 +21,18 @@ interface LayoutProps {
   children: ReactNode;
 }
 
+interface SocialMediaLink {
+  id: string;
+  platform: string;
+  url: string;
+  icon: string | null;
+}
+
 export default function Layout({ children }: LayoutProps) {
   const { refreshUser, isAuthenticated } = useAuthStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeTabs, setActiveTabs] = useState<SiteTab[]>([]);
+  const [socialMediaLinks, setSocialMediaLinks] = useState<SocialMediaLink[]>([]);
   const location = useLocation();
 
   // Atualizar dados do usuário quando a página carregar
@@ -48,8 +57,35 @@ export default function Layout({ children }: LayoutProps) {
     fetchActiveTabs();
   }, []);
 
+  // Buscar redes sociais ativas
+  useEffect(() => {
+    const fetchSocialMedia = async () => {
+      try {
+        const response = await axios.get(`${API_URL}/public/social-media/active`);
+        // Filtrar apenas Instagram, WhatsApp, Discord e YouTube
+        const filtered = response.data.filter((social: SocialMediaLink) => {
+          const platform = social.platform.toLowerCase();
+          return platform === 'instagram' || platform === 'whatsapp' || 
+                 platform === 'discord' || platform === 'youtube';
+        });
+        // Ordenar: Instagram, WhatsApp, Discord, YouTube
+        const order = ['instagram', 'whatsapp', 'discord', 'youtube'];
+        const sorted = filtered.sort((a, b) => {
+          const aIndex = order.indexOf(a.platform.toLowerCase());
+          const bIndex = order.indexOf(b.platform.toLowerCase());
+          return aIndex - bIndex;
+        });
+        setSocialMediaLinks(sorted);
+      } catch (error) {
+        console.error('Erro ao buscar redes sociais:', error);
+        setSocialMediaLinks([]);
+      }
+    };
+    fetchSocialMedia();
+  }, []);
+
   return (
-    <div className="min-h-screen bg-gray-900 relative">
+    <div className="min-h-screen bg-gray-900 relative flex flex-col">
       {/* Background Image */}
       <div 
         className="fixed inset-0 bg-cover bg-center bg-no-repeat z-0"
@@ -67,17 +103,17 @@ export default function Layout({ children }: LayoutProps) {
       <ArenaCountdownBanner />
 
       {/* Container principal com flex para sidebar e conteúdo */}
-      <div className="relative z-10 flex flex-col lg:flex-row">
+      <div className="relative z-10 flex flex-col lg:flex-row flex-1">
         {/* Conteúdo Principal */}
-        <div className="flex-1 relative z-10 min-w-0">
+        <div className="flex-1 relative z-10 min-w-0 flex flex-col">
         <nav id="main-nav" className="relative border-b border-purple-500/20 shadow-lg" style={{ backgroundColor: 'transparent' }}>
           <div className="w-full px-2 sm:px-3 md:px-6">
-            <div className="flex items-center h-20 sm:h-24 md:h-28 lg:h-32 gap-2 md:gap-3">
-              {/* Menu Hamburger - Mobile */}
+            <div className="flex items-center h-14 sm:h-20 md:h-24 lg:h-28 gap-2 md:gap-3">
+              {/* Menu Hamburger - Mobile - área de toque ~44px */}
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="lg:hidden flex-shrink-0 p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
-                aria-label="Toggle menu"
+                className="lg:hidden flex-shrink-0 min-h-[44px] min-w-[44px] p-2 rounded-lg text-white hover:bg-white/10 transition-colors flex items-center justify-center"
+                aria-label="Abrir ou fechar menu"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   {mobileMenuOpen ? (
@@ -88,25 +124,6 @@ export default function Layout({ children }: LayoutProps) {
                 </svg>
               </button>
 
-              {/* Logo */}
-              <div className="flex items-center flex-shrink-0 mr-1 sm:mr-2">
-                <Link 
-                  to="/" 
-                  className="hover:scale-110 transition-all duration-300 group relative"
-                >
-                  <div className="relative">
-                    <img 
-                      src="/images/yugioh.webp" 
-                      alt="Yu-Gi-Oh!" 
-                      className="h-10 sm:h-12 md:h-14 lg:h-16 object-contain drop-shadow-lg group-hover:drop-shadow-2xl transition-all"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-r from-purple-500/0 to-blue-500/0 group-hover:from-purple-500/20 group-hover:to-blue-500/20 rounded-lg transition-all duration-300"></div>
-                  </div>
-                </Link>
-              </div>
               
               {/* Separador visual - Desktop */}
               <div className="hidden md:block h-8 w-px bg-gradient-to-b from-transparent via-purple-500/30 to-transparent flex-shrink-0"></div>
@@ -182,8 +199,8 @@ export default function Layout({ children }: LayoutProps) {
                 ) : null}
               </div>
 
-              {/* Abas de navegação - Mobile (scroll horizontal) */}
-              <div className="lg:hidden flex items-center gap-1 flex-nowrap flex-1 min-w-0 overflow-x-auto scrollbar-hide -mx-2 px-2">
+              {/* Abas de navegação - Mobile (scroll horizontal, toque >= 44px) */}
+              <div className="lg:hidden flex items-center gap-1 flex-nowrap flex-1 min-w-0 overflow-x-auto scrollbar-hide -mx-2 px-2 py-1">
                 {activeTabs.slice(0, 4).map((tab) => {
                   const isActive = location.pathname === tab.route || 
                                   (tab.route !== '/' && location.pathname.startsWith(tab.route));
@@ -202,7 +219,7 @@ export default function Layout({ children }: LayoutProps) {
                     <Link
                       key={tab.key}
                       to={tab.route}
-                      className={`group relative flex flex-col items-center justify-center gap-0.5 px-1.5 py-1 rounded-lg text-[10px] sm:text-xs font-semibold whitespace-nowrap flex-shrink-0 transition-all ${
+                      className={`group relative flex flex-col items-center justify-center gap-0.5 min-h-[44px] px-2 py-2 rounded-lg text-[10px] sm:text-xs font-semibold whitespace-nowrap flex-shrink-0 transition-all ${
                         isActive 
                           ? `bg-gradient-to-r ${colors.from} ${colors.to} text-white shadow-lg` 
                           : 'text-gray-300 hover:text-white'
@@ -212,7 +229,7 @@ export default function Layout({ children }: LayoutProps) {
                         <img 
                           src={tab.icon} 
                           alt={tab.label}
-                          className="h-12 w-12 sm:h-16 sm:w-16 object-contain drop-shadow-lg"
+                          className="h-10 w-10 sm:h-12 sm:w-12 object-contain drop-shadow-lg"
                           onError={(e) => {
                             e.currentTarget.style.display = 'none';
                           }}
@@ -260,7 +277,7 @@ export default function Layout({ children }: LayoutProps) {
                         key={tab.key}
                         to={tab.route}
                         onClick={() => setMobileMenuOpen(false)}
-                        className={`flex flex-col items-center justify-center gap-1 p-3 rounded-lg text-xs font-semibold transition-all ${
+                        className={`flex flex-col items-center justify-center gap-1 min-h-[48px] p-3 rounded-lg text-xs font-semibold transition-all ${
                           isActive 
                             ? `bg-gradient-to-r ${colors.from} ${colors.to} text-white shadow-lg` 
                             : 'text-gray-300 hover:text-white hover:bg-white/10'
@@ -290,14 +307,7 @@ export default function Layout({ children }: LayoutProps) {
           )}
         </nav>
 
-        <main className="pb-8 px-2 sm:px-4 md:px-6">{children}</main>
-          
-          {/* Footer */}
-          <footer className="border-t border-gray-700/50 py-4 mt-auto">
-            <div className="max-w-7xl mx-auto px-4 text-center text-gray-400 text-sm">
-              <p>© 2025 Yu-Gi-Oh! Duel Arena - Todos os direitos reservados</p>
-            </div>
-          </footer>
+        <main className="flex-1 pb-8 px-2 sm:px-4 md:px-6">{children}</main>
         </div>
 
         {/* Card Lateral Direito - Perfil do Usuário - Desktop */}
@@ -316,6 +326,35 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         )}
       </div>
+
+      {/* Footer */}
+      <footer className="border-t border-gray-700/50 py-3 sm:py-4 px-3 sm:px-4 bg-transparent backdrop-blur-sm relative z-10 mt-auto">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-4">
+          <p className="text-gray-400 text-xs sm:text-sm text-center sm:text-left">
+            © 2025 Yu-Gi-Oh! Duel Arena - Todos os direitos reservados
+          </p>
+          {socialMediaLinks.length > 0 && (
+            <div className="flex items-center gap-4">
+              {socialMediaLinks.map((social) => {
+                const icon = getSocialIcon(social.platform, "w-6 h-6");
+                
+                return (
+                  <a
+                    key={social.id}
+                    href={social.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:scale-125 transition-all duration-200 opacity-80 hover:opacity-100"
+                    title={social.platform}
+                  >
+                    {icon}
+                  </a>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </footer>
     </div>
   );
 }

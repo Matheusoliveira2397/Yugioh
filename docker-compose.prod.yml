@@ -94,6 +94,7 @@ services:
     volumes:
       - ./backend/uploads:/app/uploads
       - ./backend/logs:/app/logs
+      - ./frontend/public/images/cards:/app/frontend-cards  # Compartilhar pasta de cartas com frontend
     networks:
       - yugioh-network
     depends_on:

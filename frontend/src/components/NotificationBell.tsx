@@ -17,16 +17,6 @@ interface FriendRequest {
   createdAt: string;
 }
 
-interface MessageNotification {
-  id: string;
-  senderId: string;
-  senderName: string;
-  senderClanTag?: string;
-  senderProfileImage?: string;
-  content: string;
-  createdAt: string;
-}
-
 interface SystemNotification {
   id: string;
   type: 'system';
@@ -42,7 +32,6 @@ export default function NotificationBell() {
   const location = useLocation();
   const { connect, on, getSocket, isConnected } = useSocketStore();
   const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
-  const [messageNotifications, setMessageNotifications] = useState<MessageNotification[]>([]);
   const [systemNotifications, setSystemNotifications] = useState<SystemNotification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -74,7 +63,7 @@ export default function NotificationBell() {
     return () => clearInterval(interval);
   }, [token]);
 
-  // Escutar mensagens privadas via WebSocket
+  // Escutar mensagens do sistema via WebSocket
   useEffect(() => {
     if (!user || !token) return;
 
@@ -89,61 +78,20 @@ export default function NotificationBell() {
       const timeout = setTimeout(() => {
         const newSocket = getSocket();
         if (newSocket) {
-          setupMessageListener(newSocket);
+          setupSystemListener(newSocket);
         }
       }, 1000);
       return () => clearTimeout(timeout);
     }
 
-    setupMessageListener(socket);
+    setupSystemListener(socket);
 
     // Solicitar permissão para notificações do navegador
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
 
-    function setupMessageListener(socketInstance: any) {
-      const currentUserId = typeof user.id === 'string' ? user.id : user.id.toString();
-
-      const handlePrivateMessage = (data: any) => {
-        const senderId = data.userId || data.senderId;
-        
-        // Ignorar se a mensagem foi enviada por mim
-        if (senderId === currentUserId) return;
-
-        // Adicionar notificação de mensagem
-        const notification: MessageNotification = {
-          id: data.id || `msg-${Date.now()}-${Math.random()}`,
-          senderId: senderId.toString(),
-          senderName: data.nickname || data.username || 'Alguém',
-          senderClanTag: data.clanTag,
-          senderProfileImage: data.profileImage,
-          content: data.content || data.message || '',
-          createdAt: data.createdAt || new Date().toISOString(),
-        };
-
-        setMessageNotifications(prev => {
-          // Evitar duplicatas
-          if (prev.some(n => n.id === notification.id)) {
-            return prev;
-          }
-          // Manter apenas as últimas 10 notificações
-          return [notification, ...prev].slice(0, 10);
-        });
-
-        // Mostrar notificação do navegador se permitido
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification(`Nova mensagem de ${notification.senderName}`, {
-            body: notification.content.length > 50 
-              ? notification.content.substring(0, 50) + '...' 
-              : notification.content,
-            icon: notification.senderProfileImage ? `${API_URL}${notification.senderProfileImage}` : undefined,
-          });
-        }
-      };
-
-      socketInstance.on('privateMessage', handlePrivateMessage);
-
+    function setupSystemListener(socketInstance: any) {
       // Escutar mensagens do sistema
       const handleSystemMessage = (data: SystemNotification) => {
         setSystemNotifications(prev => {
@@ -169,14 +117,12 @@ export default function NotificationBell() {
       socketInstance.on('systemMessage', handleSystemMessage);
 
       return () => {
-        socketInstance.off('privateMessage', handlePrivateMessage);
         socketInstance.off('systemMessage', handleSystemMessage);
       };
     }
 
     return () => {
       if (socket) {
-        socket.off('privateMessage');
         socket.off('systemMessage');
       }
     };
@@ -193,19 +139,6 @@ export default function NotificationBell() {
     }
   }, [isOpen]);
 
-  // Escutar eventos de mensagem visualizada
-  useEffect(() => {
-    const handleMessageViewed = (event: CustomEvent) => {
-      const { senderId } = event.detail;
-      // Remover notificações deste remetente
-      setMessageNotifications(prev => prev.filter(n => n.senderId !== senderId.toString()));
-    };
-
-    window.addEventListener('messageViewed' as any, handleMessageViewed);
-    return () => {
-      window.removeEventListener('messageViewed' as any, handleMessageViewed);
-    };
-  }, []);
 
   // Fechar dropdown ao clicar fora
   useEffect(() => {
@@ -264,9 +197,9 @@ export default function NotificationBell() {
         <svg className="w-4 h-4 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
         </svg>
-        {(pendingRequests.length > 0 || messageNotifications.length > 0 || systemNotifications.length > 0) && (
+        {(pendingRequests.length > 0 || systemNotifications.length > 0) && (
           <span className="absolute top-0 right-0 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
-            {pendingRequests.length + messageNotifications.length + systemNotifications.length > 9 ? '9+' : pendingRequests.length + messageNotifications.length + systemNotifications.length}
+            {pendingRequests.length + systemNotifications.length > 9 ? '9+' : pendingRequests.length + systemNotifications.length}
           </span>
         )}
       </button>
@@ -283,9 +216,9 @@ export default function NotificationBell() {
             <div className="p-4 border-b border-slate-700">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold text-white">Notificações</h3>
-                {(pendingRequests.length > 0 || messageNotifications.length > 0 || systemNotifications.length > 0) && (
+                {(pendingRequests.length > 0 || systemNotifications.length > 0) && (
                   <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-                    {pendingRequests.length + messageNotifications.length + systemNotifications.length}
+                    {pendingRequests.length + systemNotifications.length}
                   </span>
                 )}
               </div>
@@ -296,7 +229,7 @@ export default function NotificationBell() {
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-500"></div>
                 </div>
-              ) : pendingRequests.length === 0 && messageNotifications.length === 0 && systemNotifications.length === 0 ? (
+              ) : pendingRequests.length === 0 && systemNotifications.length === 0 ? (
                 <div className="text-center py-8 text-gray-400">
                   <p className="text-4xl mb-2">📭</p>
                   <p>Nenhuma notificação</p>
@@ -349,58 +282,6 @@ export default function NotificationBell() {
                     </motion.div>
                   ))}
 
-                  {/* Notificações de Mensagens */}
-                  {messageNotifications.map((notification) => (
-                    <motion.div
-                      key={notification.id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="p-4 hover:bg-slate-700/50 transition-colors cursor-pointer"
-                      onClick={() => {
-                        // Remover a notificação ao clicar
-                        setMessageNotifications(prev => prev.filter(n => n.id !== notification.id));
-                        setIsOpen(false);
-                        navigate(`/friends?selectedFriendId=${notification.senderId}`);
-                      }}
-                    >
-                      <div className="flex items-start gap-3">
-                        <img
-                          src={notification.senderProfileImage ? `${API_URL}${notification.senderProfileImage}` : '/images/default.png'}
-                          alt={notification.senderName}
-                          className="w-10 h-10 rounded-full border-2 border-blue-500 object-cover"
-                          onError={(e) => {
-                            e.currentTarget.src = '/images/default.png';
-                          }}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-white">
-                            {notification.senderClanTag ? `|${notification.senderClanTag}| ${notification.senderName}` : notification.senderName}
-                          </p>
-                          <p className="text-xs text-gray-400 line-clamp-2">{notification.content}</p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {new Date(notification.createdAt).toLocaleDateString('pt-BR', {
-                              day: '2-digit',
-                              month: 'short',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </p>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setMessageNotifications(prev => prev.filter(n => n.id !== notification.id));
-                          }}
-                          className="text-gray-400 hover:text-white transition-colors"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                    </motion.div>
-                  ))}
-                  
                   {/* Solicitações de Amizade */}
                   {pendingRequests.map((request) => (
                     <motion.div
@@ -453,7 +334,7 @@ export default function NotificationBell() {
               )}
             </div>
 
-            {(pendingRequests.length > 0 || messageNotifications.length > 0 || systemNotifications.length > 0) && (
+            {(pendingRequests.length > 0 || systemNotifications.length > 0) && (
               <div className="p-3 border-t border-slate-700">
                 <button
                   onClick={() => {

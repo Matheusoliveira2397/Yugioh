@@ -28,8 +28,6 @@ interface ArenaSchedule {
   config?: {
     levelRanges?: LevelRange[];
     scoreMultiplier?: number;
-    bonusGems?: number;
-    description?: string;
     rewards?: {
       levelRangeRewards?: LevelRangeReward[];
     };
@@ -54,7 +52,6 @@ export default function AdminArenaSchedulesPanel() {
     isActive: true,
     order: 0,
     scoreMultiplier: 1.5,
-    bonusGems: 50,
     description: '',
     levelRangeRewards: [] as LevelRangeReward[],
   });
@@ -115,7 +112,6 @@ export default function AdminArenaSchedulesPanel() {
         config: {
           levelRanges: levelRanges,
           scoreMultiplier: formData.scoreMultiplier,
-          bonusGems: formData.bonusGems,
           description: formData.description,
           rewards: {
             levelRangeRewards: formData.levelRangeRewards,
@@ -154,7 +150,6 @@ export default function AdminArenaSchedulesPanel() {
       isActive: schedule.isActive,
       order: schedule.order,
       scoreMultiplier: schedule.config?.scoreMultiplier || 1.5,
-      bonusGems: schedule.config?.bonusGems || 50,
       description: schedule.config?.description || '',
       levelRangeRewards: schedule.config?.rewards?.levelRangeRewards || [],
     });
@@ -187,7 +182,6 @@ export default function AdminArenaSchedulesPanel() {
       isActive: true,
       order: 0,
       scoreMultiplier: 1.5,
-      bonusGems: 50,
       description: '',
       levelRangeRewards: [],
     });
@@ -227,7 +221,8 @@ export default function AdminArenaSchedulesPanel() {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-4xl font-bold mb-2">⏰ Horários Recorrentes de Arena</h1>
-            <p className="text-gray-300">Configure horários fixos que criam arenas automaticamente todos os dias</p>
+            <p className="text-gray-300">Configure horários fixos que criam arenas automaticamente todos os dias (horário de Brasília)</p>
+            <p className="text-gray-400 text-sm mt-1">As arenas serão criadas automaticamente nos horários configurados abaixo</p>
           </div>
           <div className="flex gap-4">
             <button
@@ -306,10 +301,6 @@ export default function AdminArenaSchedulesPanel() {
                   <span className="text-gray-400">Multiplicador:</span>
                   <span className="text-white font-semibold">x{schedule.config?.scoreMultiplier || 1.5}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Gemas Bônus:</span>
-                  <span className="text-white font-semibold">{schedule.config?.bonusGems || 50}</span>
-                </div>
                 {schedule.config?.description && (
                   <p className="text-gray-300 text-xs mt-2">{schedule.config.description}</p>
                 )}
@@ -374,7 +365,7 @@ export default function AdminArenaSchedulesPanel() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold mb-2">Horário de Início (HH:mm) *</label>
+                    <label className="block text-sm font-bold mb-2">Horário de Início (HH:mm) - Horário de Brasília *</label>
                     <input
                       type="time"
                       required
@@ -382,6 +373,7 @@ export default function AdminArenaSchedulesPanel() {
                       onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
                       className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
                     />
+                    <p className="text-xs text-gray-400 mt-1">A arena será criada automaticamente todos os dias neste horário</p>
                   </div>
                   <div>
                     <label className="block text-sm font-bold mb-2">Duração (minutos) *</label>
@@ -429,18 +421,6 @@ export default function AdminArenaSchedulesPanel() {
                       value={formData.scoreMultiplier}
                       onChange={(e) =>
                         setFormData({ ...formData, scoreMultiplier: parseFloat(e.target.value) })
-                      }
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold mb-2">Gemas Bônus</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={formData.bonusGems}
-                      onChange={(e) =>
-                        setFormData({ ...formData, bonusGems: parseInt(e.target.value) })
                       }
                       className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
                     />
@@ -514,7 +494,10 @@ export default function AdminArenaSchedulesPanel() {
                     onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
                     className="w-5 h-5 rounded"
                   />
-                  <span className="text-sm font-bold">Horário Ativo (criará arenas automaticamente)</span>
+                  <div>
+                    <span className="text-sm font-bold block">Horário Ativo</span>
+                    <span className="text-xs text-gray-400">Quando ativo, uma arena será criada automaticamente todos os dias neste horário (horário de Brasília)</span>
+                  </div>
                 </label>
               </div>
 

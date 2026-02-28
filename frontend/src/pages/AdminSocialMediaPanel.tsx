@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
 import { Navigate } from 'react-router-dom';
+import { InstagramIcon, WhatsAppIcon, DiscordIcon, YouTubeIcon } from '../components/SocialMediaIcons';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -157,6 +158,85 @@ export default function AdminSocialMediaPanel() {
     });
   };
 
+  const handleSocialMediaUpdate = (platform: string, url: string) => {
+    const existing = socialMedia.find(s => s.platform.toLowerCase() === platform.toLowerCase());
+    if (existing) {
+      // Atualizar existente
+      const updated = socialMedia.map(s => 
+        s.platform.toLowerCase() === platform.toLowerCase() 
+          ? { ...s, url, isActive: url.trim() !== '' }
+          : s
+      );
+      setSocialMedia(updated);
+    } else {
+      // Criar novo (ícones são renderizados via SVG, não precisamos salvar emoji)
+      const newSocial: SocialMedia = {
+        id: '',
+        platform: platform.toLowerCase(),
+        url,
+        label: null,
+        icon: null, // Ícones são renderizados via SVG
+        order: 0,
+        isActive: url.trim() !== '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      setSocialMedia([...socialMedia, newSocial]);
+    }
+  };
+
+  const handleSaveAll = async () => {
+    try {
+      setSaving(true);
+      
+      const platforms = ['instagram', 'whatsapp', 'discord', 'youtube'];
+      
+      // Processar cada plataforma
+      for (const platform of platforms) {
+        const social = socialMedia.find(s => s.platform.toLowerCase() === platform);
+        
+        if (social) {
+          if (social.id) {
+            // Atualizar existente
+            await axios.put(
+              `${API_URL}/admin/social-media/${social.id}`,
+              {
+                url: social.url,
+                isActive: social.url.trim() !== '',
+              },
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+          } else if (social.url.trim() !== '') {
+            // Criar novo
+            await axios.post(
+              `${API_URL}/admin/social-media`,
+              {
+                platform: platform.toLowerCase(),
+                url: social.url,
+                label: null,
+                icon: null, // Ícones são renderizados via SVG
+                order: 0,
+                isActive: true,
+              },
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+          }
+        } else {
+          // Se não existe, verificar se há uma entrada no banco que precisa ser desativada
+          // Isso será tratado automaticamente quando buscarmos novamente
+        }
+      }
+      
+      await fetchSocialMedia();
+      alert('Redes sociais salvas com sucesso!');
+    } catch (error: any) {
+      console.error('Erro ao salvar redes sociais:', error);
+      alert(error.response?.data?.message || 'Erro ao salvar redes sociais');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -178,168 +258,87 @@ export default function AdminSocialMediaPanel() {
             📱 Gerenciar Redes Sociais
           </h1>
           <p className="text-gray-400">
-            Configure os links das redes sociais que aparecem abaixo do chat
+            Configure os links das redes sociais que aparecem no rodapé do jogo
           </p>
         </div>
 
-        {/* Formulário de Criação/Edição */}
+        {/* Formulário de Configuração das Redes Sociais Principais */}
         <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
           <h2 className="text-xl font-bold text-white mb-4">
-            {editingId ? 'Editar Rede Social' : 'Nova Rede Social'}
+            Configurar Links das Redes Sociais
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-gray-300 mb-2">Plataforma *</label>
-              <input
-                type="text"
-                value={formData.platform}
-                onChange={(e) => setFormData({ ...formData, platform: e.target.value })}
-                placeholder="Ex: discord, youtube, twitter"
-                className="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2">URL *</label>
+          <div className="space-y-4">
+            {/* Instagram */}
+            <div className="bg-gray-700/50 rounded-lg p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <InstagramIcon className="w-6 h-6 text-pink-500" />
+                <h3 className="text-lg font-bold text-white">Instagram</h3>
+              </div>
               <input
                 type="url"
-                value={formData.url}
-                onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                placeholder="https://..."
-                className="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                value={socialMedia.find(s => s.platform.toLowerCase() === 'instagram')?.url || ''}
+                onChange={(e) => handleSocialMediaUpdate('instagram', e.target.value)}
+                placeholder="https://instagram.com/seu-perfil"
+                className="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-600 focus:border-pink-500 focus:outline-none"
               />
             </div>
-            <div>
-              <label className="block text-gray-300 mb-2">Label (opcional)</label>
+
+            {/* WhatsApp */}
+            <div className="bg-gray-700/50 rounded-lg p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <WhatsAppIcon className="w-6 h-6 text-green-500" />
+                <h3 className="text-lg font-bold text-white">WhatsApp</h3>
+              </div>
               <input
-                type="text"
-                value={formData.label}
-                onChange={(e) => setFormData({ ...formData, label: e.target.value })}
-                placeholder="Ex: Nosso Discord"
-                className="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                type="url"
+                value={socialMedia.find(s => s.platform.toLowerCase() === 'whatsapp')?.url || ''}
+                onChange={(e) => handleSocialMediaUpdate('whatsapp', e.target.value)}
+                placeholder="https://wa.me/seu-numero"
+                className="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-600 focus:border-green-500 focus:outline-none"
               />
             </div>
-            <div>
-              <label className="block text-gray-300 mb-2">Ícone (emoji, opcional)</label>
+
+            {/* Discord */}
+            <div className="bg-gray-700/50 rounded-lg p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <DiscordIcon className="w-6 h-6 text-indigo-500" />
+                <h3 className="text-lg font-bold text-white">Discord</h3>
+              </div>
               <input
-                type="text"
-                value={formData.icon}
-                onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
-                placeholder="Ex: 💬, 📺"
-                className="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                type="url"
+                value={socialMedia.find(s => s.platform.toLowerCase() === 'discord')?.url || ''}
+                onChange={(e) => handleSocialMediaUpdate('discord', e.target.value)}
+                placeholder="https://discord.gg/seu-servidor"
+                className="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-600 focus:border-indigo-500 focus:outline-none"
               />
             </div>
-            <div>
-              <label className="block text-gray-300 mb-2">Ordem</label>
+
+            {/* YouTube */}
+            <div className="bg-gray-700/50 rounded-lg p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <YouTubeIcon className="w-6 h-6 text-red-500" />
+                <h3 className="text-lg font-bold text-white">YouTube</h3>
+              </div>
               <input
-                type="number"
-                value={formData.order}
-                onChange={(e) => setFormData({ ...formData, order: parseInt(e.target.value) || 0 })}
-                className="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                type="url"
+                value={socialMedia.find(s => s.platform.toLowerCase() === 'youtube')?.url || ''}
+                onChange={(e) => handleSocialMediaUpdate('youtube', e.target.value)}
+                placeholder="https://youtube.com/@seu-canal"
+                className="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-600 focus:border-red-500 focus:outline-none"
               />
-            </div>
-            <div className="flex items-center">
-              <label className="flex items-center gap-2 text-gray-300">
-                <input
-                  type="checkbox"
-                  checked={formData.isActive}
-                  onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                  className="w-5 h-5"
-                />
-                Ativo
-              </label>
             </div>
           </div>
-          <div className="flex gap-4 mt-6">
-            {editingId ? (
-              <>
-                <button
-                  onClick={() => handleUpdate(editingId)}
-                  disabled={saving}
-                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold disabled:opacity-50"
-                >
-                  {saving ? 'Salvando...' : 'Salvar'}
-                </button>
-                <button
-                  onClick={cancelEdit}
-                  disabled={saving}
-                  className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-bold disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={handleCreate}
-                disabled={saving}
-                className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50"
-              >
-                {saving ? 'Criando...' : 'Criar Rede Social'}
-              </button>
-            )}
+          <div className="mt-6">
+            <button
+              onClick={handleSaveAll}
+              disabled={saving}
+              className="w-full px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50 transition-all"
+            >
+              {saving ? 'Salvando...' : '💾 Salvar Todas as Configurações'}
+            </button>
           </div>
         </div>
 
-        {/* Lista de Redes Sociais */}
-        <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
-          <h2 className="text-xl font-bold text-white mb-4">Redes Sociais Configuradas</h2>
-          {socialMedia.length === 0 ? (
-            <p className="text-gray-400 text-center py-8">Nenhuma rede social configurada</p>
-          ) : (
-            <div className="space-y-4">
-              {socialMedia.map((social, index) => (
-                <motion.div
-                  key={social.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  className={`p-4 rounded-lg border-2 ${
-                    social.isActive ? 'bg-gray-700/50 border-green-500/50' : 'bg-gray-800/50 border-gray-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <span className="text-3xl">{social.icon || '🔗'}</span>
-                      <div>
-                        <h3 className="text-lg font-bold text-white">
-                          {social.label || social.platform}
-                        </h3>
-                        <p className="text-sm text-gray-400">{social.url}</p>
-                        <p className="text-xs text-gray-500">
-                          Plataforma: {social.platform} | Ordem: {social.order}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-bold ${
-                          social.isActive
-                            ? 'bg-green-500/20 text-green-400'
-                            : 'bg-red-500/20 text-red-400'
-                        }`}
-                      >
-                        {social.isActive ? 'Ativo' : 'Inativo'}
-                      </span>
-                      <button
-                        onClick={() => startEdit(social)}
-                        disabled={saving || editingId !== null}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleDelete(social.id)}
-                        disabled={saving || editingId !== null}
-                        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-                      >
-                        Excluir
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </div>
       </motion.div>
     </div>
   );

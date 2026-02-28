@@ -294,12 +294,35 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
             
             logger.debug(`📤 [Matchmaking] Preparando dados - player1Field: ${player1Field?.deck?.length || 0} cartas no deck`);
             
+            // Buscar dados completos dos usuários para incluir no opponent
+            let player1User: any = null;
+            let player2User: any = null;
+            try {
+              player1User = await this.duelsService['usersRepository'].findOne({ 
+                where: { id: player1.userId }, 
+                select: ['id', 'username', 'nickname', 'clanTag', 'level', 'profileImage'] 
+              });
+              player2User = await this.duelsService['usersRepository'].findOne({ 
+                where: { id: player2.userId }, 
+                select: ['id', 'username', 'nickname', 'clanTag', 'level', 'profileImage'] 
+              });
+            } catch (userError) {
+              logger.error(`❌ [Matchmaking] Erro ao buscar dados dos usuários:`, userError);
+            }
+            
             // Notificar ambos os jogadores
             const matchData1 = {
               duelId: duelIdStr,
               player1Id: player1.userId,
               player2Id: player2.userId,
-              opponent: { id: player2.userId },
+              opponent: {
+                id: player2.userId,
+                username: player2User?.username || 'Unknown',
+                nickname: player2User?.nickname || player2User?.username || 'Unknown',
+                clanTag: player2User?.clanTag || null,
+                level: player2User?.level || 1,
+                profileImage: player2User?.profileImage || null,
+              },
               player1Field: player1Field, // SEMPRE do player1
               player2Field: player2Field, // SEMPRE do player2
             };
@@ -308,15 +331,20 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
               duelId: duelIdStr,
               player1Id: player1.userId,
               player2Id: player2.userId,
-              opponent: { id: player1.userId },
+              opponent: {
+                id: player1.userId,
+                username: player1User?.username || 'Unknown',
+                nickname: player1User?.nickname || player1User?.username || 'Unknown',
+                clanTag: player1User?.clanTag || null,
+                level: player1User?.level || 1,
+                profileImage: player1User?.profileImage || null,
+              },
               player1Field: player1Field, // SEMPRE do player1
               player2Field: player2Field, // SEMPRE do player2
             };
             
             // Criar log de início do duelo
             try {
-              const player1User = await this.duelsService['usersRepository'].findOne({ where: { id: player1.userId }, select: ['username', 'clanTag'] });
-              const player2User = await this.duelsService['usersRepository'].findOne({ where: { id: player2.userId }, select: ['username', 'clanTag'] });
               const player1Name = player1User?.clanTag ? `|${player1User.clanTag}| ${player1User.username}` : player1User?.username || 'Jogador 1';
               const player2Name = player2User?.clanTag ? `|${player2User.clanTag}| ${player2User.username}` : player2User?.username || 'Jogador 2';
               

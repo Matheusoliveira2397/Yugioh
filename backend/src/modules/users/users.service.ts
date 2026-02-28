@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, BadRequestException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, MoreThan } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
@@ -10,7 +10,7 @@ import { Group } from '../groups/entities/group.entity';
 import { LevelsService } from '../levels/levels.service';
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnModuleInit {
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
@@ -24,6 +24,52 @@ export class UsersService {
     private groupRepository: Repository<Group>,
     private levelsService: LevelsService,
   ) {}
+
+  async onModuleInit() {
+    // Verificar e adicionar coluna emailVerificationToken se não existir
+    try {
+      console.log('🔧 [UsersService] Verificando coluna emailVerificationToken...');
+      const tokenColumnExists = await this.usersRepository.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'emailVerificationToken'
+      `);
+      
+      if (tokenColumnExists.length === 0) {
+        console.log('🔧 [UsersService] Adicionando coluna emailVerificationToken...');
+        await this.usersRepository.query(`
+          ALTER TABLE users 
+          ADD COLUMN IF NOT EXISTS "emailVerificationToken" VARCHAR(255) NULL
+        `);
+        console.log('✅ [UsersService] Coluna emailVerificationToken adicionada com sucesso');
+      } else {
+        console.log('✅ [UsersService] Coluna emailVerificationToken já existe');
+      }
+
+      // Marcar todos os usuários existentes como verificados (migração para usuários antigos)
+      // Isso é necessário porque usuários criados antes da implementação de verificação de email
+      // não têm email verificado, mas já estavam usando o sistema
+      try {
+        const unverifiedCount = await this.usersRepository.count({
+          where: { isEmailVerified: false },
+        });
+        
+        if (unverifiedCount > 0) {
+          console.log(`🔧 [UsersService] Marcando ${unverifiedCount} usuários antigos como verificados...`);
+          await this.usersRepository.update(
+            { isEmailVerified: false },
+            { isEmailVerified: true }
+          );
+          console.log(`✅ [UsersService] ${unverifiedCount} usuários antigos marcados como verificados`);
+        }
+      } catch (migrationError: any) {
+        console.error('⚠️ [UsersService] Erro ao marcar usuários antigos como verificados:', migrationError.message);
+      }
+    } catch (error: any) {
+      console.error('❌ [UsersService] Erro ao verificar/adicionar coluna emailVerificationToken:', error);
+      // Não lançar erro para não impedir a inicialização do módulo
+    }
+  }
 
   // Helper para normalizar profileImage (retorna null se for imagem padrão inexistente)
   private normalizeProfileImage(profileImage: string | null | undefined): string | null {
@@ -232,13 +278,26 @@ export class UsersService {
   }
 
   async findByVerificationToken(token: string): Promise<User | null> {
-    // Sistema de verificação de email desativado
-    return null;
+    return this.usersRepository.findOne({
+      where: { emailVerificationToken: token },
+    });
   }
 
   async verifyEmail(userId: number): Promise<void> {
     await this.usersRepository.update(userId, {
       isEmailVerified: true,
+    });
+  }
+
+  async updateVerificationToken(userId: number, token: string): Promise<void> {
+    await this.usersRepository.update(userId, {
+      emailVerificationToken: token,
+    });
+  }
+
+  async clearVerificationToken(userId: number): Promise<void> {
+    await this.usersRepository.update(userId, {
+      emailVerificationToken: null,
     });
   }
 
@@ -572,33 +631,8 @@ export class UsersService {
       const user = userMap.get(sr.userId);
       if (!user) return null;
       
-      // Usar divisão da tabela users (user.division) em vez da season_rankings
-      let division = user.division;
-      if (!division || division === null || division === undefined || division === '') {
-        // Se não tiver divisão no user, usar Bronze como padrão
-        division = 'Bronze';
-      } else {
-        // Normalizar divisão (garantir formato correto)
-        division = String(division).trim();
-        // Converter para formato padrão
-        const divisionUpper = division.toUpperCase();
-        if (divisionUpper === 'BRONZE') division = 'Bronze';
-        else if (divisionUpper === 'SILVER') division = 'Silver';
-        else if (divisionUpper === 'GOLD') division = 'Gold';
-        else if (divisionUpper === 'PLATINUM') division = 'Platinum';
-        else if (divisionUpper === 'DIAMOND') division = 'Diamond';
-        else if (divisionUpper === 'MASTER') division = 'Master';
-        else if (divisionUpper === 'LEGENDARY') division = 'Legendary';
-        else if (divisionUpper === 'PRATA') division = 'Silver';
-        else if (divisionUpper === 'OURO') division = 'Gold';
-        else if (divisionUpper === 'DIAMANTE') division = 'Diamond';
-        else if (divisionUpper === 'MESTRE') division = 'Master';
-        else if (divisionUpper === 'DESAFIANTE') division = 'Legendary';
-        // Se não reconhecer, manter como está ou usar Bronze
-        if (!['Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond', 'Master', 'Legendary'].includes(division)) {
-          division = 'Bronze';
-        }
-      }
+      // Usar divisão da tabela users (user.division) - igual ao ranking geral
+      const division = user.division || null;
       
       return {
         userId: sr.userId,
@@ -613,7 +647,7 @@ export class UsersService {
         seasonScore: sr.seasonScore || 0,
         wins: sr.wins || 0,
         losses: sr.losses || 0,
-        division: division,
+        division: division, // Usar divisão do usuário diretamente, igual ao ranking geral
         rank: sr.rank || 0,
       };
     }).filter(r => r !== null);
@@ -668,13 +702,13 @@ export class UsersService {
       }
     }
 
-    // Formatar resultado
+    // Formatar resultado - igual ao ranking geral
     const result = combinedRankings.map((ranking) => {
       const group = groupMap.get(ranking.userId);
       const clanTag = ranking.user.clanTag || (group && group.isActive ? group.tag : null);
       
-      // Garantir que a divisão sempre tenha um valor (já foi calculada acima)
-      const division = ranking.division || 'Bronze';
+      // Usar divisão do usuário diretamente, igual ao ranking geral
+      const division = ranking.division;
       
       console.log(`🔍 [processSeasonRankings] Jogador ${ranking.user.nickname}: division=${division}, seasonScore=${ranking.seasonScore}`);
       
@@ -687,7 +721,7 @@ export class UsersService {
         totalScore: ranking.user.totalScore,
         wins: ranking.wins,
         losses: ranking.losses,
-        division: division,
+        division: division, // Usar divisão do usuário diretamente, igual ao ranking geral
         seasonRank: ranking.rank,
         level: ranking.user.level,
         group: group || null,
@@ -720,27 +754,44 @@ export class UsersService {
     return result;
   }
 
-  async getSeasonRanking(): Promise<any[]> {
+  async getSeasonRanking(seasonId?: string): Promise<any[]> {
     try {
-      console.log('🔍 [getSeasonRanking] Iniciando busca de ranking da season...');
+      console.log('🔍 [getSeasonRanking] Iniciando busca de ranking da season...', seasonId ? `seasonId=${seasonId}` : '');
       
-      // Busca a season ativa
-      const activeSeasonRaw = await this.seasonRepository
-        .createQueryBuilder('s')
-        .select('s.id', 'id')
-        .select('s.name', 'name')
-        .select('s.isActive', 'isActive')
-        .where('s.isActive = :isActive', { isActive: true })
-        .getRawOne();
-      
-      const activeSeason = activeSeasonRaw ? { id: activeSeasonRaw.id, name: activeSeasonRaw.name, isActive: activeSeasonRaw.isActive } : null;
+      let seasonToUse: { id: string; name: string; isActive?: boolean } | null = null;
 
-      console.log('🔍 [getSeasonRanking] Season ativa encontrada:', activeSeason);
+      // Se seasonId foi informado, buscar essa season
+      if (seasonId && seasonId.trim()) {
+        const byIdRaw = await this.seasonRepository
+          .createQueryBuilder('s')
+          .select('s.id', 'id')
+          .addSelect('s.name', 'name')
+          .addSelect('s.isActive', 'isActive')
+          .where('s.id = :id', { id: seasonId.trim() })
+          .getRawOne();
+        if (byIdRaw) {
+          seasonToUse = { id: byIdRaw.id, name: byIdRaw.name, isActive: byIdRaw.isActive };
+          console.log('🔍 [getSeasonRanking] Usando season informada:', seasonToUse);
+        }
+      }
 
-      let seasonToUse = activeSeason;
+      // Se não tem season por id, usar season ativa
+      if (!seasonToUse) {
+        const activeSeasonRaw = await this.seasonRepository
+          .createQueryBuilder('s')
+          .select('s.id', 'id')
+          .select('s.name', 'name')
+          .select('s.isActive', 'isActive')
+          .where('s.isActive = :isActive', { isActive: true })
+          .getRawOne();
+        
+        const activeSeason = activeSeasonRaw ? { id: activeSeasonRaw.id, name: activeSeasonRaw.name, isActive: activeSeasonRaw.isActive } : null;
+        console.log('🔍 [getSeasonRanking] Season ativa encontrada:', activeSeason);
+        seasonToUse = activeSeason;
+      }
 
       // Se não há season ativa, buscar a mais recente
-      if (!activeSeason || !activeSeason.id) {
+      if (!seasonToUse || !seasonToUse.id) {
         console.warn('⚠️ [getSeasonRanking] Nenhuma season ativa encontrada. Buscando season mais recente...');
         
         const latestSeasonRaw = await this.seasonRepository
@@ -758,7 +809,6 @@ export class UsersService {
         } else {
           console.warn('⚠️ [getSeasonRanking] Nenhuma season encontrada no banco. Criando season temporária...');
           
-          // Criar uma season temporária se não houver nenhuma
           try {
             const newSeason = this.seasonRepository.create({
               name: 'Season Temporária',
@@ -771,7 +821,6 @@ export class UsersService {
             console.log('✅ [getSeasonRanking] Season temporária criada:', seasonToUse);
           } catch (error: any) {
             console.error('❌ [getSeasonRanking] Erro ao criar season temporária:', error.message);
-            // Mesmo sem season, vamos tentar retornar os usuários
             console.warn('⚠️ [getSeasonRanking] Tentando retornar usuários sem season...');
             return await this.getUsersWithoutSeason();
           }
@@ -793,13 +842,19 @@ export class UsersService {
         const userCount = await this.usersRepository.count();
         console.log(`📊 [getSeasonRanking] Total de usuários no sistema: ${userCount}`);
         
-        // Se há usuários mas nenhum resultado, retornar usuários básicos
         if (userCount > 0) {
           console.warn('⚠️ [getSeasonRanking] Há usuários no sistema mas nenhum ranking retornado. Retornando usuários básicos...');
           result = await this.getUsersWithoutSeason();
           console.log(`✅ [getSeasonRanking] Fallback retornou ${result.length} jogadores`);
         }
       }
+
+      // Incluir seasonId e seasonName em cada item para a coluna Season no frontend
+      result = result.map((r: any) => ({
+        ...r,
+        seasonId: seasonToUse?.id ?? null,
+        seasonName: seasonToUse?.name ?? '-',
+      }));
 
       console.log(`✅ [getSeasonRanking] Retornando ${result.length} jogadores para o frontend`);
       return result;
@@ -830,6 +885,7 @@ export class UsersService {
       .addSelect('u.winsSeason', 'winsSeason')
       .addSelect('u.lossesSeason', 'lossesSeason')
       .addSelect('u.level', 'level')
+      .addSelect('u.division', 'division')
       .orderBy('u.totalScore', 'DESC')
       .addOrderBy('u.level', 'DESC')
       .getRawMany();
@@ -893,10 +949,12 @@ export class UsersService {
         totalScore: user.totalScore || 0,
         wins: user.winsSeason || 0,
         losses: user.lossesSeason || 0,
-        division: 'Bronze', // Todos começam no Bronze
+        division: user.division || 'Bronze',
         seasonRank: index + 1,
         level: user.level || 1,
         group: group || null,
+        seasonId: null,
+        seasonName: '-',
       };
     });
 
@@ -905,9 +963,9 @@ export class UsersService {
   }
 
   // Buscar ranking de season por divisão (usando division da tabela users)
-  async getSeasonRankingByDivision(division: string): Promise<any[]> {
+  async getSeasonRankingByDivision(division: string, seasonId?: string): Promise<any[]> {
     try {
-      console.log(`🔍 [getSeasonRankingByDivision] Buscando ranking da season para divisão: ${division}`);
+      console.log(`🔍 [getSeasonRankingByDivision] Buscando ranking da season para divisão: ${division}`, seasonId ? `seasonId=${seasonId}` : '');
       
       // Normalizar divisão
       const divisionUpper = division.trim().toUpperCase();
@@ -923,20 +981,55 @@ export class UsersService {
       
       console.log(`🔍 [getSeasonRankingByDivision] Divisão normalizada: ${normalizedDivision}`);
       
-      // Buscar season ativa
-      const activeSeasonRaw = await this.seasonRepository
-        .createQueryBuilder('s')
-        .select('s.id', 'id')
-        .where('s.isActive = :isActive', { isActive: true })
-        .getRawOne();
+      let seasonToUse: { id: string; name: string } | null = null;
+
+      // Se seasonId foi informado, buscar essa season
+      if (seasonId && seasonId.trim()) {
+        const byIdRaw = await this.seasonRepository
+          .createQueryBuilder('s')
+          .select('s.id', 'id')
+          .addSelect('s.name', 'name')
+          .where('s.id = :id', { id: seasonId.trim() })
+          .getRawOne();
+        if (byIdRaw) seasonToUse = { id: byIdRaw.id, name: byIdRaw.name };
+      }
+
+      // Se não tem season por id, usar season ativa
+      if (!seasonToUse) {
+        const activeSeasonRaw = await this.seasonRepository
+          .createQueryBuilder('s')
+          .select('s.id', 'id')
+          .addSelect('s.name', 'name')
+          .where('s.isActive = :isActive', { isActive: true })
+          .getRawOne();
+        if (activeSeasonRaw) seasonToUse = { id: activeSeasonRaw.id, name: activeSeasonRaw.name };
+      }
       
-      if (!activeSeasonRaw || !activeSeasonRaw.id) {
+      if (!seasonToUse || !seasonToUse.id) {
         console.warn('⚠️ [getSeasonRankingByDivision] Nenhuma season ativa encontrada');
         return [];
       }
       
+      // Criar lista de possíveis valores da divisão para comparação
+      const possibleDivisionValues: string[] = [normalizedDivision];
+      if (normalizedDivision === 'Silver') possibleDivisionValues.push('Prata', 'PRATA', 'SILVER');
+      if (normalizedDivision === 'Gold') possibleDivisionValues.push('Ouro', 'OURO', 'GOLD');
+      if (normalizedDivision === 'Diamond') possibleDivisionValues.push('Diamante', 'DIAMANTE', 'DIAMOND');
+      if (normalizedDivision === 'Master') possibleDivisionValues.push('Mestre', 'MESTRE', 'MASTER');
+      if (normalizedDivision === 'Legendary') possibleDivisionValues.push('Desafiante', 'DESAFIANTE', 'LEGENDARY');
+      
+      console.log(`🔍 [getSeasonRankingByDivision] Valores possíveis para divisão ${normalizedDivision}:`, possibleDivisionValues);
+      
+      // Debug: Verificar quais divisões existem no banco
+      const allDivisions = await this.usersRepository
+        .createQueryBuilder('u')
+        .select('DISTINCT UPPER(TRIM(COALESCE(u.division, \'Bronze\')))', 'division')
+        .getRawMany();
+      console.log(`🔍 [getSeasonRankingByDivision] Divisões encontradas no banco:`, allDivisions.map(d => d.division));
+      
       // Buscar rankings da season com join em users para filtrar por division
-      const rankings = await this.seasonRankingRepository
+      // Buscar todos os rankings primeiro e filtrar depois (mais simples e confiável)
+      const allRankings = await this.seasonRankingRepository
         .createQueryBuilder('sr')
         .innerJoin('sr.user', 'u')
         .select('sr.userId', 'userId')
@@ -951,13 +1044,45 @@ export class UsersService {
         .addSelect('u.totalScore', 'user_totalScore')
         .addSelect('u.level', 'user_level')
         .addSelect('u.division', 'user_division')
-        .where('sr.seasonId = :seasonId', { seasonId: activeSeasonRaw.id })
-        .andWhere('UPPER(TRIM(u.division)) = :division', { division: normalizedDivision.toUpperCase() })
+        .where('sr.seasonId = :seasonId', { seasonId: seasonToUse.id })
         .orderBy('sr.seasonScore', 'DESC')
         .addOrderBy('sr.wins', 'DESC')
         .getRawMany();
       
+      // Filtrar por divisão em memória - usar mesma lógica do ranking geral
+      const rankings = allRankings.filter(r => {
+        // Pegar divisão do usuário (pode ser null, undefined, ou string)
+        const userDivisionRaw = r.user_division;
+        
+        // Se for null/undefined, tratar como Bronze (igual ao ranking geral)
+        if (!userDivisionRaw || userDivisionRaw === null || userDivisionRaw === undefined || userDivisionRaw === '') {
+          // Se o filtro é Bronze, incluir usuários sem divisão
+          return normalizedDivision === 'Bronze';
+        }
+        
+        // Normalizar divisão do usuário (igual ao ranking geral)
+        let userDivision = String(userDivisionRaw).trim();
+        const userDivisionUpper = userDivision.toUpperCase();
+        
+        // Normalizar para formato padrão (igual ao ranking geral)
+        if (userDivisionUpper === 'BRONZE' || userDivisionUpper === '') userDivision = 'Bronze';
+        else if (userDivisionUpper === 'SILVER' || userDivisionUpper === 'PRATA') userDivision = 'Silver';
+        else if (userDivisionUpper === 'GOLD' || userDivisionUpper === 'OURO') userDivision = 'Gold';
+        else if (userDivisionUpper === 'PLATINUM') userDivision = 'Platinum';
+        else if (userDivisionUpper === 'DIAMOND' || userDivisionUpper === 'DIAMANTE') userDivision = 'Diamond';
+        else if (userDivisionUpper === 'MASTER' || userDivisionUpper === 'MESTRE') userDivision = 'Master';
+        else if (userDivisionUpper === 'LEGENDARY' || userDivisionUpper === 'DESAFIANTE') userDivision = 'Legendary';
+        else userDivision = 'Bronze'; // Fallback
+        
+        // Comparar divisões normalizadas (igual ao ranking geral)
+        return userDivision === normalizedDivision;
+      });
+      
       console.log(`📊 [getSeasonRankingByDivision] Encontrados ${rankings.length} rankings para divisão ${normalizedDivision}`);
+      if (rankings.length > 0) {
+        const sampleDivisions = [...new Set(rankings.slice(0, 5).map(r => r.user_division))];
+        console.log(`📊 [getSeasonRankingByDivision] Amostra de divisões encontradas:`, sampleDivisions);
+      }
       
       if (rankings.length === 0) {
         return [];
@@ -1003,10 +1128,13 @@ export class UsersService {
         }
       }
       
-      // Formatar resultado
+      // Formatar resultado - igual ao ranking geral, com seasonId e seasonName
       const result = rankings.map((r, index) => {
         const group = groupMap.get(r.userId);
         const clanTag = r.user_clanTag || (group && group.isActive ? group.tag : null);
+        
+        // Usar divisão do usuário diretamente, igual ao ranking geral
+        const division = r.user_division;
         
         return {
           id: String(r.userId),
@@ -1017,10 +1145,12 @@ export class UsersService {
           totalScore: r.user_totalScore || 0,
           wins: r.wins || 0,
           losses: r.losses || 0,
-          division: normalizedDivision,
+          division: division,
           seasonRank: index + 1,
           level: r.user_level || 1,
           group: group || null,
+          seasonId: seasonToUse.id,
+          seasonName: seasonToUse.name,
         };
       });
       
@@ -1034,7 +1164,7 @@ export class UsersService {
 
   async getGeneralRanking(): Promise<any[]> {
     const users = await this.usersRepository.find({
-      select: ['id', 'nickname', 'clanTag', 'profileImage', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason', 'totalScore', 'level'],
+      select: ['id', 'nickname', 'clanTag', 'profileImage', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason', 'totalScore', 'level', 'division'],
       order: { totalScore: 'DESC', level: 'DESC' }, // Ordenar primeiro por totalScore, depois por level
       take: 100,
     });
@@ -1110,7 +1240,7 @@ export class UsersService {
           totalScore: user.totalScore || 0,
           wins: user.winsSeason,
           losses: user.lossesSeason,
-          division: 'Bronze',
+          division: user.division || 'Bronze', // Usar divisão do usuário
           globalRank: index + 1, // Rank baseado na posição ordenada por totalScore
           group: group || null,
         };
@@ -1129,7 +1259,7 @@ export class UsersService {
           totalScore: user.totalScore || 0,
           wins: user.winsSeason,
           losses: user.lossesSeason,
-          division: 'Bronze',
+          division: user.division || 'Bronze', // Usar divisão do usuário
           globalRank: 0,
           group: group || null,
         };

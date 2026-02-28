@@ -314,9 +314,9 @@ export class ShopService {
   }
 
   // ==================== BUSCAR INVENTÁRIO DO USUÁRIO ====================
-  async getUserInventory(userId: number): Promise<UserCard[]> {
+  async getUserInventory(userId: number): Promise<{ cards: UserCard[]; playmats: any[]; skins: any[] }> {
     try {
-      return await Promise.race([
+      const cards = await Promise.race([
         this.userCardRepository.find({
           where: { userId },
           relations: ['card'],
@@ -327,8 +327,38 @@ export class ShopService {
           setTimeout(() => reject(new Error('Query timeout')), 1000)
         )
       ]).catch(() => []);
+
+      // Buscar usuário para obter playmats e skins comprados
+      const user = await this.userRepository.findOne({
+        where: { id: userId },
+        select: ['equippedPlaymatId', 'equippedPlaymatImage', 'equippedSkinId', 'equippedSkinImage']
+      });
+
+      const playmats: any[] = [];
+      const skins: any[] = [];
+
+      // Se o usuário tem playmat equipado, adicionar à lista de playmats possuídos
+      if (user?.equippedPlaymatId && user?.equippedPlaymatImage) {
+        playmats.push({
+          id: user.equippedPlaymatId,
+          name: `Playmat ${user.equippedPlaymatId}`,
+          image: user.equippedPlaymatImage
+        });
+      }
+
+      // Se o usuário tem skin equipada, adicionar à lista de skins possuídas
+      if (user?.equippedSkinId && user?.equippedSkinImage) {
+        skins.push({
+          id: user.equippedSkinId,
+          name: `Skin ${user.equippedSkinId}`,
+          image: user.equippedSkinImage
+        });
+      }
+
+      return { cards, playmats, skins };
     } catch (error) {
-      return [];
+      console.error('❌ [getUserInventory] Erro ao buscar inventário:', error);
+      return { cards: [], playmats: [], skins: [] };
     }
   }
 

@@ -225,6 +225,7 @@ export class AdminController {
     desce: number;
     premiacao?: string;
     premiacaoJson?: any;
+    isAvailable?: boolean;
   }) {
     return this.adminService.createDivision(body);
   }
@@ -240,6 +241,7 @@ export class AdminController {
       desce?: number;
       premiacao?: string;
       premiacaoJson?: any;
+      isAvailable?: boolean;
     },
   ) {
     return this.adminService.updateDivision(id, body);
@@ -343,5 +345,28 @@ export class AdminController {
   @Delete('social-media/:id')
   deleteSocialMedia(@Param('id') id: string) {
     return this.adminService.deleteSocialMedia(id);
+  }
+
+  // ==================== CONFIGURAÇÕES DE CONTAS NOVAS ====================
+
+  @Get('new-account-settings')
+  getNewAccountSettings() {
+    return this.adminService.getNewAccountSettings();
+  }
+
+  @Put('new-account-settings')
+  updateNewAccountSettings(@Body() body: {
+    initialCredits?: number;
+    initialCash?: number;
+    availableInitialDeckIds?: string[];
+  }) {
+    return this.adminService.updateNewAccountSettings(body);
+  }
+
+  // ==================== RESET COMPLETO DO SISTEMA ====================
+  // ⚠️ PERIGOSO: Reseta TODAS as contas do sistema
+  @Post('reset-all-accounts')
+  resetAllAccounts(@Body() body: { confirmationCode: string }) {
+    return this.adminService.resetAllAccounts(body.confirmationCode);
   }
 }

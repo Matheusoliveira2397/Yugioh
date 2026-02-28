@@ -33,7 +33,23 @@ export default function AdminCardsPanel() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>('');
+  const [updatingFromApi, setUpdatingFromApi] = useState(false);
+  
+  // Estados para busca na API YGOPRODeck
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [loadingSearch, setLoadingSearch] = useState(false);
+  const [selectedApiCard, setSelectedApiCard] = useState<any>(null);
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+  const [selectedImageIndex, setSelectedImageIndex] = useState<number>(0);
+  const [availableImages, setAvailableImages] = useState<any[]>([]);
+
+  // Estados para sistema de skins
+  const [originalCardSearch, setOriginalCardSearch] = useState('');
+  const [originalCardResults, setOriginalCardResults] = useState<Card[]>([]);
+  const [selectedOriginalCard, setSelectedOriginalCard] = useState<Card | null>(null);
+  const [isSkin, setIsSkin] = useState(false);
+  const [otherSkins, setOtherSkins] = useState<Card[]>([]); // Outras skins da mesma carta
 
   // Form state
   const [formData, setFormData] = useState({
@@ -76,6 +92,297 @@ export default function AdminCardsPanel() {
     }
   };
 
+  // Função para atualizar todas as cartas da API
+  const handleUpdateAllFromApi = async () => {
+    if (!confirm('⚠️ Isso irá atualizar TODAS as cartas do banco de dados com informações da API YGOPRODeck.\n\nIsso pode demorar vários minutos dependendo da quantidade de cartas.\n\nDeseja continuar?')) {
+      return;
+    }
+
+    setUpdatingFromApi(true);
+    setMessage({ type: 'success', text: '🔄 Iniciando atualização em massa... Isso pode demorar vários minutos.' });
+
+    try {
+      const response = await api.post('/cards/admin/update-all-from-api');
+      const result = response.data;
+
+      setMessage({
+        type: 'success',
+        text: `✅ Atualização concluída! ${result.updated} cartas atualizadas, ${result.errors} erros. Recarregando lista...`
+      });
+
+      // Recarregar cartas após atualização
+      await loadCards();
+
+      // Mostrar detalhes no console
+      console.log('📊 Resultados da atualização:', result);
+      if (result.details) {
+        const errors = result.details.filter((d: any) => d.status === 'error');
+        if (errors.length > 0) {
+          console.warn('⚠️ Cartas com erro:', errors);
+        }
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao atualizar cartas:', error);
+      console.error('❌ Detalhes do erro:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message,
+      });
+      
+      let errorMessage = 'Erro desconhecido';
+      if (error.response?.status === 401) {
+        errorMessage = 'Não autorizado. Verifique se você está logado como administrador.';
+      } else if (error.response?.status === 403) {
+        errorMessage = 'Acesso negado. Você precisa de permissões de administrador.';
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      setMessage({
+        type: 'error',
+        text: `❌ Erro: ${errorMessage}`
+      });
+    } finally {
+      setUpdatingFromApi(false);
+    }
+  };
+
+  // Função para buscar cartas na API YGOPRODeck
+  const searchYugiohCards = async (query: string) => {
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    setLoadingSearch(true);
+    try {
+      const response = await api.get('/cards/yugioh-api/search', {
+        params: { query }
+      });
+      // Mostrar todos os resultados (sem limite) para não perder variantes
+      // A API YGOPRODeck geralmente retorna até 100 resultados
+      const allResults = response.data || [];
+      
+      // Agrupar por nome para facilitar visualização
+      const groupedResults = allResults.reduce((acc: any, card: any) => {
+        const name = card.name;
+        if (!acc[name]) {
+          acc[name] = [];
+        }
+        acc[name].push(card);
+        return acc;
+      }, {});
+      
+      // Converter de volta para array, mas manter agrupado
+      const sortedResults = Object.values(groupedResults).flat();
+      
+      setSearchResults(sortedResults);
+      console.log(`🔍 Encontradas ${sortedResults.length} cartas para "${query}"`);
+    } catch (error: any) {
+      console.error('Erro ao buscar cartas:', error);
+      setSearchResults([]);
+    } finally {
+      setLoadingSearch(false);
+    }
+  };
+
+  // Função para buscar cartas existentes (para criar skin)
+  const searchOriginalCards = (query: string) => {
+    if (query.length < 2) {
+      setOriginalCardResults([]);
+      return;
+    }
+    
+    const filtered = cards.filter(card => 
+      card.name.toLowerCase().includes(query.toLowerCase()) && 
+      card.isActive
+    );
+    console.log('🔍 Buscando cartas originais:', { query, totalCards: cards.length, filtered: filtered.length });
+    setOriginalCardResults(filtered.slice(0, 10));
+  };
+
+  // Função para selecionar carta original (ao criar skin)
+  const selectOriginalCard = (originalCard: Card) => {
+    console.log('✅ Selecionando carta original:', originalCard);
+    setSelectedOriginalCard(originalCard);
+    setOriginalCardSearch('');
+    setOriginalCardResults([]);
+    
+    // Preencher campos compartilhados (bloqueados para edição)
+    setFormData({
+      ...formData,
+      name: originalCard.name, // Mesmo nome
+      description: originalCard.description || '',
+      type: originalCard.type,
+      monsterType: originalCard.monsterType,
+      attribute: originalCard.attribute,
+      race: (originalCard as any).race || 'Warrior',
+      level: originalCard.level || 4,
+      atk: originalCard.atk || 0,
+      def: originalCard.def || 0,
+      spellType: (originalCard as any).spellType || 'Normal',
+      trapType: (originalCard as any).trapType || 'Normal',
+      archetype: (originalCard as any).archetype || '',
+      isBanned: (originalCard as any).isBanned || false,
+      maxCopiesInDeck: (originalCard as any).maxCopiesInDeck || 3,
+      // Campos únicos da skin (podem ser diferentes)
+      // Gerar idCarta único automaticamente baseado no idCarta original + timestamp
+      idCarta: `${(originalCard as any).idCarta || originalCard.name.replace(/[^a-zA-Z0-9]/g, '')}_skin_${Date.now()}`,
+      cardImage: '',
+      rarity: originalCard.rarity, // Pode ser diferente
+      priceCredits: 0,
+      priceCash: 0,
+      isForSale: true,
+    });
+    
+    setMessage({ 
+      type: 'success', 
+      text: `✅ Carta original "${originalCard.name}" selecionada! Um ID único foi gerado automaticamente. Você pode alterá-lo se desejar.` 
+    });
+  };
+
+  // Função para selecionar carta da API e preencher formulário
+  const selectCardFromApi = async (apiCard: any) => {
+    try {
+      setLoadingSearch(true);
+      // Buscar dados completos da carta (sem baixar imagem ainda)
+      const response = await api.get('/cards/yugioh-api/card', {
+        params: { 
+          name: apiCard.name,
+          downloadImage: 'false' // Não baixar ainda, apenas buscar dados
+        }
+      });
+
+      const cardData = response.data;
+      
+      // Verificar se há múltiplas imagens
+      const images = cardData.allImages || [];
+      setAvailableImages(images);
+      setSelectedImageIndex(0);
+      
+      // Preencher formulário automaticamente
+      setFormData({
+        ...formData,
+        name: cardData.name,
+        idCarta: cardData.idCarta || `YGOPRO_${Date.now()}`,
+        description: cardData.description,
+        cardImage: images.length > 0 ? (images[0].image_url || images[0].image_url_small) : cardData.cardImage,
+        type: cardData.type,
+        monsterType: cardData.monsterType,
+        attribute: cardData.attribute,
+        race: cardData.race,
+        spellType: cardData.spellType,
+        trapType: cardData.trapType,
+        archetype: cardData.archetype || '',
+        level: cardData.level,
+        rank: cardData.rank,
+        atk: cardData.atk,
+        def: cardData.def,
+      });
+
+      setSelectedApiCard(cardData);
+      setSearchResults([]);
+      setSearchQuery('');
+      
+      // Mostrar preview da primeira imagem
+      if (images.length > 0) {
+        setImagePreview(images[0].image_url || images[0].image_url_small);
+      } else if (cardData.cardImage) {
+        setImagePreview(cardData.cardImage);
+      }
+      
+      setMessage({ 
+        type: 'success', 
+        text: `✅ Carta "${cardData.name}" carregada da API! ${images.length > 1 ? `${images.length} imagens disponíveis. Selecione uma e clique em "Baixar Imagem".` : 'Clique em "Baixar Imagem" para salvar.'}` 
+      });
+    } catch (error: any) {
+      console.error('Erro ao carregar carta:', error);
+      setMessage({ 
+        type: 'error', 
+        text: `❌ Erro ao carregar dados da carta: ${error.response?.data?.message || error.message}` 
+      });
+    } finally {
+      setLoadingSearch(false);
+    }
+  };
+
+  // Função para selecionar uma imagem específica
+  const selectImage = (index: number, imageUrl: string) => {
+    setSelectedImageIndex(index);
+    setImagePreview(imageUrl);
+    setFormData({
+      ...formData,
+      cardImage: imageUrl
+    });
+  };
+
+  // Função para baixar a imagem selecionada
+  const downloadSelectedImage = async () => {
+    if (!selectedApiCard || availableImages.length === 0) {
+      setMessage({ type: 'error', text: '❌ Nenhuma imagem disponível para baixar' });
+      return;
+    }
+
+    try {
+      setLoadingSearch(true);
+      const selectedImage = availableImages[selectedImageIndex];
+      const imageUrl = selectedImage.image_url || selectedImage.image_url_small;
+      
+      if (!imageUrl) {
+        setMessage({ type: 'error', text: '❌ URL da imagem não encontrada' });
+        return;
+      }
+
+      // Baixar a imagem selecionada
+      const response = await api.get('/cards/yugioh-api/card', {
+        params: { 
+          name: selectedApiCard.name,
+          downloadImage: 'true',
+          imageIndex: selectedImageIndex.toString()
+        }
+      });
+
+      const cardData = response.data;
+      
+      // Atualizar formulário com o path local
+      setFormData({
+        ...formData,
+        cardImage: cardData.cardImage
+      });
+
+      // Atualizar preview
+      if (cardData.cardImage) {
+        if (cardData.cardImage.startsWith('/images/')) {
+          // Imagem salva no frontend (acesso direto)
+          setImagePreview(cardData.cardImage);
+        } else if (cardData.cardImage.startsWith('http://') || cardData.cardImage.startsWith('https://')) {
+          // URL externa (temporária, antes de salvar)
+          setImagePreview(cardData.cardImage);
+        } else if (cardData.cardImage.startsWith('/uploads/cards/')) {
+          // Converter caminho antigo para novo formato
+          const fileName = cardData.cardImage.split('/').pop();
+          setImagePreview(`/images/cards/${fileName}`);
+        }
+      }
+      
+      setMessage({ 
+        type: 'success', 
+        text: `✅ Imagem ${selectedImageIndex + 1} de ${availableImages.length} baixada e salva no servidor!` 
+      });
+    } catch (error: any) {
+      console.error('Erro ao baixar imagem:', error);
+      setMessage({ 
+        type: 'error', 
+        text: `❌ Erro ao baixar imagem: ${error.response?.data?.message || error.message}` 
+      });
+    } finally {
+      setLoadingSearch(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -92,7 +399,7 @@ export default function AdminCardsPanel() {
     }
 
     try {
-      let imagePath = formData.cardImage;
+      let imagePath = formData.cardImage || '';
 
       // Se houver uma nova imagem selecionada, fazer upload primeiro
       if (selectedImageFile) {
@@ -119,6 +426,13 @@ export default function AdminCardsPanel() {
           return;
         }
       }
+      
+      // Se não houver imagePath mas formData.cardImage existir, usar ele
+      if (!imagePath && formData.cardImage) {
+        imagePath = formData.cardImage;
+      }
+      
+      console.log('📸 imagePath final:', imagePath);
 
       if (editingCard) {
         // EDITAR
@@ -134,8 +448,13 @@ export default function AdminCardsPanel() {
         if (formData.type) cleanedFormData.type = formData.type;
         if (formData.rarity) cleanedFormData.rarity = formData.rarity;
         
-        // Campos opcionais - apenas se tiverem valor
-        if (imagePath) cleanedFormData.cardImage = imagePath;
+        // Campos opcionais - cardImage sempre incluir se tiver valor (mesmo que seja string vazia para limpar)
+        if (imagePath !== undefined && imagePath !== null) {
+          cleanedFormData.cardImage = imagePath;
+        } else if (formData.cardImage !== undefined && formData.cardImage !== null) {
+          // Se imagePath não foi definido mas formData.cardImage existe, usar ele
+          cleanedFormData.cardImage = formData.cardImage;
+        }
         
         // Campos específicos de Monster
         if (formData.type === 'Monster') {
@@ -204,6 +523,13 @@ export default function AdminCardsPanel() {
         // CRIAR
         console.log('➕ Criando nova carta');
         
+        // Se idCarta estiver vazio, gerar um único automaticamente
+        if (!formData.idCarta || formData.idCarta.trim() === '') {
+          const baseName = formData.name ? formData.name.replace(/[^a-zA-Z0-9]/g, '') : 'card';
+          formData.idCarta = `${baseName}_${Date.now()}`;
+          console.log('🆔 idCarta gerado automaticamente:', formData.idCarta);
+        }
+        
         // Limpar dados removendo campos que não existem mais
         const cleanedFormData: any = {};
         const allowedFields = [
@@ -218,13 +544,22 @@ export default function AdminCardsPanel() {
             // Usar imagePath se houver upload, senão usar o valor do formData
             if (imagePath) {
               cleanedFormData[key] = imagePath;
-            } else if (formData[key as keyof typeof formData]) {
-              cleanedFormData[key] = formData[key as keyof typeof formData];
+            } else if (formData.cardImage !== undefined && formData.cardImage !== null) {
+              cleanedFormData[key] = formData.cardImage;
             }
           } else if (formData[key as keyof typeof formData] !== undefined && formData[key as keyof typeof formData] !== null) {
             cleanedFormData[key] = formData[key as keyof typeof formData];
           }
         }
+        
+        // Garantir que idCarta está presente e não está vazio
+        if (!cleanedFormData.idCarta || cleanedFormData.idCarta.trim() === '') {
+          const baseName = cleanedFormData.name ? cleanedFormData.name.replace(/[^a-zA-Z0-9]/g, '') : 'card';
+          cleanedFormData.idCarta = `${baseName}_${Date.now()}`;
+          console.log('🆔 idCarta gerado automaticamente (fallback):', cleanedFormData.idCarta);
+        }
+        
+        console.log('📸 cardImage no cleanedFormData:', cleanedFormData.cardImage);
         
         console.log('📤 Dados enviados (limpos):', cleanedFormData);
         const response = await api.post('/cards', cleanedFormData);
@@ -249,7 +584,7 @@ export default function AdminCardsPanel() {
     }
   };
 
-  const handleEdit = (card: Card) => {
+  const handleEdit = async (card: Card) => {
     console.log('✏️ Editando carta:', card);
     setEditingCard(card);
     
@@ -288,6 +623,52 @@ export default function AdminCardsPanel() {
     setSelectedImageFile(null);
     setImagePreview('');
     setShowForm(true);
+
+    // Verificar se esta carta é uma skin (existem outras cartas com o mesmo nome)
+    // IMPORTANTE: A primeira carta criada (mais antiga) é a original, não é skin
+    try {
+      const response = await api.get(`/cards/by-name/${encodeURIComponent(card.name)}/skins`);
+      const allCardsWithSameName = response.data || [];
+      
+      if (allCardsWithSameName.length > 1) {
+        // Existem outras cartas com o mesmo nome
+        // Ordenar por data de criação (a primeira é a original)
+        const sortedCards = [...allCardsWithSameName].sort((a: Card, b: Card) => {
+          const dateA = new Date(a.createdAt || 0).getTime();
+          const dateB = new Date(b.createdAt || 0).getTime();
+          return dateA - dateB;
+        });
+        
+        // A primeira carta (mais antiga) é a original
+        const originalCard = sortedCards[0];
+        const isOriginal = originalCard.id === card.id;
+        
+        if (isOriginal) {
+          // Esta é a carta original - não é skin
+          setIsSkin(false);
+          // Mostrar as outras cartas como skins
+          const otherSkinsList = sortedCards.slice(1); // Todas exceto a primeira (original)
+          setOtherSkins(otherSkinsList);
+          console.log(`📝 Carta original! Existem ${otherSkinsList.length} skin(s) desta carta.`);
+        } else {
+          // Esta é uma skin (não é a original)
+          setIsSkin(true);
+          // Mostrar a original e as outras skins (exceto a atual)
+          const otherSkinsList = sortedCards.filter((c: Card) => c.id !== card.id);
+          setOtherSkins(otherSkinsList);
+          console.log(`🎨 Carta é uma skin! Original: ${originalCard.idCarta}, outras versões:`, otherSkinsList.length);
+        }
+      } else {
+        // Esta é a única carta com esse nome (não é skin)
+        setIsSkin(false);
+        setOtherSkins([]);
+      }
+    } catch (error: any) {
+      console.error('Erro ao verificar skins:', error);
+      // Se der erro, assumir que não é skin
+      setIsSkin(false);
+      setOtherSkins([]);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -354,6 +735,16 @@ export default function AdminCardsPanel() {
     setEditingCard(null);
     setSelectedImageFile(null);
     setImagePreview('');
+    setSelectedApiCard(null);
+    setAvailableImages([]);
+    setSelectedImageIndex(0);
+    setSearchQuery('');
+    setSearchResults([]);
+    setOriginalCardSearch('');
+    setOriginalCardResults([]);
+    setSelectedOriginalCard(null);
+    setIsSkin(false);
+    setOtherSkins([]);
   };
 
   const filteredCards = cards
@@ -427,18 +818,227 @@ export default function AdminCardsPanel() {
           </div>
           
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Busca na API YGOPRODeck */}
+            {!selectedOriginalCard && (
+              <div className="bg-blue-900/30 rounded-lg p-4 border border-blue-500/50">
+                <h3 className="text-sm font-bold mb-3 text-blue-400">🔍 Buscar Carta na API YGOPRODeck</h3>
+                <div className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    searchYugiohCards(e.target.value);
+                  }}
+                  placeholder="Digite o nome da carta para buscar..."
+                  className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                />
+                {loadingSearch && (
+                  <div className="absolute right-3 top-2.5 text-blue-400">⏳</div>
+                )}
+                </div>
+              
+              {/* Lista de resultados */}
+              {searchResults.length > 0 && (
+                <div className="mt-3">
+                  <div className="text-xs text-gray-400 mb-2 px-1">
+                    📋 {searchResults.length} {searchResults.length === 1 ? 'carta encontrada' : 'cartas encontradas'}
+                  </div>
+                  <div className="bg-gray-900 border border-gray-700 rounded-lg max-h-96 overflow-y-auto">
+                    {searchResults.map((card, index) => (
+                      <div
+                        key={`${card.id || card.name}-${index}`}
+                        onClick={() => selectCardFromApi(card)}
+                        className="p-3 hover:bg-gray-800 cursor-pointer border-b border-gray-700 last:border-b-0 flex items-center gap-3"
+                      >
+                        {card.card_images?.[0]?.image_url_small && (
+                          <img 
+                            src={card.card_images[0].image_url_small} 
+                            alt={card.name}
+                            className="w-12 h-16 object-contain flex-shrink-0"
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-white text-sm truncate">{card.name}</div>
+                          <div className="text-xs text-gray-400">{card.type}</div>
+                          {card.atk !== undefined && (
+                            <div className="text-xs text-gray-500">ATK: {card.atk} {card.def !== undefined ? `/ DEF: ${card.def}` : ''}</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {selectedApiCard && (
+                <div className="mt-3 space-y-3">
+                  <div className="p-3 bg-green-900/20 border border-green-500 rounded-lg">
+                    <p className="text-green-400 font-semibold text-sm">
+                      ✅ Carta "{selectedApiCard.name}" carregada da API!
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {availableImages.length > 1 
+                        ? `${availableImages.length} imagens disponíveis. Selecione uma abaixo e clique em "Baixar Imagem".`
+                        : 'Selecione a imagem abaixo e clique em "Baixar Imagem" para salvar.'}
+                    </p>
+                  </div>
+
+                  {/* Galeria de Imagens Disponíveis */}
+                  {availableImages.length > 0 && (
+                    <div className="bg-gray-900/50 rounded-lg p-3 border border-gray-700">
+                      <h4 className="text-xs font-bold mb-2 text-blue-400">
+                        🖼️ Imagens Disponíveis ({availableImages.length})
+                      </h4>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 mb-3">
+                        {availableImages.map((img: any, index: number) => {
+                          const imageUrl = img.image_url_small || img.image_url;
+                          const isSelected = index === selectedImageIndex;
+                          return (
+                            <div
+                              key={index}
+                              onClick={() => selectImage(index, img.image_url || img.image_url_small)}
+                              className={`relative cursor-pointer rounded border-2 transition-all ${
+                                isSelected 
+                                  ? 'border-blue-500 ring-2 ring-blue-500/50' 
+                                  : 'border-gray-700 hover:border-blue-400'
+                              }`}
+                            >
+                              <img
+                                src={imageUrl}
+                                alt={`${selectedApiCard.name} - Imagem ${index + 1}`}
+                                className="w-full h-24 object-contain rounded"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display = 'none';
+                                }}
+                              />
+                              {isSelected && (
+                                <div className="absolute top-1 right-1 bg-blue-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                                  ✓
+                                </div>
+                              )}
+                              <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs text-center py-0.5">
+                                #{index + 1}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={downloadSelectedImage}
+                        disabled={loadingSearch}
+                        className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed px-4 py-2 rounded-lg text-white text-sm font-bold transition-all"
+                      >
+                        {loadingSearch ? '⏳ Baixando...' : `📥 Baixar Imagem Selecionada (${selectedImageIndex + 1}/${availableImages.length})`}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              </div>
+            )}
+
             {/* Informações Básicas */}
             <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700">
               <h3 className="text-sm font-bold mb-3 text-purple-400">📝 Informações Básicas</h3>
+              
+              {/* Checkbox: É Skin */}
+              <div className="mb-4 p-3 bg-purple-900/20 border border-purple-500/50 rounded-lg">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isSkin}
+                    onChange={(e) => {
+                      setIsSkin(e.target.checked);
+                      if (!e.target.checked) {
+                        // Se desmarcar, limpar seleção de carta original
+                        setSelectedOriginalCard(null);
+                        setOriginalCardSearch('');
+                        setOriginalCardResults([]);
+                        setOtherSkins([]);
+                      }
+                    }}
+                    disabled={editingCard !== null && otherSkins.length > 0}
+                    className="w-5 h-5 text-purple-500 rounded focus:ring-purple-500 focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                  <span className="text-white font-semibold text-sm">
+                    🎨 Esta é uma skin de uma carta existente
+                    {editingCard && otherSkins.length > 0 && (
+                      <span className="text-purple-400 ml-2">(Detectado automaticamente)</span>
+                    )}
+                  </span>
+                </label>
+                <div className="text-xs text-gray-400 mt-1 ml-7">
+                  {editingCard && otherSkins.length > 0 ? (
+                    <>
+                      {isSkin ? (
+                        <>
+                          <p className="mb-2">
+                            <span className="text-purple-400 font-semibold">🎨 Esta é uma skin!</span> Existem {otherSkins.length} outra(s) versão(ões) de "{editingCard.name}".
+                          </p>
+                          {otherSkins.length > 0 && (
+                            <div className="mt-2 space-y-1">
+                              <span className="text-purple-400 font-semibold">Outras versões:</span>
+                              {otherSkins.map((otherCard) => {
+                                // Ordenar todas as cartas para identificar qual é a original
+                                const allCards = editingCard ? [editingCard, ...otherSkins] : otherSkins;
+                                const sorted = [...allCards].sort((a, b) => {
+                                  const dateA = new Date(a.createdAt || 0).getTime();
+                                  const dateB = new Date(b.createdAt || 0).getTime();
+                                  return dateA - dateB;
+                                });
+                                const isOriginalCard = sorted[0] && sorted[0].id === otherCard.id;
+                                return (
+                                  <div key={otherCard.id} className="text-gray-300 ml-2">
+                                    {isOriginalCard ? '📝 Original:' : '🎨 Skin:'} {otherCard.idCarta || otherCard.id} {otherCard.rarity && `(${otherCard.rarity})`}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <p className="mb-2">
+                            <span className="text-green-400 font-semibold">📝 Esta é a carta original!</span> Existem {otherSkins.length} skin(s) desta carta.
+                          </p>
+                          {otherSkins.length > 0 && (
+                            <div className="mt-2 space-y-1">
+                              <span className="text-purple-400 font-semibold">Skins:</span>
+                              {otherSkins.map((skin) => (
+                                <div key={skin.id} className="text-gray-300 ml-2">
+                                  🎨 {skin.idCarta || skin.id} {skin.rarity && `(${skin.rarity})`}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <p>Marque esta opção se esta carta é uma skin (versão alternativa) de uma carta existente. Isso permite controlar se a skin aparece na loja separadamente.</p>
+                  )}
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                 <div>
-                  <label className="block text-xs font-bold mb-1">Nome da Carta *</label>
+                  <label className="block text-xs font-bold mb-1">
+                    Nome da Carta * 
+                    {selectedOriginalCard && (
+                      <span className="text-orange-400 ml-1">(Bloqueado - herdado da carta original)</span>
+                    )}
+                  </label>
                   <input
                     type="text"
                     required
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500 transition-colors"
+                    disabled={selectedOriginalCard !== null}
+                    className={`w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500 transition-colors ${
+                      selectedOriginalCard ? 'opacity-60 cursor-not-allowed' : ''
+                    }`}
                     placeholder="Ex: Mago Negro"
                   />
                 </div>
@@ -456,12 +1056,20 @@ export default function AdminCardsPanel() {
               </div>
               
               <div className="mb-3">
-                <label className="block text-xs font-bold mb-1">Descrição *</label>
+                <label className="block text-xs font-bold mb-1">
+                  Descrição * 
+                  {selectedOriginalCard && (
+                    <span className="text-orange-400 ml-1">(Bloqueado - herdado da carta original)</span>
+                  )}
+                </label>
                 <textarea
                   required
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500 h-20 transition-colors"
+                  disabled={selectedOriginalCard !== null}
+                  className={`w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500 h-20 transition-colors ${
+                    selectedOriginalCard ? 'opacity-60 cursor-not-allowed' : ''
+                  }`}
                   placeholder="Ex: The ultimate wizard..."
                 />
               </div>
@@ -528,11 +1136,19 @@ export default function AdminCardsPanel() {
               <h3 className="text-sm font-bold mb-3 text-purple-400">🎯 Tipo e Classificação</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div>
-                <label className="block text-xs font-bold mb-1">Tipo *</label>
+                <label className="block text-xs font-bold mb-1">
+                  Tipo * 
+                  {selectedOriginalCard && (
+                    <span className="text-orange-400 ml-1">(Bloqueado)</span>
+                  )}
+                </label>
                 <select
                   value={formData.type}
                   onChange={(e) => setFormData({ ...formData, type: e.target.value as CardType })}
-                  className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500"
+                  disabled={selectedOriginalCard !== null}
+                  className={`w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500 ${
+                    selectedOriginalCard ? 'opacity-60 cursor-not-allowed' : ''
+                  }`}
                 >
                   <option value="Monster">Monster</option>
                   <option value="Spell">Spell</option>
@@ -842,13 +1458,13 @@ export default function AdminCardsPanel() {
       )}
 
       {/* Filtros */}
-      <div className="bg-gray-800 rounded-lg p-4 mb-6 flex gap-4">
+      <div className="bg-gray-800 rounded-lg p-4 mb-6 flex gap-4 flex-wrap">
         <input
           type="text"
           placeholder="🔍 Buscar carta..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
+          className="flex-1 min-w-[200px] bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
         />
         <select
           value={filter}
@@ -859,6 +1475,24 @@ export default function AdminCardsPanel() {
           <option value="active">Ativas ({cards.filter(c => c.isActive).length})</option>
           <option value="inactive">Inativas ({cards.filter(c => !c.isActive).length})</option>
         </select>
+        <button
+          onClick={handleUpdateAllFromApi}
+          disabled={updatingFromApi}
+          className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+          title="Atualiza todas as cartas com informações da API (maxCopiesInDeck e descrições em português)"
+        >
+          {updatingFromApi ? (
+            <>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              <span>Atualizando...</span>
+            </>
+          ) : (
+            <>
+              <span>🔄</span>
+              <span>Atualizar da API</span>
+            </>
+          )}
+        </button>
       </div>
 
       {/* Listagem de Cartas */}

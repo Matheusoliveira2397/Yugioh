@@ -62,30 +62,62 @@ export default function GroupDetailPage() {
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [achievements, setAchievements] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'weekly' | 'season' | 'total'>('weekly');
+  const [activeTab, setActiveTab] = useState<'weekly' | 'season' | 'total' | 'members'>('weekly');
   const [loading, setLoading] = useState(true);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
   const [showEditModal, setShowEditModal] = useState(false);
   const [editFormData, setEditFormData] = useState({
     name: '',
     tag: '',
     description: '',
     isPublic: true,
+    cashDivisionMembers: null as number | null,
   });
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
   const [editError, setEditError] = useState('');
+  const [hasPendingRequest, setHasPendingRequest] = useState(false);
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+  const [showRequestsTab, setShowRequestsTab] = useState(false);
 
 
-  useEffect(() => {
-    if (id) {
-      fetchGroupDetails();
-      fetchRanking('weekly');
-      fetchAchievements();
+  // Calcular se é membro (antes dos useEffects)
+  const userId = user?.id ? (typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id)) : null;
+  const leaderId = group?.leader?.id ? (typeof group.leader.id === 'string' ? parseInt(group.leader.id, 10) : Number(group.leader.id)) : null;
+  const isLeader = userId !== null && leaderId !== null && userId === leaderId;
+  const isMember = userId !== null && members.some(m => {
+    const memberId = m.user?.id ? (typeof m.user.id === 'string' ? parseInt(m.user.id, 10) : Number(m.user.id)) : null;
+    return memberId !== null && userId === memberId;
+  });
+
+  const checkPendingRequest = async () => {
+    if (!id || !token) return;
+    try {
+      const response = await axios.get(`${API_URL}/groups/${id}/requests/check`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setHasPendingRequest(response.data.hasPending);
+    } catch (error) {
+      // Ignorar erro se não tiver permissão
+      setHasPendingRequest(false);
     }
-  }, [id]);
+  };
+
+  const fetchPendingRequests = async () => {
+    if (!id || !token) return;
+    try {
+      const response = await axios.get(`${API_URL}/groups/${id}/requests/pending`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setPendingRequests(response.data || []);
+    } catch (error) {
+      console.error('Erro ao buscar solicitações:', error);
+      setPendingRequests([]);
+    }
+  };
 
   const fetchAchievements = async () => {
     if (!id) return;
@@ -100,14 +132,36 @@ export default function GroupDetailPage() {
     }
   };
 
-  // Calcular se é membro
-  const userId = user?.id ? (typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id)) : null;
-  const leaderId = group?.leader?.id ? (typeof group.leader.id === 'string' ? parseInt(group.leader.id, 10) : Number(group.leader.id)) : null;
-  const isLeader = userId !== null && leaderId !== null && userId === leaderId;
-  const isMember = userId !== null && members.some(m => {
-    const memberId = m.user?.id ? (typeof m.user.id === 'string' ? parseInt(m.user.id, 10) : Number(m.user.id)) : null;
-    return memberId !== null && userId === memberId;
-  });
+  useEffect(() => {
+    if (id) {
+      fetchGroupDetails();
+      fetchRanking('weekly');
+      fetchAchievements();
+      checkPendingRequest();
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (id && group && members.length > 0) {
+      // Recalcular isLeader e isMember dentro do useEffect
+      const currentUserId = user?.id ? (typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id)) : null;
+      const currentLeaderId = group?.leader?.id ? (typeof group.leader.id === 'string' ? parseInt(group.leader.id, 10) : Number(group.leader.id)) : null;
+      const currentIsLeader = currentUserId !== null && currentLeaderId !== null && currentUserId === currentLeaderId;
+      const currentIsMember = currentUserId !== null && members.some(m => {
+        const memberId = m.user?.id ? (typeof m.user.id === 'string' ? parseInt(m.user.id, 10) : Number(m.user.id)) : null;
+        return memberId !== null && currentUserId === memberId;
+      });
+      
+      const isCoLeader = currentIsMember && members.find(m => {
+        const memId = m.user?.id ? (typeof m.user.id === 'string' ? parseInt(m.user.id, 10) : Number(m.user.id)) : null;
+        return memId === currentUserId && (m.role === 'Co-Leader' || m.role === 'LEADER' || m.role === 'CO_LEADER');
+      });
+
+      if (currentIsLeader || isCoLeader) {
+        fetchPendingRequests();
+      }
+    }
+  }, [id, group, members, user]);
 
 
   const fetchGroupDetails = async () => {
@@ -130,9 +184,23 @@ export default function GroupDetailPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setMembers(response.data);
-      setActiveTab(type);
+      if (type !== 'members') {
+        setActiveTab(type);
+      }
     } catch (error) {
       console.error('Erro ao buscar ranking:', error);
+    }
+  };
+
+  const fetchMembers = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/groups/${id}/ranking/total`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setMembers(response.data);
+      setActiveTab('members');
+    } catch (error) {
+      console.error('Erro ao buscar membros:', error);
     }
   };
 
@@ -141,7 +209,7 @@ export default function GroupDetailPage() {
     if (!id) return;
     
     try {
-      await axios.post(
+      const response = await axios.post(
         `${API_URL}/groups/join/${id}`,
         {},
         {
@@ -149,33 +217,77 @@ export default function GroupDetailPage() {
         }
       );
       
-      // Buscar dados atualizados do usuário após entrar no grupo
-      try {
-        const userResponse = await axios.get(
-          `${API_URL}/users/me`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
+      // Se o grupo for privado, a resposta será uma solicitação (tem id e status)
+      if (group && !group.isPublic && response.data && response.data.status) {
+        alert('Solicitação de entrada enviada! Aguarde a aprovação.');
+        await checkPendingRequest();
+      } else {
+        // Grupo público - usuário entrou diretamente
+        // Buscar dados atualizados do usuário após entrar no grupo
+        try {
+          const userResponse = await axios.get(
+            `${API_URL}/users/me`,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          );
+          
+          console.log('🔄 [joinGroup] Dados do usuário recebidos:', userResponse.data);
+          if (userResponse.data) {
+            const updatedUser = { ...user, ...userResponse.data };
+            console.log('✅ [joinGroup] Atualizando store com clanTag:', updatedUser.clanTag);
+            useAuthStore.setState({
+              user: updatedUser,
+            });
           }
-        );
-        
-        console.log('🔄 [joinGroup] Dados do usuário recebidos:', userResponse.data);
-        if (userResponse.data) {
-          const updatedUser = { ...user, ...userResponse.data };
-          console.log('✅ [joinGroup] Atualizando store com clanTag:', updatedUser.clanTag);
-          useAuthStore.setState({
-            user: updatedUser,
-          });
+        } catch (err) {
+          console.error('❌ Erro ao buscar dados do usuário:', err);
         }
-      } catch (err) {
-        console.error('❌ Erro ao buscar dados do usuário:', err);
+        
+        alert('Você entrou no clã!');
+        // Recarregar dados do grupo para atualizar a lista de membros
+        await fetchGroupDetails();
+        await fetchRanking(activeTab);
       }
-      
-      alert('Você entrou no clã!');
-      // Recarregar dados do grupo para atualizar a lista de membros
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || 'Erro ao entrar no clã';
+      alert(errorMessage);
+    }
+  };
+
+  const handleAcceptRequest = async (requestId: string) => {
+    if (!id) return;
+    try {
+      await axios.post(
+        `${API_URL}/groups/${id}/requests/${requestId}/accept`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      alert('Solicitação aceita!');
+      await fetchPendingRequests();
       await fetchGroupDetails();
       await fetchRanking(activeTab);
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Erro ao entrar no clã');
+      alert(error.response?.data?.message || 'Erro ao aceitar solicitação');
+    }
+  };
+
+  const handleRejectRequest = async (requestId: string) => {
+    if (!id) return;
+    try {
+      await axios.post(
+        `${API_URL}/groups/${id}/requests/${requestId}/reject`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      alert('Solicitação recusada.');
+      await fetchPendingRequests();
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Erro ao recusar solicitação');
     }
   };
 
@@ -216,32 +328,52 @@ export default function GroupDetailPage() {
   };
 
   const handleDeleteGroup = async () => {
+    if (!deletePassword) {
+      alert('Por favor, digite sua senha para confirmar a exclusão.');
+      return;
+    }
+
     try {
-      await axios.delete(`${API_URL}/groups/${id}`, {
+      // axios.delete não suporta data diretamente, usar axios.request ou axios.post
+      await axios.request({
+        method: 'DELETE',
+        url: `${API_URL}/groups/${id}`,
         headers: { Authorization: `Bearer ${token}` },
+        data: { password: deletePassword },
       });
       alert('Grupo excluído com sucesso!');
+      setDeletePassword('');
+      setShowDeleteModal(false);
       navigate('/groups');
     } catch (error: any) {
       alert(error.response?.data?.message || 'Erro ao excluir grupo');
+      setDeletePassword('');
     }
   };
 
   const handlePromoteMember = async (memberUserId: number, role: 'CO_LEADER' | 'ELDER') => {
-    if (!confirm(`Tem certeza que deseja promover este membro a ${role === 'CO_LEADER' ? 'Co-Líder' : 'Veterano'}?`)) {
+    // Converter para o formato que o backend espera
+    const backendRole = role === 'CO_LEADER' ? 'Co-Leader' : 'Elder';
+    
+    if (!confirm(`Tem certeza que deseja promover este membro a ${role === 'CO_LEADER' ? 'Oficial (Co-Líder)' : 'Veterano'}?`)) {
       return;
     }
 
     try {
       await axios.post(
         `${API_URL}/groups/${id}/promote/${memberUserId}`,
-        { role },
+        { role: backendRole },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       alert('Membro promovido com sucesso!');
       await fetchGroupDetails();
-      await fetchRanking(activeTab);
+      if (activeTab === 'members') {
+        await fetchMembers();
+      } else {
+        await fetchRanking(activeTab);
+      }
     } catch (error: any) {
+      console.error('Erro ao promover membro:', error);
       alert(error.response?.data?.message || 'Erro ao promover membro');
     }
   };
@@ -259,9 +391,30 @@ export default function GroupDetailPage() {
       );
       alert('Membro rebaixado com sucesso!');
       await fetchGroupDetails();
-      await fetchRanking(activeTab);
+      await fetchRanking(activeTab === 'members' ? 'total' : activeTab);
+      if (activeTab === 'members') {
+        await fetchRanking('total'); // Recarregar lista de membros
+      }
     } catch (error: any) {
       alert(error.response?.data?.message || 'Erro ao rebaixar membro');
+    }
+  };
+
+  const handleRemoveMember = async (memberUserId: number) => {
+    if (!confirm('Tem certeza que deseja expulsar este membro do clã?')) {
+      return;
+    }
+
+    try {
+      await axios.delete(
+        `${API_URL}/groups/${id}/members/${memberUserId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert('Membro expulso com sucesso!');
+      await fetchGroupDetails();
+      await fetchRanking('total'); // Recarregar lista de membros
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Erro ao expulsar membro');
     }
   };
 
@@ -272,6 +425,7 @@ export default function GroupDetailPage() {
         tag: group.tag,
         description: group.description || '',
         isPublic: group.isPublic,
+        cashDivisionMembers: (group as any).cashDivisionMembers || null,
       });
       setLogoPreview(group.logo ? `${API_URL}${group.logo}` : null);
       setBannerPreview(group.banner ? `${API_URL}${group.banner}` : null);
@@ -304,6 +458,9 @@ export default function GroupDetailPage() {
         formDataToSend.append('description', editFormData.description);
       }
       formDataToSend.append('isPublic', editFormData.isPublic.toString());
+      if (editFormData.cashDivisionMembers !== null && editFormData.cashDivisionMembers > 0) {
+        formDataToSend.append('cashDivisionMembers', editFormData.cashDivisionMembers.toString());
+      }
       if (logoFile) {
         formDataToSend.append('logo', logoFile);
       }
@@ -504,9 +661,14 @@ export default function GroupDetailPage() {
                 {!isMember && !user?.group && !user?.clanTag && (
                   <button
                     onClick={handleJoinGroup}
-                    className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-bold hover:from-green-700 hover:to-emerald-700 transition-colors shadow-lg shadow-green-500/30"
+                    disabled={hasPendingRequest}
+                    className={`px-6 py-3 rounded-xl font-bold transition-colors shadow-lg ${
+                      hasPendingRequest
+                        ? 'bg-yellow-600/50 text-yellow-200 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700 shadow-green-500/30'
+                    }`}
                   >
-                    ✨ Entrar no Clã
+                    {hasPendingRequest ? '⏳ Confirmação Pendente' : '✨ Entrar no Clã'}
                   </button>
                 )}
                 {isMember && !isLeader && (
@@ -518,22 +680,13 @@ export default function GroupDetailPage() {
                   </button>
                 )}
                 {isLeader && (
-                  <>
-                    <button
-                      onClick={handleOpenEditModal}
-                      className="p-3 text-white hover:text-blue-400 transition-colors flex items-center justify-center text-2xl"
-                      title="Editar Grupo"
-                    >
-                      ⚙️
-                    </button>
-                    <button
-                      onClick={() => setShowDeleteModal(true)}
-                      className="p-3 text-white hover:text-red-400 transition-colors flex items-center justify-center text-2xl"
-                      title="Excluir Grupo"
-                    >
-                      🗑️
-                    </button>
-                  </>
+                  <button
+                    onClick={handleOpenEditModal}
+                    className="p-3 text-white hover:text-blue-400 transition-colors flex items-center justify-center text-2xl"
+                    title="Configurações do Grupo"
+                  >
+                    ⚙️
+                  </button>
                 )}
               </div>
               </div>
@@ -557,7 +710,7 @@ export default function GroupDetailPage() {
               {achievements.map((achievement) => (
                 <div
                   key={achievement.id}
-                  className="p-3 rounded-lg border border-white/20 hover:border-white/40 transition-colors bg-slate-900/30 flex flex-col items-center text-center"
+                  className="p-2 flex flex-col items-center text-center"
                 >
                   {/* Imagem da conquista - maior destaque */}
                   {achievement.icon && (
@@ -610,12 +763,12 @@ export default function GroupDetailPage() {
           )}
         </motion.div>
 
-        {/* Tabs de Ranking */}
-        <div className="flex gap-4 mb-6">
+        {/* Tabs de Ranking e Solicitações */}
+        <div className="flex gap-4 mb-6 flex-wrap">
           <button
-            onClick={() => fetchRanking('weekly')}
+            onClick={() => { fetchRanking('weekly'); setShowRequestsTab(false); }}
             className={`px-6 py-3 rounded-xl font-bold transition-all ${
-              activeTab === 'weekly'
+              activeTab === 'weekly' && !showRequestsTab
                 ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
                 : 'bg-slate-900/30  text-slate-400 hover:bg-slate-900/50 border border-white/20'
             }`}
@@ -623,9 +776,9 @@ export default function GroupDetailPage() {
             📅 Ranking Semanal
           </button>
           <button
-            onClick={() => fetchRanking('season')}
+            onClick={() => { fetchRanking('season'); setShowRequestsTab(false); }}
             className={`px-6 py-3 rounded-xl font-bold transition-all ${
-              activeTab === 'season'
+              activeTab === 'season' && !showRequestsTab
                 ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
                 : 'bg-slate-900/30  text-slate-400 hover:bg-slate-900/50 border border-white/20'
             }`}
@@ -636,19 +789,252 @@ export default function GroupDetailPage() {
             onClick={() => {
               setActiveTab('total');
               fetchRanking('total');
+              setShowRequestsTab(false);
             }}
             className={`px-6 py-3 rounded-xl font-bold transition-all ${
-              activeTab === 'total'
+              activeTab === 'total' && !showRequestsTab
                 ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
                 : 'bg-slate-900/30  text-slate-400 hover:bg-slate-900/50 border border-white/20'
             }`}
           >
             ⭐ Ranking Total
           </button>
+          {(isLeader || (isMember && members.find(m => {
+            const memId = m.user?.id ? (typeof m.user.id === 'string' ? parseInt(m.user.id, 10) : Number(m.user.id)) : null;
+            return memId === userId && (m.role === 'Co-Leader' || m.role === 'LEADER' || m.role === 'CO_LEADER');
+          }))) && (
+            <>
+              <button
+                onClick={() => { 
+                  setActiveTab('members'); 
+                  setShowRequestsTab(false);
+                  fetchMembers();
+                }}
+                className={`px-6 py-3 rounded-xl font-bold transition-all ${
+                  activeTab === 'members' && !showRequestsTab
+                    ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
+                    : 'bg-slate-900/30  text-slate-400 hover:bg-slate-900/50 border border-white/20'
+                }`}
+              >
+                👥 Membros
+              </button>
+              <button
+                onClick={() => { setShowRequestsTab(true); setActiveTab('weekly'); fetchPendingRequests(); }}
+                className={`px-6 py-3 rounded-xl font-bold transition-all ${
+                  showRequestsTab
+                    ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
+                    : 'bg-slate-900/30  text-slate-400 hover:bg-slate-900/50 border border-white/20'
+                }`}
+              >
+                📨 Solicitações {pendingRequests.length > 0 && `(${pendingRequests.length})`}
+              </button>
+            </>
+          )}
         </div>
 
+        {/* Solicitações Pendentes */}
+        {showRequestsTab && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-slate-900/30  rounded-2xl border border-slate-700/50 overflow-hidden mb-8"
+          >
+            <div className="p-6">
+              <h2 className="text-2xl font-bold text-white mb-4">📨 Solicitações Pendentes</h2>
+              {pendingRequests.length === 0 ? (
+                <p className="text-gray-400">Nenhuma solicitação pendente.</p>
+              ) : (
+                <div className="space-y-3">
+                  {pendingRequests.map((request) => (
+                    <div
+                      key={request.id}
+                      className="bg-slate-800/50 rounded-lg p-4 border border-white/10 flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-4">
+                        <img
+                          src={request.user?.profileImage ? `${API_URL}${request.user.profileImage}` : '/images/default.png'}
+                          alt={request.user?.nickname || 'Usuário'}
+                          className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
+                          onError={(e) => {
+                            e.currentTarget.src = '/images/default.png';
+                          }}
+                        />
+                        <div>
+                          <Link
+                            to={`/profile/${request.user?.id}`}
+                            className="text-white font-semibold hover:text-purple-400 transition-colors cursor-pointer block"
+                          >
+                            {request.user?.clanTag ? `|${request.user.clanTag}| ${request.user.nickname}` : request.user?.nickname}
+                          </Link>
+                          <p className="text-slate-400 text-sm">
+                            Nível {request.user?.level || 0} • Solicitado em {new Date(request.createdAt).toLocaleDateString('pt-BR')}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleAcceptRequest(request.id)}
+                          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold transition-colors"
+                        >
+                          ✓ Aceitar
+                        </button>
+                        <button
+                          onClick={() => handleRejectRequest(request.id)}
+                          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors"
+                        >
+                          ✕ Recusar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Aba de Membros */}
+        {activeTab === 'members' && !showRequestsTab && (isLeader || (isMember && members.find(m => {
+          const memId = m.user?.id ? (typeof m.user.id === 'string' ? parseInt(m.user.id, 10) : Number(m.user.id)) : null;
+          return memId === userId && (m.role === 'Co-Leader' || m.role === 'LEADER' || m.role === 'CO_LEADER');
+        }))) && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-slate-900/30  rounded-2xl border border-slate-700/50 overflow-hidden mb-8"
+          >
+            <div className="p-6">
+              <h2 className="text-2xl font-bold text-white mb-4">👥 Membros do Clã</h2>
+              {members.length === 0 ? (
+                <p className="text-gray-400">Nenhum membro encontrado.</p>
+              ) : (
+                <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar pr-2">
+                  {members.map((member, index) => {
+                    const memberId = member.user?.id ? (typeof member.user.id === 'string' ? parseInt(member.user.id, 10) : Number(member.user.id)) : null;
+                    const isCurrentUser = memberId === userId;
+                    const isMemberOfficer = member.role === 'Co-Leader' || member.role === 'CO_LEADER' || member.role === 'ELDER' || member.role === 'LEADER';
+                    const isMemberLeader = memberId === leaderId;
+                    
+                    // Verificar se pode remover (líder pode remover todos exceto ele mesmo, oficiais podem remover apenas membros normais)
+                    const canRemove = isLeader 
+                      ? !isMemberLeader // Líder pode remover todos exceto ele mesmo
+                      : (isMember && members.find(m => {
+                          const memId = m.user?.id ? (typeof m.user.id === 'string' ? parseInt(m.user.id, 10) : Number(m.user.id)) : null;
+                          return memId === userId && (m.role === 'Co-Leader' || m.role === 'CO_LEADER');
+                        })) && !isMemberOfficer && !isMemberLeader; // Oficiais podem remover apenas membros normais
+
+                    // Verificar se pode promover (apenas membros normais, não oficiais nem líder)
+                    const canPromote = isLeader && !isMemberLeader && (member.role === 'Member' || member.role === 'MEMBER' || !isMemberOfficer);
+                    // Verificar se pode rebaixar (apenas oficiais, não líder)
+                    const canDemote = isLeader && !isMemberLeader && isMemberOfficer;
+
+                    return (
+                      <div
+                        key={member.id}
+                        className="bg-slate-800/50 rounded-lg p-4 border border-white/10 flex items-center justify-between"
+                      >
+                        <div className="flex items-center gap-4 flex-1">
+                          {/* Posição */}
+                          <div className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-lg bg-slate-700/50 text-slate-300">
+                            {index + 1}
+                          </div>
+
+                          {/* Foto do Membro */}
+                          {member.user?.profileImage ? (
+                            <img
+                              src={`${API_URL}${member.user.profileImage}`}
+                              alt={member.user?.nickname || 'Membro'}
+                              className="w-14 h-14 rounded-full border-2 border-purple-500/50 object-cover"
+                              onError={(e) => {
+                                e.currentTarget.src = '/images/default.png';
+                              }}
+                            />
+                          ) : (
+                            <div className="w-14 h-14 rounded-full border-2 border-purple-500/50 bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white font-bold text-xl">
+                              {member.user?.nickname?.[0]?.toUpperCase() || '?'}
+                            </div>
+                          )}
+
+                          {/* Informações do Membro */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Link
+                                to={`/profile/${member.user?.id}`}
+                                className="text-white font-semibold hover:text-purple-400 transition-colors cursor-pointer"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {member.user?.clanTag ? `|${member.user.clanTag}| ` : ''}{member.user?.nickname || 'Desconhecido'}
+                              </Link>
+                              {isMemberLeader && (
+                                <span className="px-2 py-1 bg-yellow-500/20 text-yellow-400 rounded text-xs font-bold">
+                                  👑 Líder
+                                </span>
+                              )}
+                              {!isMemberLeader && isMemberOfficer && (
+                                <span className="px-2 py-1 bg-purple-500/20 text-purple-400 rounded text-xs font-bold">
+                                  ⭐ Oficial
+                                </span>
+                              )}
+                              {!isMemberLeader && !isMemberOfficer && (
+                                <span className="px-2 py-1 bg-slate-500/20 text-slate-400 rounded text-xs">
+                                  Membro
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-slate-400">
+                              <span>Nível {member.user?.level || 0}</span>
+                              <span>Score Total: {member.totalScore?.toLocaleString() || 0}</span>
+                              <span>V/D: <span className="text-green-400">{member.contributedWins || 0}</span> / <span className="text-red-400">{member.contributedLosses || 0}</span></span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Ações (apenas para líder e oficiais) */}
+                        {(isLeader || (isMember && members.find(m => {
+                          const memId = m.user?.id ? (typeof m.user.id === 'string' ? parseInt(m.user.id, 10) : Number(m.user.id)) : null;
+                          return memId === userId && (m.role === 'Co-Leader' || m.role === 'CO_LEADER');
+                        }))) && (
+                          <div className="flex gap-2">
+                            {canPromote && (
+                              <button
+                                onClick={() => handlePromoteMember(memberId!, 'CO_LEADER')}
+                                className="px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-semibold"
+                                title="Promover a Oficial"
+                              >
+                                ⭐ Promover
+                              </button>
+                            )}
+                            {canDemote && (
+                              <button
+                                onClick={() => handleDemoteMember(memberId!)}
+                                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-semibold"
+                                title="Rebaixar a Membro"
+                              >
+                                ⬇️ Rebaixar
+                              </button>
+                            )}
+                            {canRemove && (
+                              <button
+                                onClick={() => handleRemoveMember(memberId!)}
+                                className="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-semibold"
+                                title="Expulsar do clã"
+                              >
+                                🚫 Expulsar
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
         {/* Ranking de Membros */}
-        {(
+        {!showRequestsTab && activeTab !== 'members' && (
         <div className="bg-slate-900/30  rounded-2xl border border-slate-700/50 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -775,13 +1161,33 @@ export default function GroupDetailPage() {
 
       {/* Modal de Edição */}
       {showEditModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4 overflow-y-auto">
+        <div 
+          className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+          style={{ zIndex: 10000 }}
+        >
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-slate-900/80  rounded-2xl p-8 max-w-2xl w-full border border-purple-500/50 shadow-2xl my-8"
+            className="bg-slate-900/80  rounded-2xl p-8 max-w-2xl w-full border border-purple-500/50 shadow-2xl my-8 relative"
+            style={{ zIndex: 10001 }}
           >
-            <h2 className="text-3xl font-bold text-white mb-6 flex items-center gap-3">
+            {/* Botão de Fechar */}
+            <button
+              onClick={() => {
+                setShowEditModal(false);
+                setEditError('');
+                setLogoFile(null);
+                setBannerFile(null);
+              }}
+              className="absolute top-4 right-4 p-2 text-white hover:text-red-400 transition-colors rounded-lg hover:bg-red-500/20"
+              title="Fechar"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            <h2 className="text-3xl font-bold text-white mb-6 flex items-center gap-3 pr-10">
               <span className="text-4xl">⚙️</span>
               Editar Grupo
             </h2>
@@ -921,6 +1327,24 @@ export default function GroupDetailPage() {
                 </div>
               </div>
 
+              {/* Divisão de Cash */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-2">
+                  Número de Membros para Divisão de Cash
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={editFormData.cashDivisionMembers ?? ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, cashDivisionMembers: e.target.value ? parseInt(e.target.value, 10) : null })}
+                  placeholder="Deixe em branco para usar o padrão do admin"
+                  className="w-full px-4 py-3 bg-slate-900/30 border border-slate-700/50 rounded-xl text-white focus:border-purple-500 focus:outline-none"
+                />
+                <p className="text-slate-400 text-sm mt-1">
+                  Número de membros que receberão cash na divisão semanal. Se não configurado, será usado o número padrão definido pelo admin.
+                </p>
+              </div>
+
               {/* Erro */}
               {editError && (
                 <div className="bg-red-500/20 border border-red-500 text-red-400 px-4 py-3 rounded-xl">
@@ -950,38 +1374,99 @@ export default function GroupDetailPage() {
                 </button>
               </div>
             </form>
+
+            {/* Seção de Excluir Clã */}
+            <div className="mt-8 pt-8 border-t border-red-500/30">
+              <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                <span className="text-2xl">⚠️</span>
+                Zona de Perigo
+              </h3>
+              <p className="text-slate-400 mb-4 text-sm">
+                Excluir o clã é uma ação irreversível. Todos os membros serão removidos e o clã será desativado permanentemente.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEditModal(false);
+                  setShowDeleteModal(true);
+                }}
+                className="w-full py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors"
+              >
+                🗑️ Excluir Clã
+              </button>
+            </div>
           </motion.div>
         </div>
       )}
 
       {/* Modal de Confirmação de Exclusão */}
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
+        <div 
+          className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+          style={{ zIndex: 10002 }}
+        >
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-slate-900/80  rounded-2xl p-8 max-w-md w-full border border-red-500/50 shadow-2xl"
+            className="bg-slate-900/80  rounded-2xl p-8 max-w-md w-full border border-red-500/50 shadow-2xl relative"
+            style={{ zIndex: 10003 }}
           >
+            {/* Botão de Fechar */}
+            <button
+              onClick={() => {
+                setShowDeleteModal(false);
+                setDeletePassword('');
+              }}
+              className="absolute top-4 right-4 p-2 text-white hover:text-red-400 transition-colors rounded-lg hover:bg-red-500/20"
+              title="Fechar"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
             <h2 className="text-3xl font-bold text-white mb-4 flex items-center gap-3">
               <span className="text-4xl">⚠️</span>
               Excluir Grupo?
             </h2>
             
-            <p className="text-slate-300 mb-6">
+            <p className="text-slate-300 mb-4">
               Tem certeza que deseja excluir o grupo <span className="font-bold text-white">{group.name}</span>?
               Esta ação é irreversível e todos os membros serão removidos.
             </p>
 
+            <div className="mb-6">
+              <label className="block text-slate-300 font-semibold mb-2">
+                Digite sua senha para confirmar:
+              </label>
+              <input
+                type="password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                placeholder="Sua senha"
+                className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-red-500 focus:outline-none"
+                autoFocus
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && deletePassword) {
+                    handleDeleteGroup();
+                  }
+                }}
+              />
+            </div>
+
             <div className="flex gap-4">
               <button
-                onClick={() => setShowDeleteModal(false)}
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeletePassword('');
+                }}
                 className="flex-1 py-3 bg-slate-700 text-white rounded-xl font-bold hover:bg-slate-600 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleDeleteGroup}
-                className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors"
+                disabled={!deletePassword}
+                className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors disabled:bg-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Excluir
               </button>

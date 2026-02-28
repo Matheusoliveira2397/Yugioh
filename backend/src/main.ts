@@ -108,14 +108,86 @@ async function bootstrap() {
     prefix: '/uploads/',
   });
 
-  // Servir imagens padrão
-  app.useStaticAssets(join(__dirname, '..', 'uploads', 'images'), {
-    prefix: '/images/',
-  });
-
   // Servir avatares padrão
   app.useStaticAssets(join(__dirname, '..', 'uploads', 'avatars'), {
     prefix: '/avatars/',
+  });
+
+  // CRÍTICO: Servir imagens das cartas do frontend PRIMEIRO (antes de qualquer outra rota /images/)
+  // Isso garante que /images/cards/* seja servido antes de /images/*
+  // Tentar múltiplos caminhos possíveis (desenvolvimento local e Docker)
+  const frontendCardsPaths = [
+    // Docker: volume mapeado
+    '/app/frontend-cards',
+    // Desenvolvimento local: caminho relativo
+    join(__dirname, '..', '..', 'frontend', 'public', 'images', 'cards'),
+    // Fallback: tentar encontrar o diretório raiz do projeto
+    (() => {
+      let projectRoot = __dirname;
+      while (projectRoot !== join(projectRoot, '..')) {
+        const frontendPath = join(projectRoot, '..', 'frontend', 'public', 'images', 'cards');
+        if (fs.existsSync(join(projectRoot, '..', 'frontend'))) {
+          return frontendPath;
+        }
+        const parentRoot = join(projectRoot, '..');
+        if (parentRoot === projectRoot) break; // Evitar loop infinito
+        projectRoot = parentRoot;
+      }
+      return null;
+    })(),
+  ].filter(Boolean);
+
+  // Encontrar o primeiro caminho que existe
+  let cardsPath: string | null = null;
+  for (const pathOption of frontendCardsPaths) {
+    if (pathOption && fs.existsSync(pathOption)) {
+      cardsPath = pathOption;
+      console.log(`✅ Diretório de cartas encontrado: ${cardsPath}`);
+      // Verificar se há arquivos no diretório
+      try {
+        const files = fs.readdirSync(pathOption);
+        console.log(`📁 Arquivos encontrados no diretório de cartas: ${files.length} arquivos`);
+        if (files.length > 0) {
+          console.log(`📄 Primeiros 5 arquivos: ${files.slice(0, 5).join(', ')}`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Erro ao listar arquivos do diretório: ${error}`);
+      }
+      break;
+    }
+  }
+
+  if (cardsPath) {
+    // CRÍTICO: Servir imagens das cartas ANTES de qualquer outra rota
+    // Usar express.static diretamente para ter mais controle
+    const express = require('express');
+    app.use('/images/cards', express.static(cardsPath, {
+      index: false, // Não servir index.html quando arquivo não for encontrado
+      setHeaders: (res: any, path: string) => {
+        // Definir Content-Type correto baseado na extensão do arquivo
+        if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
+          res.setHeader('Content-Type', 'image/jpeg');
+        } else if (path.endsWith('.png')) {
+          res.setHeader('Content-Type', 'image/png');
+        } else if (path.endsWith('.webp')) {
+          res.setHeader('Content-Type', 'image/webp');
+        }
+        // Cache headers
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      },
+    }));
+    
+    console.log(`✅ Servindo imagens de cartas de: ${cardsPath}`);
+  } else {
+    console.warn('⚠️ Diretório de cartas não encontrado. Verifique se o volume está mapeado corretamente.');
+  }
+
+  // Servir imagens padrão (DEPOIS de /images/cards/ para não conflitar)
+  // IMPORTANTE: Esta rota genérica /images/ deve vir DEPOIS de /images/cards/
+  // para não interceptar requisições de cartas
+  app.useStaticAssets(join(__dirname, '..', 'uploads', 'images'), {
+    prefix: '/images/',
+    index: false, // Não servir index.html quando arquivo não for encontrado
   });
 
   // Habilitar CORS

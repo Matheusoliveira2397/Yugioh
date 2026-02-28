@@ -6,12 +6,32 @@ export class MailService {
   private transporter;
 
   constructor() {
+    // Debug: verificar variáveis de ambiente
+    console.log('🔍 [MailService] Verificando variáveis de ambiente...');
+    console.log(`   EMAIL_USER: ${process.env.EMAIL_USER || 'NÃO DEFINIDO'}`);
+    console.log(`   EMAIL_PASSWORD: ${process.env.EMAIL_PASSWORD ? 'DEFINIDO (' + process.env.EMAIL_PASSWORD.length + ' caracteres)' : 'NÃO DEFINIDO'}`);
+    console.log(`   FRONTEND_URL: ${process.env.FRONTEND_URL || 'NÃO DEFINIDO'}`);
+    
     // Se não tiver configuração de email, usar Ethereal (email de teste)
     if (!process.env.EMAIL_USER || process.env.EMAIL_USER === 'seu-email@gmail.com') {
       // Modo de desenvolvimento - apenas loga no console
-      console.log('⚠️ Email não configurado - links aparecerão no console');
+      console.log('⚠️ [MailService] Email não configurado - links aparecerão no console');
+      console.log('💡 [MailService] Dica: Verifique se as variáveis EMAIL_USER e EMAIL_PASSWORD estão no arquivo .env na pasta backend/');
       this.transporter = null;
     } else {
+      // Remover espaços da senha se houver
+      const emailPassword = process.env.EMAIL_PASSWORD?.replace(/\s/g, '') || process.env.EMAIL_PASSWORD;
+      
+      console.log(`📧 [MailService] Configurando email com usuário: ${process.env.EMAIL_USER}`);
+      console.log(`📧 [MailService] Senha configurada: ${emailPassword ? 'Sim (' + emailPassword.length + ' caracteres)' : 'Não'}`);
+      console.log(`📧 [MailService] FRONTEND_URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+      
+      if (!emailPassword) {
+        console.error('❌ [MailService] EMAIL_PASSWORD não está configurado!');
+        this.transporter = null;
+        return;
+      }
+      
       // Configuração para Gmail com opções de segurança relaxadas
       this.transporter = nodemailer.createTransport({
         host: 'smtp.gmail.com',
@@ -19,27 +39,51 @@ export class MailService {
         secure: false,
         auth: {
           user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASSWORD,
+          pass: emailPassword,
         },
         tls: {
           rejectUnauthorized: false,
         },
       });
+      
+      // Testar conexão
+      console.log('🔍 [MailService] Verificando conexão SMTP...');
+      this.transporter.verify((error, success) => {
+        if (error) {
+          const smtpError = error as any;
+          console.error('❌ [MailService] Erro ao verificar conexão SMTP:');
+          console.error(`   Tipo: ${smtpError?.code || 'Desconhecido'}`);
+          console.error(`   Mensagem: ${smtpError?.message || 'Erro desconhecido'}`);
+          if (smtpError.code === 'EAUTH') {
+            console.error('💡 [MailService] Dica: Verifique se está usando a Senha de App do Gmail, não a senha normal');
+          }
+        } else {
+          console.log('✅ [MailService] Conexão SMTP verificada com sucesso!');
+          console.log('✅ [MailService] Pronto para enviar emails!');
+        }
+      });
     }
   }
 
-  async sendVerificationEmail(email: string, nickname: string, token: string) {
-    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${token}`;
+  async sendVerificationEmail(email: string, nickname: string, token: string): Promise<boolean> {
+    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email/${token}`;
 
     // Se não tem transporter configurado, apenas loga
     if (!this.transporter) {
-      console.log(`\n🔗 Link de verificação para ${nickname} (${email}):`);
+      console.log(`\n⚠️ [MailService] Email não configurado - Link de verificação para ${nickname} (${email}):`);
       console.log(`   ${verificationUrl}\n`);
-      return;
+      return false;
     }
 
+    console.log(`📧 [MailService] ========== INÍCIO DO ENVIO DE EMAIL ==========`);
+    console.log(`📧 [MailService] Tentando enviar email de verificação para: ${email}`);
+    console.log(`📧 [MailService] URL de verificação: ${verificationUrl}`);
+    console.log(`📧 [MailService] De: ${process.env.EMAIL_USER}`);
+    console.log(`📧 [MailService] Para: ${email}`);
+    console.log(`📧 [MailService] Transporter existe: ${this.transporter ? 'SIM' : 'NÃO'}`);
+
     try {
-      await this.transporter.sendMail({
+      const info = await this.transporter.sendMail({
         from: `"Yu-Gi-Oh Game" <${process.env.EMAIL_USER}>`,
         to: email,
         subject: '🎴 Confirme seu cadastro no Yu-Gi-Oh Game',
@@ -153,10 +197,47 @@ export class MailService {
         `,
       });
 
-      console.log(`✅ Email de verificação enviado para: ${email}`);
-    } catch (error) {
-      console.error('❌ Erro ao enviar email:', error);
-      throw new Error('Falha ao enviar email de verificação');
+      console.log(`✅ [MailService] ========== EMAIL ENVIADO COM SUCESSO ==========`);
+      console.log(`✅ [MailService] Email de verificação enviado para: ${email}`);
+      console.log(`📧 [MailService] Message ID: ${info.messageId || 'N/A'}`);
+      console.log(`📧 [MailService] Response: ${info.response || 'N/A'}`);
+      console.log(`📧 [MailService] Accepted: ${JSON.stringify(info.accepted || [])}`);
+      console.log(`📧 [MailService] Rejected: ${JSON.stringify(info.rejected || [])}`);
+      console.log(`📧 [MailService] ===============================================`);
+      
+      // Verificar se o email foi realmente aceito
+      if (info.accepted && info.accepted.length > 0) {
+        console.log(`✅ [MailService] Email aceito pelo servidor SMTP`);
+        return true;
+      } else if (info.rejected && info.rejected.length > 0) {
+        console.error(`❌ [MailService] Email REJEITADO pelo servidor SMTP: ${JSON.stringify(info.rejected)}`);
+        return false;
+      } else {
+        console.warn(`⚠️ [MailService] Status do email não está claro, mas retornando sucesso`);
+        return true;
+      }
+    } catch (error: any) {
+      console.error('❌ [MailService] Erro ao enviar email de verificação:');
+      console.error(`   Tipo: ${error?.constructor?.name}`);
+      console.error(`   Mensagem: ${error?.message || 'Erro desconhecido'}`);
+      console.error(`   Código: ${error?.code || 'N/A'}`);
+      console.error(`   Command: ${error?.command || 'N/A'}`);
+      
+      // Log detalhado do erro
+      if (error.response) {
+        console.error(`   Response: ${error.response}`);
+      }
+      if (error.responseCode) {
+        console.error(`   Response Code: ${error.responseCode}`);
+      }
+      
+      // Se for erro de autenticação, dar dica
+      if (error.code === 'EAUTH' || error.message?.includes('Invalid login')) {
+        console.error('💡 [MailService] Dica: Verifique se está usando a Senha de App do Gmail, não a senha normal da conta');
+      }
+      
+      // Retornar false em vez de lançar erro
+      return false;
     }
   }
 

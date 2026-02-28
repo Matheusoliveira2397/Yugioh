@@ -1,10 +1,13 @@
 import { motion } from 'framer-motion';
+import { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { Navigate, useNavigate } from 'react-router-dom';
+import ResetAllAccountsModal from '../components/admin/ResetAllAccountsModal';
 
 export default function AdminPanel() {
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const [showResetModal, setShowResetModal] = useState(false);
 
   // Proteção: apenas ADMIN ou MASTER
   if (!user || (user.role !== 'ADMIN' && user.role !== 'MASTER')) {
@@ -132,6 +135,22 @@ export default function AdminPanel() {
       route: '/admin/social-media',
       color: 'from-pink-600 to-rose-800'
     },
+    { 
+      id: 'new-account-settings', 
+      label: 'Configurações de Contas Novas', 
+      icon: '⚙️',
+      description: 'Configurar cash, créditos e decks iniciais',
+      route: '/admin/new-account-settings',
+      color: 'from-cyan-600 to-blue-800'
+    },
+    { 
+      id: 'cash-division', 
+      label: 'Divisão de Cash', 
+      icon: '💰',
+      description: 'Configurar divisão automática de cash dos grupos',
+      route: '/admin/cash-division',
+      color: 'from-green-600 to-emerald-800'
+    },
   ];
 
   return (
@@ -194,6 +213,29 @@ export default function AdminPanel() {
           ))}
         </div>
 
+        {/* Área de Ações Perigosas */}
+        {user?.role === 'MASTER' && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.6 }}
+            className="mt-8 p-6 bg-gradient-to-r from-red-900/30 to-orange-900/30 border-2 border-red-600/50 rounded-xl"
+          >
+            <h3 className="text-2xl font-bold text-red-400 mb-4 flex items-center gap-2">
+              ⚠️ Ações Perigosas
+            </h3>
+            <p className="text-red-200 text-sm mb-4">
+              Estas ações são irreversíveis e afetam todo o sistema.
+            </p>
+            <button
+              onClick={() => setShowResetModal(true)}
+              className="px-6 py-3 bg-red-700 hover:bg-red-600 text-white font-bold rounded-lg transition-all border-2 border-red-500"
+            >
+              🔄 Resetar Todas as Contas
+            </button>
+          </motion.div>
+        )}
+
         {/* Botão Voltar */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -209,6 +251,16 @@ export default function AdminPanel() {
           </button>
         </motion.div>
       </div>
+
+      {/* Modal de Reset */}
+      <ResetAllAccountsModal
+        isOpen={showResetModal}
+        onClose={() => setShowResetModal(false)}
+        onSuccess={() => {
+          setShowResetModal(false);
+          // Opcional: mostrar notificação de sucesso
+        }}
+      />
     </div>
   );
 }

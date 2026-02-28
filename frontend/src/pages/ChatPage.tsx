@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useSocketStore } from '../stores/socketStore';
+import { getSocialIcon } from '../components/SocialMediaIcons';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -118,7 +119,9 @@ export default function ChatPage() {
       // Escutar mensagens carregadas do banco
       socket.on('messagesLoaded', (data: { messages: Message[] }) => {
         console.log(`📋 [ChatPage] Mensagens antigas carregadas: ${data.messages.length} mensagens`);
-        setMessages(data.messages);
+        // Manter apenas as últimas 50 mensagens
+        const limitedMessages = data.messages.slice(-50);
+        setMessages(limitedMessages);
       });
 
       // Escutar novas mensagens
@@ -135,7 +138,8 @@ export default function ChatPage() {
             console.log('⚠️ [ChatPage] Mensagem duplicada ignorada:', data.id);
             return prev;
           }
-          const newMessages = [...prev, data].slice(-100);
+          // Manter apenas as últimas 50 mensagens
+          const newMessages = [...prev, data].slice(-50);
           console.log(`✅ [ChatPage] Mensagem adicionada. Total: ${newMessages.length}`);
           return newMessages;
         });
@@ -172,7 +176,20 @@ export default function ChatPage() {
             clanTag: data.clanTag,
             messages: [],
           };
-          chat.messages = [...chat.messages, data].slice(-100);
+          // Adicionar nova mensagem e filtrar
+          const now = new Date();
+          const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+          const allMessages = [...chat.messages, data];
+          
+          // Filtrar mensagens com mais de 24 horas e manter apenas as últimas 20
+          const filteredMessages = allMessages
+            .filter(msg => {
+              const msgDate = new Date(msg.timestamp || msg.createdAt || now);
+              return msgDate >= twentyFourHoursAgo;
+            })
+            .slice(-20);
+          
+          chat.messages = filteredMessages;
           newChats.set(senderId, chat);
           return newChats;
         });
@@ -569,19 +586,6 @@ export default function ChatPage() {
                     <div className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'} flex-1`}>
                       <div className={`p-2 sm:p-3 rounded-xl shadow-md ${isMyMessage ? 'border border-blue-500/50' : 'border border-white/20'}`}>
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          {/* Imagem do perfil */}
-                          <img
-                            src={
-                              msg.profileImage
-                                ? `${API_URL}${msg.profileImage}?t=${Date.now()}`
-                                : `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMyMessage ? '3b82f6' : 'ef4444'}&color=fff&size=32`
-                            }
-                            alt={msg.username}
-                            className="w-6 h-6 rounded-full object-cover border border-gray-600 flex-shrink-0"
-                            onError={(e) => {
-                              e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMyMessage ? '3b82f6' : 'ef4444'}&color=fff&size=32`;
-                            }}
-                          />
                           <button
                             onClick={() => {
                               const currentUserId = user?.id ? (typeof user.id === 'string' ? user.id : user.id.toString()) : null;
@@ -691,7 +695,7 @@ export default function ChatPage() {
                     })()}
 
                     {/* Mensagens Privadas */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-900">
                       {chat.messages.length === 0 ? (
                         <div className="text-center text-gray-500 py-8">
                           <p className="text-2xl mb-2">💭</p>
@@ -715,7 +719,7 @@ export default function ChatPage() {
                               key={index}
                               className={`flex gap-2 ${isMyMessage ? 'flex-row-reverse' : 'flex-row'} max-w-[85%] ${isMyMessage ? 'ml-auto' : 'mr-auto'}`}
                             >
-                              <div className={`p-3 rounded-lg border ${isMyMessage ? 'border-blue-500/50' : isChallenge ? 'border-yellow-500/50' : 'border-white/20'}`}>
+                              <div className={`p-3 rounded-lg border bg-gray-800 ${isMyMessage ? 'border-blue-500/50 bg-blue-900/20' : isChallenge ? 'border-yellow-500/50 bg-yellow-900/20' : 'border-white/20'}`}>
                                 <div className="flex items-center gap-2 mb-1">
                                   {/* Imagem do perfil */}
                                   <img
@@ -762,7 +766,7 @@ export default function ChatPage() {
                     </div>
 
                     {/* Input de Mensagem Privada */}
-                    <div className="p-4 border-t border-white/20">
+                    <div className="p-4 border-t border-white/20 bg-gray-900">
                       <div className="flex gap-2">
                         <input
                           type="text"
@@ -776,7 +780,7 @@ export default function ChatPage() {
                           }}
                           onKeyPress={(e) => e.key === 'Enter' && handleSendPrivateMessage(activePrivateChat)}
                           placeholder="Digite sua mensagem..."
-                          className="flex-1 text-white px-4 py-2 rounded-lg border border-white/20 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+                          className="flex-1 bg-gray-800 text-white placeholder-gray-400 px-4 py-2 rounded-lg border border-white/20 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm"
                           disabled={!isConnected}
                         />
                         <button
@@ -908,39 +912,27 @@ function SocialMediaLinks() {
 
   if (socialMedia.length === 0) return null;
 
-  const getPlatformIcon = (platform: string, customIcon: string | null) => {
-    if (customIcon) return customIcon;
-    
-    const iconMap: { [key: string]: string } = {
-      discord: '💬',
-      youtube: '📺',
-      twitter: '🐦',
-      instagram: '📷',
-      facebook: '👥',
-      tiktok: '🎵',
-      twitch: '🎮',
-    };
-    
-    return iconMap[platform.toLowerCase()] || '🔗';
-  };
-
   return (
     <div className="bg-gray-800/50 border-t border-gray-700 p-4">
       <div className="flex flex-wrap items-center justify-center gap-4">
         <span className="text-gray-400 text-sm">Siga-nos:</span>
-        {socialMedia.map((social) => (
-          <a
-            key={social.id}
-            href={social.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 px-4 py-2 bg-gray-700/50 hover:bg-gray-700 rounded-lg transition-colors"
-            title={social.label || social.platform}
-          >
-            <span className="text-xl">{getPlatformIcon(social.platform, social.icon)}</span>
-            <span className="text-white text-sm">{social.label || social.platform}</span>
-          </a>
-        ))}
+        {socialMedia.map((social) => {
+          const icon = getSocialIcon(social.platform, "w-5 h-5");
+          
+          return (
+            <a
+              key={social.id}
+              href={social.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-4 py-2 bg-gray-700/50 hover:bg-gray-700 rounded-lg transition-colors text-gray-300 hover:text-white"
+              title={social.label || social.platform}
+            >
+              {icon}
+              <span className="text-white text-sm">{social.label || social.platform}</span>
+            </a>
+          );
+        })}
       </div>
     </div>
   );

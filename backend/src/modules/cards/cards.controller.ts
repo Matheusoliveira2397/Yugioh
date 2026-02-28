@@ -9,6 +9,8 @@ import { UploadService } from '../upload/upload.service';
 import { CreateCardDto } from './dto/create-card.dto';
 import { UpdateCardDto } from './dto/update-card.dto';
 import { AddEffectDto } from './dto/add-effect.dto';
+import { YugiohApiService } from './services/yugioh-api.service';
+import * as path from 'path';
 
 @Controller('cards')
 @UseGuards(JwtAuthGuard)
@@ -16,6 +18,7 @@ export class CardsController {
   constructor(
     private cardsService: CardsService,
     private uploadService: UploadService,
+    private yugiohApiService: YugiohApiService,
   ) {}
 
   @Get()
@@ -220,5 +223,85 @@ export class CardsController {
   async uploadCardImage(@UploadedFile() file: any, @Body('cardName') cardName: string) {
     const imagePath = await this.uploadService.uploadCardImage(file, cardName);
     return { imagePath };
+  }
+
+  // ==================== YUGIOH API ====================
+
+  @Get('yugioh-api/search')
+  @UseGuards(AdminGuard)
+  async searchYugiohCards(@Query('query') query: string) {
+    if (!query || query.length < 2) {
+      return [];
+    }
+    return this.yugiohApiService.searchCards(query);
+  }
+
+  @Get('yugioh-api/card')
+  @UseGuards(AdminGuard)
+  async getYugiohCard(
+    @Query('name') name: string, 
+    @Query('downloadImage') downloadImage?: string,
+    @Query('imageIndex') imageIndex?: string
+  ) {
+    if (!name) {
+      throw new BadRequestException('Nome da carta é obrigatório');
+    }
+    
+    const shouldDownload = downloadImage === 'true';
+    const imgIndex = imageIndex ? parseInt(imageIndex, 10) : 0;
+    
+    if (shouldDownload) {
+      return this.yugiohApiService.searchCardAndDownloadImage(name, imgIndex);
+    } else {
+      return this.yugiohApiService.searchCardByName(name);
+    }
+  }
+
+  @Post('yugioh-api/download-image')
+  @UseGuards(AdminGuard)
+  async downloadCardImage(@Body() body: { imageUrl: string; cardName: string; cardId?: string }) {
+    if (!body.imageUrl || !body.cardName) {
+      throw new BadRequestException('imageUrl e cardName são obrigatórios');
+    }
+    const imagePath = await this.uploadService.downloadAndSaveCardImage(
+      body.imageUrl,
+      body.cardName,
+      body.cardId // Passar cardId se fornecido
+    );
+    return { imagePath };
+  }
+
+  @Get('find-image-by-name/:cardName')
+  @Public()
+  async findCardImageByName(@Param('cardName') cardName: string) {
+    if (!cardName) {
+      throw new BadRequestException('Nome da carta é obrigatório');
+    }
+    const imagePath = this.uploadService.findCardImageByName(cardName);
+    return { imagePath };
+  }
+
+  @Post('admin/rename-all-images')
+  @UseGuards(AdminGuard)
+  async renameAllCardImages() {
+    // Delegar para o service
+    return this.cardsService.renameAllCardImages();
+  }
+
+  // ==================== ATUALIZAÇÃO EM MASSA ====================
+
+  @Post('admin/update-all-from-api')
+  @UseGuards(AdminGuard)
+  async updateAllCardsFromApi(@Request() req: any) {
+    console.log('📥 [CardsController] Recebida requisição para atualizar todas as cartas da API');
+    console.log('👤 [CardsController] Usuário:', req.user?.username, 'Role:', req.user?.role);
+    try {
+      const result = await this.cardsService.updateAllCardsFromApi();
+      console.log('✅ [CardsController] Atualização concluída:', result);
+      return result;
+    } catch (error: any) {
+      console.error('❌ [CardsController] Erro ao atualizar cartas:', error);
+      throw error;
+    }
   }
 }

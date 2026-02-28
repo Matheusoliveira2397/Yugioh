@@ -3,10 +3,10 @@ import { motion } from 'framer-motion';
 
 interface DuelLog {
   id: string;
-  username: string;
+  username?: string;
   actionType: string;
   message: string;
-  createdAt: Date;
+  createdAt: Date | string;
 }
 
 interface DuelLogsProps {
@@ -111,11 +111,11 @@ const DuelLogs: React.FC<DuelLogsProps> = ({ logs }) => {
                           </span>
                         )}
                         <span className="text-slate-500 text-[9px] ml-auto">
-                          {new Date(log.createdAt).toLocaleTimeString('pt-BR', { 
+                          {log.createdAt ? new Date(log.createdAt).toLocaleTimeString('pt-BR', { 
                             hour: '2-digit', 
                             minute: '2-digit',
                             second: '2-digit'
-                          })}
+                          }) : '--:--:--'}
                         </span>
                       </div>
                       <div className="text-slate-200 text-xs leading-relaxed break-words">

@@ -52,6 +52,7 @@ export default function GroupsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingRankings, setLoadingRankings] = useState(true);
   const [filterPublic, setFilterPublic] = useState<boolean | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
   const { token, user } = useAuthStore();
 
   // Form state
@@ -75,17 +76,27 @@ export default function GroupsPage() {
   const fetchRankings = async () => {
     try {
       setLoadingRankings(true);
-      const headers = { Authorization: `Bearer ${token}` };
+      setError(null);
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
       
       const [seasonRes, generalRes] = await Promise.all([
-        axios.get(`${API_URL}/groups/ranking/season`, { headers }),
-        axios.get(`${API_URL}/groups/ranking/general`, { headers }),
+        axios.get(`${API_URL}/groups/ranking/season`, { headers }).catch(err => {
+          console.error('Erro ao buscar ranking season:', err);
+          return { data: [] };
+        }),
+        axios.get(`${API_URL}/groups/ranking/general`, { headers }).catch(err => {
+          console.error('Erro ao buscar ranking general:', err);
+          return { data: [] };
+        }),
       ]);
       
-      setSeasonRanking(seasonRes.data || []);
-      setGeneralRanking(generalRes.data || []);
-    } catch (error) {
+      setSeasonRanking(Array.isArray(seasonRes.data) ? seasonRes.data : []);
+      setGeneralRanking(Array.isArray(generalRes.data) ? generalRes.data : []);
+    } catch (error: any) {
       console.error('Erro ao buscar rankings:', error);
+      setError('Erro ao carregar rankings. Tente recarregar a página.');
+      setSeasonRanking([]);
+      setGeneralRanking([]);
     } finally {
       setLoadingRankings(false);
     }
@@ -93,14 +104,26 @@ export default function GroupsPage() {
 
   const fetchGroups = async () => {
     try {
+      setLoading(true);
+      setError(null);
       const params = filterPublic !== undefined ? { public: filterPublic } : {};
       const response = await axios.get(`${API_URL}/groups/all`, {
         params,
-        headers: { Authorization: `Bearer ${token}` },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      setGroups(response.data);
-    } catch (error) {
+      
+      // Garantir que a resposta é um array
+      if (Array.isArray(response.data)) {
+        setGroups(response.data);
+      } else {
+        console.error('Resposta não é um array:', response.data);
+        setGroups([]);
+      }
+    } catch (error: any) {
       console.error('Erro ao buscar grupos:', error);
+      console.error('Detalhes do erro:', error.response?.data || error.message);
+      setError('Erro ao carregar grupos. Tente recarregar a página.');
+      setGroups([]);
     } finally {
       setLoading(false);
     }
@@ -317,6 +340,23 @@ export default function GroupsPage() {
           </button>
         </div>
 
+        {/* Mensagem de Erro */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-500/20 border border-red-500/50 rounded-xl text-red-400 text-center">
+            {error}
+            <button
+              onClick={() => {
+                setError(null);
+                fetchGroups();
+                fetchRankings();
+              }}
+              className="ml-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white font-semibold transition-colors"
+            >
+              Tentar Novamente
+            </button>
+          </div>
+        )}
+
         {/* Lista de Rankings */}
         {loadingRankings ? (
           <div className="text-center text-white text-xl py-12">Carregando rankings...</div>
@@ -339,7 +379,13 @@ export default function GroupsPage() {
                 }`}
               >
                 <div className="flex items-center gap-4 flex-1">
-                  <Link to={`/groups/${group.id}`} className="flex items-center gap-4 flex-1">
+                  <Link to={`/groups/${group.id}`} className="flex items-center gap-4 flex-1" onClick={(e) => {
+                    // Se clicar no link do líder, não navegar para o grupo
+                    if ((e.target as HTMLElement).closest('a[href*="/profile/"]')) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }
+                  }}>
                     {/* Posição */}
                     <div className={`w-12 h-12 rounded-lg flex items-center justify-center font-bold text-xl ${
                       group.rank === 1
@@ -378,9 +424,16 @@ export default function GroupsPage() {
                       </div>
                       <div className="flex items-center gap-4 text-sm text-slate-400">
                         <span>👥 {group.memberCount} membros</span>
-                        <Link to={`/profile/${group.leader.id}`} className="hover:text-purple-400 transition-colors cursor-pointer">
+                        <span 
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            window.location.href = `/profile/${group.leader.id}`;
+                          }}
+                          className="hover:text-purple-400 transition-colors cursor-pointer"
+                        >
                           👑 {group.leader.nickname}
-                        </Link>
+                        </span>
                       </div>
                     </div>
 

@@ -30,7 +30,8 @@ import { ActivityInterceptor } from './common/interceptors/activity.interceptor'
     // Configuração
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: ['.env', '../.env'], // Tenta ambos os caminhos
+      expandVariables: true,
     }),
 
     // Cron Jobs

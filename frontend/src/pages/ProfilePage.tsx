@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { motion } from 'framer-motion';
 import axios from 'axios';
@@ -689,17 +689,16 @@ export const ProfilePage: React.FC = () => {
               {/* Clã - Em baixo do Email */}
               {profileUser.clanTag && (
                 <p className="text-cyan-400 font-semibold mb-4 text-base sm:text-lg">
-                  {groupInfo?.group?.logo && (
-                    <img 
-                      src={`${API_URL}${groupInfo.group.logo}`}
-                      alt={groupInfo.group.name}
-                      className="w-5 h-5 rounded object-cover inline-block mr-2"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                    />
+                  {groupInfo?.group?.id ? (
+                    <Link 
+                      to={`/groups/${groupInfo.group.id}`}
+                      className="hover:text-cyan-300 transition-colors cursor-pointer"
+                    >
+                      |{profileUser.clanTag}|
+                    </Link>
+                  ) : (
+                    `|${profileUser.clanTag}|`
                   )}
-                  |{profileUser.clanTag}|
                 </p>
               )}
               
@@ -841,43 +840,16 @@ export const ProfilePage: React.FC = () => {
                       <div className="bg-black/20 rounded-lg p-3 border border-slate-700/50">
                         <div className="flex items-center justify-between">
                           <span className="text-xs md:text-sm text-slate-400 font-medium uppercase tracking-wide flex items-center gap-1.5">
-                            {groupInfo.group.logo && (
-                              <img 
-                                src={`${API_URL}${groupInfo.group.logo}`}
-                                alt={groupInfo.group.name}
-                                className="w-4 h-4 rounded object-cover"
-                                onError={(e) => {
-                                  e.currentTarget.style.display = 'none';
-                                }}
-                              />
-                            )}
                             <span className="text-base">👥</span> Clã
                           </span>
-                          <span className="text-lg md:text-xl font-bold text-cyan-400 drop-shadow-lg">
+                          <Link 
+                            to={`/groups/${groupInfo.group.id}`}
+                            className="text-lg md:text-xl font-bold text-cyan-400 drop-shadow-lg hover:text-cyan-300 transition-colors cursor-pointer"
+                          >
                             {groupInfo.group.tag ? `|${groupInfo.group.tag}|` : groupInfo.group.name}
-                          </span>
+                          </Link>
                         </div>
                       </div>
-                      {groupInfo.memberRank && (
-                        <div className="bg-black/20 rounded-lg p-3 border border-slate-700/50">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs md:text-sm text-slate-400 font-medium uppercase tracking-wide flex items-center gap-1.5">
-                              <span className="text-base">🏆</span> Ranking no Clã
-                            </span>
-                            <span className="text-lg md:text-xl font-bold text-yellow-400 drop-shadow-lg">{groupInfo.memberRank}°</span>
-                          </div>
-                        </div>
-                      )}
-                      {groupInfo.memberTotalRank && (
-                        <div className="bg-black/20 rounded-lg p-3 border border-slate-700/50">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs md:text-sm text-slate-400 font-medium uppercase tracking-wide flex items-center gap-1.5">
-                              <span className="text-base">⭐</span> Ranking do Clã
-                            </span>
-                            <span className="text-lg md:text-xl font-bold text-orange-400 drop-shadow-lg">{groupInfo.memberTotalRank}°</span>
-                          </div>
-                        </div>
-                      )}
                     </>
                   )}
                 </div>
@@ -909,7 +881,7 @@ export const ProfilePage: React.FC = () => {
             className="p-6 rounded-xl border border-white/10"
             style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
           >
-            <h2 className="text-2xl font-bold text-white mb-4">📝 Biografia</h2>
+            <h2 className="text-2xl font-bold text-white mb-4">Biografia</h2>
             {isOwnProfile && !editingBio ? (
               <div>
                 <p className="text-gray-300 mb-4 whitespace-pre-wrap">
@@ -967,7 +939,7 @@ export const ProfilePage: React.FC = () => {
             className="p-6 rounded-xl border border-white/10"
             style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
           >
-            <h2 className="text-2xl font-bold text-white mb-4">🏆 Conquistas</h2>
+            <h2 className="text-2xl font-bold text-white mb-4">Conquistas</h2>
             {achievements.length === 0 ? (
               <p className="text-gray-400">Nenhuma conquista desbloqueada ainda.</p>
             ) : (
@@ -975,7 +947,7 @@ export const ProfilePage: React.FC = () => {
                 {achievements.map((achievement) => (
                   <div
                     key={achievement.id}
-                    className="flex flex-col items-center p-4 rounded-xl border border-white/20 hover:border-white/40 transition-colors bg-slate-900/50"
+                    className="flex flex-col items-center p-2"
                   >
                     {achievement.icon ? (
                       <img
@@ -1141,11 +1113,11 @@ export const ProfilePage: React.FC = () => {
             className="p-6 rounded-xl border border-white/10"
             style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
           >
-            <h2 className="text-2xl font-bold text-white mb-4">⚔️ Histórico de Duelos</h2>
+            <h2 className="text-2xl font-bold text-white mb-4">Histórico de Duelos</h2>
             {!duelHistory || duelHistory.length === 0 ? (
               <p className="text-gray-400">Nenhum duelo registrado ainda.</p>
             ) : (
-              <div className="space-y-3 max-h-96 overflow-y-auto">
+              <div className="space-y-3 max-h-96 overflow-y-auto pr-3 custom-scrollbar scroll-smooth">
                 {duelHistory.map((duel, index) => {
                   try {
                     if (!profileUser || !profileUser.id) {
@@ -1155,25 +1127,27 @@ export const ProfilePage: React.FC = () => {
                     
                     let opponent: any;
                     let won: boolean;
-                    let isDraw: boolean;
-                    let myLifePoints: number;
-                    let opponentLifePoints: number;
+                    let isCancelled: boolean;
                     
                     if (duel.opponent) {
                       opponent = duel.opponent;
                       won = duel.result === 'WIN';
-                      isDraw = duel.result === 'DRAW' || duel.result === 'CANCELLED';
-                      myLifePoints = duel.playerLifePoints || 0;
-                      opponentLifePoints = duel.opponentLifePoints || 0;
+                      isCancelled = duel.result === 'CANCELLED';
+                      // Ignorar duelos cancelados - não aparecem no histórico
+                      if (isCancelled) {
+                        return null;
+                      }
                     } else {
                       const player1Id = typeof duel.player1?.id === 'string' ? parseInt(duel.player1.id, 10) : Number(duel.player1?.id);
                       const player2Id = typeof duel.player2?.id === 'string' ? parseInt(duel.player2.id, 10) : Number(duel.player2?.id);
                       const isPlayer1 = player1Id === currentUserId;
                       opponent = isPlayer1 ? duel.player2 : duel.player1;
                       won = duel.winnerId === currentUserId;
-                      isDraw = duel.result === 'DRAW';
-                      myLifePoints = isPlayer1 ? (duel.player1LifePoints || 0) : (duel.player2LifePoints || 0);
-                      opponentLifePoints = isPlayer1 ? (duel.player2LifePoints || 0) : (duel.player1LifePoints || 0);
+                      isCancelled = duel.result === 'CANCELLED' || duel.result === 'DRAW';
+                      // Ignorar duelos cancelados ou empates - não aparecem no histórico
+                      if (isCancelled) {
+                        return null;
+                      }
                     }
                     
                     const getDuelTypeName = (origin: string | undefined): string => {
@@ -1196,49 +1170,38 @@ export const ProfilePage: React.FC = () => {
                     return (
                       <div
                         key={duel.id}
-                        className={`p-4 rounded-xl border ${
-                          won ? 'border-green-500/30' : isDraw ? 'border-yellow-500/30' : 'border-red-500/30'
+                        className={`p-4 rounded-xl border-2 ${
+                          won 
+                            ? 'border-green-500 bg-green-500/10 shadow-lg shadow-green-500/20' 
+                            : 'border-red-500 bg-red-500/10 shadow-lg shadow-red-500/20'
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          {/* Foto do jogador atual */}
+                          {profileUser?.profileImage ? (
+                            <img
+                              src={`${API_URL}${profileUser.profileImage}`}
+                              alt={profileUser?.nickname || profileUser?.username}
+                              className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
+                              onError={(e) => {
+                                e.currentTarget.src = '/images/default.png';
+                              }}
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-full border-2 border-purple-500/50 bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white font-bold">
+                              {profileUser?.nickname?.[0]?.toUpperCase() || profileUser?.username?.[0]?.toUpperCase() || '?'}
+                            </div>
+                          )}
+                          
+                          {/* Texto do resultado */}
                           <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              {opponent?.profileImage && (
-                                <img
-                                  src={`${API_URL}${opponent.profileImage}`}
-                                  alt={opponent?.nickname || opponent?.username}
-                                  className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
-                                  onError={(e) => {
-                                    e.currentTarget.src = '/images/default.png';
-                                  }}
-                                />
-                              )}
-                              <div className="flex-1">
-                                <div className="font-bold text-white text-lg">
-                                  {won ? 'Venceu' : isDraw ? 'Empatou' : 'Perdeu'} um {duelTypeName} contra {opponent?.clanTag ? `|${opponent.clanTag}| ` : ''}{opponent?.nickname || opponent?.username || 'Desconhecido'}
-                                </div>
-                                {opponent?.level && (
-                                  <div className="text-xs text-slate-400">
-                                    Nível: {opponent.level} ⭐
-                                  </div>
-                                )}
-                              </div>
+                            <div className="font-bold text-lg">
+                              <span className={won ? 'text-green-400' : 'text-red-400'}>
+                                {won ? 'Ganhou' : 'Perdeu'}
+                              </span>
+                              <span className="text-white"> um {duelTypeName} contra {opponent?.clanTag ? `|${opponent.clanTag}| ` : ''}{opponent?.nickname || opponent?.username || 'Desconhecido'}</span>
                             </div>
-                            <div className="grid grid-cols-2 gap-2 text-sm">
-                              <div>
-                                <span className="text-slate-400">Meus LP: </span>
-                                <span className={`font-bold ${myLifePoints > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                  {myLifePoints?.toLocaleString() || 0}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-slate-400">Oponente LP: </span>
-                                <span className={`font-bold ${opponentLifePoints > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                  {opponentLifePoints?.toLocaleString() || 0}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="text-xs text-gray-400 mt-2">
+                            <div className="text-xs text-gray-400 mt-1">
                               {duel.finishedAt 
                                 ? `Finalizado em ${new Date(duel.finishedAt).toLocaleString('pt-BR')}`
                                 : duel.createdAt
@@ -1247,11 +1210,22 @@ export const ProfilePage: React.FC = () => {
                               }
                             </div>
                           </div>
-                          <div className={`px-3 py-2 rounded-lg font-bold text-sm whitespace-nowrap ${
-                            won ? 'text-green-400 border border-green-500/30' : isDraw ? 'text-yellow-400 border border-yellow-500/30' : 'text-red-400 border border-red-500/30'
-                          }`}>
-                            {won ? '🏆 Vitória' : isDraw ? '🤝 Empate' : '❌ Derrota'}
-                          </div>
+                          
+                          {/* Foto do oponente */}
+                          {opponent?.profileImage ? (
+                            <img
+                              src={`${API_URL}${opponent.profileImage}`}
+                              alt={opponent?.nickname || opponent?.username}
+                              className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
+                              onError={(e) => {
+                                e.currentTarget.src = '/images/default.png';
+                              }}
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-full border-2 border-purple-500/50 bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white font-bold">
+                              {opponent?.nickname?.[0]?.toUpperCase() || opponent?.username?.[0]?.toUpperCase() || '?'}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );

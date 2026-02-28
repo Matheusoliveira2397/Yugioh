@@ -26,6 +26,9 @@ export class Division {
   @Column({ type: 'json', nullable: true })
   premiacaoJson: any; // Premiação em formato JSON estruturado
 
+  @Column({ type: 'boolean', default: true })
+  isAvailable: boolean; // Se a divisão está disponível para novos jogadores
+
   @CreateDateColumn()
   createdAt: Date;
 

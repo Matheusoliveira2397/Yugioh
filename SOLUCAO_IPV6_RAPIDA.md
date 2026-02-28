@@ -9,7 +9,7 @@ Se o Supabase está em **IPv6-only** e você não consegue fazer o restore diret
 Execute este comando:
 
 ```powershell
-cd c:\Yugioh
+cd D:\Yugioh
 
 # Substitua pelo nome do seu dump
 $dumpFile = "yugioh_backup_20250812_190833.dump"

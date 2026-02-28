@@ -120,4 +120,16 @@ export class Duel {
     phaseWhenStarted: string;
     data: any; // Dados específicos do tipo de escolha (ex: opponentHand, playerHand, graveyards)
   } | null;
+
+  /** Log de ações do duelo (persistido junto com o estado, como player1Field/player2Field) */
+  @Column({ name: 'action_logs', type: 'jsonb', nullable: true })
+  actionLogs: Array<{
+    id: string;
+    userId: number;
+    username: string;
+    clanTag?: string | null;
+    actionType: string;
+    message: string;
+    createdAt: string;
+  }> | null;
 }

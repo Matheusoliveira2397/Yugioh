@@ -23,6 +23,7 @@ import { RedisService } from '../redis/redis.service';
 import { SiteTab } from './entities/site-tab.entity';
 import { Division } from './entities/division.entity';
 import { SocialMedia } from './entities/social-media.entity';
+import { NewAccountSettingsService } from '../new-account-settings/new-account-settings.service';
 import { InitialDecksService } from '../initial-decks/initial-decks.service';
 import { DuelsGateway } from '../duels/duels.gateway';
 import { ChatGateway } from '../chat/chat.gateway';
@@ -77,6 +78,7 @@ export class AdminService implements OnModuleInit {
     private divisionsRepository: Repository<Division>,
     @InjectRepository(SocialMedia)
     private socialMediaRepository: Repository<SocialMedia>,
+    private newAccountSettingsService: NewAccountSettingsService,
     private redisService: RedisService,
     @Inject(forwardRef(() => InitialDecksService))
     private initialDecksService: InitialDecksService,
@@ -184,6 +186,7 @@ export class AdminService implements OnModuleInit {
             "desce" INTEGER NOT NULL DEFAULT 10,
             "premiacao" TEXT NULL,
             "premiacaoJson" JSONB NULL,
+            "isAvailable" BOOLEAN NOT NULL DEFAULT true,
             "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             "updatedAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
           )
@@ -192,6 +195,60 @@ export class AdminService implements OnModuleInit {
         console.log('✅ [AdminService] Tabela divisions criada com sucesso');
       } else {
         console.log('✅ [AdminService] Tabela divisions já existe');
+        
+        // Verificar se a coluna isAvailable existe
+        try {
+          const columnExists = await this.divisionsRepository.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'divisions' AND column_name = 'isAvailable'
+          `);
+          
+          if (columnExists.length === 0) {
+            console.log('🔧 [AdminService] Adicionando coluna isAvailable à tabela divisions...');
+            await this.divisionsRepository.query(`
+              ALTER TABLE divisions 
+              ADD COLUMN "isAvailable" BOOLEAN NOT NULL DEFAULT true
+            `);
+            console.log('✅ [AdminService] Coluna isAvailable adicionada com sucesso');
+          }
+        } catch (error: any) {
+          console.error('❌ [AdminService] Erro ao verificar/criar coluna isAvailable:', error);
+        }
+      }
+
+      // Verificar e criar as 6 divisões padrão se não existirem
+      try {
+        const existingDivisions = await this.divisionsRepository.find();
+        const divisionNames = existingDivisions.map(d => d.name.toLowerCase());
+        
+        const defaultDivisions = [
+          { name: 'Bronze', order: 1, isAvailable: true },
+          { name: 'Silver', order: 2, isAvailable: false },
+          { name: 'Gold', order: 3, isAvailable: false },
+          { name: 'Platinum', order: 4, isAvailable: false },
+          { name: 'Diamond', order: 5, isAvailable: false },
+          { name: 'Master', order: 6, isAvailable: false },
+          { name: 'Legendary', order: 7, isAvailable: false },
+        ];
+
+        for (const defaultDiv of defaultDivisions) {
+          if (!divisionNames.includes(defaultDiv.name.toLowerCase())) {
+            console.log(`🔧 [AdminService] Criando divisão padrão: ${defaultDiv.name}`);
+            const division = this.divisionsRepository.create({
+              name: defaultDiv.name,
+              order: defaultDiv.order,
+              maxDuelistas: 100,
+              sobe: 10,
+              desce: 10,
+              isAvailable: defaultDiv.isAvailable,
+            });
+            await this.divisionsRepository.save(division);
+            console.log(`✅ [AdminService] Divisão ${defaultDiv.name} criada com sucesso`);
+          }
+        }
+      } catch (error: any) {
+        console.error('❌ [AdminService] Erro ao criar divisões padrão:', error);
       }
     } catch (error) {
       console.error('❌ [AdminService] Erro ao verificar/criar tabela divisions:', error);
@@ -1094,6 +1151,13 @@ export class AdminService implements OnModuleInit {
     });
   }
 
+  async getAvailableDivisions(): Promise<Division[]> {
+    return this.divisionsRepository.find({
+      where: { isAvailable: true },
+      order: { order: 'DESC' }, // Ordem decrescente (maior order primeiro)
+    });
+  }
+
   async getDivisionById(id: string): Promise<Division> {
     const division = await this.divisionsRepository.findOne({ where: { id } });
     if (!division) {
@@ -1110,6 +1174,7 @@ export class AdminService implements OnModuleInit {
     desce: number;
     premiacao?: string;
     premiacaoJson?: any;
+    isAvailable?: boolean;
   }): Promise<Division> {
     // Verificar se já existe uma divisão com essa ordem
     const existingDivision = await this.divisionsRepository.findOne({
@@ -1133,6 +1198,7 @@ export class AdminService implements OnModuleInit {
       desce?: number;
       premiacao?: string;
       premiacaoJson?: any;
+      isAvailable?: boolean;
     },
   ): Promise<Division> {
     const division = await this.divisionsRepository.findOne({ where: { id } });
@@ -1160,6 +1226,26 @@ export class AdminService implements OnModuleInit {
       throw new Error('Divisão não encontrada');
     }
     await this.divisionsRepository.remove(division);
+  }
+
+  /**
+   * Busca a divisão mais baixa (menor order) que está disponível (isAvailable = true)
+   * Retorna o nome da divisão (ex: "Bronze") ou "Bronze" como padrão se nenhuma estiver disponível
+   */
+  async getLowestAvailableDivision(): Promise<string> {
+    const availableDivisions = await this.divisionsRepository.find({
+      where: { isAvailable: true },
+      order: { order: 'ASC' },
+      take: 1,
+    });
+
+    if (availableDivisions.length > 0) {
+      return availableDivisions[0].name;
+    }
+
+    // Se nenhuma divisão estiver disponível, retornar Bronze como padrão
+    console.warn('⚠️ [getLowestAvailableDivision] Nenhuma divisão disponível, usando Bronze como padrão');
+    return 'Bronze';
   }
 
   // Garantir que todos os usuários tenham ranking da season com divisão Bronze
@@ -1301,5 +1387,155 @@ export class AdminService implements OnModuleInit {
       throw new Error('Rede social não encontrada');
     }
     await this.socialMediaRepository.remove(socialMedia);
+  }
+
+  // ========== NEW ACCOUNT SETTINGS ==========
+
+  async getNewAccountSettings() {
+    return this.newAccountSettingsService.getSettings();
+  }
+
+  async updateNewAccountSettings(data: {
+    initialCredits?: number;
+    initialCash?: number;
+    availableInitialDeckIds?: string[];
+  }) {
+    return this.newAccountSettingsService.updateSettings(data);
+  }
+
+  // ========== RESET COMPLETO DO SISTEMA ==========
+
+  /**
+   * ⚠️ PERIGOSO: Reseta TODAS as contas do sistema
+   * - Zera scores, vitórias, derrotas
+   * - Remove todas as cartas compradas
+   * - Remove todos os decks
+   * - Remove todas as conquistas
+   * - Remove todos os clãs
+   * - Reseta cash e créditos para valores iniciais
+   * - Reseta deck para um inicial aleatório
+   * - Reseta level, experiência, rating, divisão
+   */
+  async resetAllAccounts(confirmationCode: string): Promise<{
+    message: string;
+    usersReset: number;
+    cardsDeleted: number;
+    decksDeleted: number;
+    achievementsDeleted: number;
+    groupsDeleted: number;
+  }> {
+    // Verificação de segurança: código de confirmação deve ser "RESET_ALL_ACCOUNTS_CONFIRM"
+    if (confirmationCode !== 'RESET_ALL_ACCOUNTS_CONFIRM') {
+      throw new Error('Código de confirmação inválido');
+    }
+
+    // Buscar configurações iniciais
+    const newAccountSettings = await this.newAccountSettingsService.getSettings();
+    const initialCredits = newAccountSettings.initialCredits || 50;
+    const initialCash = newAccountSettings.initialCash || 50000;
+    const availableDeckIds = newAccountSettings.availableInitialDeckIds || [];
+
+    // Buscar divisão mais baixa
+    const availableDivisions = await this.divisionsRepository.find({
+      where: { isAvailable: true },
+      order: { order: 'ASC' },
+      take: 1,
+    });
+    const lowestDivision = availableDivisions.length > 0 ? availableDivisions[0].name : 'Bronze';
+
+    // Usar query runner para transação
+    const queryRunner = this.usersRepository.manager.connection.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // 1. Buscar todos os usuários (exceto MASTER e ADMIN)
+      const allUsers = await queryRunner.manager.find(User, {
+        where: { role: UserRole.PLAYER },
+      });
+
+      let usersReset = 0;
+      let cardsDeleted = 0;
+      let decksDeleted = 0;
+      let achievementsDeleted = 0;
+
+      // 2. Para cada usuário, resetar dados
+      for (const user of allUsers) {
+        // Deletar cartas do usuário
+        const deletedCards = await queryRunner.manager.delete(UserCard, { userId: user.id });
+        cardsDeleted += deletedCards.affected || 0;
+
+        // Deletar decks do usuário (deck_cards será deletado por CASCADE)
+        const deletedDecks = await queryRunner.manager.delete(Deck, { userId: user.id });
+        decksDeleted += deletedDecks.affected || 0;
+
+        // Deletar conquistas do usuário
+        const deletedAchievements = await queryRunner.manager.delete(Achievement, { userId: user.id });
+        achievementsDeleted += deletedAchievements.affected || 0;
+
+        // Resetar dados do usuário
+        await queryRunner.manager.update(User, user.id, {
+          totalScore: 0,
+          winsGeral: 0,
+          lossesGeral: 0,
+          winsSeason: 0,
+          lossesSeason: 0,
+          rating: 1000,
+          level: 1,
+          experience: 0,
+          credits: initialCredits,
+          cash: initialCash,
+          division: lowestDivision,
+          equippedDeckName: null,
+          clanTag: null,
+        });
+
+        // Atribuir deck inicial aleatório
+        try {
+          await this.initialDecksService.assignDeckToUser(
+            user.id,
+            availableDeckIds.length > 0 ? availableDeckIds : undefined
+          );
+        } catch (error) {
+          // Se não houver deck inicial, continuar sem deck
+        }
+
+        usersReset++;
+      }
+
+      // 3. Deletar todos os clãs (group_members será deletado por CASCADE)
+      const deletedGroups = await queryRunner.manager.delete(Group, {});
+      const groupsDeleted = deletedGroups.affected || 0;
+
+      // 4. Limpar clanTag de todos os usuários (já feito acima, mas garantir)
+      await queryRunner.manager.update(User, {}, { clanTag: null });
+
+      // 5. Resetar season rankings
+      await queryRunner.manager.update(SeasonRanking, {}, {
+        wins: 0,
+        losses: 0,
+        seasonScore: 0,
+        rank: 0,
+        divisionPoints: 0,
+      });
+
+      // Commit da transação
+      await queryRunner.commitTransaction();
+
+      return {
+        message: 'Reset completo realizado com sucesso',
+        usersReset,
+        cardsDeleted,
+        decksDeleted,
+        achievementsDeleted,
+        groupsDeleted,
+      };
+    } catch (error) {
+      // Rollback em caso de erro
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 }

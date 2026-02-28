@@ -17,6 +17,7 @@ import { DuelQueueService } from './duel-queue.service';
 import { TurnPhase, DuelOrigin, DuelStatus } from './entities/duel.entity';
 import { UsersService } from '../users/users.service';
 import { CardEffectHandlersService } from './services/card-effect-handlers.service';
+import { CardEffectsService } from './services/card-effects.service';
 import { ArenaMatchmakingService } from '../arena/arena-matchmaking.service';
 import { ArenaService } from '../arena/arena.service';
 import { ArenaMatchmakingProcessorService } from '../arena/arena-matchmaking-processor.service';
@@ -48,6 +49,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     private duelQueueService: DuelQueueService,
     private usersService: UsersService,
     private cardEffectHandlersService: CardEffectHandlersService,
+    private cardEffectsService: CardEffectsService,
     @Inject(forwardRef(() => ArenaMatchmakingService))
     private arenaMatchmakingService: ArenaMatchmakingService,
     @Inject(forwardRef(() => ArenaService))
@@ -340,7 +342,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     @ConnectedSocket() client: Socket,
   ) {
     try {
-      const userId = client.data.userId || data.userId;
+      // Segurança: usar APENAS o userId do JWT (client.data.userId). Nunca confiar em data.userId do cliente.
+      const userId = client.data.userId;
       if (!userId) {
         console.error(`❌ [handleSearchDuel] ID de usuário inválido`);
         client.emit('duelError', { message: 'ID de usuário inválido' });
@@ -392,7 +395,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     @ConnectedSocket() client: Socket,
   ) {
     try {
-      const userId = client.data.userId || data.userId;
+      // Segurança: usar APENAS o userId do JWT (client.data.userId). Nunca confiar em data.userId do cliente.
+      const userId = client.data.userId;
       if (!userId) {
         console.error(`❌ [handleSearchArenaDuel] ID de usuário inválido`);
         client.emit('duelError', { message: 'ID de usuário inválido' });
@@ -472,7 +476,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     @ConnectedSocket() client: Socket,
   ) {
     try {
-      const userId = client.data.userId || data.userId;
+      // Segurança: usar APENAS o userId do JWT (client.data.userId). Nunca confiar em data.userId do cliente.
+      const userId = client.data.userId;
       if (!userId) {
         console.error(`❌ [handleCancelSearch] ID de usuário inválido`);
         return;
@@ -529,6 +534,26 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         return;
       }
 
+      // Verificar se algum dos jogadores já tem duelo em andamento
+      const activeDuelP1 = await this.duelsService.getActiveDuelForUser(player1Id);
+      const activeDuelP2 = await this.duelsService.getActiveDuelForUser(player2Id);
+      if (activeDuelP1) {
+        console.error(`❌ [handleCreateDuelFromMatch] Jogador 1 (${player1Id}) já tem duelo ativo (ID: ${activeDuelP1.id})`);
+        client.emit('duelError', {
+          message: 'Um dos jogadores já tem um duelo em andamento. Finalize o duelo atual antes de iniciar outro.',
+          activeDuelId: activeDuelP1.id,
+        });
+        return;
+      }
+      if (activeDuelP2) {
+        console.error(`❌ [handleCreateDuelFromMatch] Jogador 2 (${player2Id}) já tem duelo ativo (ID: ${activeDuelP2.id})`);
+        client.emit('duelError', {
+          message: 'Um dos jogadores já tem um duelo em andamento. Finalize o duelo atual antes de iniciar outro.',
+          activeDuelId: activeDuelP2.id,
+        });
+        return;
+      }
+
       client.join(`user_${userId}`);
       
       // Determinar origem do duelo (CHAT, ARENA, TOURNAMENT, ou OTHER)
@@ -563,7 +588,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       
       // UUID pode ser string, não precisa converter para number
       const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
-      const userId = data.userId || client.data.userId;
+      // Segurança: usar APENAS o userId do JWT. Nunca confiar em data.userId do cliente.
+      const userId = client.data.userId;
 
       if (!duelId || !userId) {
         client.emit('duelError', { message: 'Dados inválidos' });
@@ -606,7 +632,6 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         return;
       }
       
-      console.log(`✅ [handleJoinDuelRoom] Duelo encontrado! ID: ${duel.id}, Status: ${duel.status}`);
 
       // Verificar se o duelo está encerrado ou cancelado - emitir evento especial para popup
       if (duel.status === DuelStatus.FINISHED || duel.status === DuelStatus.CANCELLED) {
@@ -758,8 +783,6 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       const isPlayer1 = duelPlayer1Id === numericUserId;
       const isCurrentTurn = (isPlayer1 && duel.currentTurn === 1) || (!isPlayer1 && duel.currentTurn === 2);
       if (isCurrentTurn && duel.currentPhase === TurnPhase.DRAW) {
-        console.log(`🔄 [handleJoinDuelRoom] Processando fase DRAW automaticamente para o jogador ${numericUserId}...`);
-        
         // Emitir DRAW phase primeiro para mostrar o popup
         const drawPhaseDuelData = {
           id: duel.id,
@@ -787,8 +810,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         // Depois emitir para todos na room
         this.server.to(`duel_${duelId}`).emit('duelUpdate', drawPhaseDuelData);
         
-        // Adicionar delay para que o frontend mostre "Draw Phase" antes de processar
-        await new Promise(resolve => setTimeout(resolve, 1500)); // 1.5 segundos de delay
+        // Pequeno delay para o frontend mostrar "Draw Phase" antes de processar
+        await new Promise(resolve => setTimeout(resolve, 400));
         const updatedDuel = await this.duelsService.processDrawPhase(duelId);
         
         if (updatedDuel) {
@@ -824,46 +847,10 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           this.server.to(`duel_${duelId}`).emit('duelUpdate', nextPhaseDuelData);
         }
       } else if (isCurrentTurn && duel.currentPhase !== TurnPhase.DRAW) {
-        // Se não está em DRAW mas é o turno do jogador, verificar se precisa emitir atualização
-        // Isso pode acontecer se a Draw Phase já foi processada automaticamente no createDuelInternal
-        // Verificar se é o primeiro turno do primeiro jogador e está em MAIN2
-        const isFirstTurn = (duel as any).turnCounter === 1;
-        const isPlayer1Turn = duel.currentTurn === 1;
-        const isFirstTurnOfFirstPlayer = isFirstTurn && isPlayer1Turn;
-        
-        if (isFirstTurnOfFirstPlayer && duel.currentPhase === TurnPhase.MAIN2) {
-          console.log(`🔄 [handleJoinDuelRoom] Primeiro turno já processado - emitindo atualização para MAIN2`);
-          // Buscar duelo atualizado do banco para garantir dados corretos
-          const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
-          if (updatedDuel) {
-            const player1Field = (updatedDuel as any).player1Field;
-            const player2Field = (updatedDuel as any).player2Field;
-            
-            const main2PhaseDuelData = {
-              id: updatedDuel.id,
-              player1Id: updatedDuel.player1Id,
-              player2Id: updatedDuel.player2Id,
-              player1: (updatedDuel as any).player1,
-              player2: (updatedDuel as any).player2,
-              player1LifePoints: updatedDuel.player1LifePoints,
-              player2LifePoints: updatedDuel.player2LifePoints,
-              currentTurn: updatedDuel.currentTurn,
-              currentPhase: updatedDuel.currentPhase, // MAIN2
-              status: updatedDuel.status,
-              duelTime: (updatedDuel as any).duelTime || 0,
-              turnTime: (updatedDuel as any).turnTime || 90,
-              turnTimeRemaining: this.duelsService.calculateTurnTimeRemaining(updatedDuel),
-              turnStartedAt: (updatedDuel as any).turnStartedAt,
-              player1Field: player1Field,
-              player2Field: player2Field,
-              pendingChoice: (updatedDuel as any).pendingChoice || null,
-              createdAt: updatedDuel.createdAt,
-              updatedAt: updatedDuel.updatedAt,
-            };
-            // Emitir para todos na room do duelo
-            this.server.to(`duel_${duelId}`).emit('duelUpdate', main2PhaseDuelData);
-          }
-        }
+        // Se não está em DRAW mas é o turno do jogador, o duelo já foi processado
+        // A fase atual já está correta (STANDBY, MAIN1, BATTLE, MAIN2, etc.)
+        // Não precisa de lógica especial - o duelo já está na fase correta
+        console.log(`🔄 [handleJoinDuelRoom] Turno do jogador já em andamento - fase atual: ${duel.currentPhase}`);
       }
 
       // Calcular tempo restante do turno
@@ -906,35 +893,48 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         player2FieldDeckLength: duelData.player2Field?.deck?.length || 0,
         player2FieldHandLength: duelData.player2Field?.hand?.length || 0,
       });
-
-      client.emit('duelUpdate', duelData);
-      console.log(`✅ [handleJoinDuelRoom] duelUpdate enviado com sucesso!`);
       
-      // Carregar logs do duelo do banco de dados e enviar para o cliente
-      try {
-        const savedLogs = await this.duelsService.getDuelLogs(duelId);
-        if (savedLogs && savedLogs.length > 0) {
-          // Converter logs do banco para o formato esperado pelo frontend
-          const formattedLogs = savedLogs.map((log: any) => ({
-            id: log.id,
-            username: log.user?.clanTag ? `|${log.user.clanTag}| ${log.user.username}` : log.user?.username || 'Jogador',
-            actionType: log.actionType,
-            message: log.message,
-            createdAt: log.createdAt,
-          }));
-          
-          // Enviar todos os logs de uma vez
-          client.emit('duelLogsLoaded', { logs: formattedLogs });
-          console.log(`📋 [handleJoinDuelRoom] ${formattedLogs.length} logs carregados do banco e enviados`);
-        } else {
-          console.log(`ℹ️ [handleJoinDuelRoom] Nenhum log encontrado no banco para este duelo`);
-        }
-      } catch (logError) {
-        console.error(`❌ [handleJoinDuelRoom] Erro ao carregar logs:`, logError);
-        // Não falhar a conexão se houver erro ao carregar logs
+      // CRÍTICO: Garantir que o deck está presente antes de enviar
+      if (!duelData.player1Field?.deck || duelData.player1Field.deck.length === 0) {
+        console.error(`❌ [handleJoinDuelRoom] ERRO: player1Field.deck está vazio antes de enviar!`);
+        console.error(`❌ [handleJoinDuelRoom] player1Field completo:`, JSON.stringify(duelData.player1Field, null, 2));
+      }
+      if (!duelData.player2Field?.deck || duelData.player2Field.deck.length === 0) {
+        console.error(`❌ [handleJoinDuelRoom] ERRO: player2Field.deck está vazio antes de enviar!`);
+        console.error(`❌ [handleJoinDuelRoom] player2Field completo:`, JSON.stringify(duelData.player2Field, null, 2));
       }
       
-      console.log(`✅ [handleJoinDuelRoom] ==========================================`);
+      // Garantir que deck é um array válido (não null/undefined)
+      if (duelData.player1Field && (!duelData.player1Field.deck || !Array.isArray(duelData.player1Field.deck))) {
+        console.warn(`⚠️ [handleJoinDuelRoom] player1Field.deck não é um array válido, inicializando...`);
+        duelData.player1Field.deck = [];
+      }
+      if (duelData.player2Field && (!duelData.player2Field.deck || !Array.isArray(duelData.player2Field.deck))) {
+        console.warn(`⚠️ [handleJoinDuelRoom] player2Field.deck não é um array válido, inicializando...`);
+        duelData.player2Field.deck = [];
+      }
+
+      client.emit('duelUpdate', duelData);
+      
+      // Carregar logs do duelo do banco de dados e enviar para o cliente (persistência ao fechar/reabrir duelo)
+      try {
+        const savedLogs = await this.duelsService.getDuelLogs(duel.id);
+        const formattedLogs = (savedLogs && savedLogs.length > 0)
+          ? savedLogs.map((log: any) => ({
+              id: log.id,
+              username: log.user?.clanTag ? `|${log.user.clanTag}| ${log.user.username}` : log.user?.username || 'Jogador',
+              actionType: log.actionType,
+              message: log.message,
+              createdAt: log.createdAt,
+            }))
+          : [];
+        client.emit('duelLogsLoaded', { logs: formattedLogs });
+        console.log(`📋 [handleJoinDuelRoom] ${formattedLogs.length} logs carregados do banco e enviados`);
+      } catch (logError) {
+        console.error(`❌ [handleJoinDuelRoom] Erro ao carregar logs:`, logError);
+        client.emit('duelLogsLoaded', { logs: [] });
+      }
+      
     } catch (error) {
       console.error(`❌ [handleJoinDuelRoom] Erro:`, error);
       client.emit('duelError', { message: 'Erro ao entrar na room do duelo' });
@@ -949,7 +949,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     try {
       // UUID pode ser string, não precisa converter para number
       const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
-      const userId = data.userId || client.data.userId;
+      // Segurança: usar APENAS o userId do JWT. Nunca confiar em data.userId do cliente.
+      const userId = client.data.userId;
 
       if (!duelId || !userId) {
         client.emit('duelError', { message: 'Dados inválidos' });
@@ -1068,8 +1069,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         };
         this.server.to(`duel_${duelId}`).emit('duelUpdate', drawPhaseDuelData);
         
-        // Aguardar 1.5 segundos para mostrar o popup
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // Pequeno delay para mostrar o popup da fase
+        await new Promise(resolve => setTimeout(resolve, 400));
         
         // Processar DRAW phase (comprar carta e avançar para próxima fase)
         const finalDuel = await this.duelsService.processDrawPhase(duelId);
@@ -1145,7 +1146,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
   ) {
     try {
       const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
-      const userId = data.userId || client.data.userId;
+      // Segurança: usar APENAS o userId do JWT. Nunca confiar em data.userId do cliente.
+      const userId = client.data.userId;
       const targetPhase = data.targetPhase as TurnPhase;
 
       if (!duelId || !userId || !targetPhase) {
@@ -1244,8 +1246,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         };
         this.server.to(`duel_${duelId}`).emit('duelUpdate', drawPhaseDuelData);
         
-        // Aguardar 1.5 segundos para mostrar o popup
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // Pequeno delay para mostrar o popup da fase
+        await new Promise(resolve => setTimeout(resolve, 400));
         
         // Processar DRAW phase (pode já ter sido processado automaticamente pelo advanceToNextTurn)
         const finalDuel = await this.duelsService.processDrawPhase(duelId);
@@ -1354,7 +1356,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     try {
       // UUID pode ser string, não precisa converter para number
       const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
-      const userId = data.userId || client.data.userId;
+      // Segurança: usar APENAS o userId do JWT. Nunca confiar em data.userId do cliente.
+      const userId = client.data.userId;
 
       if (!duelId || !userId) {
         return;
@@ -1384,7 +1387,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
   ) {
     try {
       const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
-      const userId = data.userId || client.data.userId;
+      // Segurança: usar APENAS o userId do JWT. Nunca confiar em data.userId do cliente.
+      const userId = client.data.userId;
       const cardIdsToDiscard = data.cardIdsToDiscard || [];
 
       if (!duelId || !userId) {
@@ -1408,18 +1412,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         return;
       }
 
-      // Tentar finalizar o turno
-      const result = await this.duelsService.endTurn(duelId, numericUserId, cardIdsToDiscard);
-
-      if (result.needsDiscard) {
-        // Precisa descartar cartas - solicitar ao jogador
-        client.emit('needsDiscard', {
-          duelId,
-          cardsToDiscard: result.cardsToDiscard,
-          message: `Você tem mais de 6 cartas na mão. Selecione ${result.cardsToDiscard} carta(s) para descartar.`,
-        });
-        return;
-      }
+      // Tentar finalizar o turno (o descarte será automático se necessário)
+      const result = await this.duelsService.endTurn(duelId, numericUserId);
 
       // Criar log de finalização de turno
       await this.createAndEmitDuelLog(duelId, numericUserId, 'END_TURN', 'Finalizou o turno');
@@ -1441,7 +1435,6 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       // Verificar se o próximo turno está em DRAW (pode já ter sido processado automaticamente pelo advanceToNextTurn)
       // Se ainda está em DRAW, processar. Se não, a Draw Phase já foi processada automaticamente.
       if (updatedDuel.currentPhase === TurnPhase.DRAW) {
-        console.log(`🔄 [handleEndTurn] Processando fase DRAW automaticamente após finalizar turno...`);
         
         // O jogador que PERDEU o turno é o jogador atual (quem finalizou o turno)
         const playerWhoLostTurn = numericUserId;
@@ -1503,8 +1496,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         };
         this.server.to(`duel_${duelId}`).emit('duelUpdate', drawPhaseDuelData);
 
-        // Aguardar 1.5 segundos para mostrar o popup
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // Pequeno delay para mostrar o popup da fase
+        await new Promise(resolve => setTimeout(resolve, 400));
 
         // Processar DRAW phase (comprar carta e avançar para próxima fase)
         const finalDuel = await this.duelsService.processDrawPhase(duelId);
@@ -1547,7 +1540,6 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       } else {
         // Draw Phase já foi processada automaticamente pelo advanceToNextTurn
         // Apenas emitir o duelo atualizado
-        console.log(`✅ [handleEndTurn] Draw Phase já foi processada automaticamente. Fase atual: ${updatedDuel.currentPhase}`);
       }
 
       // Se não está em DRAW, emitir normalmente
@@ -1592,7 +1584,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
   ) {
     try {
       const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
-      const userId = data.userId || client.data.userId;
+      // Segurança: usar APENAS o userId do JWT. Nunca confiar em data.userId do cliente.
+      const userId = client.data.userId;
       const cardId = data.cardId;
 
       if (!duelId || !userId || !cardId) {
@@ -1744,7 +1737,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     try {
       // UUID pode ser string, não precisa converter para number
       const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
-      const userId = data.userId || client.data.userId;
+      // Segurança: usar APENAS o userId do JWT. Nunca confiar em data.userId do cliente.
+      const userId = client.data.userId;
 
       if (!duelId || !userId) {
         client.emit('duelError', { message: 'Dados inválidos' });
@@ -1957,8 +1951,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       this.server.to(`duel_${duelId}`).emit('duelUpdate', drawPhaseDuelData);
 
       // Processar fase DRAW automaticamente (comprar carta e avançar para próxima fase)
-      // Adicionar delay para que o frontend mostre "Draw Phase" antes de processar
-      await new Promise(resolve => setTimeout(resolve, 1500)); // 1.5 segundos de delay
+      // Pequeno delay para o frontend mostrar "Draw Phase" antes de processar
+      await new Promise(resolve => setTimeout(resolve, 400));
       await this.duelsService.processDrawPhase(duelId);
 
       // Buscar o duelo atualizado após processar a fase DRAW
@@ -2022,15 +2016,24 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     @ConnectedSocket() client: Socket,
   ) {
     try {
-      // UUID pode ser string, não precisa converter para number
       const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
       const timeInSeconds = data.timeInSeconds;
+      // Segurança: usar APENAS o userId do JWT. Só jogadores do duelo podem atualizar o tempo.
+      const userId = client.data.userId;
 
-      if (!duelId || timeInSeconds === undefined) {
-        return; // Silenciosamente ignorar se dados inválidos
+      if (!duelId || timeInSeconds === undefined || !userId) {
+        return;
       }
 
-      // Atualizar tempo no banco de dados (assíncrono)
+      const duel = this.duelsService.findDuelByIdLight(duelId) ?? await this.duelsService.findDuelByIdFromDatabase(duelId);
+      if (!duel) return;
+
+      const numericUserId = Number(userId);
+      const isPlayer = duel.player1Id === numericUserId || duel.player2Id === numericUserId;
+      if (!isPlayer) {
+        return; // Não é jogador deste duelo — ignorar silenciosamente
+      }
+
       this.duelsService.updateDuelTime(duelId, timeInSeconds).catch((error) => {
         console.error(`❌ [handleUpdateDuelTime] Erro ao atualizar tempo:`, error);
       });
@@ -2044,11 +2047,14 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     @MessageBody() data: { duelId: number | string; userId?: number; actionType: string; actionData?: any },
     @ConnectedSocket() client: Socket,
   ) {
+    // Declarar variáveis fora do try para que estejam acessíveis no catch
+    const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
+    // Segurança: usar APENAS o userId do JWT. Nunca confiar em data.userId do cliente.
+    const userId = client.data.userId;
+    const actionType = data.actionType;
+    const actionData = data.actionData || {};
+    
     try {
-      const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
-      const userId = data.userId || client.data.userId;
-      const actionType = data.actionType;
-      const actionData = data.actionData || {};
 
       if (!duelId || !userId || !actionType) {
         client.emit('duelError', { message: 'Dados inválidos' });
@@ -2056,37 +2062,58 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       }
 
       // Verificar se há escolha pendente e bloquear outras ações (exceto a própria escolha)
-      const duel = await this.duelsService.findDuelByIdFromDatabase(duelId);
+      // IMPORTANTE: Buscar do banco ignorando cache para ter dados atualizados
+      const duel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
       if (duel && (duel as any).pendingChoice) {
         const pendingChoice = (duel as any).pendingChoice;
-        // Apenas CONFISCATION, GRACEFUL_CHARITY e FORCEFUL_SENTRY criam pendingChoice persistente
-        const isPersistentChoiceAction = actionType === 'CONFISCATION_CHOICE' ||
+        
+        // Verificar se o pendingChoice é válido (não é null ou undefined)
+        if (pendingChoice && pendingChoice !== null && pendingChoice !== undefined) {
+          // Ações que podem ser executadas mesmo com pendingChoice ativo
+        const isAllowedChoiceAction = actionType === 'CONFISCATION_CHOICE' ||
                                          actionType === 'GRACEFUL_CHARITY_CHOICE' ||
-                                         actionType === 'FORCEFUL_SENTRY_CHOICE';
-        
-        // Se há escolha pendente persistente e não é uma ação de escolha persistente, bloquear
-        if (!isPersistentChoiceAction && pendingChoice.userId === userId) {
-          client.emit('duelError', { 
-            message: 'Você precisa completar a escolha pendente antes de fazer outras ações',
-            pendingChoice: pendingChoice
-          });
-          return;
-        }
-        
-        // Se o turno mudou desde que a escolha foi iniciada, fechar modal primeiro e depois fazer escolha automática
-        if (pendingChoice.userId === userId && 
-            (duel.currentTurn !== pendingChoice.turnWhenStarted || 
-             duel.currentPhase !== pendingChoice.phaseWhenStarted)) {
-          console.log(`⚠️ [handleDuelAction] Turno mudou durante escolha pendente - fechando modal e fazendo escolha automática`);
+                                      actionType === 'FORCEFUL_SENTRY_CHOICE' ||
+                                      actionType === 'MYSTICAL_SPACE_TYPHOON_CHOICE' ||
+                                      actionType === 'SOUL_TAKER_CHOICE' ||
+                                      actionType === 'SNOWMAN_EATER_CHOICE' ||
+                                      actionType === 'CHAOS_SORCERER_CHOICE' ||
+                                      actionType === 'CHANGE_OF_HEART_CHOICE' ||
+                                      actionType === 'BRAIN_CONTROL_CHOICE' ||
+                                      actionType === 'MONSTER_REBORN_CHOICE' ||
+                                      actionType === 'PREMATURE_BURIAL_CHOICE' ||
+                                      actionType === 'LAST_WILL_CHOICE' ||
+                                      actionType === 'MONSTER_REINCARNATION_DISCARD_CHOICE' ||
+                                      actionType === 'MONSTER_REINCARNATION_GRAVEYARD_CHOICE' ||
+                                      actionType === 'CANCEL_CARD_ACTIVATION';
           
-          // 1. Primeiro, emitir evento para fechar o modal no frontend
-          client.emit('closePendingChoiceModal', { duelId, reason: 'turn_changed' });
-          // Também emitir para a room inteira caso o jogador tenha múltiplas abas
-          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', { duelId, reason: 'turn_changed' });
+          // Se há escolha pendente e não é uma ação de escolha permitida, bloquear
+          if (!isAllowedChoiceAction && pendingChoice.userId === userId) {
+            client.emit('duelError', { 
+              message: 'Você precisa completar a escolha pendente antes de fazer outras ações',
+              pendingChoice: pendingChoice
+            });
+            return;
+          }
           
-          // 2. Depois fazer escolha automática
-          await this.handleAutoChoice(duelId, userId, pendingChoice);
-          return;
+          // Se o turno mudou desde que a escolha foi iniciada, fechar modal primeiro e depois fazer escolha automática
+          if (pendingChoice.userId === userId && 
+              (duel.currentTurn !== pendingChoice.turnWhenStarted || 
+               duel.currentPhase !== pendingChoice.phaseWhenStarted)) {
+            console.log(`⚠️ [handleDuelAction] Turno mudou durante escolha pendente - fechando modal e fazendo escolha automática`);
+            
+            // 1. Primeiro, emitir evento para fechar o modal no frontend
+            client.emit('closePendingChoiceModal', { duelId, reason: 'turn_changed' });
+            // Também emitir para a room inteira caso o jogador tenha múltiplas abas
+            this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', { duelId, reason: 'turn_changed' });
+            
+            // 2. Depois fazer escolha automática
+            await this.handleAutoChoice(duelId, userId, pendingChoice);
+            return;
+          }
+        } else {
+          // PendingChoice inválido - limpar do banco e continuar normalmente
+          console.log(`ℹ️ [handleDuelAction] PendingChoice encontrado mas é inválido (null/undefined) - limpando e continuando`);
+          await this.duelsService.clearPendingChoice(duelId, false);
         }
       }
 
@@ -2178,7 +2205,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         await this.createAndEmitDuelLog(duelId, userId, 'SPECIAL_SUMMON_CYBER_DRAGON', `Invocou Cyber Dragon por invocação especial em ${positionText}`);
 
         // Buscar duelo atualizado para enviar atualização
-        let updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        let updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (updatedDuel) {
           // Se está em STANDBY, mudar automaticamente para MAIN1
           if (updatedDuel.currentPhase === TurnPhase.STANDBY) {
@@ -2244,7 +2271,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         });
 
         // Buscar duelo atualizado e emitir atualização
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (updatedDuel) {
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -2413,14 +2440,46 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           return;
         }
 
+        // Buscar duelo atualizado antes de coletar monstros
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+        if (!updatedDuel) {
+          client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
+          return;
+        }
+
+        // Coletar monstros face-up do campo para o modal
+        const player1Field = (updatedDuel as any).player1Field;
+        const player2Field = (updatedDuel as any).player2Field;
+        const isPlayer1 = Number(updatedDuel.player1Id) === Number(userId);
+        const playerField = isPlayer1 ? player1Field : player2Field;
+        const opponentField = isPlayer1 ? player2Field : player1Field;
+        
+        const availableMonsters: Array<{ monster: any; zoneIndex: number; player: 'player' | 'opponent' }> = [];
+        
+        // Coletar monstros do próprio campo
+        if (playerField && playerField.monsters && Array.isArray(playerField.monsters)) {
+          playerField.monsters.forEach((monster: any, index: number) => {
+            if (monster && monster !== null && (monster.position === 'attack' || monster.position === 'defense')) {
+              availableMonsters.push({ monster, zoneIndex: index, player: 'player' });
+            }
+          });
+        }
+        
+        // Coletar monstros do campo do oponente
+        if (opponentField && opponentField.monsters && Array.isArray(opponentField.monsters)) {
+          opponentField.monsters.forEach((monster: any, index: number) => {
+            if (monster && monster !== null && (monster.position === 'attack' || monster.position === 'defense')) {
+              availableMonsters.push({ monster, zoneIndex: index, player: 'opponent' });
+            }
+          });
+        }
+
         // Emitir evento direto ao frontend para mostrar seleção de alvo
         client.emit('chaosSorcererEffectShowTargets', {
           duelId,
+          availableMonsters: availableMonsters,
           data: result.data,
         });
-
-        // Buscar duelo atualizado e emitir atualização
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
         if (updatedDuel) {
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -2474,7 +2533,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         });
 
         // Buscar duelo atualizado e emitir atualização
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (updatedDuel) {
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -2529,7 +2588,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         });
 
         // Buscar duelo atualizado e emitir atualização
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (updatedDuel) {
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -2580,7 +2639,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         await this.createAndEmitDuelLog(duelId, userId, 'SPECIAL_SUMMON_DARK_ARMED_DRAGON', `Invocou Dark Armed Dragon por invocação especial em modo de ataque`);
 
         // Buscar duelo atualizado
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (updatedDuel) {
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -2634,7 +2693,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         });
 
         // Buscar duelo atualizado e emitir atualização
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (updatedDuel) {
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -2684,7 +2743,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         await this.createAndEmitDuelLog(duelId, userId, 'DARK_ARMED_DRAGON_EFFECT', `Dark Armed Dragon baniu um monstro Dark e destruiu uma carta`);
 
         // Buscar duelo atualizado
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (updatedDuel) {
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -2715,6 +2774,88 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
           this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
         }
+      } else if (actionType === 'START_BLS_EFFECT') {
+        const { monsterZoneIndex } = actionData;
+        if (monsterZoneIndex === undefined) {
+          client.emit('duelError', { message: 'Zona do monstro não fornecida' });
+          return;
+        }
+        const result = await this.duelsService.startBlackLusterSoldierEffect(duelId, userId, monsterZoneIndex);
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro ao iniciar efeito do Black Luster Soldier' });
+          return;
+        }
+        client.emit('blsEffectShowTargets', { duelId, data: result.data });
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+        if (updatedDuel) {
+          const duelData = {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1 || null,
+            player2: (updatedDuel as any).player2 || null,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            duelTime: (updatedDuel as any).duelTime || 0,
+            turnTime: (updatedDuel as any).turnTime || 90,
+            turnTimeRemaining: this.duelsService.calculateTurnTimeRemaining(updatedDuel),
+            turnStartedAt: (updatedDuel as any).turnStartedAt,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+            createdAt: updatedDuel.createdAt,
+            updatedAt: updatedDuel.updatedAt,
+          };
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
+        }
+      } else if (actionType === 'BLS_EFFECT_CHOICE') {
+        const { monsterZoneIndex, effectNumber, targetPlayer, targetZoneIndex } = actionData;
+        if (monsterZoneIndex === undefined || effectNumber === undefined) {
+          client.emit('duelError', { message: 'Dados de escolha inválidos' });
+          return;
+        }
+        const result = await this.duelsService.processBlackLusterSoldierEffect(
+          duelId,
+          userId,
+          monsterZoneIndex,
+          effectNumber as 1 | 2,
+          targetPlayer,
+          targetZoneIndex,
+        );
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro ao processar efeito do BLS' });
+          return;
+        }
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+        if (updatedDuel) {
+          const duelData = {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1 || null,
+            player2: (updatedDuel as any).player2 || null,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            duelTime: (updatedDuel as any).duelTime || 0,
+            turnTime: (updatedDuel as any).turnTime || 90,
+            turnTimeRemaining: this.duelsService.calculateTurnTimeRemaining(updatedDuel),
+            turnStartedAt: (updatedDuel as any).turnStartedAt,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+            createdAt: updatedDuel.createdAt,
+            updatedAt: updatedDuel.updatedAt,
+          };
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
+        }
       } else if (actionType === 'CHAOS_SORCERER_EFFECT_CHOICE') {
         // Processar escolha de alvo do efeito do ChaosSorcerer
         const { monsterZoneIndex, targetPlayer, targetZoneIndex } = actionData;
@@ -2735,7 +2876,58 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         await this.createAndEmitDuelLog(duelId, userId, 'CHAOS_SORCERER_EFFECT', `ChaosSorcerer baniu um monstro face-up`);
 
         // Buscar duelo atualizado
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+        if (updatedDuel) {
+          const player1Field = (updatedDuel as any).player1Field;
+          const player2Field = (updatedDuel as any).player2Field;
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+
+          const duelData = {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1 || null,
+            player2: (updatedDuel as any).player2 || null,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            duelTime: (updatedDuel as any).duelTime || 0,
+            turnTime: (updatedDuel as any).turnTime || 90,
+            turnTimeRemaining: turnTimeRemaining,
+            turnStartedAt: (updatedDuel as any).turnStartedAt,
+            player1Field: player1Field,
+            player2Field: player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+            createdAt: updatedDuel.createdAt,
+            updatedAt: updatedDuel.updatedAt,
+          };
+
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
+        }
+      } else if (actionType === 'ACTIVATE_CHAOS_EMPEROR_DRAGON_EFFECT') {
+        // Ativar efeito do Chaos Emperor Dragon (descartar todas as cartas e causar dano)
+        const { monsterZoneIndex } = actionData;
+
+        if (monsterZoneIndex === undefined) {
+          client.emit('duelError', { message: 'Zona do monstro não fornecida' });
+          return;
+        }
+
+        const result = await this.duelsService.processChaosEmperorDragonEffect(duelId, userId, monsterZoneIndex);
+
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro ao ativar efeito do Chaos Emperor Dragon' });
+          return;
+        }
+
+        // Criar log de ação
+        await this.createAndEmitDuelLog(duelId, userId, 'CHAOS_EMPEROR_DRAGON_EFFECT', `Chaos Emperor Dragon descartou todas as cartas e causou ${result.damage || 0} de dano`);
+
+        // Buscar duelo atualizado
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (updatedDuel) {
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -2790,7 +2982,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         });
 
         // Buscar duelo atualizado e emitir atualização
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (updatedDuel) {
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -2841,7 +3033,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         await this.createAndEmitDuelLog(duelId, userId, 'EXILED_FORCE_EFFECT', `Exiled Force foi tributado e destruiu um monstro`);
 
         // Buscar duelo atualizado
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (updatedDuel) {
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -2896,7 +3088,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         });
 
         // Buscar duelo atualizado e emitir atualização
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (updatedDuel) {
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -2948,7 +3140,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         await this.createAndEmitDuelLog(duelId, userId, 'SPECIAL_SUMMON_RED_EYES_DARKNESS_METAL_DRAGON', `Invocou Red-Eyes Darkness Metal Dragon por invocação especial em ${positionText}`);
 
         // Buscar duelo atualizado
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (updatedDuel) {
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -3019,7 +3211,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         });
 
         // Buscar duelo atualizado e emitir atualização
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (updatedDuel) {
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -3069,7 +3261,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         await this.createAndEmitDuelLog(duelId, userId, 'RED_EYES_DARKNESS_METAL_DRAGON_EFFECT', `Red-Eyes Darkness Metal Dragon invocou um dragão por invocação especial`);
 
         // Buscar duelo atualizado
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (updatedDuel) {
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -3119,7 +3311,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         await this.createAndEmitDuelLog(duelId, userId, 'CYBER_STEIN_EFFECT', `Cyber-Stein pagou 5000 LP e invocou um monstro do Extra Deck`);
 
         // Buscar duelo atualizado
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (updatedDuel) {
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -3290,7 +3482,13 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       } else if (actionType === 'SET_MONSTER' || actionType === 'SET_SPELL_TRAP' || actionType === 'ACTIVATE_SPELL_TRAP') {
         // Colocar monstro, spell ou trap no campo
         const { cardId, zoneIndex, position } = actionData;
-        if (!cardId || zoneIndex === undefined) {
+        // IMPORTANTE: Para ACTIVATE_SPELL_TRAP, zoneIndex pode ser undefined/null se a carta está na mão
+        // e precisa de modal (como Mystical Space Typhoon) - a carta não vai para o campo
+        if (!cardId) {
+          client.emit('duelError', { message: 'Dados inválidos' });
+          return;
+        }
+        if (actionType !== 'ACTIVATE_SPELL_TRAP' && zoneIndex === undefined) {
           client.emit('duelError', { message: 'Dados inválidos' });
           return;
         }
@@ -3311,7 +3509,9 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             let cardOnField = null; // Variável para armazenar a carta no campo (se existir)
             
             // Se for ACTIVATE_SPELL_TRAP, primeiro procurar no campo (carta já está lá)
-            if (actionType === 'ACTIVATE_SPELL_TRAP' && playerField && playerField.spellTrap) {
+            // IMPORTANTE: Só verificar no campo se zoneIndex é válido
+            if (actionType === 'ACTIVATE_SPELL_TRAP' && playerField && playerField.spellTrap && 
+                zoneIndex !== undefined && zoneIndex !== null && zoneIndex >= 0 && zoneIndex < 5) {
               // Garantir que spellTrap é um array válido
               if (!Array.isArray(playerField.spellTrap)) {
                 playerField.spellTrap = [null, null, null, null, null];
@@ -3431,7 +3631,9 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
               console.log(`✅ [handleDuelAction] Tipo da carta determinado: ${cardType}`);
               
               // Se cardOnField ainda não foi definido, verificar agora
-              if (!cardOnField && playerField && playerField.spellTrap && Array.isArray(playerField.spellTrap)) {
+              // IMPORTANTE: Só verificar se zoneIndex é válido
+              if (!cardOnField && playerField && playerField.spellTrap && Array.isArray(playerField.spellTrap) &&
+                  zoneIndex !== undefined && zoneIndex !== null && zoneIndex >= 0 && zoneIndex < 5) {
                 // Garantir que spellTrap é um array válido
                 if (!Array.isArray(playerField.spellTrap)) {
                   playerField.spellTrap = [null, null, null, null, null];
@@ -3537,10 +3739,27 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             (typeof originalCardId === 'string' && originalCardId.includes('forcefulsentry')) ||
             (typeof originalCardName === 'string' && originalCardName.includes('forceful sentry'));
         
+        // Verificar se é ChangeOfHeart ANTES de definir isSpecialCard
+        // ChangeOfHeart é uma Normal Spell que vai direto para o cemitério, então não precisa de zoneIndex quando está na mão
+        const isChangeOfHeartCardEarly = originalCardId === 'changeofheart' || originalCardName === 'change of heart' ||
+            (typeof originalCardId === 'string' && originalCardId.includes('changeofheart')) ||
+            (typeof originalCardName === 'string' && originalCardName.includes('change of heart')) ||
+            cardId === 'ChangeOfHeart' || 
+            cardId === 'changeofheart' ||
+            (typeof cardId === 'string' && cardId.toLowerCase().includes('changeofheart'));
+        
+        // Verificar se é BrainControl
+        const isBrainControlCardEarly = cardId === 'BrainControl' ||
+            cardId === 'braincontrol' ||
+            (typeof cardId === 'string' && cardId.toLowerCase().includes('braincontrol')) ||
+            originalCardName === 'brain control' ||
+            (typeof originalCardName === 'string' && originalCardName.includes('brain control'));
+        
         const isSpecialCard = isConfiscationCard || isGracefulCharityCard || isForcefulSentryCard;
         
         // Para cartas especiais, comportamento normal (coloca no campo imediatamente)
         // Para outras cartas, processar efeito primeiro antes de colocar no campo
+        // Change Of Heart e Brain Control também precisam entrar neste bloco para verificar se precisam de modal
         let result;
         let updatedDuel;
         
@@ -3549,7 +3768,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           console.log(`🔍 [handleDuelAction] Carta não é especial - verificando se precisa de modal antes de colocar no campo`);
           
           // Buscar duelo atual
-          updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+          updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
           if (!updatedDuel) {
             client.emit('duelError', { message: 'Duelo não encontrado' });
             return;
@@ -3563,7 +3782,9 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           let cardIsOnField = false;
           
           // Verificar se está no campo (em set) - se estiver, pode ativar normalmente
-          if (playerFieldCheck && playerFieldCheck.spellTrap && playerFieldCheck.spellTrap[zoneIndex]) {
+          // IMPORTANTE: Se zoneIndex é válido e há carta nessa zona, verificar se é a carta que queremos ativar
+          if (zoneIndex !== undefined && zoneIndex !== null && zoneIndex >= 0 && zoneIndex < 5 &&
+              playerFieldCheck && playerFieldCheck.spellTrap && playerFieldCheck.spellTrap[zoneIndex]) {
             const cardOnField = playerFieldCheck.spellTrap[zoneIndex];
             const cardOnFieldId = cardOnField.idCarta || cardOnField.id || cardOnField.cardId;
             if (cardOnFieldId === cardId || String(cardOnFieldId).toLowerCase() === String(cardId).toLowerCase()) {
@@ -3572,6 +3793,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
               // Se a carta está no campo em "set", marcar que estava no campo
               if (cardOnField.position === 'set') {
                 // A carta já está no campo em "set" - quando cancelar, deve permanecer em "set"
+                console.log(`🔍 [handleDuelAction] Carta ${cardToProcess.name || cardToProcess.cardName} está no campo em "set"`);
               }
             }
           }
@@ -3610,23 +3832,80 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             return;
           }
           
-          // Se a carta está na mão e precisa de modal, NÃO colocar no campo ainda
-          // Criar pendingChoice e abrir modal - a carta permanece na mão
-          if (!cardIsOnField && this.duelsService.needsModalBeforeReveal(cardToProcess)) {
+          // Se a carta precisa de modal (na mão OU no campo em "set"), NÃO colocar no campo ainda
+          // Criar pendingChoice e abrir modal - a carta permanece onde estava
+          const needsModal = this.duelsService.needsModalBeforeReveal(cardToProcess);
+          console.log(`🔍 [handleDuelAction] Verificando se precisa de modal - cardId: ${cardId}, cardName: ${cardToProcess.name || cardToProcess.cardName}, needsModal: ${needsModal}, cardIsOnField: ${cardIsOnField}`);
+          
+          // IMPORTANTE: Se a carta está na mão e precisa de modal, não precisa de zoneIndex válido
+          // porque a carta não vai para o campo - vai direto para o cemitério após a ativação
+          // Nesse caso, podemos ignorar completamente o zoneIndex recebido do frontend
+          if (needsModal && !cardIsOnField) {
+            console.log(`✅ [handleDuelAction] Carta está na mão e precisa de modal - ignorando zoneIndex (carta não vai para o campo, vai direto para o cemitério)`);
+            // Não fazer nada com zoneIndex - a carta não precisa ir para o campo
+          }
+          
+          if (needsModal) {
             console.log(`🔒 [handleDuelAction] Spell ${cardToProcess.name || cardToProcess.cardName} precisa de modal - NÃO colocando no campo, criando pendingChoice`);
+            console.log(`🔒 [handleDuelAction] Carta está no campo? ${cardIsOnField}`);
             
+            // IMPORTANTE: Se a carta está no campo em "set", NÃO chamar processCardEffect
+            // porque ele pode salvar o duelo com a carta em "face-up"
+            // Apenas criar pendingChoice manualmente para Mystical Space Typhoon
+            // Para outras cartas que criam pendingChoice automaticamente, processCardEffect será chamado depois
+            
+            // Verificar se é Mystical Space Typhoon, Soul Taker, Change Of Heart ou Brain Control ANTES de chamar processCardEffect
+            const cardNameLower = (cardToProcess.name || cardToProcess.cardName || '').toLowerCase();
+            const cardIdLower = String(cardId || '').toLowerCase();
+            const isMysticalSpaceTyphoon = cardId === 'MysticalSpaceTyphoon' ||
+                                          cardId === 'mysticalspacetyphoon' ||
+                                          cardIdLower.includes('mysticalspacetyphoon') ||
+                                          cardNameLower.includes('mystical space typhoon');
+            const isSoulTaker = cardId === 'SoulTaker' ||
+                               cardId === 'soultaker' ||
+                               cardIdLower.includes('soultaker') ||
+                               cardNameLower.includes('soul taker');
+            const isChangeOfHeart = isChangeOfHeartCardEarly;
+            const isBrainControl = cardId === 'BrainControl' ||
+                                  cardId === 'braincontrol' ||
+                                  cardIdLower.includes('braincontrol') ||
+                                  cardNameLower.includes('brain control');
+            const isMonsterReborn = cardId === 'MonsterReborn' ||
+                                   cardId === 'monsterreborn' ||
+                                   cardIdLower.includes('monsterreborn') ||
+                                   cardNameLower.includes('monster reborn');
+            const isLastWill = cardId === 'LastWill' ||
+                              cardId === 'lastwill' ||
+                              cardIdLower.includes('lastwill') ||
+                              cardNameLower.includes('last will');
+            const isMonsterReincarnation = cardId === 'MonsterReincarnation' ||
+                                          cardId === 'monsterreincarnation' ||
+                                          cardIdLower.includes('monsterreincarnation') ||
+                                          cardNameLower.includes('monster reincarnation');
+            const isPrematureBurial = cardId === 'PrematureBurial' ||
+                                     cardId === 'prematureburial' ||
+                                     cardIdLower.includes('prematureburial') ||
+                                     cardNameLower.includes('premature burial');
+            const needsModalBeforeField = isMysticalSpaceTyphoon || isSoulTaker || isChangeOfHeart || isBrainControl || isMonsterReborn || isLastWill || isMonsterReincarnation || isPrematureBurial;
+            
+            let createdPendingChoice = false;
+            
+            // Se NÃO precisa de modal antes de ir para o campo e a carta está na mão, pode chamar processCardEffect
+            // Mas se está no campo em "set", não chamar para evitar revelar a carta
+            if (!needsModalBeforeField && !cardIsOnField) {
             // Criar um duelo temporário para processar o efeito e criar pendingChoice
-            // Mas sem colocar a carta no campo ainda
+              // Mas sem colocar a carta no campo ainda (se estava na mão)
             const tempDuel = { ...updatedDuel };
             const tempPlayerField = isPlayer1Check ? (tempDuel as any).player1Field : (tempDuel as any).player2Field;
             
             // Colocar temporariamente no campo apenas para processCardEffect criar o pendingChoice
-            // Depois vamos remover - a carta permanece na mão até o modal ser confirmado
+              // Depois vamos restaurar - a carta permanece onde estava até o modal ser confirmado
             const originalSpellTrap = tempPlayerField.spellTrap[zoneIndex];
             tempPlayerField.spellTrap[zoneIndex] = { ...cardToProcess, position: 'face-up' };
             
             // Processar efeito para criar pendingChoice (mas não vamos salvar isso)
-            const createdPendingChoice = await this.duelsService.processCardEffect(
+            // CRÍTICO: Usar CardEffectsService para processar efeitos (novo sistema de registro)
+              createdPendingChoice = await this.cardEffectsService.processCardEffect(
               duelId.toString(),
               tempDuel as any,
               isPlayer1Check,
@@ -3634,14 +3913,1194 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
               zoneIndex
             );
             
-            // Restaurar campo original (carta não foi colocada ainda)
+              // Restaurar campo original (carta não foi colocada/movida ainda)
             tempPlayerField.spellTrap[zoneIndex] = originalSpellTrap;
+            }
             
-            // Buscar duelo atualizado para ver se pendingChoice foi criado
-            updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+            // IMPORTANTE: Garantir que o duelo real não foi modificado
+            // Buscar duelo atualizado do banco
+            updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+            
+            // Verificar se a carta no campo ainda está em "set" (não foi revelada)
+            if (cardIsOnField && updatedDuel) {
+              const realPlayerField = isPlayer1Check ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
+              if (realPlayerField && realPlayerField.spellTrap && realPlayerField.spellTrap[zoneIndex]) {
+                const realCard = realPlayerField.spellTrap[zoneIndex];
+                // Se a carta foi alterada para face-up, restaurar para set
+                if (realCard.position === 'face-up' && cardToProcess.position === 'set') {
+                  realCard.position = 'set';
+                  // Salvar a correção no banco
+                  await this.duelsService.updateDuelInDatabase(duelId, {
+                    player1Field: (updatedDuel as any).player1Field,
+                    player2Field: (updatedDuel as any).player2Field,
+                  } as any);
+                  // Buscar novamente após correção
+                  updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+                }
+              }
+            }
+            
+            // Verificar se precisa de modal antes de ir para o campo (Mystical Space Typhoon ou Soul Taker)
+            console.log(`🔍 [handleDuelAction] Verificando cartas com modal antes do campo - cardId: ${cardId}, cardName: ${cardToProcess.name || cardToProcess.cardName}, isMST: ${isMysticalSpaceTyphoon}, isSoulTaker: ${isSoulTaker}, createdPendingChoice: ${createdPendingChoice}`);
+            
+            if (isMysticalSpaceTyphoon) {
+              // Mystical Space Typhoon precisa criar pendingChoice manualmente
+              console.log(`✨ [handleDuelAction] Mystical Space Typhoon detectada - criando pendingChoice manualmente`);
+              
+              // Se a carta está na mão e está em BATTLE ou STANDBY, mudar fase automaticamente
+              if (!cardIsOnField && updatedDuel) {
+                if (updatedDuel.currentPhase === TurnPhase.BATTLE) {
+                  console.log(`🔄 [handleDuelAction] Carta da mão em BATTLE - mudando para MAIN2`);
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN2);
+                } else if (updatedDuel.currentPhase === TurnPhase.STANDBY) {
+                  console.log(`🔄 [handleDuelAction] Carta da mão em STANDBY - mudando para MAIN1`);
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN1);
+                }
+              }
+              
+              // IMPORTANTE: Buscar duelo atualizado do banco para garantir que temos os dados mais recentes do oponente
+              // PRIMEIRO: Tentar buscar do cache ativo (mais rápido e mais atualizado)
+              const cachedDuel = this.duelsService.findDuelByIdLight(duelId);
+              if (cachedDuel) {
+                console.log(`✅ [handleDuelAction] Duelo encontrado no cache ativo`);
+                updatedDuel = cachedDuel;
+              } else {
+                // Se não encontrou no cache, buscar do banco
+                const latestDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+                if (latestDuel) {
+                  updatedDuel = latestDuel;
+                  console.log(`✅ [handleDuelAction] Duelo atualizado do banco - player1Field existe: ${!!(updatedDuel as any).player1Field}, player2Field existe: ${!!(updatedDuel as any).player2Field}`);
+                }
+              }
+              
+              // Verificar se os campos são strings (JSON não parseado) e fazer parse se necessário
+              if (updatedDuel) {
+                if ((updatedDuel as any).player1Field && typeof (updatedDuel as any).player1Field === 'string') {
+                  try {
+                    (updatedDuel as any).player1Field = JSON.parse((updatedDuel as any).player1Field);
+                    console.log(`✅ [handleDuelAction] player1Field parseado do JSON`);
+                  } catch (e) {
+                    console.error(`❌ [handleDuelAction] Erro ao fazer parse do player1Field:`, e);
+                  }
+                }
+                if ((updatedDuel as any).player2Field && typeof (updatedDuel as any).player2Field === 'string') {
+                  try {
+                    (updatedDuel as any).player2Field = JSON.parse((updatedDuel as any).player2Field);
+                    console.log(`✅ [handleDuelAction] player2Field parseado do JSON`);
+                  } catch (e) {
+                    console.error(`❌ [handleDuelAction] Erro ao fazer parse do player2Field:`, e);
+                  }
+                }
+              }
+              
+              // Coletar spell/trap do campo (próprio e oponente) para o modal
+              // CRÍTICO: Garantir que temos os dados mais recentes do oponente
+              console.log(`🔍 [handleDuelAction] ========== IDENTIFICAÇÃO DE JOGADORES ==========`);
+              console.log(`🔍 [handleDuelAction] userId: ${userId} (tipo: ${typeof userId})`);
+              console.log(`🔍 [handleDuelAction] updatedDuel.player1Id: ${(updatedDuel as any).player1Id} (tipo: ${typeof (updatedDuel as any).player1Id})`);
+              console.log(`🔍 [handleDuelAction] updatedDuel.player2Id: ${(updatedDuel as any).player2Id} (tipo: ${typeof (updatedDuel as any).player2Id})`);
+              console.log(`🔍 [handleDuelAction] Number(userId): ${Number(userId)}`);
+              console.log(`🔍 [handleDuelAction] Number(updatedDuel.player1Id): ${Number((updatedDuel as any).player1Id)}`);
+              console.log(`🔍 [handleDuelAction] isPlayer1Check: ${isPlayer1Check}`);
+              
+              let playerField = isPlayer1Check ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
+              let opponentField = isPlayer1Check ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
+              
+              console.log(`🔍 [handleDuelAction] playerField obtido de: ${isPlayer1Check ? 'player1Field' : 'player2Field'}`);
+              console.log(`🔍 [handleDuelAction] opponentField obtido de: ${isPlayer1Check ? 'player2Field' : 'player1Field'}`);
+              console.log(`🔍 [handleDuelAction] playerField existe: ${!!playerField}`);
+              console.log(`🔍 [handleDuelAction] opponentField existe: ${!!opponentField}`);
+              
+              // Se opponentField não existe ou não tem spellTrap, tentar buscar do cache ativo novamente
+              if (!opponentField || !opponentField.spellTrap || !Array.isArray(opponentField.spellTrap)) {
+                console.warn(`⚠️ [handleDuelAction] opponentField inválido no updatedDuel, tentando buscar do cache ativo...`);
+                const activeDuel = this.duelsService.findDuelByIdLight(duelId);
+                if (activeDuel) {
+                  console.log(`✅ [handleDuelAction] Duelo encontrado no cache ativo`);
+                  const activeOpponentField = isPlayer1Check ? (activeDuel as any).player2Field : (activeDuel as any).player1Field;
+                  console.log(`🔍 [handleDuelAction] activeOpponentField obtido de: ${isPlayer1Check ? 'player2Field' : 'player1Field'}`);
+                  console.log(`🔍 [handleDuelAction] activeOpponentField existe: ${!!activeOpponentField}`);
+                  console.log(`🔍 [handleDuelAction] activeOpponentField.spellTrap existe: ${!!(activeOpponentField?.spellTrap)}`);
+                  console.log(`🔍 [handleDuelAction] activeOpponentField.spellTrap é array: ${Array.isArray(activeOpponentField?.spellTrap)}`);
+                  if (activeOpponentField && activeOpponentField.spellTrap && Array.isArray(activeOpponentField.spellTrap)) {
+                    const cardsCount = activeOpponentField.spellTrap.filter((c: any) => c !== null && c !== undefined).length;
+                    console.log(`✅ [handleDuelAction] opponentField encontrado no cache ativo com ${cardsCount} cartas`);
+                    opponentField = activeOpponentField;
+                    // Atualizar também o updatedDuel para manter consistência
+                    if (isPlayer1Check) {
+                      (updatedDuel as any).player2Field = activeOpponentField;
+                      console.log(`✅ [handleDuelAction] Atualizado updatedDuel.player2Field com dados do cache`);
+                    } else {
+                      (updatedDuel as any).player1Field = activeOpponentField;
+                      console.log(`✅ [handleDuelAction] Atualizado updatedDuel.player1Field com dados do cache`);
+                    }
+                  } else {
+                    console.error(`❌ [handleDuelAction] activeOpponentField do cache também está inválido!`);
+                  }
+                } else {
+                  console.error(`❌ [handleDuelAction] Duelo não encontrado no cache ativo!`);
+                }
+              }
+              
+              console.log(`🔍 [handleDuelAction] ========== VERIFICAÇÃO INICIAL DE CAMPOS ==========`);
+              console.log(`🔍 [handleDuelAction] isPlayer1Check: ${isPlayer1Check}`);
+              console.log(`🔍 [handleDuelAction] playerField existe: ${!!playerField}`);
+              console.log(`🔍 [handleDuelAction] opponentField existe: ${!!opponentField}`);
+              console.log(`🔍 [handleDuelAction] playerField.spellTrap existe: ${!!(playerField?.spellTrap)}`);
+              console.log(`🔍 [handleDuelAction] opponentField.spellTrap existe: ${!!(opponentField?.spellTrap)}`);
+              console.log(`🔍 [handleDuelAction] opponentField.spellTrap tipo: ${typeof opponentField?.spellTrap}`);
+              console.log(`🔍 [handleDuelAction] opponentField.spellTrap é array: ${Array.isArray(opponentField?.spellTrap)}`);
+              if (opponentField?.spellTrap && Array.isArray(opponentField.spellTrap)) {
+                const opponentCardsCount = opponentField.spellTrap.filter((c: any) => c !== null && c !== undefined).length;
+                console.log(`🔍 [handleDuelAction] opponentField.spellTrap tem ${opponentCardsCount} cartas`);
+              }
+              
+              // CRÍTICO: Verificar se opponentField existe e tem spellTrap
+              if (!opponentField) {
+                console.error(`❌ [handleDuelAction] opponentField é null ou undefined!`);
+                console.error(`❌ [handleDuelAction] isPlayer1Check: ${isPlayer1Check}`);
+                console.error(`❌ [handleDuelAction] updatedDuel.player1Field existe: ${!!(updatedDuel as any).player1Field}`);
+                console.error(`❌ [handleDuelAction] updatedDuel.player2Field existe: ${!!(updatedDuel as any).player2Field}`);
+              } else {
+                console.log(`✅ [handleDuelAction] opponentField encontrado!`);
+                console.log(`✅ [handleDuelAction] opponentField.spellTrap existe: ${!!opponentField.spellTrap}`);
+                console.log(`✅ [handleDuelAction] opponentField.spellTrap é array: ${Array.isArray(opponentField.spellTrap)}`);
+                if (opponentField.spellTrap && Array.isArray(opponentField.spellTrap)) {
+                  const opponentCardsCount = opponentField.spellTrap.filter((c: any) => c !== null && c !== undefined).length;
+                  console.log(`✅ [handleDuelAction] opponentField.spellTrap tem ${opponentCardsCount} cartas`);
+                }
+              }
+              
+              console.log(`🔍 [handleDuelAction] ========== VERIFICAÇÃO DE CAMPOS ==========`);
+              console.log(`🔍 [handleDuelAction] isPlayer1Check: ${isPlayer1Check}`);
+              console.log(`🔍 [handleDuelAction] playerField existe: ${!!playerField}`);
+              console.log(`🔍 [handleDuelAction] opponentField existe: ${!!opponentField}`);
+              console.log(`🔍 [handleDuelAction] playerField.spellTrap existe: ${!!(playerField?.spellTrap)}`);
+              console.log(`🔍 [handleDuelAction] opponentField.spellTrap existe: ${!!(opponentField?.spellTrap)}`);
+              console.log(`🔍 [handleDuelAction] playerField.spellTrap é array: ${Array.isArray(playerField?.spellTrap)}`);
+              console.log(`🔍 [handleDuelAction] opponentField.spellTrap é array: ${Array.isArray(opponentField?.spellTrap)}`);
+              console.log(`🔍 [handleDuelAction] playerField.spellTrap length: ${playerField?.spellTrap?.length || 0}`);
+              console.log(`🔍 [handleDuelAction] opponentField.spellTrap length: ${opponentField?.spellTrap?.length || 0}`);
+              
+              // Garantir que opponentField.spellTrap é um array válido
+              if (opponentField && (!opponentField.spellTrap || !Array.isArray(opponentField.spellTrap))) {
+                console.warn(`⚠️ [handleDuelAction] opponentField.spellTrap não é um array válido! Inicializando...`);
+                opponentField.spellTrap = [null, null, null, null, null];
+              }
+              
+              // Garantir que playerField.spellTrap é um array válido
+              if (playerField && (!playerField.spellTrap || !Array.isArray(playerField.spellTrap))) {
+                console.warn(`⚠️ [handleDuelAction] playerField.spellTrap não é um array válido! Inicializando...`);
+                playerField.spellTrap = [null, null, null, null, null];
+              }
+              
+              console.log(`🔍 [handleDuelAction] ========== FIM DA VERIFICAÇÃO ==========`);
+              
+              console.log(`🔍 [handleDuelAction] Coletando spell/trap para Mystical Space Typhoon`);
+              console.log(`🔍 [handleDuelAction] playerField existe: ${!!playerField}, opponentField existe: ${!!opponentField}`);
+              console.log(`🔍 [handleDuelAction] playerField.spellTrap:`, playerField?.spellTrap);
+              console.log(`🔍 [handleDuelAction] opponentField.spellTrap:`, opponentField?.spellTrap);
+              
+              const playerSpellTraps: Array<{ card: any; zoneIndex: number; player: 'player' | 'opponent' }> = [];
+              const opponentSpellTraps: Array<{ card: any; zoneIndex: number; player: 'player' | 'opponent' }> = [];
+              
+              // Coletar do próprio campo
+              if (playerField && playerField.spellTrap && Array.isArray(playerField.spellTrap)) {
+                playerField.spellTrap.forEach((card: any, index: number) => {
+                  if (card && card !== null) {
+                    // Não incluir a própria Mystical Space Typhoon se estiver no campo
+                    const cardId = card.idCarta || card.id || card.cardId;
+                    const isMST = cardId === 'MysticalSpaceTyphoon' || 
+                                  cardId === 'mysticalspacetyphoon' ||
+                                  (typeof cardId === 'string' && cardId.toLowerCase().includes('mysticalspacetyphoon'));
+                    if (!isMST) {
+                      playerSpellTraps.push({ card, zoneIndex: index, player: 'player' });
+                    }
+                  }
+                });
+              }
+              
+              // Coletar do campo do oponente
+              // IMPORTANTE: Coletar TODAS as spell/trap do oponente, mesmo as que estão face-down (set)
+              console.log(`🔍 [handleDuelAction] ========== COLETANDO SPELL/TRAP DO OPONENTE ==========`);
+              
+              // CRÍTICO: Buscar o campo do oponente novamente do duelo atualizado para garantir que temos os dados mais recentes
+              if (!opponentField || !opponentField.spellTrap || !Array.isArray(opponentField.spellTrap)) {
+                console.warn(`⚠️ [handleDuelAction] opponentField inválido, buscando do duelo atualizado novamente...`);
+                const freshDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+                if (freshDuel) {
+                  const freshOpponentField = isPlayer1Check ? (freshDuel as any).player2Field : (freshDuel as any).player1Field;
+                  if (freshOpponentField && freshOpponentField.spellTrap && Array.isArray(freshOpponentField.spellTrap)) {
+                    opponentField = freshOpponentField;
+                    console.log(`✅ [handleDuelAction] opponentField atualizado do duelo fresco`);
+                  }
+                }
+              }
+              
+              console.log(`🔍 [handleDuelAction] opponentField existe: ${!!opponentField}`);
+              console.log(`🔍 [handleDuelAction] opponentField.spellTrap existe: ${!!(opponentField?.spellTrap)}`);
+              console.log(`🔍 [handleDuelAction] opponentField.spellTrap é array: ${Array.isArray(opponentField?.spellTrap)}`);
+              
+              // CRÍTICO: Garantir que opponentField.spellTrap é um array válido antes de iterar
+              if (!opponentField) {
+                console.error(`❌ [handleDuelAction] opponentField é null ou undefined!`);
+              } else if (!opponentField.spellTrap) {
+                console.warn(`⚠️ [handleDuelAction] opponentField.spellTrap não existe - inicializando...`);
+                opponentField.spellTrap = [null, null, null, null, null];
+              } else if (!Array.isArray(opponentField.spellTrap)) {
+                console.warn(`⚠️ [handleDuelAction] opponentField.spellTrap não é array - convertendo...`);
+                opponentField.spellTrap = [null, null, null, null, null];
+              } else {
+                // Garantir que tem 5 elementos
+                while (opponentField.spellTrap.length < 5) {
+                  opponentField.spellTrap.push(null);
+                }
+                opponentField.spellTrap = opponentField.spellTrap.slice(0, 5);
+              }
+              
+              console.log(`🔍 [handleDuelAction] opponentField.spellTrap após inicialização:`, JSON.stringify(opponentField?.spellTrap, null, 2));
+              
+              // CRÍTICO: Verificar novamente se opponentField.spellTrap é válido antes de iterar
+              if (!opponentField) {
+                console.error(`❌ [handleDuelAction] opponentField ainda é null após inicialização!`);
+              } else if (!opponentField.spellTrap) {
+                console.error(`❌ [handleDuelAction] opponentField.spellTrap ainda não existe após inicialização!`);
+                // Tentar inicializar novamente
+                opponentField.spellTrap = [null, null, null, null, null];
+              } else if (!Array.isArray(opponentField.spellTrap)) {
+                console.error(`❌ [handleDuelAction] opponentField.spellTrap ainda não é array após inicialização! Tipo: ${typeof opponentField.spellTrap}`);
+                // Tentar converter para array
+                opponentField.spellTrap = [null, null, null, null, null];
+              }
+              
+              // CRÍTICO: Antes de coletar, garantir que temos o opponentField mais atualizado
+              // Buscar novamente do duelo atualizado para ter certeza
+              if (updatedDuel) {
+                const latestOpponentField = isPlayer1Check ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
+                if (latestOpponentField && latestOpponentField.spellTrap && Array.isArray(latestOpponentField.spellTrap)) {
+                  opponentField = latestOpponentField;
+                  console.log(`✅ [handleDuelAction] opponentField atualizado com dados mais recentes antes da coleta`);
+                }
+              }
+              
+              if (opponentField && opponentField.spellTrap && Array.isArray(opponentField.spellTrap)) {
+                console.log(`✅ [handleDuelAction] Coletando spell/trap do oponente - total de zonas: ${opponentField.spellTrap.length}`);
+                // CRÍTICO: Garantir que o array tem 5 elementos
+                while (opponentField.spellTrap.length < 5) {
+                  opponentField.spellTrap.push(null);
+                }
+                opponentField.spellTrap = opponentField.spellTrap.slice(0, 5);
+                
+                console.log(`🔍 [handleDuelAction] Iniciando iteração sobre opponentField.spellTrap - total de elementos: ${opponentField.spellTrap.length}`);
+                opponentField.spellTrap.forEach((card: any, index: number) => {
+                  // IMPORTANTE: Verificar se card existe e não é null/undefined
+                  console.log(`🔍 [handleDuelAction] Iterando zona ${index} - card existe: ${!!card}, card é null: ${card === null}, card é undefined: ${card === undefined}`);
+                  if (card && card !== null && card !== undefined) {
+                    const cardName = card.name || card.cardName || 'Desconhecida';
+                    const cardPosition = card.position || 'set';
+                    const cardId = card.idCarta || card.id || card.cardId;
+                    console.log(`✅ [handleDuelAction] Oponente - Zona ${index}: ${cardName} (${cardPosition}) - ID: ${cardId}`);
+                    console.log(`✅ [handleDuelAction] Adicionando carta do oponente ao array opponentSpellTraps`);
+                    // IMPORTANTE: Garantir que o objeto card está completo antes de adicionar
+                    const cardToAdd = { 
+                      card: { ...card }, // Criar cópia para garantir que não há referências problemáticas
+                      zoneIndex: index, 
+                      player: 'opponent' as const
+                    };
+                    opponentSpellTraps.push(cardToAdd);
+                    console.log(`✅ [handleDuelAction] Carta adicionada! opponentSpellTraps.length agora é: ${opponentSpellTraps.length}`);
+                  } else {
+                    console.log(`🔍 [handleDuelAction] Oponente - Zona ${index}: vazia (card: ${card}, tipo: ${typeof card})`);
+                  }
+                });
+                console.log(`✅ [handleDuelAction] Iteração concluída - opponentSpellTraps.length: ${opponentSpellTraps.length}`);
+                console.log(`✅ [handleDuelAction] Total de spell/trap do oponente coletadas: ${opponentSpellTraps.length}`);
+                console.log(`✅ [handleDuelAction] Detalhes das cartas coletadas:`, opponentSpellTraps.map((st: any) => ({
+                  name: st.card?.name || st.card?.cardName || 'Desconhecida',
+                  zoneIndex: st.zoneIndex,
+                  position: st.card?.position || 'unknown',
+                  player: st.player
+                })));
+              } else {
+                console.error(`❌ [handleDuelAction] opponentField ou opponentField.spellTrap ainda não é válido após inicialização`);
+                console.error(`❌ [handleDuelAction] opponentField existe: ${!!opponentField}`);
+                console.error(`❌ [handleDuelAction] opponentField.spellTrap existe: ${!!(opponentField?.spellTrap)}`);
+                console.error(`❌ [handleDuelAction] opponentField.spellTrap é array: ${Array.isArray(opponentField?.spellTrap)}`);
+                if (opponentField) {
+                  console.error(`❌ [handleDuelAction] opponentField completo:`, JSON.stringify(opponentField, null, 2));
+                }
+              }
+              console.log(`🔍 [handleDuelAction] ========== FIM DA COLETA DO OPONENTE ==========`);
+              
+              console.log(`✅ [handleDuelAction] playerSpellTraps coletadas: ${playerSpellTraps.length}`);
+              console.log(`✅ [handleDuelAction] opponentSpellTraps coletadas: ${opponentSpellTraps.length}`);
+              
+              const allSpellTraps = [...playerSpellTraps, ...opponentSpellTraps];
+              
+              if (allSpellTraps.length > 0) {
+                // Verificar se updatedDuel não é null
+                if (!updatedDuel) {
+                  console.error(`❌ [handleDuelAction] updatedDuel é null - não é possível criar pendingChoice para Mystical Space Typhoon`);
+                  client.emit('duelError', { message: 'Erro ao processar Mystical Space Typhoon' });
+                  return;
+                }
+                
+                // IMPORTANTE: Se a carta está na mão, não usar zoneIndex (carta não vai para o campo)
+                // zoneIndex só é usado se a carta está no campo em "set"
+                const zoneIndexForPendingChoice = cardIsOnField ? zoneIndex : null;
+                
+                // Criar pendingChoice manualmente
+                await this.duelsService.setPendingChoice(duelId, {
+                  type: 'MYSTICAL_SPACE_TYPHOON',
+                  userId: userId,
+                  turnWhenStarted: updatedDuel.currentTurn,
+                  phaseWhenStarted: updatedDuel.currentPhase || 'MAIN1',
+                  data: {
+                    cardId: cardId,
+                    cardName: cardToProcess.name || cardToProcess.cardName,
+                    zoneIndex: zoneIndexForPendingChoice, // null se estava na mão
+                    cardInstanceId: cardToProcess.instanceId,
+                    cardData: cardToProcess,
+                    cardWasOnField: cardIsOnField,
+                    originalPosition: cardIsOnField ? (cardToProcess.position || 'set') : null
+                  }
+                });
+                
+                // Buscar duelo atualizado com pendingChoice
+                updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+                
+                // CRÍTICO: Atualizar opponentField com os dados mais recentes do duelo atualizado
+                if (updatedDuel) {
+                  const freshOpponentField = isPlayer1Check ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
+                  if (freshOpponentField) {
+                    opponentField = freshOpponentField;
+                    console.log(`✅ [handleDuelAction] opponentField atualizado com dados do duelo atualizado`);
+                  }
+                }
+                
+                console.log(`📤 [handleDuelAction] Emitindo mysticalSpaceTyphoonShowTargets apenas para quem ativou (com pendingChoice)`);
+                console.log(`📤 [handleDuelAction] playerSpellTraps: ${playerSpellTraps.length}, opponentSpellTraps: ${opponentSpellTraps.length}`);
+                console.log(`📤 [handleDuelAction] cardIsOnField: ${cardIsOnField}, zoneIndex: ${zoneIndexForPendingChoice}`);
+                console.log(`📤 [handleDuelAction] Detalhes das cartas do oponente:`, opponentSpellTraps.map((st: any) => ({
+                  cardName: st.card?.name || st.card?.cardName || 'Desconhecida',
+                  zoneIndex: st.zoneIndex,
+                  position: st.card?.position || 'unknown'
+                })));
+                
+                // IMPORTANTE: Garantir que opponentSpellTraps não está vazio quando deveria ter cartas
+                // Se opponentSpellTraps está vazio mas opponentField tem cartas, tentar coletar novamente
+                if (opponentSpellTraps.length === 0 && opponentField && opponentField.spellTrap && Array.isArray(opponentField.spellTrap)) {
+                  const hasOpponentCards = opponentField.spellTrap.some((card: any) => card !== null && card !== undefined);
+                  if (hasOpponentCards) {
+                    console.warn(`⚠️ [handleDuelAction] opponentSpellTraps está vazio mas opponentField tem cartas! Tentando coletar novamente...`);
+                    opponentField.spellTrap.forEach((card: any, index: number) => {
+                      if (card && card !== null) {
+                        const cardName = card.name || card.cardName || 'Desconhecida';
+                        const cardPosition = card.position || 'set';
+                        const cardId = card.idCarta || card.id || card.cardId;
+                        console.log(`🔍 [handleDuelAction] Re-coletando - Oponente - Zona ${index}: ${cardName} (${cardPosition}) - ID: ${cardId}`);
+                        opponentSpellTraps.push({ card, zoneIndex: index, player: 'opponent' });
+                      }
+                    });
+                    console.log(`✅ [handleDuelAction] Após re-coleta: ${opponentSpellTraps.length} cartas do oponente`);
+                  }
+                }
+                
+                // Emitir apenas para o cliente que ativou a carta
+                // CRÍTICO: Garantir que opponentSpellTraps está sendo enviado corretamente
+                // Se opponentSpellTraps ainda estiver vazio, tentar coletar uma última vez diretamente do updatedDuel
+                if (opponentSpellTraps.length === 0 && updatedDuel) {
+                  console.warn(`⚠️ [handleDuelAction] opponentSpellTraps ainda está vazio! Tentando coletar diretamente do updatedDuel...`);
+                  const finalOpponentField = isPlayer1Check ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
+                  if (finalOpponentField && finalOpponentField.spellTrap && Array.isArray(finalOpponentField.spellTrap)) {
+                    console.log(`✅ [handleDuelAction] finalOpponentField encontrado com ${finalOpponentField.spellTrap.length} zonas`);
+                    finalOpponentField.spellTrap.forEach((card: any, index: number) => {
+                      if (card && card !== null && card !== undefined) {
+                        const cardName = card.name || card.cardName || 'Desconhecida';
+                        const cardPosition = card.position || 'set';
+                        console.log(`🔍 [handleDuelAction] Coleta final - Oponente - Zona ${index}: ${cardName} (${cardPosition})`);
+                        opponentSpellTraps.push({ 
+                          card: { ...card }, 
+                          zoneIndex: index, 
+                          player: 'opponent' 
+                        });
+                      }
+                    });
+                    console.log(`✅ [handleDuelAction] Após coleta final: ${opponentSpellTraps.length} cartas do oponente`);
+                  } else {
+                    console.error(`❌ [handleDuelAction] Não foi possível coletar do finalOpponentField`);
+                    console.error(`❌ [handleDuelAction] finalOpponentField existe: ${!!finalOpponentField}`);
+                    console.error(`❌ [handleDuelAction] finalOpponentField.spellTrap existe: ${!!(finalOpponentField?.spellTrap)}`);
+                    console.error(`❌ [handleDuelAction] finalOpponentField.spellTrap é array: ${Array.isArray(finalOpponentField?.spellTrap)}`);
+                  }
+                }
+                
+                // CRÍTICO: Verificar uma última vez se opponentSpellTraps está vazio quando não deveria estar
+                console.log(`🔍 [handleDuelAction] ========== VERIFICAÇÃO FINAL ANTES DE ENVIAR ==========`);
+                console.log(`🔍 [handleDuelAction] opponentSpellTraps.length: ${opponentSpellTraps.length}`);
+                console.log(`🔍 [handleDuelAction] opponentField existe: ${!!opponentField}`);
+                if (opponentField) {
+                  console.log(`🔍 [handleDuelAction] opponentField.spellTrap existe: ${!!opponentField.spellTrap}`);
+                  console.log(`🔍 [handleDuelAction] opponentField.spellTrap é array: ${Array.isArray(opponentField.spellTrap)}`);
+                  if (opponentField.spellTrap && Array.isArray(opponentField.spellTrap)) {
+                    const totalCards = opponentField.spellTrap.filter((c: any) => c !== null && c !== undefined).length;
+                    console.log(`🔍 [handleDuelAction] opponentField.spellTrap tem ${totalCards} cartas no total`);
+                    console.log(`🔍 [handleDuelAction] opponentField.spellTrap completo:`, JSON.stringify(opponentField.spellTrap.map((c: any, i: number) => ({
+                      index: i,
+                      hasCard: !!c,
+                      cardName: c?.name || c?.cardName || 'null',
+                      cardId: c?.idCarta || c?.id || c?.cardId || 'null'
+                    })), null, 2));
+                  }
+                }
+                console.log(`🔍 [handleDuelAction] opponentSpellTraps coletadas:`, opponentSpellTraps.map((st: any) => ({
+                  cardName: st?.card?.name || st?.card?.cardName || 'Desconhecida',
+                  zoneIndex: st?.zoneIndex,
+                  position: st?.card?.position || 'unknown',
+                  player: st?.player,
+                  hasCard: !!st?.card
+                })));
+                
+                const eventData = {
+                  playerSpellTraps: playerSpellTraps || [],
+                  opponentSpellTraps: opponentSpellTraps || [], // Garantir que sempre é um array
+                  spellTrapZoneIndex: zoneIndexForPendingChoice, // null se estava na mão
+                  duelId: duelId,
+                };
+                
+                console.log(`📤 [handleDuelAction] ========== EMITINDO EVENTO ==========`);
+                console.log(`📤 [handleDuelAction] playerSpellTraps: ${playerSpellTraps.length}`);
+                console.log(`📤 [handleDuelAction] opponentSpellTraps: ${opponentSpellTraps.length}`);
+                console.log(`📤 [handleDuelAction] eventData.opponentSpellTraps: ${eventData.opponentSpellTraps.length}`);
+                console.log(`📤 [handleDuelAction] eventData.opponentSpellTraps é array: ${Array.isArray(eventData.opponentSpellTraps)}`);
+                console.log(`📤 [handleDuelAction] Detalhes finais das opponentSpellTraps no eventData:`, eventData.opponentSpellTraps.map((st: any) => ({
+                  cardName: st?.card?.name || st?.card?.cardName || 'Desconhecida',
+                  zoneIndex: st?.zoneIndex,
+                  position: st?.card?.position || 'unknown',
+                  player: st?.player,
+                  hasCard: !!st?.card
+                })));
+                console.log(`📤 [handleDuelAction] eventData completo (JSON):`, JSON.stringify({
+                  playerSpellTrapsCount: eventData.playerSpellTraps.length,
+                  opponentSpellTrapsCount: eventData.opponentSpellTraps.length,
+                  opponentSpellTraps: eventData.opponentSpellTraps.map((st: any) => ({
+                    cardName: st?.card?.name || st?.card?.cardName || 'Desconhecida',
+                    zoneIndex: st?.zoneIndex,
+                    player: st?.player
+                  }))
+                }, null, 2));
+                
+                client.emit('mysticalSpaceTyphoonShowTargets', eventData);
+                
+                console.log(`✅ [handleDuelAction] Evento mysticalSpaceTyphoonShowTargets emitido apenas para o cliente que ativou`);
+                console.log(`✅ [handleDuelAction] Dados enviados - playerSpellTraps: ${JSON.stringify(playerSpellTraps.map((st: any) => ({ name: st.card?.name, zoneIndex: st.zoneIndex })))}`);
+                console.log(`✅ [handleDuelAction] Dados enviados - opponentSpellTraps: ${JSON.stringify(opponentSpellTraps.map((st: any) => ({ name: st.card?.name, zoneIndex: st.zoneIndex })))}`);
+                console.log(`📤 [handleDuelAction] ========== FIM DA EMISSÃO ==========`);
+                
+                // Emitir atualização do duelo (com pendingChoice mas sem carta no campo)
+                if (updatedDuel) {
+                  this.server.to(`duel_${duelId}`).emit('duelUpdate', updatedDuel);
+                }
+                return; // Aguardar escolha do usuário
+              } else {
+                console.log(`ℹ️ [handleDuelAction] Nenhuma spell/trap no campo para Mystical Space Typhoon destruir`);
+                // Se não há spell/trap, não criar pendingChoice e não colocar carta no campo
+                return;
+              }
+            }
+            
+            if (isSoulTaker) {
+              // Soul Taker precisa criar pendingChoice manualmente (mesmo padrão do Mystical Space Typhoon)
+              console.log(`✨ [handleDuelAction] Soul Taker detectada - criando pendingChoice manualmente`);
+              
+              // Se a carta está na mão e está em BATTLE ou STANDBY, mudar fase automaticamente
+              if (!cardIsOnField && updatedDuel) {
+                if (updatedDuel.currentPhase === TurnPhase.BATTLE) {
+                  console.log(`🔄 [handleDuelAction] Carta da mão em BATTLE - mudando para MAIN2`);
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN2);
+                } else if (updatedDuel.currentPhase === TurnPhase.STANDBY) {
+                  console.log(`🔄 [handleDuelAction] Carta da mão em STANDBY - mudando para MAIN1`);
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN1);
+                }
+              }
+              
+              const playerField = isPlayer1Check ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
+              const opponentField = isPlayer1Check ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
+              
+              // Coletar apenas monstros FACE-UP do campo do oponente (attack ou defense, não set)
+              const opponentMonstersWithIndices: Array<{ monster: any; zoneIndex: number }> = [];
+              (opponentField?.monsters || []).forEach((m: any, index: number) => {
+                if (m && m !== null && m !== undefined) {
+                  const position = m.position || 'attack';
+                  // Só pode destruir monstros face-up (attack ou defense, não set)
+                  if (position === 'attack' || position === 'defense') {
+                    opponentMonstersWithIndices.push({ monster: m, zoneIndex: index });
+                  }
+                }
+              });
+              
+              const opponentMonsters = opponentMonstersWithIndices.map((om: any) => ({
+                ...om.monster,
+                zoneIndex: om.zoneIndex, // Incluir zoneIndex no objeto do monstro
+              }));
+              
+              if (opponentMonsters.length > 0) {
+                // Verificar se updatedDuel não é null
+                if (!updatedDuel) {
+                  console.error(`❌ [handleDuelAction] updatedDuel é null - não é possível criar pendingChoice para Soul Taker`);
+                  client.emit('duelError', { message: 'Erro ao processar Soul Taker' });
+                  return;
+                }
+                
+                // IMPORTANTE: Se a carta está na mão, não usar zoneIndex (carta não vai para o campo)
+                // zoneIndex só é usado se a carta está no campo em "set"
+                const zoneIndexForPendingChoice = cardIsOnField ? zoneIndex : null;
+                
+                // Criar pendingChoice manualmente
+                await this.duelsService.setPendingChoice(duelId, {
+                  type: 'SOUL_TAKER',
+                  userId: userId,
+                  turnWhenStarted: updatedDuel.currentTurn,
+                  phaseWhenStarted: updatedDuel.currentPhase || 'MAIN1',
+                  data: {
+                    cardId: cardId,
+                    cardName: cardToProcess.name || cardToProcess.cardName,
+                    zoneIndex: zoneIndexForPendingChoice, // null se estava na mão
+                    cardInstanceId: cardToProcess.instanceId,
+                    cardData: cardToProcess,
+                    cardWasOnField: cardIsOnField,
+                    originalPosition: cardIsOnField ? (cardToProcess.position || 'set') : null,
+                    opponentMonsters: opponentMonsters, // Já inclui zoneIndex em cada monstro
+                  }
+                });
+                
+                // Buscar duelo atualizado com pendingChoice
+                updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+                
+                console.log(`📤 [handleDuelAction] Emitindo soulTakerShowOpponentMonsters apenas para quem ativou (com pendingChoice)`);
+                console.log(`📤 [handleDuelAction] opponentMonsters: ${opponentMonsters.length}, cardIsOnField: ${cardIsOnField}, zoneIndex: ${zoneIndexForPendingChoice}`);
+                // Emitir apenas para o cliente que ativou a carta
+                client.emit('soulTakerShowOpponentMonsters', {
+                  opponentMonsters: opponentMonsters,
+                  duelId: duelId,
+                });
+                console.log(`✅ [handleDuelAction] Evento soulTakerShowOpponentMonsters emitido apenas para o cliente que ativou`);
+                
+                // Emitir atualização do duelo (com pendingChoice mas sem carta no campo)
+                if (updatedDuel) {
+                  this.server.to(`duel_${duelId}`).emit('duelUpdate', updatedDuel);
+                }
+                return; // Aguardar escolha do usuário
+              } else {
+                console.log(`ℹ️ [handleDuelAction] Nenhum monstro face-up no campo do oponente para Soul Taker destruir`);
+                // Se não há monstros face-up, não criar pendingChoice e não colocar carta no campo
+                return;
+              }
+            }
+            
+            if (isChangeOfHeart) {
+              // Change Of Heart precisa criar pendingChoice manualmente (mesmo padrão do Mystical Space Typhoon)
+              console.log(`✨ [handleDuelAction] Change Of Heart detectada - criando pendingChoice manualmente`);
+              
+              // Se a carta está na mão e está em BATTLE ou STANDBY, mudar fase automaticamente
+              if (!cardIsOnField && updatedDuel) {
+                if (updatedDuel.currentPhase === TurnPhase.BATTLE) {
+                  console.log(`🔄 [handleDuelAction] Carta da mão em BATTLE - mudando para MAIN2`);
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN2);
+                } else if (updatedDuel.currentPhase === TurnPhase.STANDBY) {
+                  console.log(`🔄 [handleDuelAction] Carta da mão em STANDBY - mudando para MAIN1`);
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN1);
+                }
+              }
+              
+              const playerField = isPlayer1Check ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
+              const opponentField = isPlayer1Check ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
+              
+              // Coletar monstros do campo do oponente (qualquer posição, exceto Mataza The Zapper face-up)
+              const opponentMonstersWithIndices: Array<{ monster: any; zoneIndex: number }> = [];
+              (opponentField?.monsters || []).forEach((m: any, index: number) => {
+                if (m && m !== null && m !== undefined) {
+                  // Pode controlar monstros em qualquer posição (attack, defense ou set)
+                  // EXCETO Mataza The Zapper quando está face-up
+                  const cardIdMonster = m.idCarta || m.id || m.cardId;
+                  const cardNameMonster = (m.name || m.cardName || '').toLowerCase();
+                  const isMatazaFaceUp = (cardIdMonster === 'MatazaTheZapper' || 
+                                          cardIdMonster === 'matazathezapper' ||
+                                          cardNameMonster.includes('mataza the zapper')) &&
+                                         (m.position === 'attack' || m.position === 'defense');
+                  
+                  if (!isMatazaFaceUp) {
+                    opponentMonstersWithIndices.push({ monster: m, zoneIndex: index });
+                  }
+                }
+              });
+              
+              const opponentMonsters = opponentMonstersWithIndices.map((om: any) => ({
+                ...om.monster,
+                zoneIndex: om.zoneIndex, // Incluir zoneIndex no objeto do monstro
+              }));
+              
+              if (opponentMonsters.length > 0) {
+                // Verificar se updatedDuel não é null
+                if (!updatedDuel) {
+                  console.error(`❌ [handleDuelAction] updatedDuel é null - não é possível criar pendingChoice para Change Of Heart`);
+                  client.emit('duelError', { message: 'Erro ao processar Change Of Heart' });
+                  return;
+                }
+                
+                // IMPORTANTE: Se a carta está na mão, não usar zoneIndex (carta não vai para o campo ainda)
+                // zoneIndex só é usado se a carta está no campo em "set"
+                const zoneIndexForPendingChoice = cardIsOnField ? zoneIndex : null;
+                
+                // Criar pendingChoice manualmente
+                await this.duelsService.setPendingChoice(duelId, {
+                  type: 'CHANGE_OF_HEART',
+                  userId: userId,
+                  turnWhenStarted: updatedDuel.currentTurn,
+                  phaseWhenStarted: updatedDuel.currentPhase || 'MAIN1',
+                  data: {
+                    cardId: cardId,
+                    cardName: cardToProcess.name || cardToProcess.cardName,
+                    zoneIndex: zoneIndexForPendingChoice, // null se estava na mão
+                    cardInstanceId: cardToProcess.instanceId,
+                    cardData: cardToProcess,
+                    cardWasOnField: cardIsOnField,
+                    originalPosition: cardIsOnField ? (cardToProcess.position || 'set') : null,
+                    opponentMonsters: opponentMonsters, // Já inclui zoneIndex em cada monstro
+                  }
+                });
+                
+                // Buscar duelo atualizado com pendingChoice
+                updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+                
+                console.log(`📤 [handleDuelAction] Emitindo changeOfHeartShowOpponentMonsters apenas para quem ativou (com pendingChoice)`);
+                console.log(`📤 [handleDuelAction] opponentMonsters: ${opponentMonsters.length}, cardIsOnField: ${cardIsOnField}, zoneIndex: ${zoneIndexForPendingChoice}`);
+                // Emitir apenas para o cliente que ativou a carta
+                client.emit('changeOfHeartShowOpponentMonsters', {
+                  opponentMonsters: opponentMonsters,
+                  duelId: duelId,
+                });
+                console.log(`✅ [handleDuelAction] Evento changeOfHeartShowOpponentMonsters emitido apenas para o cliente que ativou`);
+                
+                // Emitir atualização do duelo (com pendingChoice mas sem carta no campo)
+                if (updatedDuel) {
+                  this.server.to(`duel_${duelId}`).emit('duelUpdate', updatedDuel);
+                }
+                return; // Aguardar escolha do usuário
+              } else {
+                console.log(`ℹ️ [handleDuelAction] Nenhum monstro no campo do oponente para Change Of Heart controlar`);
+                // Se não há monstros, não criar pendingChoice e não colocar carta no campo
+                return;
+              }
+            }
+            
+            if (isBrainControl) {
+              // Brain Control precisa criar pendingChoice manualmente (mesmo padrão do Mystical Space Typhoon)
+              console.log(`✨ [handleDuelAction] Brain Control detectada - criando pendingChoice manualmente`);
+              
+              // Se a carta está na mão e está em BATTLE ou STANDBY, mudar fase automaticamente
+              if (!cardIsOnField && updatedDuel) {
+                if (updatedDuel.currentPhase === TurnPhase.BATTLE) {
+                  console.log(`🔄 [handleDuelAction] Carta da mão em BATTLE - mudando para MAIN2`);
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN2);
+                } else if (updatedDuel.currentPhase === TurnPhase.STANDBY) {
+                  console.log(`🔄 [handleDuelAction] Carta da mão em STANDBY - mudando para MAIN1`);
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN1);
+                }
+              }
+              
+              const playerField = isPlayer1Check ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
+              const opponentField = isPlayer1Check ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
+              
+              // Coletar apenas monstros FACE-UP do campo do oponente (attack ou defense, não set)
+              // EXCETO Mataza The Zapper face-up (não pode ser controlada)
+              const opponentMonstersWithIndices: Array<{ monster: any; zoneIndex: number }> = [];
+              (opponentField?.monsters || []).forEach((m: any, index: number) => {
+                if (m && m !== null && m !== undefined) {
+                  const position = m.position || 'attack';
+                  // Só pode controlar monstros face-up (attack ou defense, não set)
+                  if (position === 'attack' || position === 'defense') {
+                    const cardIdMonster = m.idCarta || m.id || m.cardId;
+                    const cardNameMonster = (m.name || m.cardName || '').toLowerCase();
+                    const isMatazaFaceUp = (cardIdMonster === 'MatazaTheZapper' || 
+                                            cardIdMonster === 'matazathezapper' ||
+                                            cardNameMonster.includes('mataza the zapper'));
+                    if (!isMatazaFaceUp) {
+                      opponentMonstersWithIndices.push({ monster: m, zoneIndex: index });
+                    }
+                  }
+                }
+              });
+              
+              const opponentMonsters = opponentMonstersWithIndices.map((om: any) => ({
+                ...om.monster,
+                zoneIndex: om.zoneIndex, // Incluir zoneIndex no objeto do monstro
+              }));
+              
+              if (opponentMonsters.length > 0) {
+                // Verificar se updatedDuel não é null
+                if (!updatedDuel) {
+                  console.error(`❌ [handleDuelAction] updatedDuel é null - não é possível criar pendingChoice para Brain Control`);
+                  client.emit('duelError', { message: 'Erro ao processar Brain Control' });
+                  return;
+                }
+                
+                // IMPORTANTE: Se a carta está na mão, não usar zoneIndex (carta não vai para o campo ainda)
+                // zoneIndex só é usado se a carta está no campo em "set"
+                const zoneIndexForPendingChoice = cardIsOnField ? zoneIndex : null;
+                
+                // Criar pendingChoice manualmente
+                await this.duelsService.setPendingChoice(duelId, {
+                  type: 'BRAIN_CONTROL',
+                  userId: userId,
+                  turnWhenStarted: updatedDuel.currentTurn,
+                  phaseWhenStarted: updatedDuel.currentPhase || 'MAIN1',
+                  data: {
+                    cardId: cardId,
+                    cardName: cardToProcess.name || cardToProcess.cardName,
+                    zoneIndex: zoneIndexForPendingChoice, // null se estava na mão
+                    cardInstanceId: cardToProcess.instanceId,
+                    cardData: cardToProcess,
+                    cardWasOnField: cardIsOnField,
+                    originalPosition: cardIsOnField ? (cardToProcess.position || 'set') : null,
+                    opponentMonsters: opponentMonsters, // Já inclui zoneIndex em cada monstro
+                  }
+                });
+                
+                // Buscar duelo atualizado com pendingChoice
+                updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+                
+                console.log(`📤 [handleDuelAction] Emitindo brainControlShowOpponentMonsters apenas para quem ativou (com pendingChoice)`);
+                console.log(`📤 [handleDuelAction] opponentMonsters: ${opponentMonsters.length}, cardIsOnField: ${cardIsOnField}, zoneIndex: ${zoneIndexForPendingChoice}`);
+                // Emitir apenas para o cliente que ativou a carta
+                client.emit('brainControlShowOpponentMonsters', {
+                  opponentMonsters: opponentMonsters,
+                  duelId: duelId,
+                });
+                console.log(`✅ [handleDuelAction] Evento brainControlShowOpponentMonsters emitido apenas para o cliente que ativou`);
+                
+                // Emitir atualização do duelo (com pendingChoice mas sem carta no campo)
+                if (updatedDuel) {
+                  this.server.to(`duel_${duelId}`).emit('duelUpdate', updatedDuel);
+                }
+                return; // Aguardar escolha do usuário
+              } else {
+                console.log(`ℹ️ [handleDuelAction] Nenhum monstro face-up no campo do oponente para Brain Control controlar`);
+                // Se não há monstros face-up, não criar pendingChoice e não colocar carta no campo
+                return;
+              }
+            }
+            
+            if (isMonsterReborn) {
+              // MonsterReborn precisa criar pendingChoice manualmente (mesmo padrão do Change Of Heart)
+              console.log(`✨ [handleDuelAction] MonsterReborn detectada - criando pendingChoice manualmente`);
+              
+              // Se a carta está na mão e está em BATTLE ou STANDBY, mudar fase automaticamente
+              if (!cardIsOnField && updatedDuel) {
+                if (updatedDuel.currentPhase === TurnPhase.BATTLE) {
+                  console.log(`🔄 [handleDuelAction] Carta da mão em BATTLE - mudando para MAIN2`);
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN2);
+                } else if (updatedDuel.currentPhase === TurnPhase.STANDBY) {
+                  console.log(`🔄 [handleDuelAction] Carta da mão em STANDBY - mudando para MAIN1`);
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN1);
+                }
+              }
+              
+              const playerField = isPlayer1Check ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
+              const opponentField = isPlayer1Check ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
+              
+              // Coletar monstros dos cemitérios (apenas monstros)
+              const playerGraveyard = playerField?.graveyard || [];
+              const opponentGraveyard = opponentField?.graveyard || [];
+              
+              const playerMonsters = playerGraveyard.filter((c: any) => {
+                const cardType = c.type || c.cardType;
+                return cardType === 'Monster';
+              });
+              
+              const opponentMonsters = opponentGraveyard.filter((c: any) => {
+                const cardType = c.type || c.cardType;
+                return cardType === 'Monster';
+              });
+              
+              if (playerMonsters.length > 0 || opponentMonsters.length > 0) {
+                // Verificar se updatedDuel não é null
+                if (!updatedDuel) {
+                  console.error(`❌ [handleDuelAction] updatedDuel é null - não é possível criar pendingChoice para MonsterReborn`);
+                  client.emit('duelError', { message: 'Erro ao processar MonsterReborn' });
+                  return;
+                }
+                
+                // IMPORTANTE: Se a carta está na mão, não usar zoneIndex (carta não vai para o campo ainda)
+                // zoneIndex só é usado se a carta está no campo em "set"
+                const zoneIndexForPendingChoice = cardIsOnField ? zoneIndex : null;
+                
+                // Criar pendingChoice manualmente
+                await this.duelsService.setPendingChoice(duelId, {
+                  type: 'MONSTER_REBORN',
+                  userId: userId,
+                  turnWhenStarted: updatedDuel.currentTurn,
+                  phaseWhenStarted: updatedDuel.currentPhase || 'MAIN1',
+                  data: {
+                    cardId: cardId,
+                    cardName: cardToProcess.name || cardToProcess.cardName,
+                    zoneIndex: zoneIndexForPendingChoice, // null se estava na mão
+                    cardInstanceId: cardToProcess.instanceId,
+                    cardData: cardToProcess,
+                    cardWasOnField: cardIsOnField,
+                    originalPosition: cardIsOnField ? (cardToProcess.position || 'set') : null,
+                    playerGraveyard: playerMonsters,
+                    opponentGraveyard: opponentMonsters,
+                  }
+                });
+                
+                // Buscar duelo atualizado com pendingChoice
+                updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+                
+                console.log(`📤 [handleDuelAction] Emitindo monsterRebornShowGraveyards apenas para quem ativou (com pendingChoice)`);
+                console.log(`📤 [handleDuelAction] playerMonsters: ${playerMonsters.length}, opponentMonsters: ${opponentMonsters.length}, cardIsOnField: ${cardIsOnField}, zoneIndex: ${zoneIndexForPendingChoice}`);
+                // Emitir apenas para o cliente que ativou a carta
+                client.emit('monsterRebornShowGraveyards', {
+                  playerGraveyard: playerMonsters,
+                  opponentGraveyard: opponentMonsters,
+                  duelId: duelId,
+                });
+                console.log(`✅ [handleDuelAction] Evento monsterRebornShowGraveyards emitido apenas para o cliente que ativou`);
+                
+                // Emitir atualização do duelo (com pendingChoice mas sem carta no campo)
+                if (updatedDuel) {
+                  this.server.to(`duel_${duelId}`).emit('duelUpdate', updatedDuel);
+                }
+                return; // Aguardar escolha do usuário
+              } else {
+                console.log(`ℹ️ [handleDuelAction] Nenhum monstro nos cemitérios para MonsterReborn reviver`);
+                // Se não há monstros, não criar pendingChoice e não colocar carta no campo
+                return;
+              }
+            }
+            
+            if (isPrematureBurial) {
+              // Premature Burial: paga 800 LP, seleciona 1 monstro do SEU cemitério, invoca em ataque e equipa esta carta ao monstro; se um for destruído, ambos vão ao cemitério
+              console.log(`✨ [handleDuelAction] Premature Burial detectada - pagar 800 LP e escolher monstro do próprio cemitério`);
+              const currentLP = isPlayer1Check ? (updatedDuel as any).player1LifePoints : (updatedDuel as any).player2LifePoints;
+              if (currentLP < 800) {
+                client.emit('duelError', { message: 'Premature Burial: você precisa de pelo menos 800 LP para ativar.' });
+                return;
+              }
+              const playerField = isPlayer1Check ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
+              const playerGraveyard = playerField?.graveyard || [];
+              const playerMonsters = playerGraveyard.filter((c: any) => {
+                const cardType = c.type || c.cardType;
+                return cardType === 'Monster';
+              });
+              if (playerMonsters.length === 0) {
+                client.emit('duelError', { message: 'Premature Burial: não há monstros no seu cemitério.' });
+                return;
+              }
+              if (!updatedDuel) {
+                client.emit('duelError', { message: 'Erro ao processar Premature Burial' });
+                return;
+              }
+              // Pagar 800 LP
+              if (isPlayer1Check) {
+                (updatedDuel as any).player1LifePoints = Math.max(0, (updatedDuel as any).player1LifePoints - 800);
+              } else {
+                (updatedDuel as any).player2LifePoints = Math.max(0, (updatedDuel as any).player2LifePoints - 800);
+              }
+              await this.duelsService.updateDuelInDatabase(duelId, {
+                player1Field: (updatedDuel as any).player1Field,
+                player2Field: (updatedDuel as any).player2Field,
+                player1LifePoints: (updatedDuel as any).player1LifePoints,
+                player2LifePoints: (updatedDuel as any).player2LifePoints,
+              } as any);
+              const zoneIndexForPendingChoice = cardIsOnField ? zoneIndex : null;
+              await this.duelsService.setPendingChoice(duelId, {
+                type: 'PREMATURE_BURIAL',
+                userId: userId,
+                turnWhenStarted: updatedDuel.currentTurn,
+                phaseWhenStarted: updatedDuel.currentPhase || 'MAIN1',
+                data: {
+                  cardId: cardId,
+                  cardName: cardToProcess.name || cardToProcess.cardName,
+                  zoneIndex: zoneIndexForPendingChoice,
+                  cardInstanceId: cardToProcess.instanceId,
+                  cardData: cardToProcess,
+                  cardWasOnField: cardIsOnField,
+                  originalPosition: cardIsOnField ? (cardToProcess.position || 'set') : null,
+                  playerGraveyard: playerMonsters,
+                }
+              });
+              const updatedDuelWithPending = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+              client.emit('prematureBurialShowGraveyard', {
+                playerGraveyard: playerMonsters,
+                duelId: duelId,
+              });
+              if (updatedDuelWithPending) {
+                this.server.to(`duel_${duelId}`).emit('duelUpdate', updatedDuelWithPending);
+              }
+              return;
+            }
+            
+            if (isLastWill) {
+              // Last Will precisa criar modal manualmente (mesmo padrão do Monster Reborn)
+              console.log(`✨ [handleDuelAction] Last Will detectada - criando modal manualmente`);
+              
+              // Se a carta está na mão e está em BATTLE ou STANDBY, mudar fase automaticamente
+              if (!cardIsOnField && updatedDuel) {
+                if (updatedDuel.currentPhase === TurnPhase.BATTLE) {
+                  console.log(`🔄 [handleDuelAction] Carta da mão em BATTLE - mudando para MAIN2`);
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN2);
+                } else if (updatedDuel.currentPhase === TurnPhase.STANDBY) {
+                  console.log(`🔄 [handleDuelAction] Carta da mão em STANDBY - mudando para MAIN1`);
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN1);
+                }
+              }
+              
+              const playerField = isPlayer1Check ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
+              
+              // Verificar se um monstro foi destruído neste turno
+              const monsterDestroyedThisTurn = playerField?.monsterDestroyedThisTurn || false;
+              
+              if (!monsterDestroyedThisTurn) {
+                console.log(`❌ [handleDuelAction] Last Will: Nenhum monstro foi destruído no campo do jogador neste turno - não pode ser ativada`);
+                client.emit('duelError', { message: 'Last Will não pode ser ativada: Nenhum monstro foi destruído no seu campo neste turno.' });
+                return;
+              }
+              
+              // Coletar monstros do deck com ATK <= 1500
+              const deck = playerField?.deck || [];
+              const eligibleMonsters: Array<{ monster: any; deckIndex: number }> = [];
+              
+              deck.forEach((c: any, deckIndex: number) => {
+                if (!c) return;
+                
+                // Verificar se é um monstro
+                const cardType = (c.type || c.cardType || '').toString().toUpperCase().trim();
+                const isMonster = cardType === 'MONSTER' || cardType === 'MONSTRO' || cardType.includes('MONSTER');
+                if (!isMonster) return;
+                
+                // Verificar se tem ATK <= 1500
+                const atk = Number(c.atk || c.cardAtk || 0);
+                if (isNaN(atk) || atk > 1500) return;
+                
+                // Adicionar com o índice real do deck
+                eligibleMonsters.push({
+                  ...c,
+                  deckIndex: deckIndex,
+                });
+              });
+              
+              if (eligibleMonsters.length > 0) {
+                // Verificar se updatedDuel não é null
+                if (!updatedDuel) {
+                  console.error(`❌ [handleDuelAction] updatedDuel é null - não é possível criar modal para Last Will`);
+                  client.emit('duelError', { message: 'Erro ao processar Last Will' });
+                  return;
+                }
+                
+                // IMPORTANTE: Se a carta está na mão, não usar zoneIndex (carta não vai para o campo ainda)
+                // zoneIndex só é usado se a carta está no campo em "set"
+                const zoneIndexForPendingChoice = cardIsOnField ? zoneIndex : null;
+                
+                // Criar pendingChoice manualmente
+                const lastWillPendingChoice: any = {
+                  type: 'LAST_WILL',
+                  userId: userId,
+                  turnWhenStarted: updatedDuel.currentTurn,
+                  phaseWhenStarted: updatedDuel.currentPhase || 'MAIN1',
+                  data: {
+                    cardId: cardId,
+                    cardName: cardToProcess.name || cardToProcess.cardName,
+                    zoneIndex: zoneIndexForPendingChoice, // null se estava na mão
+                    cardInstanceId: cardToProcess.instanceId,
+                    cardData: cardToProcess,
+                    cardWasOnField: cardIsOnField,
+                    originalPosition: cardIsOnField ? (cardToProcess.position || 'set') : null,
+                    eligibleMonsters: eligibleMonsters,
+                  }
+                };
+                await this.duelsService.setPendingChoice(duelId, lastWillPendingChoice);
+                
+                // Buscar duelo atualizado com pendingChoice
+                updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+                
+                console.log(`📤 [handleDuelAction] Emitindo lastWillShowDeck apenas para quem ativou (com pendingChoice)`);
+                console.log(`📤 [handleDuelAction] eligibleMonsters: ${eligibleMonsters.length}, cardIsOnField: ${cardIsOnField}, zoneIndex: ${zoneIndexForPendingChoice}`);
+                // Emitir apenas para o cliente que ativou a carta
+                client.emit('lastWillShowDeck', {
+                  eligibleMonsters: eligibleMonsters,
+                  duelId: duelId,
+                });
+                console.log(`✅ [handleDuelAction] Evento lastWillShowDeck emitido apenas para o cliente que ativou`);
+                
+                // Emitir atualização do duelo (com pendingChoice mas sem carta no campo)
+                if (updatedDuel) {
+                  this.server.to(`duel_${duelId}`).emit('duelUpdate', updatedDuel);
+                }
+                return; // Aguardar escolha do usuário
+              } else {
+                console.log(`ℹ️ [handleDuelAction] Nenhum monstro com ATK <= 1500 no deck para Last Will invocar`);
+                client.emit('duelError', { message: 'Nenhum monstro com ATK <= 1500 no deck.' });
+                return;
+              }
+            }
+            
+            if (isMonsterReincarnation) {
+              // Monster Reincarnation precisa criar modal manualmente (dois passos: descartar carta, escolher monstro)
+              console.log(`✨ [handleDuelAction] Monster Reincarnation detectada - criando modal manualmente`);
+              
+              if (!updatedDuel) {
+                console.error(`❌ [handleDuelAction] updatedDuel é null - não é possível criar modal para Monster Reincarnation`);
+                client.emit('duelError', { message: 'Erro ao processar Monster Reincarnation' });
+                return;
+              }
+              
+              // Se a carta está na mão e está em BATTLE ou STANDBY, mudar fase automaticamente
+              if (!cardIsOnField && updatedDuel) {
+                if (updatedDuel.currentPhase === TurnPhase.BATTLE) {
+                  console.log(`🔄 [handleDuelAction] Carta da mão em BATTLE - mudando para MAIN2`);
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN2);
+                } else if (updatedDuel.currentPhase === TurnPhase.STANDBY) {
+                  console.log(`🔄 [handleDuelAction] Carta da mão em STANDBY - mudando para MAIN1`);
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN1);
+                }
+              }
+              
+              if (!updatedDuel) {
+                console.error(`❌ [handleDuelAction] updatedDuel é null após mudança de fase - não é possível criar modal para Monster Reincarnation`);
+                client.emit('duelError', { message: 'Erro ao processar Monster Reincarnation' });
+                return;
+              }
+              
+              const isPlayer1 = Number(updatedDuel.player1Id) === Number(userId);
+              const playerField = isPlayer1 ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
+              const playerHand = playerField?.hand || [];
+              
+              console.log(`✨ [handleDuelAction] Monster Reincarnation ativada - isPlayer1: ${isPlayer1}, playerHand: ${playerHand.length} cartas`);
+              
+              // IMPORTANTE: Se a carta está na mão, não usar zoneIndex (carta não vai para o campo ainda)
+              // zoneIndex só é usado se a carta está no campo em "set"
+              const zoneIndexForPendingChoice = cardIsOnField ? zoneIndex : null;
+              
+              // Filtrar a Monster Reincarnation da lista de cartas descartáveis se ela estiver na mão
+              let handForDiscard = playerHand;
+              if (!cardIsOnField) {
+                // Se a carta está na mão, remover ela da lista de cartas que podem ser descartadas
+                // Usar múltiplos critérios de comparação para garantir que encontramos a carta correta
+                const cardToProcessId = cardToProcess.idCarta || cardToProcess.id || cardToProcess.cardId;
+                const cardToProcessName = (cardToProcess.name || cardToProcess.cardName || '').toLowerCase();
+                
+                console.log(`🔍 [handleDuelAction] Filtrando Monster Reincarnation da mão:`);
+                console.log(`🔍 [handleDuelAction] cardToProcess.instanceId: ${cardToProcess.instanceId}`);
+                console.log(`🔍 [handleDuelAction] cardToProcess.idCarta/id/cardId: ${cardToProcessId}`);
+                console.log(`🔍 [handleDuelAction] cardToProcess.name: ${cardToProcessName}`);
+                console.log(`🔍 [handleDuelAction] playerHand antes do filtro: ${playerHand.length} cartas`);
+                
+                handForDiscard = playerHand.filter((c: any) => {
+                  if (!c) return true;
+                  
+                  const cIdCarta = c.idCarta || c.id || c.cardId;
+                  const cName = (c.name || c.cardName || '').toLowerCase();
+                  
+                  // Comparar por instanceId se ambos tiverem (mais preciso)
+                  if (c.instanceId && cardToProcess.instanceId) {
+                    if (c.instanceId === cardToProcess.instanceId) {
+                      console.log(`🚫 [handleDuelAction] Carta removida por instanceId: ${c.instanceId}`);
+                      return false; // É a mesma carta, remover
+                    }
+                  }
+                  
+                  // Comparar por idCarta/id/cardId E nome
+                  if (cIdCarta && cardToProcessId && String(cIdCarta) === String(cardToProcessId)) {
+                    if (cName === cardToProcessName && cName.includes('monster reincarnation')) {
+                      console.log(`🚫 [handleDuelAction] Carta removida por ID e nome: ${cIdCarta} - ${cName}`);
+                      return false; // É a mesma carta, remover
+                    }
+                  }
+                  
+                  // Comparar por nome (se for Monster Reincarnation)
+                  if (cName.includes('monster reincarnation') && cardToProcessName.includes('monster reincarnation')) {
+                    // Se os IDs também coincidem, é a mesma carta
+                    if (cIdCarta && cardToProcessId && String(cIdCarta) === String(cardToProcessId)) {
+                      console.log(`🚫 [handleDuelAction] Carta removida por nome e ID: ${cName} - ${cIdCarta}`);
+                      return false; // É a mesma carta, remover
+                    }
+                    // Se não tem ID mas o nome é exatamente igual, também remover (pode ser a mesma carta)
+                    if (cName === cardToProcessName) {
+                      console.log(`🚫 [handleDuelAction] Carta removida por nome exato: ${cName}`);
+                      return false; // É provavelmente a mesma carta, remover
+                    }
+                  }
+                  
+                  // Comparar por referência do objeto (último recurso)
+                  if (c === cardToProcess) {
+                    console.log(`🚫 [handleDuelAction] Carta removida por referência do objeto`);
+                    return false; // É a mesma carta, remover
+                  }
+                  
+                  return true; // Não é a mesma carta, manter
+                });
+                console.log(`✅ [handleDuelAction] Monster Reincarnation removida da lista de descarte. Cartas disponíveis: ${handForDiscard.length} (de ${playerHand.length})`);
+              }
+              
+              if (handForDiscard.length === 0) {
+                console.log(`⚠️ [handleDuelAction] Jogador não tem cartas na mão para descartar (após remover Monster Reincarnation)`);
+                client.emit('duelError', { message: 'Você não tem outras cartas na mão para descartar' });
+                return;
+              }
+              
+              // Criar pendingChoice para o primeiro passo (descartar carta da mão)
+              const monsterReincarnationPendingChoice: any = {
+                type: 'MONSTER_REINCARNATION',
+                userId: userId,
+                turnWhenStarted: updatedDuel.currentTurn,
+                phaseWhenStarted: updatedDuel.currentPhase || 'MAIN1',
+                data: {
+                  cardId: cardId,
+                  cardName: cardToProcess.name || cardToProcess.cardName,
+                  zoneIndex: zoneIndexForPendingChoice, // null se estava na mão
+                  cardInstanceId: cardToProcess.instanceId,
+                  cardData: cardToProcess,
+                  cardWasOnField: cardIsOnField,
+                  originalPosition: cardIsOnField ? (cardToProcess.position || 'set') : null,
+                  step: 1, // Primeiro passo: descartar carta da mão
+                }
+              };
+              await this.duelsService.setPendingChoice(duelId, monsterReincarnationPendingChoice);
+              
+              // Buscar duelo atualizado com pendingChoice
+              updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+              
+              console.log(`📤 [handleDuelAction] Emitindo monsterReincarnationShowHand apenas para quem ativou (com pendingChoice)`);
+              console.log(`📤 [handleDuelAction] handForDiscard: ${handForDiscard.length} cartas, cardIsOnField: ${cardIsOnField}, zoneIndex: ${zoneIndexForPendingChoice}`);
+              // Emitir apenas para o cliente que ativou a carta
+              // IMPORTANTE: Enviar handForDiscard (sem Monster Reincarnation) ao invés de playerHand
+              client.emit('monsterReincarnationShowHand', {
+                playerHand: handForDiscard,
+                duelId: duelId,
+              });
+              console.log(`✅ [handleDuelAction] Evento monsterReincarnationShowHand emitido apenas para o cliente que ativou`);
+              
+              // Emitir atualização do duelo (com pendingChoice mas sem carta no campo)
+              if (updatedDuel) {
+                this.server.to(`duel_${duelId}`).emit('duelUpdate', updatedDuel);
+              }
+              return; // Aguardar escolha do usuário
+            }
             
             // Se processCardEffect criou pendingChoice, adicionar informações da carta
             if (createdPendingChoice && updatedDuel && (updatedDuel as any).pendingChoice) {
+              // Se a carta está na mão e está em BATTLE ou STANDBY, mudar fase automaticamente
+              if (!cardIsOnField && updatedDuel) {
+                if (updatedDuel.currentPhase === TurnPhase.BATTLE) {
+                  console.log(`🔄 [handleDuelAction] Carta da mão em BATTLE - mudando para MAIN2`);
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN2);
+                } else if (updatedDuel.currentPhase === TurnPhase.STANDBY) {
+                  console.log(`🔄 [handleDuelAction] Carta da mão em STANDBY - mudando para MAIN1`);
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN1);
+                }
+              }
+              
               // Adicionar informações da carta ao pendingChoice para poder colocá-la no campo depois
               (updatedDuel as any).pendingChoice.data = {
                 ...(updatedDuel as any).pendingChoice.data,
@@ -3650,14 +5109,15 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
                 zoneIndex: zoneIndex,
                 cardInstanceId: cardToProcess.instanceId,
                 cardData: cardToProcess, // Guardar dados completos da carta
-                cardWasOnField: false // Indica que a carta estava na mão, não no campo
+                cardWasOnField: cardIsOnField, // Indica se a carta estava no campo (em "set") ou na mão
+                originalPosition: cardIsOnField ? (cardToProcess.position || 'set') : null // Se estava no campo, guardar posição original
               };
               
               // Salvar pendingChoice atualizado
               await this.duelsService.setPendingChoice(duelId, (updatedDuel as any).pendingChoice);
               
               // Buscar duelo atualizado novamente
-              updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+              updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
               
               console.log(`✅ [handleDuelAction] PendingChoice criado - modal será aberto, carta permanece na mão`);
               // Emitir atualização do duelo (com pendingChoice mas sem carta no campo)
@@ -3673,11 +5133,36 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           }
           
           // Se não precisa de modal ou está no campo, comportamento normal
+          // ANTES de colocar no campo, mudar fase se necessário (quando carta vem da mão)
+          if (!cardIsOnField && updatedDuel) {
+            if (updatedDuel.currentPhase === TurnPhase.BATTLE) {
+              console.log(`🔄 [handleDuelAction] Carta da mão em BATTLE - mudando para MAIN2 antes de colocar no campo`);
+              updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN2);
+              if (!updatedDuel) {
+                client.emit('duelError', { message: 'Erro ao mudar para fase MAIN2' });
+                return;
+              }
+            } else if (updatedDuel.currentPhase === TurnPhase.STANDBY) {
+              console.log(`🔄 [handleDuelAction] Carta da mão em STANDBY - mudando para MAIN1 antes de colocar no campo`);
+              updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN1);
+              if (!updatedDuel) {
+                client.emit('duelError', { message: 'Erro ao mudar para fase MAIN1' });
+                return;
+              }
+            }
+          }
+          
           // Colocar no campo e processar efeito
+          // IMPORTANTE: Só colocar no campo se zoneIndex é válido
+          if (zoneIndex === undefined || zoneIndex === null) {
+            console.error(`❌ [handleDuelAction] zoneIndex é undefined/null - não é possível colocar carta no campo`);
+            client.emit('duelError', { message: 'Zona inválida para colocar carta no campo' });
+            return;
+          }
+          
           console.log(`✅ [handleDuelAction] Colocando carta no campo e processando efeito`);
           try {
             result = await this.duelsService.placeCardOnField(duelId, userId, cardId, zoneIndex, finalPosition, cardType, false);
-            console.log(`✅ [handleDuelAction] placeCardOnField retornou:`, result);
           } catch (error) {
             console.error(`❌ [handleDuelAction] Erro ao chamar placeCardOnField:`, error);
             client.emit('duelError', { message: 'Erro ao colocar carta no campo' });
@@ -3692,12 +5177,60 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           
           // Buscar duelo atualizado após colocar no campo
           await new Promise(resolve => setTimeout(resolve, 100));
-          updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+          updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         } else {
           // Para cartas especiais, comportamento normal (coloca no campo e processa efeito depois)
+          // Buscar duelo atual
+          updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+          if (!updatedDuel) {
+            client.emit('duelError', { message: 'Duelo não encontrado' });
+            return;
+          }
+          
+          // Verificar se a carta está no campo
+          const isPlayer1Check = Number(updatedDuel.player1Id) === Number(userId);
+          const playerFieldCheck = isPlayer1Check ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
+          let cardIsOnField = false;
+          
+          if (zoneIndex !== undefined && zoneIndex !== null && zoneIndex >= 0 && zoneIndex < 5 &&
+              playerFieldCheck && playerFieldCheck.spellTrap && playerFieldCheck.spellTrap[zoneIndex]) {
+            const cardOnField = playerFieldCheck.spellTrap[zoneIndex];
+            const cardOnFieldId = cardOnField.idCarta || cardOnField.id || cardOnField.cardId;
+            if (cardOnFieldId === cardId || String(cardOnFieldId).toLowerCase() === String(cardId).toLowerCase()) {
+              cardIsOnField = true;
+            }
+          }
+          
+          // ANTES de colocar no campo, mudar fase se necessário (quando carta vem da mão)
+          if (!cardIsOnField && updatedDuel) {
+            if (updatedDuel.currentPhase === TurnPhase.BATTLE) {
+              console.log(`🔄 [handleDuelAction] Carta especial da mão em BATTLE - mudando para MAIN2 antes de colocar no campo`);
+              updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN2);
+              if (!updatedDuel) {
+                client.emit('duelError', { message: 'Erro ao mudar para fase MAIN2' });
+                return;
+              }
+            } else if (updatedDuel.currentPhase === TurnPhase.STANDBY) {
+              console.log(`🔄 [handleDuelAction] Carta especial da mão em STANDBY - mudando para MAIN1 antes de colocar no campo`);
+              updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN1);
+              if (!updatedDuel) {
+                client.emit('duelError', { message: 'Erro ao mudar para fase MAIN1' });
+                return;
+              }
+            }
+          }
+          
+          // IMPORTANTE: Change Of Heart e Brain Control agora são tratadas no bloco needsModalBeforeField acima
+          // Não colocar no campo aqui - será feito quando o usuário confirmar a escolha
+          // IMPORTANTE: Só colocar no campo se zoneIndex é válido
+          if (zoneIndex === undefined || zoneIndex === null) {
+            console.error(`❌ [handleDuelAction] zoneIndex é undefined/null para carta especial - não é possível colocar carta no campo`);
+            client.emit('duelError', { message: 'Zona inválida para colocar carta no campo' });
+            return;
+          }
+          
           try {
             result = await this.duelsService.placeCardOnField(duelId, userId, cardId, zoneIndex, finalPosition, cardType);
-            console.log(`✅ [handleDuelAction] placeCardOnField retornou:`, result);
           } catch (error) {
             console.error(`❌ [handleDuelAction] Erro ao chamar placeCardOnField:`, error);
             client.emit('duelError', { message: 'Erro ao colocar carta no campo' });
@@ -3715,14 +5248,27 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           await new Promise(resolve => setTimeout(resolve, 100));
           console.log(`🔍 [handleDuelAction] Buscando duelo atualizado do banco após salvar carta...`);
           // Forçar busca do banco ignorando cache
-          updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+          updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+        }
+        
+        // Persistir log de ação para SET_MONSTER / SET_SPELL_TRAP / ACTIVATE_SPELL_TRAP (logs salvos no duelo)
+        if (result && result.success && (actionType === 'SET_MONSTER' || actionType === 'SET_SPELL_TRAP' || actionType === 'ACTIVATE_SPELL_TRAP')) {
+          const cardName = actionData.cardName || cardId || 'Carta';
+          if (actionType === 'SET_MONSTER') {
+            await this.createAndEmitDuelLog(duelId, userId, 'SET_MONSTER', `Colocou monstro em ${finalPosition}`);
+          } else if (actionType === 'SET_SPELL_TRAP') {
+            await this.createAndEmitDuelLog(duelId, userId, 'SET_SPELL_TRAP', `Colocou ${cardName} em "set"`);
+          } else {
+            await this.createAndEmitDuelLog(duelId, userId, 'ACTIVATE_SPELL', `Ativou ${cardName}`);
+          }
         }
         
         // Verificar se é Confiscation, GracefulCharity ou MonsterReborn ANTES de processar
         // Usar o cardId original passado na ação para detectar mais cedo
         // NOTA: originalCardId e originalCardName já foram declarados acima
+        // NOTA: isChangeOfHeartCardEarly já foi declarado acima, reutilizar
         let isMonsterRebornCard = false;
-        let isChangeOfHeartCard = false;
+        let isChangeOfHeartCard = isChangeOfHeartCardEarly; // Reutilizar verificação anterior
         let isBrainControlCard = false;
         let isSoulTakerCard = false;
         let isUnitedWeStandCard = false;
@@ -3744,13 +5290,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
                    (typeof originalCardName === 'string' && originalCardName.toLowerCase().includes('reinforcement of the army'))) {
           isReinforcementOfTheArmyCard = true;
           console.log(`✅ [handleDuelAction] Reinforcement Of The Army detectada pelo cardId original: ${originalCardId}`);
-        } else if (originalCardId === 'changeofheart' || originalCardName === 'change of heart' ||
-                   (typeof originalCardId === 'string' && originalCardId.includes('changeofheart')) ||
-                   (typeof originalCardName === 'string' && originalCardName.includes('change of heart')) ||
-                   cardId === 'ChangeOfHeart' || 
-                   cardId === 'changeofheart' ||
-                   (typeof cardId === 'string' && cardId.toLowerCase().includes('changeofheart'))) {
-          isChangeOfHeartCard = true;
+        } else if (isChangeOfHeartCardEarly) {
+          // isChangeOfHeartCard já foi definido acima como isChangeOfHeartCardEarly
           console.log(`✅ [handleDuelAction] ChangeOfHeart detectada - originalCardId: ${originalCardId}, originalCardName: ${originalCardName}, cardId: ${cardId}`);
         } else if (cardId === 'BrainControl' ||
                    cardId === 'braincontrol' ||
@@ -3766,14 +5307,18 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           console.log(`✅ [handleDuelAction] SoulTaker detectada pelo cardId original: ${cardId}`);
         } else if (cardId === 'UnitedWeStand' ||
                    cardId === 'unitedwestand' ||
-                   (typeof cardId === 'string' && cardId.toLowerCase().includes('unitedwestand'))) {
+                   (typeof cardId === 'string' && cardId.toLowerCase().includes('unitedwestand')) ||
+                   originalCardName === 'United We Stand' ||
+                   (typeof originalCardName === 'string' && originalCardName.toLowerCase().includes('united we stand'))) {
           isUnitedWeStandCard = true;
-          console.log(`✅ [handleDuelAction] UnitedWeStand detectada pelo cardId original: ${cardId}`);
+          console.log(`✅ [handleDuelAction] UnitedWeStand detectada pelo cardId/nome: ${cardId}/${originalCardName}`);
         } else if (cardId === 'MagePower' ||
                    cardId === 'magepower' ||
-                   (typeof cardId === 'string' && cardId.toLowerCase().includes('magepower'))) {
+                   (typeof cardId === 'string' && cardId.toLowerCase().includes('magepower')) ||
+                   originalCardName === 'Mage Power' ||
+                   (typeof originalCardName === 'string' && originalCardName.toLowerCase().includes('mage power'))) {
           isMagePowerCard = true;
-          console.log(`✅ [handleDuelAction] MagePower detectada pelo cardId original: ${cardId}`);
+          console.log(`✅ [handleDuelAction] MagePower detectada pelo cardId/nome: ${cardId}/${originalCardName}`);
         } else if (cardId === 'MysticalSpaceTyphoon' ||
                    cardId === 'mysticalspacetyphoon' ||
                    (typeof cardId === 'string' && cardId.toLowerCase().includes('mysticalspacetyphoon'))) {
@@ -3950,68 +5495,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         }
 
         // Se for MonsterReborn, verificar no cemitério (já foi processada e movida)
-        if (isMonsterRebornCard && updatedDuel && (actionType === 'ACTIVATE_SPELL_TRAP' || actionType === 'SET_SPELL_TRAP') && finalPosition === 'face-up') {
-          console.log(`✨ [handleDuelAction] MonsterReborn detectada - aguardando processCardEffect terminar e verificando no cemitério`);
-          
-          // Aguardar um pouco mais para garantir que o processCardEffect terminou e moveu a carta para o cemitério
-          await new Promise(resolve => setTimeout(resolve, 300));
-          
-          // Buscar duelo atualizado novamente para garantir que temos os dados mais recentes
-          updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
-          
-          if (!updatedDuel) {
-            console.error(`❌ [handleDuelAction] Não foi possível buscar duelo atualizado para MonsterReborn`);
-            return;
-          }
-          
-          const isPlayer1 = Number(updatedDuel.player1Id) === Number(userId);
-          const playerField = isPlayer1 ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
-          const opponentField = isPlayer1 ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
-          const playerGraveyard = playerField?.graveyard || [];
-          
-          // Verificar se MonsterReborn está no cemitério (foi movida pelo processCardEffect)
-          const monsterRebornInGraveyard = playerGraveyard.find((c: any) => {
-            const cardId = c.idCarta || c.id || c.cardId;
-            return cardId === 'MonsterReborn' || 
-                   cardId === 'monsterreborn' ||
-                   (typeof cardId === 'string' && cardId.toLowerCase().includes('monsterreborn'));
-          });
-          
-          console.log(`🔍 [handleDuelAction] MonsterReborn no cemitério? ${!!monsterRebornInGraveyard}, playerGraveyard.length: ${playerGraveyard.length}`);
-          
-          if (monsterRebornInGraveyard) {
-            console.log(`✨ [handleDuelAction] MonsterReborn detectada no cemitério após placeCardOnField`);
-            
-            // Coletar monstros dos cemitérios
-            const opponentGraveyard = opponentField?.graveyard || [];
-            
-            const playerMonsters = playerGraveyard.filter((c: any) => {
-              const cardType = c.type || c.cardType;
-              return cardType === 'Monster';
-            });
-            
-            const opponentMonsters = opponentGraveyard.filter((c: any) => {
-              const cardType = c.type || c.cardType;
-              return cardType === 'Monster';
-            });
-            
-            if (playerMonsters.length > 0 || opponentMonsters.length > 0) {
-              // IMPORTANTE: MonsterReborn não cria pendingChoice - o frontend gerencia o estado temporário
-              // Quando o usuário confirmar, o backend processa imediatamente
-              // Se cancelar, nada acontece (a carta não é ativada)
-              console.log(`📤 [handleDuelAction] Emitindo monsterRebornShowGraveyards apenas para quem ativou (sem pendingChoice)`);
-              // Emitir apenas para o cliente que ativou a carta
-              client.emit('monsterRebornShowGraveyards', {
-                playerGraveyard: playerMonsters,
-                opponentGraveyard: opponentMonsters,
-                duelId: duelId,
-              });
-              console.log(`✅ [handleDuelAction] Evento monsterRebornShowGraveyards emitido apenas para o cliente que ativou`);
-            } else {
-              console.log(`ℹ️ [handleDuelAction] Nenhum monstro nos cemitérios para reviver`);
-            }
-          }
-        }
+        // MonsterReborn agora é tratada no bloco needsModalBeforeField acima
+        // Não precisa mais verificar aqui se está no cemitério
         
         // Se for Reinforcement Of The Army, verificar no cemitério (já foi processada e movida)
         if (isReinforcementOfTheArmyCard && updatedDuel && (actionType === 'ACTIVATE_SPELL_TRAP' || actionType === 'SET_SPELL_TRAP') && finalPosition === 'face-up') {
@@ -4021,7 +5506,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           await new Promise(resolve => setTimeout(resolve, 300));
           
           // Buscar duelo atualizado novamente
-          updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+          updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
           
           if (!updatedDuel) {
             console.error(`❌ [handleDuelAction] Não foi possível buscar duelo atualizado para Reinforcement Of The Army`);
@@ -4100,317 +5585,14 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           }
         }
         
-        // Se for Last Will, verificar no deck (já foi processada e movida)
-        // Verificar se é Last Will usando cardId ou cardName do actionData
-        const isLastWillCard = cardId && (
-          String(cardId).toLowerCase().includes('lastwill') ||
-          (actionData?.cardName || '').toLowerCase().includes('last will') ||
-          (originalCardName || '').includes('last will')
-        );
+        // Last Will agora é tratada no bloco needsModalBeforeField acima
+        // Não precisa mais verificar aqui se está no cemitério
         
-        if (isLastWillCard && updatedDuel && (actionType === 'ACTIVATE_SPELL_TRAP' || actionType === 'SET_SPELL_TRAP') && finalPosition === 'face-up') {
-          console.log(`✨ [handleDuelAction] Last Will detectada - aguardando processCardEffect terminar e verificando no deck`);
-          
-          // Aguardar um pouco mais para garantir que o processCardEffect terminou e moveu a carta para o cemitério
-          await new Promise(resolve => setTimeout(resolve, 300));
-          
-          // Buscar duelo atualizado novamente para garantir que temos os dados mais recentes
-          updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
-          
-          if (!updatedDuel) {
-            console.error(`❌ [handleDuelAction] Não foi possível buscar duelo atualizado para Last Will`);
-            return;
-          }
-          
-          const isPlayer1 = Number(updatedDuel.player1Id) === Number(userId);
-          const playerField = isPlayer1 ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
-          
-          // Verificar se Last Will está no cemitério (foi processada pelo processCardEffect)
-          // Se não estiver no cemitério, significa que não foi processada corretamente
-          const playerGraveyard = playerField?.graveyard || [];
-          const lastWillInGraveyard = playerGraveyard.find((c: any) => {
-            if (!c) return false;
-            const cCardId = c.idCarta || c.id || c.cardId || '';
-            const cCardName = (c.name || c.cardName || '').toLowerCase();
-            return String(cCardId).toLowerCase().includes('lastwill') || cCardName.includes('last will');
-          });
-          
-          // IMPORTANTE: Verificar se um monstro foi destruído neste turno ANTES de emitir o evento
-          const monsterDestroyedThisTurn = playerField?.monsterDestroyedThisTurn || false;
-          
-          // Se Last Will está no cemitério mas nenhum monstro foi destruído, significa que a ativação falhou
-          if (lastWillInGraveyard && !monsterDestroyedThisTurn) {
-            console.log(`❌ [handleDuelAction] Last Will: Nenhum monstro foi destruído no campo do jogador neste turno - ativação falhou`);
-            client.emit('duelError', { message: 'Last Will não pode ser ativada: Nenhum monstro foi destruído no seu campo neste turno.' });
-            return;
-          }
-          
-          if (!monsterDestroyedThisTurn) {
-            console.log(`❌ [handleDuelAction] Last Will: Nenhum monstro foi destruído no campo do jogador neste turno - não emitindo evento`);
-            client.emit('duelError', { message: 'Last Will não pode ser ativada: Nenhum monstro foi destruído no seu campo neste turno.' });
-            return;
-          }
-          
-          // Verificar se Last Will está no campo (ainda não foi processada)
-          const lastWillOnField = playerField?.spellTrap?.some((st: any) => {
-            if (!st) return false;
-            const stCardId = st.idCarta || st.id || st.cardId || '';
-            const stCardName = (st.name || st.cardName || '').toLowerCase();
-            return String(stCardId).toLowerCase().includes('lastwill') || stCardName.includes('last will');
-          });
-          
-          // Se não está no cemitério nem no campo, algo deu errado
-          if (!lastWillInGraveyard && !lastWillOnField) {
-            console.log(`⚠️ [handleDuelAction] Last Will não encontrada no campo nem no cemitério - algo deu errado`);
-            return;
-          }
-          
-          // Se está no campo mas não no cemitério, ainda não foi processada - aguardar
-          if (lastWillOnField && !lastWillInGraveyard) {
-            console.log(`⏳ [handleDuelAction] Last Will ainda está no campo - aguardando processamento...`);
-            // Aguardar mais um pouco
-            await new Promise(resolve => setTimeout(resolve, 200));
-            // Buscar novamente
-            updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
-            if (!updatedDuel) return;
-            const updatedPlayerField = isPlayer1 ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
-            const updatedGraveyard = updatedPlayerField?.graveyard || [];
-            const lastWillStillInGraveyard = updatedGraveyard.find((c: any) => {
-              if (!c) return false;
-              const cCardId = c.idCarta || c.id || c.cardId || '';
-              const cCardName = (c.name || c.cardName || '').toLowerCase();
-              return String(cCardId).toLowerCase().includes('lastwill') || cCardName.includes('last will');
-            });
-            if (!lastWillStillInGraveyard) {
-              console.log(`❌ [handleDuelAction] Last Will não foi processada - não emitindo evento`);
-              return;
-            }
-          }
-          
-          const deck = playerField?.deck || [];
-          
-          // Coletar monstros do deck com ATK <= 1500
-          const eligibleMonsters: Array<{ monster: any; deckIndex: number }> = [];
-          
-          deck.forEach((c: any, deckIndex: number) => {
-            if (!c) return;
-            
-            // Verificar se é um monstro
-            const cardType = (c.type || c.cardType || '').toString().toUpperCase().trim();
-            const isMonster = cardType === 'MONSTER' || cardType === 'MONSTRO' || cardType.includes('MONSTER');
-            if (!isMonster) return;
-            
-            // Verificar se tem ATK <= 1500
-            const atk = Number(c.atk || c.cardAtk || 0);
-            if (isNaN(atk) || atk > 1500) return;
-            
-            // Adicionar com o índice real do deck
-            eligibleMonsters.push({
-              ...c,
-              deckIndex: deckIndex, // Usar o índice real do array
-            });
-          });
-          
-          if (eligibleMonsters.length > 0) {
-            console.log(`📤 [handleDuelAction] Emitindo lastWillShowDeck apenas para quem ativou`);
-            // Emitir apenas para o cliente que ativou a carta
-            client.emit('lastWillShowDeck', {
-              eligibleMonsters: eligibleMonsters,
-              duelId: duelId,
-            });
-            console.log(`✅ [handleDuelAction] Evento lastWillShowDeck emitido apenas para o cliente que ativou`);
-          } else {
-            console.log(`ℹ️ [handleDuelAction] Nenhum monstro com ATK <= 1500 no deck`);
-          }
-        }
+        // Change Of Heart e Brain Control agora são tratadas no bloco needsModalBeforeField acima
+        // Não precisam mais ser processadas aqui após colocar no campo
         
-        // Se for ChangeOfHeart, verificar no campo do oponente (ChangeOfHeart permanece no campo, não vai para o cemitério)
-        if (isChangeOfHeartCard && updatedDuel && (actionType === 'ACTIVATE_SPELL_TRAP' || actionType === 'SET_SPELL_TRAP') && finalPosition === 'face-up') {
-          console.log(`✨ [handleDuelAction] ChangeOfHeart detectada - aguardando processCardEffect terminar e verificando campo do oponente`);
-          
-          // Aguardar um pouco mais para garantir que o processCardEffect terminou e a carta foi colocada no campo
-          await new Promise(resolve => setTimeout(resolve, 300));
-          
-          // Buscar duelo atualizado novamente para garantir que temos os dados mais recentes
-          updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
-          
-          if (!updatedDuel) {
-            console.error(`❌ [handleDuelAction] Não foi possível buscar duelo atualizado para ChangeOfHeart`);
-            return;
-          }
-          
-          const isPlayer1 = Number(updatedDuel.player1Id) === Number(userId);
-          const playerField = isPlayer1 ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
-          const opponentField = isPlayer1 ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
-          
-          // IMPORTANTE: ChangeOfHeart NÃO é movida para o cemitério - ela permanece no campo
-          // Verificar se ChangeOfHeart está no campo (spellTrap) - verificar em qualquer zona
-          let changeOfHeartOnField = false;
-          let changeOfHeartZoneIndex = -1;
-          
-          if (playerField?.spellTrap && Array.isArray(playerField.spellTrap)) {
-            for (let i = 0; i < playerField.spellTrap.length; i++) {
-              const st = playerField.spellTrap[i];
-              if (!st) continue;
-              
-              const cardId = st.idCarta || st.id || st.cardId;
-              const cardName = (st.name || st.cardName || '').toLowerCase();
-              const isChangeOfHeart = cardId === 'ChangeOfHeart' || 
-                                     cardId === 'changeofheart' ||
-                                     (typeof cardId === 'string' && cardId.toLowerCase().includes('changeofheart')) ||
-                                     cardName.includes('change of heart');
-              
-              if (isChangeOfHeart) {
-                changeOfHeartOnField = true;
-                changeOfHeartZoneIndex = i;
-                break;
-              }
-            }
-          }
-          
-          console.log(`🔍 [handleDuelAction] ChangeOfHeart no campo? ${changeOfHeartOnField}, zoneIndex: ${changeOfHeartZoneIndex}, zoneIndex original: ${zoneIndex}`);
-          
-          if (changeOfHeartOnField) {
-            console.log(`✨ [handleDuelAction] ChangeOfHeart detectada no campo após placeCardOnField`);
-            
-            // Coletar monstros do campo do oponente com seus índices de zona (qualquer posição: attack, defense ou set)
-            const opponentMonstersWithIndices: Array<{ monster: any; zoneIndex: number }> = [];
-            (opponentField?.monsters || []).forEach((m: any, index: number) => {
-              if (m && m !== null && m !== undefined) {
-                // Pode controlar monstros em qualquer posição (attack, defense ou set)
-                opponentMonstersWithIndices.push({ monster: m, zoneIndex: index });
-              }
-            });
-            
-            const opponentMonsters = opponentMonstersWithIndices.map((om: any) => ({
-              ...om.monster,
-              zoneIndex: om.zoneIndex, // Incluir zoneIndex no objeto do monstro
-            }));
-            
-            if (opponentMonsters.length > 0) {
-              // IMPORTANTE: ChangeOfHeart não cria pendingChoice - o frontend gerencia o estado temporário
-              // Quando o usuário confirmar, o backend processa imediatamente
-              // Se cancelar, nada acontece (a carta não é ativada)
-              console.log(`📤 [handleDuelAction] Emitindo changeOfHeartShowOpponentMonsters apenas para quem ativou (sem pendingChoice)`);
-              // Emitir apenas para o cliente que ativou a carta
-              client.emit('changeOfHeartShowOpponentMonsters', {
-                opponentMonsters: opponentMonsters,
-                duelId: duelId,
-              });
-              console.log(`✅ [handleDuelAction] Evento changeOfHeartShowOpponentMonsters emitido apenas para o cliente que ativou`);
-            } else {
-              console.log(`ℹ️ [handleDuelAction] Nenhum monstro no campo do oponente para controlar`);
-            }
-          } else {
-            console.log(`⚠️ [handleDuelAction] ChangeOfHeart não encontrada no campo na zona ${zoneIndex}`);
-          }
-        }
-        
-        // Verificar se BrainControl está no campo (similar ao ChangeOfHeart)
-        if (isBrainControlCard && updatedDuel && (actionType === 'ACTIVATE_SPELL_TRAP' || actionType === 'SET_SPELL_TRAP') && finalPosition === 'face-up') {
-          const isPlayer1 = Number(updatedDuel.player1Id) === Number(userId);
-          const playerField = isPlayer1 ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
-          const opponentField = isPlayer1 ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
-          
-          // Verificar se BrainControl está no campo
-          if (playerField && playerField.spellTrap && playerField.spellTrap[zoneIndex]) {
-            const cardOnField = playerField.spellTrap[zoneIndex];
-            const cardIdCarta = cardOnField.idCarta || cardOnField.id || cardOnField.cardId;
-            const cardName = cardOnField.name || cardOnField.cardName;
-            
-            if (cardIdCarta === 'BrainControl' || 
-                cardIdCarta === 'braincontrol' || 
-                (typeof cardIdCarta === 'string' && cardIdCarta.toLowerCase().includes('braincontrol')) ||
-                cardName === 'Brain Control' || 
-                cardName === 'brain control' || 
-                (typeof cardName === 'string' && cardName.toLowerCase().includes('brain control'))) {
-              console.log(`✨ [handleDuelAction] BrainControl detectada no campo após placeCardOnField`);
-              
-              // Coletar apenas monstros FACE-UP do campo do oponente (attack ou defense, não set)
-              const opponentMonstersWithIndices: Array<{ monster: any; zoneIndex: number }> = [];
-              (opponentField?.monsters || []).forEach((m: any, index: number) => {
-                if (m && m !== null && m !== undefined) {
-                  const position = m.position || 'attack';
-                  // Só pode controlar monstros face-up (attack ou defense, não set)
-                  if (position === 'attack' || position === 'defense') {
-                    opponentMonstersWithIndices.push({ monster: m, zoneIndex: index });
-                  }
-                }
-              });
-              
-              const opponentMonsters = opponentMonstersWithIndices.map((om: any) => ({
-                ...om.monster,
-                zoneIndex: om.zoneIndex, // Incluir zoneIndex no objeto do monstro
-              }));
-              
-              if (opponentMonsters.length > 0) {
-                // IMPORTANTE: BrainControl não cria pendingChoice - o frontend gerencia o estado temporário
-                console.log(`📤 [handleDuelAction] Emitindo brainControlShowOpponentMonsters apenas para quem ativou (sem pendingChoice)`);
-                // Emitir apenas para o cliente que ativou a carta
-                client.emit('brainControlShowOpponentMonsters', {
-                  opponentMonsters: opponentMonsters,
-                  duelId: duelId,
-                });
-                console.log(`✅ [handleDuelAction] Evento brainControlShowOpponentMonsters emitido apenas para o cliente que ativou`);
-              } else {
-                console.log(`ℹ️ [handleDuelAction] Nenhum monstro face-up no campo do oponente para controlar`);
-              }
-            }
-          }
-        }
-        
-        // Verificar se SoulTaker está no campo (similar ao ChangeOfHeart e BrainControl)
-        if (isSoulTakerCard && updatedDuel && (actionType === 'ACTIVATE_SPELL_TRAP' || actionType === 'SET_SPELL_TRAP') && finalPosition === 'face-up') {
-          const isPlayer1 = Number(updatedDuel.player1Id) === Number(userId);
-          const playerField = isPlayer1 ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
-          const opponentField = isPlayer1 ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
-          
-          // Verificar se SoulTaker está no campo
-          if (playerField && playerField.spellTrap && playerField.spellTrap[zoneIndex]) {
-            const cardOnField = playerField.spellTrap[zoneIndex];
-            const cardIdCarta = cardOnField.idCarta || cardOnField.id || cardOnField.cardId;
-            const cardName = cardOnField.name || cardOnField.cardName;
-            
-            if (cardIdCarta === 'SoulTaker' || 
-                cardIdCarta === 'soultaker' || 
-                (typeof cardIdCarta === 'string' && cardIdCarta.toLowerCase().includes('soultaker')) ||
-                cardName === 'Soul Taker' || 
-                cardName === 'soul taker' || 
-                (typeof cardName === 'string' && cardName.toLowerCase().includes('soul taker'))) {
-              console.log(`✨ [handleDuelAction] SoulTaker detectada no campo após placeCardOnField`);
-              
-              // Coletar apenas monstros FACE-UP do campo do oponente (attack ou defense, não set)
-              const opponentMonstersWithIndices: Array<{ monster: any; zoneIndex: number }> = [];
-              (opponentField?.monsters || []).forEach((m: any, index: number) => {
-                if (m && m !== null && m !== undefined) {
-                  const position = m.position || 'attack';
-                  // Só pode destruir monstros face-up (attack ou defense, não set)
-                  if (position === 'attack' || position === 'defense') {
-                    opponentMonstersWithIndices.push({ monster: m, zoneIndex: index });
-                  }
-                }
-              });
-              
-              const opponentMonsters = opponentMonstersWithIndices.map((om: any) => ({
-                ...om.monster,
-                zoneIndex: om.zoneIndex, // Incluir zoneIndex no objeto do monstro
-              }));
-              
-              if (opponentMonsters.length > 0) {
-                // IMPORTANTE: SoulTaker não cria pendingChoice - o frontend gerencia o estado temporário
-                console.log(`📤 [handleDuelAction] Emitindo soulTakerShowOpponentMonsters apenas para quem ativou (sem pendingChoice)`);
-                // Emitir apenas para o cliente que ativou a carta
-                client.emit('soulTakerShowOpponentMonsters', {
-                  opponentMonsters: opponentMonsters,
-                  duelId: duelId,
-                });
-                console.log(`✅ [handleDuelAction] Evento soulTakerShowOpponentMonsters emitido apenas para o cliente que ativou`);
-              } else {
-                console.log(`ℹ️ [handleDuelAction] Nenhum monstro face-up no campo do oponente para destruir`);
-              }
-            }
-          }
-        }
+        // Soul Taker agora é tratado no bloco acima (mesmo padrão do Mystical Space Typhoon)
+        // Removido código duplicado - a lógica está no bloco needsModalBeforeField
         
         // UnitedWeStand - Mostrar monstros disponíveis para equipar
         // Só mostrar modal se a carta foi ativada normalmente (não via drag and drop)
@@ -4425,12 +5607,11 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             const cardIdCarta = cardOnField.idCarta || cardOnField.id || cardOnField.cardId;
             const cardName = cardOnField.name || cardOnField.cardName;
             
+            const cardNameLower = (cardName || '').toString().toLowerCase();
             if (cardIdCarta === 'UnitedWeStand' || 
-                cardIdCarta === 'unitedwestand' || 
                 (typeof cardIdCarta === 'string' && cardIdCarta.toLowerCase().includes('unitedwestand')) ||
-                cardName === 'United We Stand' || 
-                cardName === 'united we stand' || 
-                (typeof cardName === 'string' && cardName.toLowerCase().includes('united we stand'))) {
+                cardNameLower === 'united we stand' || 
+                cardNameLower.includes('united we stand')) {
               
               // Verificar se a carta já foi equipada via drag and drop
               // Se equippedToMonsterZoneIndex estiver definido, significa que já foi equipada
@@ -4492,12 +5673,11 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             const cardIdCarta = cardOnField.idCarta || cardOnField.id || cardOnField.cardId;
             const cardName = cardOnField.name || cardOnField.cardName;
             
-            if (cardIdCarta === 'MagePower' || 
-                cardIdCarta === 'magepower' || 
+            const magePowerNameLower = (cardName || '').toString().toLowerCase();
+            if (cardIdCarta === 'MagePower' ||
                 (typeof cardIdCarta === 'string' && cardIdCarta.toLowerCase().includes('magepower')) ||
-                cardName === 'Mage Power' || 
-                cardName === 'mage power' || 
-                (typeof cardName === 'string' && cardName.toLowerCase().includes('mage power'))) {
+                magePowerNameLower === 'mage power' ||
+                magePowerNameLower.includes('mage power')) {
               
               // Verificar se a carta já foi equipada via drag and drop
               // Se equippedToMonsterZoneIndex estiver definido, significa que já foi equipada
@@ -4546,65 +5726,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           }
         }
         
-        // Verificar se a carta ativada é Mystical Space Typhoon (usando a variável já declarada acima)
-        if (isMysticalSpaceTyphoonCard && updatedDuel && (actionType === 'ACTIVATE_SPELL_TRAP' || actionType === 'SET_SPELL_TRAP') && finalPosition === 'face-up') {
-          const isPlayer1 = Number(updatedDuel.player1Id) === Number(userId);
-          const playerField = isPlayer1 ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
-          const opponentField = isPlayer1 ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
-          
-          // Verificar se Mystical Space Typhoon está no campo
-          if (playerField && playerField.spellTrap && playerField.spellTrap[zoneIndex]) {
-            const cardOnField = playerField.spellTrap[zoneIndex];
-            const cardIdCarta = cardOnField.idCarta || cardOnField.id || cardOnField.cardId;
-            
-            if (cardIdCarta === 'MysticalSpaceTyphoon' || 
-                cardIdCarta === 'mysticalspacetyphoon' || 
-                (typeof cardIdCarta === 'string' && cardIdCarta.toLowerCase().includes('mysticalspacetyphoon'))) {
-              console.log(`✨ [handleDuelAction] Mystical Space Typhoon detectada no campo após placeCardOnField`);
-              
-              // Coletar spell/trap do campo (próprio e oponente)
-              const playerSpellTraps: Array<{ card: any; zoneIndex: number; player: 'player' | 'opponent' }> = [];
-              const opponentSpellTraps: Array<{ card: any; zoneIndex: number; player: 'player' | 'opponent' }> = [];
-              
-              // Coletar do próprio campo
-              if (playerField && playerField.spellTrap && Array.isArray(playerField.spellTrap)) {
-                playerField.spellTrap.forEach((card: any, index: number) => {
-                  if (card && card !== null && index !== zoneIndex) { // Não incluir a própria Mystical Space Typhoon
-                    playerSpellTraps.push({ card, zoneIndex: index, player: 'player' });
-                  }
-                });
-              }
-              
-              // Coletar do campo do oponente
-              if (opponentField && opponentField.spellTrap && Array.isArray(opponentField.spellTrap)) {
-                opponentField.spellTrap.forEach((card: any, index: number) => {
-                  if (card && card !== null) {
-                    opponentSpellTraps.push({ card, zoneIndex: index, player: 'opponent' });
-                  }
-                });
-              }
-              
-              const allSpellTraps = [...playerSpellTraps, ...opponentSpellTraps];
-              
-              if (allSpellTraps.length > 0) {
-                // IMPORTANTE: Mystical Space Typhoon não cria pendingChoice - o frontend gerencia o estado temporário
-                console.log(`📤 [handleDuelAction] Emitindo mysticalSpaceTyphoonShowTargets apenas para quem ativou (sem pendingChoice)`);
-                // Emitir apenas para o cliente que ativou a carta
-                client.emit('mysticalSpaceTyphoonShowTargets', {
-                  playerSpellTraps: playerSpellTraps,
-                  opponentSpellTraps: opponentSpellTraps,
-                  spellTrapZoneIndex: zoneIndex,
-                  duelId: duelId,
-                });
-                console.log(`✅ [handleDuelAction] Evento mysticalSpaceTyphoonShowTargets emitido apenas para o cliente que ativou`);
-              } else {
-                console.log(`ℹ️ [handleDuelAction] Nenhuma spell/trap no campo para Mystical Space Typhoon destruir`);
-              }
-            }
-          }
-        }
-        
-        // Verificar se a carta ativada é The Forceful Sentry (apenas se não for Confiscation, GracefulCharity, MonsterReborn, ChangeOfHeart, BrainControl, UnitedWeStand, MagePower ou MysticalSpaceTyphoon)
+        // Verificar se a carta ativada é The Forceful Sentry (apenas se não for Confiscation, GracefulCharity, MonsterReborn, ChangeOfHeart, BrainControl, UnitedWeStand, MagePower, MysticalSpaceTyphoon ou ReinforcementOfTheArmy)
+        // IMPORTANTE: Não excluir isForcefulSentryCard da verificação - ela precisa ser processada aqui
         if ((actionType === 'ACTIVATE_SPELL_TRAP' || actionType === 'SET_SPELL_TRAP') && finalPosition === 'face-up' && !isConfiscationCard && !isGracefulCharityCard && !isMonsterRebornCard && !isChangeOfHeartCard && !isBrainControlCard && !isSoulTakerCard && !isUnitedWeStandCard && !isMagePowerCard && !isMysticalSpaceTyphoonCard && !isReinforcementOfTheArmyCard && updatedDuel) {
           const isPlayer1 = Number(updatedDuel.player1Id) === Number(userId);
           const player1Field = (updatedDuel as any).player1Field;
@@ -4614,11 +5737,19 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           
           if (activatedCard) {
             const cardId = activatedCard.idCarta || activatedCard.id || activatedCard.cardId;
+            const cardName = (activatedCard.name || activatedCard.cardName || '').toLowerCase();
             
-            // Verificar se é TheForcefulSentry
-            if (cardId === 'TheForcefulSentry' || 
+            // Verificar se é TheForcefulSentry usando múltiplos critérios
+            const isForcefulSentryActivated = cardId === 'TheForcefulSentry' || 
                 cardId === 'theforcefulsentry' ||
-                (typeof cardId === 'string' && cardId.toLowerCase().includes('forcefulsentry'))) {
+                (typeof cardId === 'string' && cardId.toLowerCase().includes('forcefulsentry')) ||
+                cardName === 'the forceful sentry' ||
+                (typeof cardName === 'string' && cardName.includes('forceful sentry')) ||
+                isForcefulSentryCard; // Usar também a verificação anterior
+            
+            console.log(`🔍 [handleDuelAction] Verificando The Forceful Sentry - cardId: ${cardId}, cardName: ${cardName}, isForcefulSentryCard: ${isForcefulSentryCard}, isForcefulSentryActivated: ${isForcefulSentryActivated}`);
+            
+            if (isForcefulSentryActivated) {
               // Emitir evento especial para mostrar mão do oponente
               const opponentField = isPlayer1 ? player2Field : player1Field;
               const opponentHand = opponentField?.hand || [];
@@ -4689,23 +5820,17 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           }
         }
         
-        // Se for Confiscation, GracefulCharity ou MonsterReborn, já foram processados acima
+        // Se for Confiscation, GracefulCharity, ForcefulSentry ou MonsterReborn, já foram processados acima
         // Se não for, emitir duelUpdate normalmente
-        if (!isConfiscationCard && !isGracefulCharityCard && !isMonsterRebornCard && !isChangeOfHeartCard && !isBrainControlCard && !isSoulTakerCard && !isUnitedWeStandCard && !isMagePowerCard && !isReinforcementOfTheArmyCard) {
+        if (!isConfiscationCard && !isGracefulCharityCard && !isForcefulSentryCard && !isMonsterRebornCard && !isChangeOfHeartCard && !isBrainControlCard && !isSoulTakerCard && !isUnitedWeStandCard && !isMagePowerCard && !isReinforcementOfTheArmyCard) {
           if (!updatedDuel) {
             console.error(`❌ [handleDuelAction] Não foi possível buscar duelo atualizado do banco`);
             client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
             return;
           }
           
-          // Se está em STANDBY e invocou/ativou uma carta, mudar automaticamente para MAIN1
-          if (updatedDuel.currentPhase === TurnPhase.STANDBY && (actionType === 'ACTIVATE_SPELL_TRAP' || actionType === 'SET_SPELL_TRAP' || actionType === 'SET_MONSTER')) {
-            updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN1);
-            if (!updatedDuel) {
-              client.emit('duelError', { message: 'Erro ao mudar para fase MAIN1' });
-              return;
-            }
-          }
+          // Nota: A mudança de fase já foi feita antes de colocar a carta no campo (linhas 3996-4012)
+          // Não é necessário fazer novamente aqui
 
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -4720,7 +5845,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             player1LifePoints: updatedDuel.player1LifePoints,
             player2LifePoints: updatedDuel.player2LifePoints,
             currentTurn: updatedDuel.currentTurn,
-            currentPhase: updatedDuel.currentPhase || 'MAIN1',
+            currentPhase: updatedDuel.currentPhase,
             status: updatedDuel.status,
             duelTime: (updatedDuel as any).duelTime || 0,
             turnTime: (updatedDuel as any).turnTime || 90,
@@ -4749,12 +5874,33 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             updatedDuel = finalUpdatedDuel;
           }
 
-          // Se está em STANDBY e invocou/ativou uma carta, mudar automaticamente para MAIN1
-          if (updatedDuel && updatedDuel.currentPhase === TurnPhase.STANDBY && (actionType === 'ACTIVATE_SPELL_TRAP' || actionType === 'SET_SPELL_TRAP' || actionType === 'SET_MONSTER')) {
-            updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN1);
-            if (!updatedDuel) {
-              client.emit('duelError', { message: 'Erro ao mudar para fase MAIN1' });
-              return;
+          // Mudar fase automaticamente ao ativar/colocar carta da mão:
+          // - Se está em BATTLE e ativa/coloca uma carta da mão, mudar para MAIN2
+          // - Se está em STANDBY e ativa/coloca uma carta da mão, mudar para MAIN1
+          if (actionType === 'ACTIVATE_SPELL_TRAP' || actionType === 'SET_SPELL_TRAP' || actionType === 'SET_MONSTER') {
+            // Verificar se a carta foi ativada/colocada da mão
+            // Para ACTIVATE_SPELL_TRAP: zoneIndex é null/undefined se vem da mão
+            // Para SET_SPELL_TRAP e SET_MONSTER: sempre vem da mão (não está no campo ainda)
+            const isFromHand = actionType === 'ACTIVATE_SPELL_TRAP' 
+              ? (actionData.zoneIndex === undefined || actionData.zoneIndex === null)
+              : true; // SET_SPELL_TRAP e SET_MONSTER sempre vêm da mão
+            
+            if (isFromHand && updatedDuel) {
+              if (updatedDuel.currentPhase === TurnPhase.BATTLE) {
+                console.log(`🔄 [handleDuelAction] Carta especial ${actionType} da mão em BATTLE - mudando para MAIN2`);
+                updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN2);
+                if (!updatedDuel) {
+                  client.emit('duelError', { message: 'Erro ao mudar para fase MAIN2' });
+                  return;
+                }
+              } else if (updatedDuel.currentPhase === TurnPhase.STANDBY) {
+                console.log(`🔄 [handleDuelAction] Carta especial ${actionType} da mão em STANDBY - mudando para MAIN1`);
+                updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN1);
+                if (!updatedDuel) {
+                  client.emit('duelError', { message: 'Erro ao mudar para fase MAIN1' });
+                  return;
+                }
+              }
             }
           }
           
@@ -4771,7 +5917,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             player1LifePoints: updatedDuel.player1LifePoints,
             player2LifePoints: updatedDuel.player2LifePoints,
             currentTurn: updatedDuel.currentTurn,
-            currentPhase: updatedDuel.currentPhase || 'MAIN1',
+            currentPhase: updatedDuel.currentPhase,
             status: updatedDuel.status,
             duelTime: (updatedDuel as any).duelTime || 0,
             turnTime: (updatedDuel as any).turnTime || 90,
@@ -4796,6 +5942,128 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           return;
         }
 
+        // Buscar duelo e pendingChoice
+        const duel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        if (!duel) {
+          client.emit('duelError', { message: 'Duelo não encontrado' });
+          return;
+        }
+
+        const pendingChoice = (duel as any).pendingChoice;
+        if (!pendingChoice || pendingChoice.type !== 'MONSTER_REBORN' || pendingChoice.userId !== userId) {
+          client.emit('duelError', { message: 'Escolha pendente inválida' });
+          return;
+        }
+
+        const cardData = pendingChoice.data.cardData;
+        const cardWasOnField = pendingChoice.data.cardWasOnField;
+        const zoneIndexForCard = pendingChoice.data.zoneIndex;
+        let zoneWhereCardWasPlaced: number | null = null; // Quando ativa da mão, guardar zona onde foi colocada para mover ao cemitério depois
+
+        // Se a carta estava na mão, removê-la da mão e colocá-la no campo (placeCardOnField não remove quando precisa de modal)
+        if (!cardWasOnField && cardData) {
+          const isPlayer1 = Number(duel.player1Id) === Number(userId);
+          const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+          let availableZoneIndex = zoneIndexForCard;
+          
+          if (availableZoneIndex === null || availableZoneIndex === undefined) {
+            availableZoneIndex = playerField.spellTrap.findIndex((s: any) => s === null || s === undefined);
+            if (availableZoneIndex === -1) {
+              client.emit('duelError', { message: 'Não há espaço no campo para ativar a carta' });
+              return;
+            }
+          }
+
+          // Encontrar Monster Reborn na mão (por id ou nome) e removê-la
+          const hand = playerField.hand || [];
+          const cardIdRef = (cardData.idCarta || cardData.id || cardData.cardId || '').toString().toLowerCase();
+          const cardNameRef = (cardData.name || cardData.cardName || '').toString().toLowerCase();
+          const handIndex = hand.findIndex((c: any) => {
+            if (!c) return false;
+            const id = (c.idCarta || c.id || c.cardId || '').toString().toLowerCase();
+            const name = (c.name || c.cardName || '').toString().toLowerCase();
+            return id === cardIdRef || id.includes('monsterreborn') || name.includes('monster reborn');
+          });
+
+          if (handIndex === -1) {
+            client.emit('duelError', { message: 'Monster Reborn não encontrada na mão' });
+            return;
+          }
+
+          const cardFromHand = playerField.hand.splice(handIndex, 1)[0];
+          playerField.spellTrap[availableZoneIndex] = { ...cardFromHand, position: 'face-up' };
+          zoneWhereCardWasPlaced = availableZoneIndex;
+
+          await this.duelsService.updateDuelInDatabase(duelId, {
+            player1Field: (duel as any).player1Field,
+            player2Field: (duel as any).player2Field,
+          } as any);
+        } else if (cardWasOnField && zoneIndexForCard !== null && zoneIndexForCard !== undefined) {
+          // Se estava no campo em "set", apenas virar para "face-up"
+          const isPlayer1 = Number(duel.player1Id) === Number(userId);
+          const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+          if (playerField && playerField.spellTrap && playerField.spellTrap[zoneIndexForCard]) {
+            playerField.spellTrap[zoneIndexForCard].position = 'face-up';
+            await this.duelsService.updateDuelInDatabase(duelId, {
+              player1Field: (duel as any).player1Field,
+              player2Field: (duel as any).player2Field,
+            } as any);
+          }
+        }
+
+        // Buscar duelo atualizado após colocar/virar a carta
+        let duelAfterPlacement = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        if (!duelAfterPlacement) {
+          client.emit('duelError', { message: 'Erro ao buscar duelo após colocar carta' });
+          return;
+        }
+
+        // Mover MonsterReborn para o cemitério (é uma Normal Spell - vai ao cemitério após o efeito)
+        const isPlayer1 = Number(duelAfterPlacement.player1Id) === Number(userId);
+        const playerField = isPlayer1 ? (duelAfterPlacement as any).player1Field : (duelAfterPlacement as any).player2Field;
+        // Se ativou da mão, usar a zona onde acabamos de colocar; senão usar zoneIndex do pending ou buscar por id/nome
+        let finalZoneIndex: number | null | undefined = cardWasOnField ? zoneIndexForCard : zoneWhereCardWasPlaced;
+        if (finalZoneIndex === null || finalZoneIndex === undefined || finalZoneIndex < 0) {
+          finalZoneIndex = playerField.spellTrap.findIndex((s: any) => {
+            if (!s) return false;
+            const sid = (s.idCarta || s.id || s.cardId || '').toString().toLowerCase();
+            const sname = (s.name || s.cardName || '').toString().toLowerCase();
+            const did = (cardData.idCarta || cardData.id || cardData.cardId || '').toString().toLowerCase();
+            return sid === did || sid.includes('monsterreborn') || sname.includes('monster reborn');
+          });
+          if (finalZoneIndex === -1) finalZoneIndex = null;
+        }
+        
+        if (finalZoneIndex !== null && finalZoneIndex !== undefined && finalZoneIndex >= 0 && playerField && playerField.spellTrap && playerField.spellTrap[finalZoneIndex]) {
+          const card = playerField.spellTrap[finalZoneIndex];
+          const cardId = card.idCarta || card.id || card.cardId;
+          const cardName = (card.name || card.cardName || '').toString().toLowerCase();
+          const isMonsterReborn = cardId === 'MonsterReborn' || 
+                                 cardId === 'monsterreborn' ||
+                                 (typeof cardId === 'string' && cardId.toString().toLowerCase().includes('monsterreborn')) ||
+                                 cardName.includes('monster reborn');
+          
+          if (isMonsterReborn && (card.position === 'face-up' || !card.position)) {
+            console.log(`🔄 [MONSTER_REBORN_CHOICE] Movendo Monster Reborn da zona ${finalZoneIndex} para o cemitério (ativada da mão: ${!cardWasOnField})`);
+            
+            if (!playerField.graveyard) {
+              playerField.graveyard = [];
+            }
+            playerField.graveyard.push(card);
+            playerField.spellTrap[finalZoneIndex] = null;
+            
+            // Atualizar no banco
+            await this.duelsService.updateDuelInDatabase(duelId, {
+              player1Field: (duelAfterPlacement as any).player1Field,
+              player2Field: (duelAfterPlacement as any).player2Field,
+            } as any);
+            
+            // Buscar duelo atualizado novamente
+            duelAfterPlacement = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+          }
+        }
+
+        // Processar a escolha do monstro
         const result = await this.duelsService.processMonsterRebornChoice(duelId, userId, chosenMonster);
 
         if (!result.success) {
@@ -4803,7 +6071,161 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           return;
         }
 
-        // Não há pendingChoice para limpar (não é mais usado)
+        // Limpar pendingChoice
+        await this.duelsService.clearPendingChoice(duelId, false);
+        
+        // Buscar duelo atualizado e emitir atualização
+        const updatedDuelAfterChoice = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        if (updatedDuelAfterChoice) {
+          const player1Field = (updatedDuelAfterChoice as any).player1Field;
+          const player2Field = (updatedDuelAfterChoice as any).player2Field;
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuelAfterChoice);
+          
+          const duelData = {
+            id: updatedDuelAfterChoice.id,
+            player1Id: updatedDuelAfterChoice.player1Id,
+            player2Id: updatedDuelAfterChoice.player2Id,
+            player1: (updatedDuelAfterChoice as any).player1 || null,
+            player2: (updatedDuelAfterChoice as any).player2 || null,
+            player1LifePoints: updatedDuelAfterChoice.player1LifePoints,
+            player2LifePoints: updatedDuelAfterChoice.player2LifePoints,
+            currentTurn: updatedDuelAfterChoice.currentTurn,
+            currentPhase: updatedDuelAfterChoice.currentPhase,
+            status: updatedDuelAfterChoice.status,
+            turnCounter: updatedDuelAfterChoice.turnCounter || 1,
+            duelTime: (updatedDuelAfterChoice as any).duelTime || 0,
+            turnTime: (updatedDuelAfterChoice as any).turnTime || 90,
+            turnTimeRemaining: turnTimeRemaining,
+            turnStartedAt: (updatedDuelAfterChoice as any).turnStartedAt,
+            player1Field: player1Field,
+            player2Field: player2Field,
+            pendingChoice: (updatedDuelAfterChoice as any).pendingChoice || null,
+            createdAt: updatedDuelAfterChoice.createdAt,
+            updatedAt: updatedDuelAfterChoice.updatedAt,
+          };
+          
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
+        }
+      } else if (actionType === 'PREMATURE_BURIAL_CHOICE') {
+        const { chosenMonster } = actionData;
+        if (!chosenMonster || chosenMonster.index === undefined) {
+          client.emit('duelError', { message: 'Escolha de monstro inválida' });
+          return;
+        }
+        let duel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        if (!duel) {
+          client.emit('duelError', { message: 'Duelo não encontrado' });
+          return;
+        }
+        const pendingChoice = (duel as any).pendingChoice;
+        if (!pendingChoice || pendingChoice.type !== 'PREMATURE_BURIAL' || Number(pendingChoice.userId) !== Number(userId)) {
+          client.emit('duelError', { message: 'Escolha pendente inválida' });
+          return;
+        }
+        const cardData = pendingChoice.data.cardData;
+        const cardWasOnField = pendingChoice.data.cardWasOnField;
+        const zoneIndexForCard = pendingChoice.data.zoneIndex;
+        let spellTrapZoneIndex: number | null = null;
+        if (!cardWasOnField && cardData) {
+          const isPlayer1 = Number(duel.player1Id) === Number(userId);
+          const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+          const availableZoneIndex = playerField.spellTrap.findIndex((s: any) => s === null || s === undefined);
+          if (availableZoneIndex === -1) {
+            client.emit('duelError', { message: 'Não há espaço no campo para ativar a carta' });
+            return;
+          }
+          const hand = playerField.hand || [];
+          const cardIdRef = (cardData.idCarta || cardData.id || cardData.cardId || '').toString().toLowerCase();
+          const cardNameRef = (cardData.name || cardData.cardName || '').toString().toLowerCase();
+          const handIndex = hand.findIndex((c: any) => {
+            if (!c) return false;
+            const id = (c.idCarta || c.id || c.cardId || '').toString().toLowerCase();
+            const name = (c.name || c.cardName || '').toString().toLowerCase();
+            return id === cardIdRef || id.includes('prematureburial') || name.includes('premature burial');
+          });
+          if (handIndex === -1) {
+            client.emit('duelError', { message: 'Premature Burial não encontrada na mão' });
+            return;
+          }
+          const cardFromHand = playerField.hand.splice(handIndex, 1)[0];
+          playerField.spellTrap[availableZoneIndex] = { ...cardFromHand, position: 'face-up' };
+          spellTrapZoneIndex = availableZoneIndex;
+          await this.duelsService.updateDuelInDatabase(duelId, {
+            player1Field: (duel as any).player1Field,
+            player2Field: (duel as any).player2Field,
+          } as any);
+          await new Promise((r) => setTimeout(r, 50));
+        } else if (cardWasOnField && zoneIndexForCard != null) {
+          spellTrapZoneIndex = zoneIndexForCard;
+          const isPlayer1 = Number(duel.player1Id) === Number(userId);
+          const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+          if (playerField?.spellTrap?.[zoneIndexForCard]) {
+            playerField.spellTrap[zoneIndexForCard].position = 'face-up';
+            await this.duelsService.updateDuelInDatabase(duelId, {
+              player1Field: (duel as any).player1Field,
+              player2Field: (duel as any).player2Field,
+            } as any);
+          }
+        }
+        duel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        if (!duel) {
+          client.emit('duelError', { message: 'Erro ao buscar duelo' });
+          return;
+        }
+        if (spellTrapZoneIndex === null || spellTrapZoneIndex === undefined || spellTrapZoneIndex < 0) {
+          const isPlayer1 = Number(duel.player1Id) === Number(userId);
+          const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+          spellTrapZoneIndex = playerField.spellTrap.findIndex((s: any) => {
+            if (!s) return false;
+            const sid = (s.idCarta || s.id || s.cardId || '').toString().toLowerCase();
+            return sid.includes('prematureburial') || (s.name || s.cardName || '').toString().toLowerCase().includes('premature burial');
+          });
+        }
+        if (spellTrapZoneIndex === -1 || spellTrapZoneIndex === null || spellTrapZoneIndex === undefined) {
+          client.emit('duelError', { message: 'Premature Burial não encontrada no campo' });
+          return;
+        }
+        const monsterIndex = typeof chosenMonster.index === 'number' ? chosenMonster.index : parseInt(String(chosenMonster.index), 10);
+        if (isNaN(monsterIndex)) {
+          client.emit('duelError', { message: 'Índice do monstro inválido' });
+          return;
+        }
+        const result = await this.duelsService.processPrematureBurialChoice(duelId, userId, { index: monsterIndex }, spellTrapZoneIndex);
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro ao processar Premature Burial' });
+          return;
+        }
+        await this.duelsService.clearPendingChoice(duelId, false);
+        await this.createAndEmitDuelLog(duelId, userId, 'ACTIVATE_SPELL', `Premature Burial: reviveu um monstro do cemitério e equipou`);
+        const updatedDuel = result.duel || await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        if (updatedDuel) {
+          const player1Field = (updatedDuel as any).player1Field;
+          const player2Field = (updatedDuel as any).player2Field;
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          const duelData = {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            duelTime: (updatedDuel as any).duelTime || 0,
+            turnTime: (updatedDuel as any).turnTime || 90,
+            turnTimeRemaining,
+            turnStartedAt: (updatedDuel as any).turnStartedAt,
+            player1Field,
+            player2Field,
+            pendingChoice: null,
+            createdAt: updatedDuel.createdAt,
+            updatedAt: updatedDuel.updatedAt,
+          };
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
+        }
       } else if (actionType === 'REINFORCEMENT_OF_THE_ARMY_CHOICE') {
         // Processar escolha do Reinforcement Of The Army
         const { deckIndex } = actionData;
@@ -4824,7 +6246,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         await this.createAndEmitDuelLog(duelId, userId, 'REINFORCEMENT_OF_THE_ARMY', `Reinforcement Of The Army adicionou um monstro Warrior à mão`);
 
         // Buscar duelo atualizado
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (!updatedDuel) {
           client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
           return;
@@ -4867,6 +6289,82 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           return;
         }
 
+        // Buscar duelo e pendingChoice antes de processar
+        const duel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        if (!duel) {
+          client.emit('duelError', { message: 'Duelo não encontrado' });
+          return;
+        }
+
+        const pendingChoice = (duel as any).pendingChoice;
+        if (!pendingChoice || pendingChoice.type !== 'LAST_WILL' || pendingChoice.userId !== userId) {
+          client.emit('duelError', { message: 'Escolha pendente inválida para Last Will' });
+          return;
+        }
+
+        const isPlayer1 = Number(duel.player1Id) === Number(userId);
+        const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+
+        // Mover Last Will para o cemitério se estiver no campo
+        const finalZoneIndex = pendingChoice.data?.zoneIndex;
+        if (finalZoneIndex !== null && finalZoneIndex !== undefined && playerField && playerField.spellTrap && playerField.spellTrap[finalZoneIndex]) {
+          const card = playerField.spellTrap[finalZoneIndex];
+          const cardId = card.idCarta || card.id || card.cardId;
+          const cardName = (card.name || card.cardName || '').toLowerCase();
+          const isLastWill = cardId === 'LastWill' || 
+                           cardId === 'lastwill' ||
+                           (typeof cardId === 'string' && cardId.toLowerCase().includes('lastwill')) ||
+                           cardName.includes('last will');
+          
+          if (isLastWill && (card.position === 'face-up' || card.position === 'set')) {
+            console.log(`🔄 [LAST_WILL_CHOICE] Movendo Last Will da zona ${finalZoneIndex} para o cemitério`);
+            
+            if (!playerField.graveyard) {
+              playerField.graveyard = [];
+            }
+            playerField.graveyard.push(card);
+            playerField.spellTrap[finalZoneIndex] = null;
+            
+            // Atualizar no banco
+            await this.duelsService.updateDuelInDatabase(duelId, {
+              player1Field: (duel as any).player1Field,
+              player2Field: (duel as any).player2Field,
+            } as any);
+          }
+        } else if (pendingChoice.data?.cardWasOnField === false) {
+          // Carta estava na mão - remover da mão e mover para o cemitério
+          const cardId = pendingChoice.data?.cardId;
+          const cardInstanceId = pendingChoice.data?.cardInstanceId;
+          
+          if (playerField && playerField.hand && Array.isArray(playerField.hand)) {
+            const cardIndex = playerField.hand.findIndex((c: any) => {
+              if (cardInstanceId && c.instanceId) {
+                return c.instanceId === cardInstanceId;
+              }
+              const cId = c.idCarta || c.id || c.cardId;
+              return cId === cardId || String(cId).toLowerCase() === String(cardId).toLowerCase();
+            });
+            
+            if (cardIndex !== -1) {
+              const card = playerField.hand[cardIndex];
+              playerField.hand.splice(cardIndex, 1);
+              
+              if (!playerField.graveyard) {
+                playerField.graveyard = [];
+              }
+              playerField.graveyard.push(card);
+              
+              console.log(`🔄 [LAST_WILL_CHOICE] Movendo Last Will da mão para o cemitério`);
+              
+              // Atualizar no banco
+              await this.duelsService.updateDuelInDatabase(duelId, {
+                player1Field: (duel as any).player1Field,
+                player2Field: (duel as any).player2Field,
+              } as any);
+            }
+          }
+        }
+
         const result = await this.cardEffectHandlersService.processLastWillChoice(duelId, userId, deckIndex, zoneIndex);
 
         if (!result.success) {
@@ -4874,11 +6372,14 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           return;
         }
 
+        // Limpar pendingChoice
+        await this.duelsService.clearPendingChoice(duelId, false);
+
         // Criar log de ação
         await this.createAndEmitDuelLog(duelId, userId, 'LAST_WILL_EFFECT', `Last Will invocou um monstro do deck por invocação especial`);
 
         // Buscar duelo atualizado
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (!updatedDuel) {
           client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
           return;
@@ -4975,6 +6476,71 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           return;
         }
 
+        // Buscar duelo e pendingChoice
+        const duel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        if (!duel) {
+          client.emit('duelError', { message: 'Duelo não encontrado' });
+          return;
+        }
+
+        const pendingChoice = (duel as any).pendingChoice;
+        if (!pendingChoice || pendingChoice.type !== 'CHANGE_OF_HEART' || pendingChoice.userId !== userId) {
+          client.emit('duelError', { message: 'Escolha pendente inválida' });
+          return;
+        }
+
+        const cardData = pendingChoice.data.cardData;
+        const cardWasOnField = pendingChoice.data.cardWasOnField;
+        const zoneIndexForCard = pendingChoice.data.zoneIndex;
+        
+        // Variável para armazenar o zoneIndex final onde a carta está
+        let finalZoneIndex: number | null = null;
+
+        // Se a carta estava na mão, colocá-la no campo agora
+        if (!cardWasOnField && cardData) {
+          // Encontrar um zoneIndex disponível
+          const isPlayer1 = Number(duel.player1Id) === Number(userId);
+          const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+          let availableZoneIndex = zoneIndexForCard;
+          
+          // Se zoneIndex não foi especificado, encontrar um disponível
+          if (availableZoneIndex === null || availableZoneIndex === undefined) {
+            availableZoneIndex = playerField.spellTrap.findIndex((s: any) => s === null || s === undefined);
+            if (availableZoneIndex === -1) {
+              client.emit('duelError', { message: 'Não há espaço no campo para ativar a carta' });
+              return;
+            }
+          }
+
+          // Colocar a carta no campo
+          const cardId = cardData.idCarta || cardData.id || cardData.cardId;
+          const cardType = cardData.type || cardData.cardType || 'Spell';
+          const placeResult = await this.duelsService.placeCardOnField(duelId, userId, cardId, availableZoneIndex, 'face-up', cardType);
+          
+          if (!placeResult || !placeResult.success) {
+            client.emit('duelError', { message: placeResult?.message || 'Erro ao colocar carta no campo' });
+            return;
+          }
+          
+          // Armazenar o zoneIndex onde a carta foi colocada
+          finalZoneIndex = availableZoneIndex;
+        } else if (cardWasOnField && zoneIndexForCard !== null && zoneIndexForCard !== undefined) {
+          // Se estava no campo em "set", apenas virar para "face-up"
+          const isPlayer1 = Number(duel.player1Id) === Number(userId);
+          const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+          if (playerField && playerField.spellTrap && playerField.spellTrap[zoneIndexForCard]) {
+            playerField.spellTrap[zoneIndexForCard].position = 'face-up';
+            await this.duelsService.updateDuelInDatabase(duelId, {
+              player1Field: (duel as any).player1Field,
+              player2Field: (duel as any).player2Field,
+            } as any);
+          }
+          
+          // Armazenar o zoneIndex onde a carta está
+          finalZoneIndex = zoneIndexForCard;
+        }
+
+        // Processar a escolha do monstro
         const result = await this.duelsService.processChangeOfHeartChoice(duelId, userId, chosenMonsterZoneIndex);
 
         if (!result.success) {
@@ -4982,13 +6548,25 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           return;
         }
 
-        // Não há pendingChoice para limpar (não é mais usado)
+        // Change Of Heart permanece no campo até o fim do turno ou ser destruída
+        // Não mover para o cemitério imediatamente - será movida no fim do turno em advanceToNextTurn
+        
+        // Buscar duelo atualizado após processar a escolha
+        let duelAfterChoice = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        if (!duelAfterChoice) {
+          client.emit('duelError', { message: 'Erro ao buscar duelo após processar escolha' });
+          return;
+        }
+
+        // Limpar pendingChoice
+        await this.duelsService.clearPendingChoice(duelId);
         
         // Aguardar um pouco para garantir que o banco foi atualizado
         await new Promise(resolve => setTimeout(resolve, 100));
         
         // Buscar duelo atualizado (forçar busca do banco ignorando cache)
-        const updatedDuelAfterChoice = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        // Usar duelAfterChoice se já foi atualizado, senão buscar novamente
+        const updatedDuelAfterChoice = duelAfterChoice || await this.duelsService.findDuelByIdFromDatabase(duelId, true);
         if (!updatedDuelAfterChoice) {
           client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
           return;
@@ -5043,6 +6621,62 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           return;
         }
 
+        // Buscar duelo e pendingChoice
+        const duel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        if (!duel) {
+          client.emit('duelError', { message: 'Duelo não encontrado' });
+          return;
+        }
+
+        const pendingChoice = (duel as any).pendingChoice;
+        if (!pendingChoice || pendingChoice.type !== 'BRAIN_CONTROL' || pendingChoice.userId !== userId) {
+          client.emit('duelError', { message: 'Escolha pendente inválida' });
+          return;
+        }
+
+        const cardData = pendingChoice.data.cardData;
+        const cardWasOnField = pendingChoice.data.cardWasOnField;
+        const zoneIndexForCard = pendingChoice.data.zoneIndex;
+
+        // Se a carta estava na mão, colocá-la no campo agora
+        if (!cardWasOnField && cardData) {
+          // Encontrar um zoneIndex disponível
+          const isPlayer1 = Number(duel.player1Id) === Number(userId);
+          const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+          let availableZoneIndex = zoneIndexForCard;
+          
+          // Se zoneIndex não foi especificado, encontrar um disponível
+          if (availableZoneIndex === null || availableZoneIndex === undefined) {
+            availableZoneIndex = playerField.spellTrap.findIndex((s: any) => s === null || s === undefined);
+            if (availableZoneIndex === -1) {
+              client.emit('duelError', { message: 'Não há espaço no campo para ativar a carta' });
+              return;
+            }
+          }
+
+          // Colocar a carta no campo
+          const cardId = cardData.idCarta || cardData.id || cardData.cardId;
+          const cardType = cardData.type || cardData.cardType || 'Spell';
+          const placeResult = await this.duelsService.placeCardOnField(duelId, userId, cardId, availableZoneIndex, 'face-up', cardType);
+          
+          if (!placeResult || !placeResult.success) {
+            client.emit('duelError', { message: placeResult?.message || 'Erro ao colocar carta no campo' });
+            return;
+          }
+        } else if (cardWasOnField && zoneIndexForCard !== null && zoneIndexForCard !== undefined) {
+          // Se estava no campo em "set", apenas virar para "face-up"
+          const isPlayer1 = Number(duel.player1Id) === Number(userId);
+          const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+          if (playerField && playerField.spellTrap && playerField.spellTrap[zoneIndexForCard]) {
+            playerField.spellTrap[zoneIndexForCard].position = 'face-up';
+            await this.duelsService.updateDuelInDatabase(duelId, {
+              player1Field: (duel as any).player1Field,
+              player2Field: (duel as any).player2Field,
+            } as any);
+          }
+        }
+
+        // Processar a escolha do monstro
         const result = await this.duelsService.processBrainControlChoice(duelId, userId, chosenMonsterZoneIndex);
 
         if (!result.success) {
@@ -5050,13 +6684,25 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           return;
         }
 
-        // Não há pendingChoice para limpar (não é mais usado)
+        // Buscar duelo atualizado após processar a escolha
+        let duelAfterBrainControl = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        if (!duelAfterBrainControl) {
+          client.emit('duelError', { message: 'Erro ao buscar duelo após processar escolha' });
+          return;
+        }
+
+        // Brain Control permanece no campo (face-up) enquanto controla o monstro.
+        // Será movida para o cemitério no fim do turno (advanceToNextTurn) ou quando for destruída (MST, Harpie's, etc.).
+
+        // Limpar pendingChoice
+        await this.duelsService.clearPendingChoice(duelId);
         
         // Aguardar um pouco para garantir que o banco foi atualizado
         await new Promise(resolve => setTimeout(resolve, 100));
         
         // Buscar duelo atualizado (forçar busca do banco ignorando cache)
-        const updatedDuelAfterBrainControl = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        // Usar duelAfterBrainControl se já foi atualizado, senão buscar novamente
+        const updatedDuelAfterBrainControl = duelAfterBrainControl || await this.duelsService.findDuelByIdFromDatabase(duelId, true);
         if (!updatedDuelAfterBrainControl) {
           client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
           return;
@@ -5301,27 +6947,32 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
       } else if (actionType === 'MYSTICAL_SPACE_TYPHOON_CHOICE') {
         // Processar escolha do alvo para Mystical Space Typhoon
-        const { targetPlayer, targetZoneIndex } = actionData;
+        const { targetPlayer, targetZoneIndex, spellTrapZoneIndex } = actionData;
 
         if (targetPlayer === undefined || targetZoneIndex === undefined || targetZoneIndex < 0 || targetZoneIndex >= 5) {
           client.emit('duelError', { message: 'Escolha de alvo inválida' });
           return;
         }
 
-        const result = await this.duelsService.processMysticalSpaceTyphoonChoice(duelId, userId, targetPlayer, targetZoneIndex);
+        console.log(`🔍 [MYSTICAL_SPACE_TYPHOON_CHOICE] Processando escolha - targetPlayer: ${targetPlayer}, targetZoneIndex: ${targetZoneIndex}, spellTrapZoneIndex: ${spellTrapZoneIndex}`);
+        console.log(`🔍 [MYSTICAL_SPACE_TYPHOON_CHOICE] Chamando processMysticalSpaceTyphoonChoice...`);
+        const result = await this.duelsService.processMysticalSpaceTyphoonChoice(duelId, userId, targetPlayer, targetZoneIndex, spellTrapZoneIndex);
 
         if (!result.success) {
+          console.error(`❌ [MYSTICAL_SPACE_TYPHOON_CHOICE] Erro ao processar: ${result.message}`);
           client.emit('duelError', { message: result.message || 'Erro ao processar escolha' });
           return;
         }
 
-        // Não há pendingChoice para limpar (não é mais usado)
+        console.log(`✅ [MYSTICAL_SPACE_TYPHOON_CHOICE] processMysticalSpaceTyphoonChoice concluído com sucesso`);
 
-        // Aguardar um pouco para garantir que o banco foi atualizado
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        // Buscar duelo atualizado (forçar busca do banco ignorando cache)
-        const updatedDuelAfterMST = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        // Usar o duelo retornado pelo serviço (já com monstro devolvido ao oponente se era Change Of Heart/Brain Control)
+        let updatedDuelAfterMST = (result as any).duel;
+        if (!updatedDuelAfterMST) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+          console.log(`🔍 [MYSTICAL_SPACE_TYPHOON_CHOICE] Buscando duelo atualizado do banco...`);
+          updatedDuelAfterMST = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        }
         if (!updatedDuelAfterMST) {
           client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
           return;
@@ -5508,6 +7159,13 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         // Processar ataque
         const { attackerZoneIndex, targetZoneIndex } = actionData;
         
+        console.log(`⚔️ [handleDuelAction] ATTACK recebido:`, {
+          attackerZoneIndex,
+          targetZoneIndex,
+          targetZoneIndexType: typeof targetZoneIndex,
+          targetZoneIndexAfterNullish: targetZoneIndex ?? null
+        });
+        
         if (attackerZoneIndex === undefined) {
           client.emit('duelError', { message: 'Zona do atacante inválida' });
           return;
@@ -5523,10 +7181,32 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           }
         }
 
-        const result = await this.duelsService.attackMonster(duelId, userId, attackerZoneIndex, targetZoneIndex ?? null);
+        const finalTargetZoneIndex = targetZoneIndex ?? null;
+        console.log(`⚔️ [handleDuelAction] Chamando attackMonster com:`, {
+          attackerZoneIndex,
+          targetZoneIndex: finalTargetZoneIndex
+        });
         
-        // Buscar duelo atualizado SEMPRE (mesmo se Mirror Force foi ativada, precisamos emitir a atualização)
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId);
+        // Obter informações do atacante e alvo ANTES do ataque
+        // Isso é necessário para emitir a animação mesmo se o ataque for cancelado por uma armadilha
+        // Reutilizar duelBeforeAttack que já foi buscado acima
+        if (!duelBeforeAttack) {
+          client.emit('duelError', { message: 'Duelo não encontrado' });
+          return;
+        }
+        
+        const isPlayer1 = Number(duelBeforeAttack.player1Id) === Number(userId);
+        const attackerFieldBefore = isPlayer1 ? (duelBeforeAttack as any).player1Field : (duelBeforeAttack as any).player2Field;
+        const defenderFieldBefore = isPlayer1 ? (duelBeforeAttack as any).player2Field : (duelBeforeAttack as any).player1Field;
+        const attackerBefore = attackerFieldBefore?.monsters?.[attackerZoneIndex];
+        const targetBefore = finalTargetZoneIndex !== null && finalTargetZoneIndex !== undefined 
+          ? defenderFieldBefore?.monsters?.[finalTargetZoneIndex] 
+          : null;
+        
+        const result = await this.duelsService.attackMonster(duelId, userId, attackerZoneIndex, finalTargetZoneIndex);
+        
+        // Buscar duelo atualizado do BANCO (garantir BLS canAttackAgainThisTurn e estado persistido)
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (!updatedDuel) {
           client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
           return;
@@ -5548,8 +7228,30 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           }
         }
         
-        // Se Mirror Force foi ativada, emitir erro mas TAMBÉM emitir a atualização do duelo
-        if (!result.success) {
+        // Se o ataque foi cancelado por uma armadilha, emitir evento para acionar a animação
+        if (!result.success && attackerBefore) {
+          // Verificar se a mensagem indica que foi cancelado por uma armadilha
+          const message = result.message || '';
+          const isTrapCancelled = message.includes('Mirror Force') || 
+                                  message.includes('Sakuretsu Armor') || 
+                                  message.includes('Dimensional Prison') ||
+                                  message.includes('foi ativada');
+          
+          if (isTrapCancelled) {
+            console.log(`🛡️ [handleDuelAction] Ataque cancelado por armadilha - emitindo evento para animação`);
+            
+            // Emitir evento para acionar a animação de ataque cancelado
+            this.server.to(`duel_${duelId}`).emit('attackCancelled', {
+              duelId: duelId,
+              attackerZoneIndex: attackerZoneIndex,
+              targetZoneIndex: finalTargetZoneIndex,
+              attackerCard: attackerBefore,
+              targetCard: targetBefore,
+              message: message,
+              isDirectAttack: finalTargetZoneIndex === null || finalTargetZoneIndex === undefined
+            });
+          }
+          
           client.emit('duelError', { message: result.message || 'Erro ao atacar' });
           // Continuar para emitir a atualização do duelo mesmo quando Mirror Force é ativada
         }
@@ -5643,6 +7345,9 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           client.emit('duelError', { message: result.message || 'Erro ao mudar posição do monstro' });
           return;
         }
+        
+        const positionText = newPosition === 'attack' ? 'ataque' : 'defesa';
+        await this.createAndEmitDuelLog(duelId, userId, 'CHANGE_POSITION', `Mudou posição do monstro para ${positionText}`);
         
         // Buscar duelo atualizado
         const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId);
@@ -5744,6 +7449,289 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         
         // Aguardar um pequeno delay antes de emitir duelUpdate para garantir que o modal feche primeiro
         await new Promise(resolve => setTimeout(resolve, 100));
+        this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
+      } else if (actionType === 'MONSTER_REINCARNATION_DISCARD_CHOICE') {
+        // Processar descarte de carta da mão (primeiro passo do Monster Reincarnation)
+        const { instanceIdToDiscard } = actionData;
+        
+        if (!instanceIdToDiscard) {
+          client.emit('duelError', { message: 'Carta para descartar não especificada' });
+          return;
+        }
+        
+        // Buscar duelo e pendingChoice
+        const duel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        if (!duel) {
+          client.emit('duelError', { message: 'Duelo não encontrado' });
+          return;
+        }
+        
+        const pendingChoice = (duel as any).pendingChoice;
+        if (!pendingChoice || pendingChoice.type !== 'MONSTER_REINCARNATION' || pendingChoice.userId !== userId) {
+          client.emit('duelError', { message: 'Escolha pendente inválida para Monster Reincarnation' });
+          return;
+        }
+        
+        const isPlayer1 = Number(duel.player1Id) === Number(userId);
+        const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+        
+        // Encontrar a carta na mão
+        const cardIndex = playerField.hand.findIndex((c: any) => c && c.instanceId === instanceIdToDiscard);
+        if (cardIndex === -1) {
+          client.emit('duelError', { message: 'Carta não encontrada na mão' });
+          return;
+        }
+        
+        const cardToDiscard = playerField.hand[cardIndex];
+        
+        // IMPORTANTE: NÃO mover a carta para o cemitério ainda - apenas remover da mão visualmente
+        // A carta será movida para o cemitério apenas quando o efeito completo for resolvido (após escolher o monstro)
+        playerField.hand.splice(cardIndex, 1);
+        
+        console.log(`🔄 [MONSTER_REINCARNATION_DISCARD_CHOICE] Carta removida da mão, mas ainda não movida para o cemitério. Será movida após escolher o monstro.`);
+        
+        // Atualizar pendingChoice para o segundo passo (escolher monstro do cemitério)
+        // Guardar a carta descartada no pendingChoice para mover para o cemitério depois
+        const updatedPendingChoice = {
+          ...pendingChoice,
+          data: {
+            ...pendingChoice.data,
+            step: 2, // Segundo passo: escolher monstro do cemitério
+            discardedCardInstanceId: instanceIdToDiscard,
+            discardedCard: cardToDiscard, // Guardar a carta completa para mover depois
+          }
+        };
+        await this.duelsService.setPendingChoice(duelId, updatedPendingChoice);
+        
+        // Atualizar no banco (incluindo pendingChoice atualizado)
+        // IMPORTANTE: A carta ainda não foi para o cemitério, apenas removida da mão
+        await this.duelsService.updateDuelInDatabase(duelId, {
+          player1Field: (duel as any).player1Field,
+          player2Field: (duel as any).player2Field,
+          pendingChoice: updatedPendingChoice,
+        } as any);
+        
+        // Coletar monstros do cemitério do jogador (sem incluir a carta descartada ainda)
+        const graveyard = playerField.graveyard || [];
+        const monsters = graveyard.filter((c: any) => {
+          const cardType = c.type || c.cardType;
+          return cardType === 'Monster' || cardType === 'Monstro';
+        });
+        
+        if (monsters.length === 0) {
+          client.emit('duelError', { message: 'Não há monstros no seu cemitério' });
+          
+          // Se não há monstros, mover a carta descartada para o cemitério mesmo assim (foi descartada como custo)
+          const discardedCard = updatedPendingChoice.data?.discardedCard;
+          if (discardedCard) {
+            if (!playerField.graveyard) {
+              playerField.graveyard = [];
+            }
+            playerField.graveyard.push(discardedCard);
+            console.log(`🔄 [MONSTER_REINCARNATION_DISCARD_CHOICE] Carta descartada movida para o cemitério (sem monstros disponíveis): ${discardedCard.name || discardedCard.cardName}`);
+          }
+          
+          // Atualizar no banco
+          await this.duelsService.updateDuelInDatabase(duelId, {
+            player1Field: (duel as any).player1Field,
+            player2Field: (duel as any).player2Field,
+          } as any);
+          
+          // Limpar pendingChoice já que não há monstros
+          await this.duelsService.clearPendingChoice(duelId, false);
+          
+          // Buscar duelo atualizado e emitir
+          const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+          if (updatedDuel) {
+            console.log(`📤 [MONSTER_REINCARNATION_DISCARD_CHOICE] Emitindo duelUpdate após descarte (sem monstros no cemitério)`);
+            this.server.to(`duel_${duelId}`).emit('duelUpdate', updatedDuel);
+          }
+          return;
+        }
+        
+        // IMPORTANTE: Não emitir duelUpdate aqui porque a carta descartada ainda não foi para o cemitério
+        // A carta será movida para o cemitério apenas quando o monstro for escolhido
+        // Por enquanto, apenas remover da mão e abrir o modal do cemitério
+        
+        console.log(`📤 [MONSTER_REINCARNATION_DISCARD_CHOICE] Carta removida da mão, mas ainda não no cemitério. Mão tem ${playerField.hand.length} cartas`);
+        
+        // Buscar duelo atualizado para emitir (sem a carta descartada no cemitério ainda)
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+        if (updatedDuel) {
+          // Emitir atualização apenas para refletir a remoção da mão (carta ainda não está no cemitério)
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', updatedDuel);
+        }
+        
+        // Pequeno delay antes de abrir o modal
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Emitir evento para mostrar modal de escolha de monstro do cemitério
+        console.log(`📤 [handleDuelAction] Emitindo monsterReincarnationShowGraveyard para escolher monstro`);
+        client.emit('monsterReincarnationShowGraveyard', {
+          monsters: monsters,
+          duelId: duelId,
+        });
+      } else if (actionType === 'MONSTER_REINCARNATION_GRAVEYARD_CHOICE') {
+        // Processar escolha de monstro do cemitério (segundo passo do Monster Reincarnation)
+        const { graveyardIndex } = actionData;
+        
+        if (graveyardIndex === undefined || graveyardIndex === null) {
+          client.emit('duelError', { message: 'Escolha de monstro inválida' });
+          return;
+        }
+        
+        // Buscar duelo e pendingChoice
+        const duel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        if (!duel) {
+          client.emit('duelError', { message: 'Duelo não encontrado' });
+          return;
+        }
+        
+        const pendingChoice = (duel as any).pendingChoice;
+        if (!pendingChoice || pendingChoice.type !== 'MONSTER_REINCARNATION' || pendingChoice.userId !== userId) {
+          client.emit('duelError', { message: 'Escolha pendente inválida para Monster Reincarnation' });
+          return;
+        }
+        
+        const isPlayer1 = Number(duel.player1Id) === Number(userId);
+        const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+        
+        // Encontrar o monstro no cemitério (usar índice real, não índice de monstros)
+        const graveyard = playerField.graveyard || [];
+        const monsters: any[] = [];
+        let monsterCount = 0;
+        let realIndex = -1;
+        
+        for (let i = 0; i < graveyard.length; i++) {
+          const card = graveyard[i];
+          const cardType = card.type || card.cardType;
+          if (cardType === 'Monster' || cardType === 'Monstro') {
+            if (monsterCount === graveyardIndex) {
+              realIndex = i;
+              break;
+            }
+            monsterCount++;
+          }
+        }
+        
+        if (realIndex === -1) {
+          client.emit('duelError', { message: 'Monstro não encontrado no cemitério' });
+          return;
+        }
+        
+        const monsterToReturn = graveyard[realIndex];
+        
+        // Remover do cemitério e adicionar à mão
+        graveyard.splice(realIndex, 1);
+        if (!playerField.hand) {
+          playerField.hand = [];
+        }
+        playerField.hand.push(monsterToReturn);
+        
+        // IMPORTANTE: Agora mover a carta descartada para o cemitério (ela estava guardada no pendingChoice)
+        const discardedCard = pendingChoice.data?.discardedCard;
+        if (discardedCard) {
+          if (!playerField.graveyard) {
+            playerField.graveyard = [];
+          }
+          playerField.graveyard.push(discardedCard);
+          console.log(`🔄 [MONSTER_REINCARNATION_GRAVEYARD_CHOICE] Carta descartada movida para o cemitério agora: ${discardedCard.name || discardedCard.cardName}`);
+        } else {
+          console.warn(`⚠️ [MONSTER_REINCARNATION_GRAVEYARD_CHOICE] Carta descartada não encontrada no pendingChoice.data`);
+        }
+        
+        // Mover Monster Reincarnation para o cemitério se estiver no campo
+        const finalZoneIndex = pendingChoice.data?.zoneIndex;
+        if (finalZoneIndex !== null && finalZoneIndex !== undefined && playerField && playerField.spellTrap && playerField.spellTrap[finalZoneIndex]) {
+          const card = playerField.spellTrap[finalZoneIndex];
+          const cardId = card.idCarta || card.id || card.cardId;
+          const cardName = (card.name || card.cardName || '').toLowerCase();
+          const isMonsterReincarnation = cardId === 'MonsterReincarnation' || 
+                                       cardId === 'monsterreincarnation' ||
+                                       (typeof cardId === 'string' && cardId.toLowerCase().includes('monsterreincarnation')) ||
+                                       cardName.includes('monster reincarnation');
+          
+          if (isMonsterReincarnation && (card.position === 'face-up' || card.position === 'set')) {
+            console.log(`🔄 [MONSTER_REINCARNATION_GRAVEYARD_CHOICE] Movendo Monster Reincarnation da zona ${finalZoneIndex} para o cemitério`);
+            
+            if (!playerField.graveyard) {
+              playerField.graveyard = [];
+            }
+            playerField.graveyard.push(card);
+            playerField.spellTrap[finalZoneIndex] = null;
+          }
+        } else if (finalZoneIndex === null || finalZoneIndex === undefined) {
+          // Carta estava na mão - remover da mão e adicionar ao cemitério
+          const cardInstanceId = pendingChoice.data?.cardInstanceId;
+          if (cardInstanceId) {
+            const handIndex = playerField.hand.findIndex((c: any) => c && c.instanceId === cardInstanceId);
+            if (handIndex !== -1) {
+              const card = playerField.hand[handIndex];
+              const cardId = card.idCarta || card.id || card.cardId;
+              const cardName = (card.name || card.cardName || '').toLowerCase();
+              const isMonsterReincarnation = cardId === 'MonsterReincarnation' || 
+                                           cardId === 'monsterreincarnation' ||
+                                           (typeof cardId === 'string' && cardId.toLowerCase().includes('monsterreincarnation')) ||
+                                           cardName.includes('monster reincarnation');
+              
+              if (isMonsterReincarnation) {
+                console.log(`🔄 [MONSTER_REINCARNATION_GRAVEYARD_CHOICE] Movendo Monster Reincarnation da mão para o cemitério`);
+                playerField.hand.splice(handIndex, 1);
+                if (!playerField.graveyard) {
+                  playerField.graveyard = [];
+                }
+                playerField.graveyard.push(card);
+              }
+            }
+          }
+        }
+        
+        // Atualizar no banco
+        await this.duelsService.updateDuelInDatabase(duelId, {
+          player1Field: (duel as any).player1Field,
+          player2Field: (duel as any).player2Field,
+        } as any);
+        
+        // Limpar pendingChoice
+        await this.duelsService.clearPendingChoice(duelId, false);
+        
+        // Criar log de ação
+        await this.createAndEmitDuelLog(duelId, userId, 'MONSTER_REINCARNATION_EFFECT', `Monster Reincarnation devolveu um monstro do cemitério para a mão`);
+        
+        // Buscar duelo atualizado
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+        if (!updatedDuel) {
+          client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
+          return;
+        }
+        
+        const player1Field = (updatedDuel as any).player1Field;
+        const player2Field = (updatedDuel as any).player2Field;
+        const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+        
+        const duelData = {
+          id: updatedDuel.id,
+          player1Id: updatedDuel.player1Id,
+          player2Id: updatedDuel.player2Id,
+          player1: (updatedDuel as any).player1 || null,
+          player2: (updatedDuel as any).player2 || null,
+          player1LifePoints: updatedDuel.player1LifePoints,
+          player2LifePoints: updatedDuel.player2LifePoints,
+          currentTurn: updatedDuel.currentTurn,
+          currentPhase: updatedDuel.currentPhase,
+          status: updatedDuel.status,
+          turnCounter: updatedDuel.turnCounter || 1,
+          duelTime: (updatedDuel as any).duelTime || 0,
+          turnTime: (updatedDuel as any).turnTime || 90,
+          turnTimeRemaining: turnTimeRemaining,
+          turnStartedAt: (updatedDuel as any).turnStartedAt,
+          player1Field: player1Field,
+          player2Field: player2Field,
+          pendingChoice: (updatedDuel as any).pendingChoice || null,
+          createdAt: updatedDuel.createdAt,
+          updatedAt: updatedDuel.updatedAt,
+        };
+        
         this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
       } else if (actionType === 'CONFISCATION_CHOICE') {
         // Processar escolha do Confiscation
@@ -5922,7 +7910,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             player1LifePoints: updatedDuel.player1LifePoints,
             player2LifePoints: updatedDuel.player2LifePoints,
             currentTurn: updatedDuel.currentTurn,
-            currentPhase: updatedDuel.currentPhase || 'MAIN1',
+            currentPhase: updatedDuel.currentPhase,
             status: updatedDuel.status,
             duelTime: (updatedDuel as any).duelTime || 0,
             turnTime: (updatedDuel as any).turnTime || 90,
@@ -5955,20 +7943,36 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         
         // Verificar se há informações sobre a carta no pendingChoice
         // Se a carta foi colocada temporariamente no campo (zoneIndex presente), removê-la
-        if (pendingChoice.data && pendingChoice.data.zoneIndex !== undefined) {
+        // IMPORTANTE: Se zoneIndex é null, a carta estava na mão e não foi colocada no campo
+        if (pendingChoice.data && pendingChoice.data.zoneIndex !== undefined && pendingChoice.data.zoneIndex !== null) {
           const zoneIndex = pendingChoice.data.zoneIndex;
           const isPlayer1 = Number(duel.player1Id) === Number(userId);
           const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+          
+          // Verificar se a carta estava na mão antes (cardInstanceId presente ou cardWasOnField = false)
+          const wasInHand = pendingChoice.data.cardWasOnField === false;
           
           // Verificar se a carta está no campo
           if (playerField && playerField.spellTrap && playerField.spellTrap[zoneIndex]) {
             const cardOnField = playerField.spellTrap[zoneIndex];
             
-            // Verificar se a carta estava na mão antes (cardInstanceId presente ou cardWasOnField = false)
-            const wasInHand = pendingChoice.data.cardInstanceId || pendingChoice.data.cardWasOnField === false;
-            
             if (wasInHand) {
               // Carta estava na mão e foi colocada temporariamente no campo - devolver para a mão
+              // MAS: Verificar se a carta já não está na mão (para evitar duplicação)
+              const cardId = cardOnField.idCarta || cardOnField.id || cardOnField.cardId;
+              const cardInstanceId = pendingChoice.data.cardInstanceId;
+              
+              // Verificar se a carta já está na mão
+              const alreadyInHand = playerField.hand && playerField.hand.some((c: any) => {
+                if (cardInstanceId && c.instanceId) {
+                  return c.instanceId === cardInstanceId;
+                }
+                const cId = c.idCarta || c.id || c.cardId;
+                return cId === cardId;
+              });
+              
+              if (!alreadyInHand) {
+                // Carta não está na mão - adicionar de volta
               if (!playerField.hand) {
                 playerField.hand = [];
               }
@@ -5981,31 +7985,85 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
                 player1Field: (duel as any).player1Field,
                 player2Field: (duel as any).player2Field,
               } as any);
-            } else if (pendingChoice.data.cardWasOnField === true) {
-              // Carta já estava no campo em "set" - voltar para "set" se foi virada para "face-up"
-              if (cardOnField.position === 'face-up') {
-                cardOnField.position = 'set';
-                console.log(`🔄 [CANCEL_CARD_ACTIVATION] Carta ${cardOnField.name || cardOnField.cardName} voltou para "set" no campo`);
+              } else {
+                // Carta já está na mão - apenas remover do campo (não duplicar!)
+                console.log(`ℹ️ [CANCEL_CARD_ACTIVATION] Carta ${cardOnField.name || cardOnField.cardName} já está na mão - apenas removendo do campo (evitando duplicação)`);
+                playerField.spellTrap[zoneIndex] = null;
                 
                 // Atualizar no banco
                 await this.duelsService.updateDuelInDatabase(duelId, {
                   player1Field: (duel as any).player1Field,
                   player2Field: (duel as any).player2Field,
                 } as any);
-              } else {
-                // Já está em "set" - apenas limpar pendingChoice
-                console.log(`ℹ️ [CANCEL_CARD_ACTIVATION] Carta ${cardOnField.name || cardOnField.cardName} já está em "set" no campo`);
+              }
+            } else if (pendingChoice.data.cardWasOnField === true) {
+              // Carta já estava no campo em "set" - SEMPRE voltar para "set" (mesmo que já esteja em "set")
+              // Isso garante que a carta possa ser ativada novamente
+              const originalPosition = pendingChoice.data.originalPosition || 'set';
+              const cardName = cardOnField.name || cardOnField.cardName;
+              const currentPosition = cardOnField.position;
+              
+              console.log(`🔄 [CANCEL_CARD_ACTIVATION] Restaurando carta ${cardName}:`);
+              console.log(`   - Posição atual: ${currentPosition}`);
+              console.log(`   - Posição original: ${originalPosition}`);
+              console.log(`   - zoneIndex: ${zoneIndex}`);
+              console.log(`   - cardWasOnField: ${pendingChoice.data.cardWasOnField}`);
+              
+              cardOnField.position = originalPosition;
+              console.log(`✅ [CANCEL_CARD_ACTIVATION] Carta ${cardName} voltou para "${originalPosition}" no campo (pode ser ativada novamente)`);
+              
+              // Atualizar no banco
+              await this.duelsService.updateDuelInDatabase(duelId, {
+                player1Field: (duel as any).player1Field,
+                player2Field: (duel as any).player2Field,
+              } as any);
+              
+              // Verificar se foi atualizado corretamente
+              const verifyDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+              if (verifyDuel) {
+                const verifyPlayerField = isPlayer1 ? (verifyDuel as any).player1Field : (verifyDuel as any).player2Field;
+                if (verifyPlayerField && verifyPlayerField.spellTrap && verifyPlayerField.spellTrap[zoneIndex]) {
+                  const verifyCard = verifyPlayerField.spellTrap[zoneIndex];
+                  console.log(`✅ [CANCEL_CARD_ACTIVATION] Verificação: Carta ${verifyCard.name || verifyCard.cardName} está em "${verifyCard.position}" no campo após atualização`);
+                }
               }
             }
           }
+        } else if (pendingChoice.data && pendingChoice.data.cardWasOnField === false) {
+          // Carta estava na mão e zoneIndex é null (não foi colocada no campo)
+          // Não fazer nada - apenas limpar pendingChoice (carta permanece na mão)
+          console.log(`ℹ️ [CANCEL_CARD_ACTIVATION] Carta estava na mão e não foi colocada no campo (zoneIndex: ${pendingChoice.data.zoneIndex}) - não fazendo nada (carta permanece na mão)`);
         }
         
-        // Limpar pendingChoice
-        await this.duelsService.clearPendingChoice(duelId);
+        // IMPORTANTE: Usar clearPendingChoice para limpar o pendingChoice
+        // Isso garante que a lógica específica de cada tipo de carta seja executada
+        // (por exemplo, devolver carta descartada no caso do Monster Reincarnation)
+        console.log(`🧹 [CANCEL_CARD_ACTIVATION] Limpando pendingChoice usando clearPendingChoice...`);
+        await this.duelsService.clearPendingChoice(duelId, true);
         
-        // Buscar duelo atualizado
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        // Aguardar um pouco para garantir que o banco foi atualizado
+        await new Promise(resolve => setTimeout(resolve, 150));
+        
+        // Buscar duelo atualizado (forçar busca do banco ignorando cache)
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
         if (updatedDuel) {
+          // Garantir que pendingChoice é null no objeto
+          (updatedDuel as any).pendingChoice = null;
+          
+          // Verificar se o pendingChoice foi realmente limpo
+          const hasPendingChoice = (updatedDuel as any).pendingChoice !== null && (updatedDuel as any).pendingChoice !== undefined;
+          console.log(`🔍 [CANCEL_CARD_ACTIVATION] Duelo atualizado - pendingChoice existe? ${hasPendingChoice}`);
+          
+          if (hasPendingChoice) {
+            console.error(`❌ [CANCEL_CARD_ACTIVATION] PendingChoice ainda existe após limpeza! Forçando null...`);
+            (updatedDuel as any).pendingChoice = null;
+            // Atualizar no banco novamente
+            await this.duelsService.updateDuelInDatabase(duelId, {
+              pendingChoice: null
+            } as any);
+          }
+          
+          // Emitir atualização
           this.server.to(`duel_${duelId}`).emit('duelUpdate', updatedDuel);
         }
         
@@ -6014,8 +8072,12 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         client.emit('duelError', { message: 'Ação não reconhecida' });
       }
     } catch (error) {
-      console.error('Erro ao processar ação do duelo:', error);
-      client.emit('duelError', { message: 'Erro ao processar ação do duelo' });
+      console.error('❌ [handleDuelAction] Erro ao processar ação do duelo:', error);
+      console.error('❌ [handleDuelAction] Stack trace:', error instanceof Error ? error.stack : 'N/A');
+      console.error('❌ [handleDuelAction] Action type:', actionType);
+      console.error('❌ [handleDuelAction] Action data:', JSON.stringify(actionData, null, 2));
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao processar ação do duelo';
+      client.emit('duelError', { message: errorMessage });
     }
   }
 
@@ -6092,6 +8154,47 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         if (!result.success) {
           console.error(`❌ [handleAutoChoice] GracefulCharity: Erro ao processar escolha:`, result.message);
         }
+      } else if (pendingChoice.type === 'CHANGE_OF_HEART' || pendingChoice.type === 'BRAIN_CONTROL') {
+        // Change Of Heart e Brain Control não podem fazer escolha automática
+        // Apenas limpar o pendingChoice e restaurar a carta para "set" se estava no campo
+        console.log(`🤖 [handleAutoChoice] ${pendingChoice.type}: Não é possível fazer escolha automática - limpando pendingChoice e restaurando carta`);
+        await this.duelsService.clearPendingChoice(duelId, true); // true = restaurar carta para "set"
+        console.log(`✅ [handleAutoChoice] ${pendingChoice.type}: PendingChoice limpo e carta restaurada`);
+        
+        // Buscar duelo atualizado e emitir atualização
+        const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+        if (updatedDuel) {
+          const player1Field = (updatedDuel as any).player1Field;
+          const player2Field = (updatedDuel as any).player2Field;
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          
+          const duelData = {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase || 'MAIN1',
+            status: updatedDuel.status,
+            duelTime: (updatedDuel as any).duelTime || 0,
+            turnTime: (updatedDuel as any).turnTime || 90,
+            turnTimeRemaining: turnTimeRemaining,
+            turnStartedAt: (updatedDuel as any).turnStartedAt,
+            player1Field: player1Field,
+            player2Field: player2Field,
+            pendingChoice: null,
+            createdAt: updatedDuel.createdAt,
+            updatedAt: updatedDuel.updatedAt,
+          };
+          
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
+          console.log(`✅ [handleAutoChoice] ${pendingChoice.type}: Escolha automática concluída (carta restaurada para "set")`);
+          console.log(`🤖 [handleAutoChoice] ==========================================`);
+          return; // Não continuar para limpar pendingChoice novamente
+        }
       } else if (pendingChoice.type === 'FORCEFUL_SENTRY') {
         // Escolher carta aleatória (ou string vazia se não houver cartas)
         const opponentHand = pendingChoice.data?.opponentHand || [];
@@ -6132,7 +8235,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       
       // Emitir atualização do duelo
       console.log(`🤖 [handleAutoChoice] Buscando duelo atualizado do banco...`);
-      const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+      const updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
       if (updatedDuel) {
         const player1Field = (updatedDuel as any).player1Field;
         const player2Field = (updatedDuel as any).player2Field;
@@ -6218,7 +8321,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
   ) {
     try {
       const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
-      const userId = data.userId || client.data.userId;
+      // Segurança: usar APENAS o userId do JWT. Nunca confiar em data.userId do cliente.
+      const userId = client.data.userId;
       const message = data.message?.trim();
 
       if (!duelId || !userId || !message) {

@@ -24,7 +24,6 @@ interface Arena {
   endTime: string;
   participants: number;
   scoreMultiplier: number;
-  bonusGems: number;
 }
 
 interface ArenaRanking {
@@ -56,6 +55,8 @@ export default function ArenaPage() {
   const [userArenaPoints, setUserArenaPoints] = useState<number>(0);
   const [remainingDuels, setRemainingDuels] = useState<number>(50);
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
+  const [timeUntilNextArena, setTimeUntilNextArena] = useState<number>(0);
+  const [nextArena, setNextArena] = useState<Arena | null>(null);
   const [levelRanges, setLevelRanges] = useState<Array<{ min: number; max: number; name: string }>>([]);
 
   useEffect(() => {
@@ -113,6 +114,45 @@ export default function ArenaPage() {
       return () => clearInterval(interval);
     }
   }, [currentArena]);
+
+  // Calcular tempo até a próxima arena
+  useEffect(() => {
+    // Determinar qual é a próxima arena
+    let next: Arena | null = null;
+    
+    if (currentArena) {
+      // Se há arena atual, procurar a próxima após ela terminar
+      const currentEndTime = new Date(currentArena.endTime).getTime();
+      const now = new Date().getTime();
+      
+      // Se a arena atual ainda não terminou, a próxima é a primeira das upcoming
+      if (now < currentEndTime) {
+        next = upcomingArenas.length > 0 ? upcomingArenas[0] : null;
+      } else {
+        // Se a arena atual terminou, a próxima é a primeira das upcoming
+        next = upcomingArenas.length > 0 ? upcomingArenas[0] : null;
+      }
+    } else {
+      // Se não há arena atual, a próxima é a primeira das upcoming
+      next = upcomingArenas.length > 0 ? upcomingArenas[0] : null;
+    }
+    
+    setNextArena(next);
+    
+    // Atualizar contador a cada segundo
+    const interval = setInterval(() => {
+      if (next) {
+        const now = new Date().getTime();
+        const startTime = new Date(next.startTime).getTime();
+        const remaining = Math.max(0, startTime - now);
+        setTimeUntilNextArena(remaining);
+      } else {
+        setTimeUntilNextArena(0);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [currentArena, upcomingArenas]);
 
   useEffect(() => {
     if (user?.level) {
@@ -344,6 +384,27 @@ export default function ArenaPage() {
             </div>
           </motion.div>
 
+          {/* Contador para Próxima Arena (quando a atual está prestes a terminar) */}
+          {nextArena && timeUntilNextArena > 0 && timeRemaining < 3600000 && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-xl p-4 mb-4 bg-gradient-to-r from-blue-900/50 to-indigo-900/50 border-2 border-blue-500/50"
+            >
+              <div className="text-center text-white">
+                <div className="text-sm font-semibold text-gray-300 mb-2">
+                  Próxima Arena: <span className="font-bold text-blue-400">{nextArena.name}</span>
+                </div>
+                <div className="text-2xl sm:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
+                  {formatTimeRemaining(timeUntilNextArena)}
+                </div>
+                <div className="text-xs text-gray-400 mt-1">
+                  Início: {new Date(nextArena.startTime).toLocaleString('pt-BR')}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
           {/* Botão Procurar Duelo */}
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -450,16 +511,6 @@ export default function ArenaPage() {
                         />
                         <div className="flex-1 min-w-0">
                           <div className="font-bold text-white truncate flex items-center gap-2">
-                            {player.groupLogo && (
-                              <img 
-                                src={`${API_URL}${player.groupLogo}`}
-                                alt={player.nickname}
-                                className="w-5 h-5 rounded object-cover flex-shrink-0"
-                                onError={(e) => {
-                                  e.currentTarget.style.display = 'none';
-                                }}
-                              />
-                            )}
                             <span>{player.clanTag ? `|${player.clanTag}| ${player.nickname}` : player.nickname}</span>
                           </div>
                           <div className="text-sm text-gray-300">
@@ -481,14 +532,85 @@ export default function ArenaPage() {
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="rounded-xl p-12 text-center"
+          className="rounded-xl p-6 sm:p-12 text-center"
         >
-          <div className="text-6xl mb-4">⚔️</div>
-          <h2 className="text-3xl font-bold mb-4">{currentArena.name}</h2>
-          <p className="text-xl text-gray-400 mb-6">{currentArena.description}</p>
+          {/* Badge de Arena Ativa */}
+          <div className="mb-4 inline-block px-4 py-2 bg-green-600/20 border-2 border-green-500 rounded-full">
+            <span className="text-green-400 font-bold text-sm">✓ ARENA ATIVA</span>
+          </div>
+          
+          <h2 className="text-2xl sm:text-3xl font-bold mb-4">{currentArena.name}</h2>
+          <p className="text-lg sm:text-xl text-gray-400 mb-6">{currentArena.description}</p>
+          
+          {/* Informações da Arena */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 text-center">
+            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
+              <div className="text-xs text-gray-400 mb-1">⏰ Início</div>
+              <div className="text-sm font-bold text-white">
+                {new Date(currentArena.startTime).toLocaleString('pt-BR', { 
+                  day: '2-digit', 
+                  month: '2-digit', 
+                  hour: '2-digit', 
+                  minute: '2-digit' 
+                })}
+              </div>
+            </div>
+            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
+              <div className="text-xs text-gray-400 mb-1">⏰ Término</div>
+              <div className="text-sm font-bold text-white">
+                {new Date(currentArena.endTime).toLocaleString('pt-BR', { 
+                  day: '2-digit', 
+                  month: '2-digit', 
+                  hour: '2-digit', 
+                  minute: '2-digit' 
+                })}
+              </div>
+            </div>
+            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
+              <div className="text-xs text-gray-400 mb-1">👥 Participantes</div>
+              <div className="text-sm font-bold text-white">{currentArena.participants}</div>
+            </div>
+            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
+              <div className="text-xs text-gray-400 mb-1">📊 Multiplicador</div>
+              <div className="text-sm font-bold text-white">x{currentArena.scoreMultiplier}</div>
+            </div>
+          </div>
+          
+          {/* Imagem ArenaDeDuelos Clicável */}
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="cursor-pointer mb-6 relative group"
+            onClick={() => handleJoinArena(currentArena.id)}
+          >
+            <div className="relative rounded-xl overflow-hidden border-4 border-red-500/50 group-hover:border-red-500 transition-all shadow-2xl">
+              <img
+                src="/images/ArenaDeDuelos.jpg"
+                alt="Arena de Duelos"
+                className="w-full h-auto max-h-[600px] object-contain"
+                onError={(e) => {
+                  // Fallback para outra imagem se a primeira não carregar
+                  const target = e.currentTarget as HTMLImageElement;
+                  if (target.src.includes('ArenaDeDuelos.jpg')) {
+                    target.src = '/images/CampoDeDuelo01.jpg';
+                  } else {
+                    target.src = '/images/background.webp';
+                  }
+                }}
+              />
+              {/* Overlay para adicionar efeito hover */}
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center pointer-events-none">
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-red-600/90 text-white font-bold py-4 px-8 rounded-lg text-xl sm:text-2xl">
+                  🔥 CLIQUE PARA ENTRAR! 🔥
+                </div>
+              </div>
+            </div>
+          </motion.div>
+          
+          {/* Botão alternativo */}
           <button
             onClick={() => handleJoinArena(currentArena.id)}
-            className="bg-red-600 hover:bg-red-700 text-white font-bold py-6 px-12 rounded-lg text-2xl transition-all shadow-lg hover:shadow-red-500/50"
+            className="bg-red-600 hover:bg-red-700 text-white font-bold py-4 sm:py-6 px-8 sm:px-12 rounded-lg text-xl sm:text-2xl transition-all shadow-lg hover:shadow-red-500/50"
           >
             🔥 ENTRAR NA ARENA AGORA! 🔥
           </button>
@@ -501,9 +623,29 @@ export default function ArenaPage() {
         >
           <div className="text-6xl mb-4">⏰</div>
           <h2 className="text-3xl font-bold mb-2">Nenhuma Arena Ativa</h2>
-          <p className="text-xl text-gray-400">
-            As arenas aparecem em horários específicos. Aguarde a próxima!
-          </p>
+          
+          {nextArena && timeUntilNextArena > 0 ? (
+            <>
+              <div className="mb-6">
+                <p className="text-xl text-gray-300 mb-4">
+                  Próxima Arena: <span className="font-bold text-purple-400">{nextArena.name}</span>
+                </p>
+                <div className="bg-gradient-to-r from-purple-900/50 to-indigo-900/50 rounded-xl p-6 border-2 border-purple-500/50 inline-block">
+                  <div className="text-sm font-semibold text-gray-300 mb-2">Tempo até a próxima arena:</div>
+                  <div className="text-5xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 mb-2">
+                    {formatTimeRemaining(timeUntilNextArena)}
+                  </div>
+                  <div className="text-sm text-gray-400">
+                    Início: {new Date(nextArena.startTime).toLocaleString('pt-BR')}
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="text-xl text-gray-400">
+              As arenas aparecem em horários específicos. Aguarde a próxima!
+            </p>
+          )}
         </motion.div>
       )}
     </div>

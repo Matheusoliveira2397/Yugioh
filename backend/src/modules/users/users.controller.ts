@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch, Body, UseGuards, Request, Post, UploadedFile, UseInterceptors, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Param, Patch, Body, UseGuards, Request, Post, UploadedFile, UseInterceptors, BadRequestException, Query } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
 import { AchievementsService } from './achievements.service';
@@ -14,8 +14,8 @@ export class UsersController {
   ) {}
 
   @Get('ranking/season')
-  async getSeasonRanking() {
-    return this.usersService.getSeasonRanking();
+  async getSeasonRanking(@Query('seasonId') seasonId?: string) {
+    return this.usersService.getSeasonRanking(seasonId);
   }
 
   @Get('ranking/general')
@@ -24,8 +24,8 @@ export class UsersController {
   }
 
   @Get('ranking/season/division/:division')
-  async getSeasonRankingByDivision(@Param('division') division: string) {
-    return this.usersService.getSeasonRankingByDivision(division);
+  async getSeasonRankingByDivision(@Param('division') division: string, @Query('seasonId') seasonId?: string) {
+    return this.usersService.getSeasonRankingByDivision(division, seasonId);
   }
 
   @Get('ranking/top5')
@@ -78,6 +78,10 @@ export class UsersController {
           globalRank: fullProfile.globalRank || fullProfile.generalRank || null,
           seasonScore: fullProfile.seasonRanking?.seasonScore || 0,
           division: fullProfile.division || null, // Divisão dinâmica do usuário
+          equippedPlaymatId: fullProfile.equippedPlaymatId || null,
+          equippedPlaymatImage: fullProfile.equippedPlaymatImage || null,
+          equippedSkinId: fullProfile.equippedSkinId || null,
+          equippedSkinImage: fullProfile.equippedSkinImage || null,
         };
       })(),
       new Promise((_, reject) => 

@@ -11,9 +11,26 @@ interface LevelRange {
 }
 
 interface ArenaRewards {
-  top1?: { credits?: number; gems?: number; cash?: number };
-  top3?: { credits?: number; gems?: number; cash?: number };
-  top10?: { credits?: number; gems?: number; cash?: number };
+  top1?: { credits?: number; cash?: number };
+  top3?: { credits?: number; cash?: number };
+  top10?: { credits?: number; cash?: number };
+  // Premiação única para o top 5 (aplicada a todas as faixas)
+  top5Rewards?: {
+    top1?: { cash?: number; score?: number; additionalScore?: number };
+    top2?: { cash?: number; score?: number; additionalScore?: number };
+    top3?: { cash?: number; score?: number; additionalScore?: number };
+    top4?: { cash?: number; score?: number; additionalScore?: number };
+    top5?: { cash?: number; score?: number; additionalScore?: number };
+  };
+  // Premiações por faixa (gerado automaticamente a partir de top5Rewards)
+  levelRangeRewards?: Array<{
+    levelRange: string;
+    top1?: { cash?: number; score?: number; additionalScore?: number };
+    top2?: { cash?: number; score?: number; additionalScore?: number };
+    top3?: { cash?: number; score?: number; additionalScore?: number };
+    top4?: { cash?: number; score?: number; additionalScore?: number };
+    top5?: { cash?: number; score?: number; additionalScore?: number };
+  }>;
 }
 
 interface ChallengeArena {
@@ -25,7 +42,6 @@ interface ChallengeArena {
   isActive: boolean;
   participants: number;
   scoreMultiplier: number;
-  bonusGems: number;
   config?: {
     levelRanges?: LevelRange[];
     rewards?: ArenaRewards;
@@ -57,11 +73,24 @@ export default function AdminArenaPanel() {
     startTime: '',
     endTime: '',
     scoreMultiplier: 1.5,
-    bonusGems: 50,
+    // Arena fixa (recorrente)
+    isRecurring: false,
+    dailyStartTime: '15:00', // Horário de Brasília (HH:mm)
+    durationMinutes: 120,
+    // Faixas de níveis selecionadas
+    selectedLevelRanges: [] as string[], // Nomes das faixas selecionadas
     rewards: {
-      top1: { credits: 0, gems: 0, cash: 0 },
-      top3: { credits: 0, gems: 0, cash: 0 },
-      top10: { credits: 0, gems: 0, cash: 0 },
+      top1: { credits: 0, cash: 0 },
+      top3: { credits: 0, cash: 0 },
+      top10: { credits: 0, cash: 0 },
+      // Premiação única para o top 5 de todas as faixas
+      top5Rewards: {
+        top1: { cash: 0, score: 0, additionalScore: 0 },
+        top2: { cash: 0, score: 0, additionalScore: 0 },
+        top3: { cash: 0, score: 0, additionalScore: 0 },
+        top4: { cash: 0, score: 0, additionalScore: 0 },
+        top5: { cash: 0, score: 0, additionalScore: 0 },
+      },
     } as ArenaRewards,
   });
 
@@ -100,12 +129,29 @@ export default function AdminArenaPanel() {
       const arenaData = {
         name: formData.name,
         description: formData.description,
-        startTime: new Date(formData.startTime).toISOString(),
-        endTime: new Date(formData.endTime).toISOString(),
+        startTime: formData.isRecurring ? null : new Date(formData.startTime).toISOString(),
+        endTime: formData.isRecurring ? null : new Date(formData.endTime).toISOString(),
         scoreMultiplier: formData.scoreMultiplier,
-        bonusGems: formData.bonusGems,
         config: {
-          rewards: formData.rewards,
+          levelRanges: levelRanges.filter(range => formData.selectedLevelRanges.includes(range.name)),
+          rewards: {
+            ...formData.rewards,
+            // Aplicar a mesma premiação do top 5 para todas as faixas selecionadas
+            levelRangeRewards: formData.selectedLevelRanges.length > 0 && formData.rewards.top5Rewards
+              ? formData.selectedLevelRanges.map(rangeName => ({
+                  levelRange: rangeName,
+                  top1: formData.rewards.top5Rewards?.top1 || { cash: 0, score: 0, additionalScore: 0 },
+                  top2: formData.rewards.top5Rewards?.top2 || { cash: 0, score: 0, additionalScore: 0 },
+                  top3: formData.rewards.top5Rewards?.top3 || { cash: 0, score: 0, additionalScore: 0 },
+                  top4: formData.rewards.top5Rewards?.top4 || { cash: 0, score: 0, additionalScore: 0 },
+                  top5: formData.rewards.top5Rewards?.top5 || { cash: 0, score: 0, additionalScore: 0 },
+                }))
+              : [],
+          },
+          // Configuração de arena fixa (recorrente)
+          isRecurring: formData.isRecurring,
+          dailyStartTime: formData.isRecurring ? formData.dailyStartTime : undefined,
+          durationMinutes: formData.isRecurring ? formData.durationMinutes : undefined,
         },
       };
 
@@ -140,17 +186,40 @@ export default function AdminArenaPanel() {
     const localStartTime = new Date(startTime.getTime() - startTime.getTimezoneOffset() * 60000);
     const localEndTime = new Date(endTime.getTime() - endTime.getTimezoneOffset() * 60000);
 
+    const config = arena.config || {};
     setFormData({
       name: arena.name,
       description: arena.description || '',
       startTime: localStartTime.toISOString().slice(0, 16),
       endTime: localEndTime.toISOString().slice(0, 16),
       scoreMultiplier: arena.scoreMultiplier,
-      bonusGems: arena.bonusGems,
-      rewards: arena.config?.rewards || {
-        top1: { credits: 0, gems: 0, cash: 0 },
-        top3: { credits: 0, gems: 0, cash: 0 },
-        top10: { credits: 0, gems: 0, cash: 0 },
+      isRecurring: config.isRecurring || false,
+      dailyStartTime: config.dailyStartTime || '15:00',
+      durationMinutes: config.durationMinutes || 120,
+      selectedLevelRanges: (config.levelRanges || []).map((r: LevelRange) => r.name),
+      rewards: {
+        ...(arena.config?.rewards || {
+          top1: { credits: 0, cash: 0 },
+          top3: { credits: 0, cash: 0 },
+          top10: { credits: 0, cash: 0 },
+        }),
+        // Se já tem top5Rewards, usar. Senão, extrair do primeiro levelRangeRewards (se existir)
+        top5Rewards: arena.config?.rewards?.top5Rewards || 
+          (arena.config?.rewards?.levelRangeRewards && arena.config.rewards.levelRangeRewards.length > 0
+            ? {
+                top1: arena.config.rewards.levelRangeRewards[0].top1 || { cash: 0, score: 0, additionalScore: 0 },
+                top2: arena.config.rewards.levelRangeRewards[0].top2 || { cash: 0, score: 0, additionalScore: 0 },
+                top3: arena.config.rewards.levelRangeRewards[0].top3 || { cash: 0, score: 0, additionalScore: 0 },
+                top4: arena.config.rewards.levelRangeRewards[0].top4 || { cash: 0, score: 0, additionalScore: 0 },
+                top5: arena.config.rewards.levelRangeRewards[0].top5 || { cash: 0, score: 0, additionalScore: 0 },
+              }
+            : {
+                top1: { cash: 0, score: 0, additionalScore: 0 },
+                top2: { cash: 0, score: 0, additionalScore: 0 },
+                top3: { cash: 0, score: 0, additionalScore: 0 },
+                top4: { cash: 0, score: 0, additionalScore: 0 },
+                top5: { cash: 0, score: 0, additionalScore: 0 },
+              }),
       },
     });
     setShowArenaModal(true);
@@ -202,14 +271,52 @@ export default function AdminArenaPanel() {
       startTime: '',
       endTime: '',
       scoreMultiplier: 1.5,
-      bonusGems: 50,
+      isRecurring: false,
+      dailyStartTime: '15:00',
+      durationMinutes: 120,
+      selectedLevelRanges: [],
       rewards: {
-        top1: { credits: 0, gems: 0, cash: 0 },
-        top3: { credits: 0, gems: 0, cash: 0 },
-        top10: { credits: 0, gems: 0, cash: 0 },
+        top1: { credits: 0, cash: 0 },
+        top3: { credits: 0, cash: 0 },
+        top10: { credits: 0, cash: 0 },
+        top5Rewards: {
+          top1: { cash: 0, score: 0, additionalScore: 0 },
+          top2: { cash: 0, score: 0, additionalScore: 0 },
+          top3: { cash: 0, score: 0, additionalScore: 0 },
+          top4: { cash: 0, score: 0, additionalScore: 0 },
+          top5: { cash: 0, score: 0, additionalScore: 0 },
+        },
       },
     });
     setEditingArena(null);
+  };
+
+  const toggleLevelRange = (rangeName: string) => {
+    setFormData(prev => ({
+      ...prev,
+      selectedLevelRanges: prev.selectedLevelRanges.includes(rangeName)
+        ? prev.selectedLevelRanges.filter(name => name !== rangeName)
+        : [...prev.selectedLevelRanges, rangeName],
+    }));
+  };
+
+  const updateTop5Reward = (position: number, field: 'cash' | 'score' | 'additionalScore', value: number) => {
+    setFormData(prev => {
+      const topKey = `top${position}` as 'top1' | 'top2' | 'top3' | 'top4' | 'top5';
+      return {
+        ...prev,
+        rewards: {
+          ...prev.rewards,
+          top5Rewards: {
+            ...prev.rewards.top5Rewards,
+            [topKey]: {
+              ...prev.rewards.top5Rewards[topKey],
+              [field]: value,
+            },
+          },
+        },
+      };
+    });
   };
 
   const formatDate = (dateString: string) => {
@@ -226,12 +333,6 @@ export default function AdminArenaPanel() {
             <p className="text-gray-300">Configure faixas de nível, horários e premiações</p>
           </div>
           <div className="flex gap-4">
-            <button
-              onClick={() => navigate('/admin/arena/schedules')}
-              className="bg-indigo-600 hover:bg-indigo-700 px-6 py-3 rounded-lg font-bold transition-all"
-            >
-              ⏰ Horários Recorrentes
-            </button>
             <button
               onClick={() => setShowLevelRangesModal(true)}
               className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold transition-all"
@@ -317,7 +418,49 @@ export default function AdminArenaPanel() {
                 </div>
               </div>
 
-              {/* Horários */}
+              {/* Arena Fixa (Recorrente) */}
+              <div className="bg-gradient-to-br from-blue-900/50 to-indigo-900/50 rounded-lg p-6 border border-blue-500/50">
+                <label className="flex items-center gap-3 cursor-pointer mb-4">
+                  <input
+                    type="checkbox"
+                    checked={formData.isRecurring}
+                    onChange={(e) => setFormData({ ...formData, isRecurring: e.target.checked })}
+                    className="w-5 h-5 rounded"
+                  />
+                  <span className="text-lg font-bold text-blue-300">🔄 Arena Fixa (Recorrente Diariamente)</span>
+                </label>
+                <p className="text-gray-300 text-sm mb-4">
+                  Se marcado, a arena será criada automaticamente todos os dias no horário especificado (horário de Brasília).
+                </p>
+                {formData.isRecurring && (
+                  <div className="grid grid-cols-2 gap-4 mt-4">
+                    <div>
+                      <label className="block text-sm font-bold mb-2">Horário de Início (HH:mm) - Horário de Brasília *</label>
+                      <input
+                        type="time"
+                        required={formData.isRecurring}
+                        value={formData.dailyStartTime}
+                        onChange={(e) => setFormData({ ...formData, dailyStartTime: e.target.value })}
+                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">Duração (minutos) *</label>
+                      <input
+                        type="number"
+                        required={formData.isRecurring}
+                        min="1"
+                        value={formData.durationMinutes}
+                        onChange={(e) => setFormData({ ...formData, durationMinutes: parseInt(e.target.value) })}
+                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Horários (apenas se não for recorrente) */}
+              {!formData.isRecurring && (
               <div className="bg-gray-900/50 rounded-lg p-6 border border-gray-700">
                 <h3 className="text-lg font-bold mb-4 text-purple-400">⏰ Horários</h3>
                 <div className="grid grid-cols-2 gap-4">
@@ -343,6 +486,7 @@ export default function AdminArenaPanel() {
                   </div>
                 </div>
               </div>
+              )}
 
               {/* Multiplicadores */}
               <div className="bg-gray-900/50 rounded-lg p-6 border border-gray-700">
@@ -361,24 +505,44 @@ export default function AdminArenaPanel() {
                       className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-bold mb-2">Gemas Bônus</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={formData.bonusGems}
-                      onChange={(e) =>
-                        setFormData({ ...formData, bonusGems: parseInt(e.target.value) })
-                      }
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
-                    />
-                  </div>
+                </div>
+              </div>
+
+              {/* Seleção de Faixas de Níveis */}
+              <div className="bg-gray-900/50 rounded-lg p-6 border border-gray-700">
+                <h3 className="text-lg font-bold mb-4 text-purple-400">📊 Faixas de Níveis</h3>
+                <p className="text-gray-300 text-sm mb-4">
+                  Selecione as faixas de níveis que poderão participar desta arena. Os jogadores só enfrentarão outros da mesma faixa.
+                </p>
+                <p className="text-yellow-400 text-xs mb-4 bg-yellow-900/20 p-2 rounded border border-yellow-700/50">
+                  ⚠️ <strong>Importante:</strong> Após selecionar as faixas, configure a premiação única para o Top 5 abaixo. A mesma premiação será aplicada automaticamente a todas as faixas selecionadas.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  {levelRanges.map((range) => (
+                    <label
+                      key={range.name}
+                      className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                        formData.selectedLevelRanges.includes(range.name)
+                          ? 'bg-purple-900/50 border-purple-500'
+                          : 'bg-gray-800/50 border-gray-700 hover:border-gray-600'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formData.selectedLevelRanges.includes(range.name)}
+                        onChange={() => toggleLevelRange(range.name)}
+                        className="w-5 h-5 rounded"
+                      />
+                      <span className="font-bold text-white">{range.name}</span>
+                      <span className="text-xs text-gray-400">(Nível {range.min}-{range.max})</span>
+                    </label>
+                  ))}
                 </div>
               </div>
 
               {/* Premiações */}
               <div className="bg-gradient-to-br from-yellow-900/50 to-orange-900/50 rounded-lg p-6 border border-yellow-500/50">
-                <h3 className="text-xl font-bold mb-6 text-yellow-300">🏆 Premiações</h3>
+                <h3 className="text-xl font-bold mb-6 text-yellow-300">🏆 Premiações Gerais</h3>
                 <div className="space-y-4">
                   {(['top1', 'top3', 'top10'] as const).map((position) => (
                     <div
@@ -411,11 +575,11 @@ export default function AdminArenaPanel() {
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-bold mb-1">💎 Gemas</label>
+                          <label className="block text-xs font-bold mb-1">💰 Cash</label>
                           <input
                             type="number"
                             min="0"
-                            value={formData.rewards[position]?.gems || 0}
+                            value={formData.rewards[position]?.cash || 0}
                             onChange={(e) =>
                               setFormData({
                                 ...formData,
@@ -423,7 +587,7 @@ export default function AdminArenaPanel() {
                                   ...formData.rewards,
                                   [position]: {
                                     ...formData.rewards[position],
-                                    gems: parseInt(e.target.value) || 0,
+                                    cash: parseFloat(e.target.value) || 0,
                                   },
                                 },
                               })
@@ -458,6 +622,61 @@ export default function AdminArenaPanel() {
                   ))}
                 </div>
               </div>
+
+              {/* Premiação Top 5 (aplicada a todas as faixas) */}
+              {formData.selectedLevelRanges.length > 0 && (
+                <div className="bg-gradient-to-br from-yellow-900/50 to-orange-900/50 rounded-lg p-6 border border-yellow-500/50">
+                  <h3 className="text-xl font-bold mb-4 text-yellow-300">🏆 Premiação Top 5 (Todas as Faixas)</h3>
+                  <p className="text-gray-300 text-sm mb-6">
+                    Configure as premiações para os top 5 jogadores. A mesma premiação será aplicada ao top 5 de cada faixa de nível selecionada. As premiações são distribuídas automaticamente quando a arena termina.
+                  </p>
+                  
+                  <div className="space-y-3">
+                    {[1, 2, 3, 4, 5].map((position) => (
+                      <div key={position} className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-lg font-bold text-yellow-300">
+                            {position === 1 ? '🥇' : position === 2 ? '🥈' : position === 3 ? '🥉' : `#${position}`} {position}º Lugar
+                          </span>
+                          <span className="text-xs text-gray-400">(aplicado a todas as faixas)</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-xs font-bold mb-1">💵 Cash</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={formData.rewards.top5Rewards[`top${position}` as 'top1' | 'top2' | 'top3' | 'top4' | 'top5']?.cash || 0}
+                              onChange={(e) => updateTop5Reward(position, 'cash', parseInt(e.target.value) || 0)}
+                              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold mb-1">⭐ Score</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={formData.rewards.top5Rewards[`top${position}` as 'top1' | 'top2' | 'top3' | 'top4' | 'top5']?.score || 0}
+                              onChange={(e) => updateTop5Reward(position, 'score', parseInt(e.target.value) || 0)}
+                              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold mb-1">⭐ Score Adicional</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={formData.rewards.top5Rewards[`top${position}` as 'top1' | 'top2' | 'top3' | 'top4' | 'top5']?.additionalScore || 0}
+                              onChange={(e) => updateTop5Reward(position, 'additionalScore', parseInt(e.target.value) || 0)}
+                              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Botões */}
               <div className="flex gap-4">
@@ -655,10 +874,6 @@ export default function AdminArenaPanel() {
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-400">📊 Multiplicador:</span>
                       <span className="text-white font-semibold">x{arena.scoreMultiplier}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-400">💎 Gemas Bônus:</span>
-                      <span className="text-white font-semibold">{arena.bonusGems}</span>
                     </div>
                   </div>
 

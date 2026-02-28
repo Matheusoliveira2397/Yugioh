@@ -16,5 +16,22 @@ export default defineConfig({
     watch: {
       usePolling: true,
     },
+    // Middleware para garantir que imagens retornem 404 em vez de index.html
+    middlewareMode: false,
+    fs: {
+      // Permitir servir arquivos de public
+      strict: false,
+    },
   },
+  // Configuração de build
+  build: {
+    rollupOptions: {
+      output: {
+        // Manter estrutura de diretórios para assets
+        assetFileNames: 'assets/[name].[hash].[ext]',
+      },
+    },
+  },
+  // Configuração de publicDir
+  publicDir: 'public',
 });

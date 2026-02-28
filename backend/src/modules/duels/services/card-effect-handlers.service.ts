@@ -101,12 +101,23 @@ export class CardEffectHandlersService {
     }
     
     // Encontrar e mover The Forceful Sentry para o cemitério
+    // Verificar primeiro no campo (spellTrap)
+    let forcefulSentryFound = false;
     if (playerField && playerField.spellTrap) {
       for (let i = 0; i < playerField.spellTrap.length; i++) {
         if (playerField.spellTrap[i] !== null && playerField.spellTrap[i] !== undefined) {
           const card = playerField.spellTrap[i];
           const cardId = card.idCarta || card.id || card.cardId;
-          if (cardId === 'TheForcefulSentry') {
+          const cardName = (card.name || card.cardName || '').toLowerCase();
+          
+          // Verificar se é The Forceful Sentry usando múltiplos critérios
+          const isForcefulSentry = cardId === 'TheForcefulSentry' || 
+              cardId === 'theforcefulsentry' ||
+              (typeof cardId === 'string' && cardId.toLowerCase().includes('forcefulsentry')) ||
+              cardName === 'the forceful sentry' ||
+              (typeof cardName === 'string' && cardName.includes('forceful sentry'));
+          
+          if (isForcefulSentry) {
             // Inicializar cemitério se não existir
             if (!playerField.graveyard) {
               playerField.graveyard = [];
@@ -116,11 +127,48 @@ export class CardEffectHandlersService {
             playerField.graveyard.push(card);
             playerField.spellTrap[i] = null;
             
-            logger.info(`✅ [CardEffectHandlersService] The Forceful Sentry movida para o cemitério`);
+            logger.info(`✅ [CardEffectHandlersService] The Forceful Sentry movida do campo para o cemitério (cardId: ${cardId}, cardName: ${cardName})`);
+            forcefulSentryFound = true;
             break;
           }
         }
       }
+    }
+    
+    // Se não encontrou no campo, verificar na mão (caso a carta tenha sido ativada da mão)
+    if (!forcefulSentryFound && playerField && playerField.hand) {
+      const handIndex = playerField.hand.findIndex((card: any) => {
+        if (!card) return false;
+        const cardId = card.idCarta || card.id || card.cardId;
+        const cardName = (card.name || card.cardName || '').toLowerCase();
+        
+        const isForcefulSentry = cardId === 'TheForcefulSentry' || 
+            cardId === 'theforcefulsentry' ||
+            (typeof cardId === 'string' && cardId.toLowerCase().includes('forcefulsentry')) ||
+            cardName === 'the forceful sentry' ||
+            (typeof cardName === 'string' && cardName.includes('forceful sentry'));
+        
+        return isForcefulSentry;
+      });
+      
+      if (handIndex !== -1) {
+        const card = playerField.hand[handIndex];
+        // Inicializar cemitério se não existir
+        if (!playerField.graveyard) {
+          playerField.graveyard = [];
+        }
+        
+        // Mover para o cemitério
+        playerField.graveyard.push(card);
+        playerField.hand.splice(handIndex, 1);
+        
+        logger.info(`✅ [CardEffectHandlersService] The Forceful Sentry movida da mão para o cemitério`);
+        forcefulSentryFound = true;
+      }
+    }
+    
+    if (!forcefulSentryFound) {
+      logger.warn(`⚠️ [CardEffectHandlersService] The Forceful Sentry não encontrada no campo nem na mão`);
     }
     
     // Atualizar no banco
@@ -396,9 +444,10 @@ export class CardEffectHandlersService {
     // Obter contador global de turnos
     const currentTurnCounter = playerField?.turnCounter || duel.turnCounter || 1;
     
-    // Reviver o monstro no campo do jogador em posição de ataque
+    // Reviver o monstro: NÃO copiar bônus/equipamentos (monstro volta com ATK/DEF base apenas)
+    const { equipmentBonusAtk, equipmentBonusDef, equippedCards, equippedCardId, equippedSpellTrapZoneIndex, equippedBy, equippedZoneIndex, ...monsterBase } = monsterToRevive;
     playerField.monsters[emptyZoneIndex] = {
-      ...monsterToRevive,
+      ...monsterBase,
       position: 'attack',
       summonedTurnNumber: currentTurnCounter,
       summonedByPlayer: duel.currentTurn,
@@ -409,7 +458,12 @@ export class CardEffectHandlersService {
     
     logger.info(`✅ [CardEffectHandlersService] Monstro ${monsterToRevive.name || monsterToRevive.cardName} revivido no campo do jogador ${isPlayer1 ? 1 : 2}`);
     
-    // Limpar pendingChoice
+    // Salvar e recalcular United We Stand (monstro face-up entrou no campo)
+    await this.duelsService.updateDuelInDatabase(duelId, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    } as any);
+    await (this.duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
     await this.duelsService.updateDuelInDatabase(duelId, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
@@ -422,6 +476,100 @@ export class CardEffectHandlersService {
     }
     
     return { success: true };
+  }
+
+  /**
+   * Processa a escolha do Premature Burial - reviver 1 monstro do próprio cemitério em ataque e equipar Premature Burial a ele.
+   * Se a carta ou o monstro for destruído, ambos vão para o cemitério.
+   */
+  async processPrematureBurialChoice(
+    duelId: string | number,
+    userId: number,
+    chosenMonster: { index: number },
+    spellTrapZoneIndex: number,
+  ): Promise<{ success: boolean; message?: string; duel?: any }> {
+    const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
+    // Forçar busca do banco para ter a Premature Burial já no campo (colocada pelo gateway)
+    let duel = await this.duelsService.findDuelByIdFromDatabase(duelIdStr, true);
+    if (!duel) {
+      return { success: false, message: 'Duelo não encontrado' };
+    }
+    const isPlayer1 = Number(duel.player1Id) === Number(userId);
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    if (!playerField) {
+      return { success: false, message: 'Campo do jogador não encontrado' };
+    }
+    if (!playerField.monsters || !Array.isArray(playerField.monsters)) {
+      playerField.monsters = [null, null, null, null, null];
+    }
+    while (playerField.monsters.length < 5) {
+      playerField.monsters.push(null);
+    }
+    playerField.monsters = playerField.monsters.slice(0, 5);
+    const graveyard = playerField?.graveyard || [];
+    const monstersInGraveyard = graveyard.filter((c: any) => (c.type || c.cardType) === 'Monster');
+    const index = typeof chosenMonster.index === 'number' ? chosenMonster.index : parseInt(String(chosenMonster.index), 10);
+    if (isNaN(index) || index < 0 || index >= monstersInGraveyard.length) {
+      return { success: false, message: 'Monstro inválido no cemitério' };
+    }
+    let realIndex = -1;
+    let monsterCount = 0;
+    for (let i = 0; i < graveyard.length; i++) {
+      if ((graveyard[i].type || graveyard[i].cardType) === 'Monster') {
+        if (monsterCount === index) {
+          realIndex = i;
+          break;
+        }
+        monsterCount++;
+      }
+    }
+    if (realIndex === -1) {
+      return { success: false, message: 'Monstro não encontrado no cemitério' };
+    }
+    const emptyZoneIndex = playerField.monsters.findIndex((m: any) => m == null);
+    if (emptyZoneIndex === -1) {
+      return { success: false, message: 'Não há espaço no campo para invocar o monstro' };
+    }
+    const spellTrap = playerField.spellTrap || [];
+    if (spellTrapZoneIndex < 0 || spellTrapZoneIndex >= spellTrap.length || !spellTrap[spellTrapZoneIndex]) {
+      return { success: false, message: 'Premature Burial não encontrada no campo' };
+    }
+    const monsterToRevive = graveyard.splice(realIndex, 1)[0];
+    const currentTurnCounter = playerField?.turnCounter || (duel as any).turnCounter || 1;
+    const { equipmentBonusAtk, equipmentBonusDef, equippedCards, equippedCardId, equippedSpellTrapZoneIndex, equippedBy, equippedZoneIndex, ...monsterBase } = monsterToRevive;
+    const revivedMonster = {
+      ...monsterBase,
+      position: 'attack',
+      summonedTurnNumber: currentTurnCounter,
+      summonedByPlayer: (duel as any).currentTurn,
+      positionChangedThisTurn: false,
+      attackedThisTurn: false,
+      attacksThisTurn: 0,
+    };
+    const premCardId = (spellTrap[spellTrapZoneIndex].idCarta || spellTrap[spellTrapZoneIndex].id || spellTrap[spellTrapZoneIndex].cardId || 'PrematureBurial').toString();
+    const uniqueEquipRef = `${premCardId}:${spellTrapZoneIndex}`;
+    if (!revivedMonster.equippedCards || !Array.isArray(revivedMonster.equippedCards)) {
+      revivedMonster.equippedCards = [];
+    }
+    revivedMonster.equippedCards.push(uniqueEquipRef);
+    revivedMonster.equippedCardId = premCardId;
+    revivedMonster.equippedSpellTrapZoneIndex = spellTrapZoneIndex;
+    revivedMonster.equippedBy = isPlayer1 ? 1 : 2;
+    playerField.monsters[emptyZoneIndex] = revivedMonster;
+    spellTrap[spellTrapZoneIndex].equippedToMonsterZoneIndex = emptyZoneIndex;
+    logger.info(`✅ [CardEffectHandlersService] Premature Burial: monstro ${monsterToRevive.name || monsterToRevive.cardName} revivido e equipado na zona ${emptyZoneIndex}`);
+    const p1Field = JSON.parse(JSON.stringify((duel as any).player1Field));
+    const p2Field = JSON.parse(JSON.stringify((duel as any).player2Field));
+    await this.duelsService.updateDuelInDatabase(duelId, {
+      player1Field: p1Field,
+      player2Field: p2Field,
+    } as any);
+    await (this.duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
+    const activeDuels = (this.duelsService as any).activeDuels;
+    if (activeDuels) {
+      activeDuels.set(duelIdStr, duel);
+    }
+    return { success: true, duel };
   }
 
   /**
@@ -516,7 +664,12 @@ export class CardEffectHandlersService {
     playerField.deck = this.shuffleDeck(playerField.deck);
     logger.info(`✅ [CardEffectHandlersService] Last Will: Deck embaralhado após remover a carta`);
     
-    // Atualizar no banco
+    // Salvar e recalcular United We Stand (monstro face-up entrou no campo)
+    await this.duelsService.updateDuelInDatabase(duelId, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    } as any);
+    await (this.duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
     await this.duelsService.updateDuelInDatabase(duelId, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,

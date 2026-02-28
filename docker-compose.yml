@@ -1,3 +1,5 @@
+# Caminho do projeto no host (evita C: quando o projeto está em D:)
+# Crie .env na raiz com: PROJECT_PATH=D:/Yugioh
 services:
   # PostgreSQL - Banco de dados principal
   postgres:
@@ -69,13 +71,11 @@ services:
     environment:
       ADMINER_DEFAULT_SERVER: postgres
 
-  # Backend API
+  # Backend API (dev: nest start --watch)
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
-      args:
-        - NODE_ENV=development
+      context: ${PROJECT_PATH:-.}/backend
+      dockerfile: Dockerfile.dev
     container_name: yugioh-backend
     ports:
       - "3000:3000"
@@ -98,14 +98,15 @@ services:
       - yugioh-network
     volumes:
       - uploads_data:/app/uploads
-      - ./backend/src:/app/src  # Sincronizar código fonte em desenvolvimento
-    command: npm run start:dev
+      - ${PROJECT_PATH:-.}/backend/src:/app/src
+      - ${PROJECT_PATH:-.}/frontend/public/images/cards:/app/frontend-cards
+    command: npx nest start --watch
 
-  # Frontend
+  # Frontend (dev: Vite na porta 5173)
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: ${PROJECT_PATH:-.}/frontend
+      dockerfile: Dockerfile.dev
     container_name: yugioh-frontend
     ports:
       - "5173:5173"
@@ -117,7 +118,7 @@ services:
     networks:
       - yugioh-network
     volumes:
-      - ./frontend:/app
+      - ${PROJECT_PATH:-.}/frontend:/app
       - /app/node_modules
     command: npm run dev -- --host
 
@@ -128,7 +129,7 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${PROJECT_PATH:-.}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - backend
       - frontend

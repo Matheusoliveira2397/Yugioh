@@ -17,11 +17,22 @@ interface RankedPlayer {
   division: string;
   wins: number;
   losses: number;
+  seasonId?: string | null;
+  seasonName?: string | null;
   group?: {
     id: string;
     name: string;
     tag: string;
   };
+}
+
+interface Season {
+  id: string;
+  name: string;
+  seasonNumber?: number;
+  isActive?: boolean;
+  startDate?: string;
+  endDate?: string;
 }
 
 interface RankedGroup {
@@ -42,23 +53,76 @@ interface RankedGroup {
   };
 }
 
+interface Division {
+  id: string;
+  name: string;
+  order: number;
+  isAvailable?: boolean;
+}
+
 export default function RankingPage() {
   const [players, setPlayers] = useState<RankedPlayer[]>([]);
   const [allPlayers, setAllPlayers] = useState<RankedPlayer[]>([]); // Todos os players (sem filtro)
   const [groups, setGroups] = useState<RankedGroup[]>([]);
   const [rankingType, setRankingType] = useState<'duelista' | 'clan'>('duelista'); // Por padrão, mostrar duelista
   const [activeTab, setActiveTab] = useState<'season' | 'general'>('season');
-  const [selectedDivision, setSelectedDivision] = useState<string | null>('Legendary'); // Por padrão, mostrar "Desafiante" no ranking da season
+  const [selectedDivision, setSelectedDivision] = useState<string | null>('Legendary');
   const [loading, setLoading] = useState(true);
+  const [availableDivisions, setAvailableDivisions] = useState<Division[]>([]);
+  const [seasons, setSeasons] = useState<Season[]>([]);
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null); // null = season atual
   const { token, user } = useAuthStore();
 
   useEffect(() => {
+    fetchAvailableDivisions();
     fetchRanking();
-    // Quando entrar no ranking da season, selecionar "Desafiante" por padrão
     if (activeTab === 'season' && selectedDivision === null && rankingType === 'duelista') {
       setSelectedDivision('Legendary');
     }
   }, [activeTab, rankingType]);
+
+  useEffect(() => {
+    if (activeTab === 'season') {
+      fetchSeasons();
+    }
+  }, [activeTab]);
+
+  const fetchSeasons = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/seasons/all`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      setSeasons(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      console.error('Erro ao buscar seasons:', error);
+      setSeasons([]);
+    }
+  };
+
+  const fetchAvailableDivisions = async () => {
+    try {
+      // Usar endpoint público que não requer autenticação
+      const response = await axios.get(`${API_URL}/public/divisions/available`);
+      const available = response.data || [];
+      setAvailableDivisions(available);
+      
+      // Se estiver no ranking da season e não houver divisão selecionada, selecionar a primeira disponível
+      if (activeTab === 'season' && available.length > 0 && !selectedDivision) {
+        setSelectedDivision(available[0].name);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar divisões disponíveis:', error);
+      // Em caso de erro, usar todas as divisões padrão
+      setAvailableDivisions([
+        { id: '1', name: 'Legendary', order: 7, isAvailable: true },
+        { id: '2', name: 'Master', order: 6, isAvailable: true },
+        { id: '3', name: 'Diamond', order: 5, isAvailable: true },
+        { id: '4', name: 'Gold', order: 4, isAvailable: true },
+        { id: '5', name: 'Silver', order: 3, isAvailable: true },
+        { id: '6', name: 'Bronze', order: 1, isAvailable: true },
+      ]);
+    }
+  };
 
   // Função para aplicar filtro de divisão
   const applyDivisionFilter = (playersList: RankedPlayer[], division: string | null) => {
@@ -148,20 +212,41 @@ export default function RankingPage() {
     }
   };
 
-  // Quando a divisão selecionada mudar, buscar do backend
+  // Quando a divisão selecionada mudar, aplicar filtro local (apenas para ranking da season)
   useEffect(() => {
-    if (rankingType === 'duelista' && activeTab === 'season' && selectedDivision) {
-      fetchRanking();
+    if (rankingType === 'duelista' && activeTab === 'season') {
+      if (allPlayers.length > 0) {
+        if (selectedDivision && selectedDivision !== 'all') {
+          // Aplicar filtro local nos dados já carregados (apenas para season)
+          applyDivisionFilter(allPlayers, selectedDivision);
+        } else {
+          // Se não há divisão selecionada ou selecionou "all", mostrar todos
+          setPlayers(allPlayers);
+        }
+      } else {
+        // Se não há dados carregados, buscar todos primeiro
+        fetchRanking();
+      }
+    } else if (rankingType === 'duelista' && activeTab === 'general') {
+      // No ranking geral, sempre mostrar todos sem filtro
+      if (allPlayers.length > 0) {
+        setPlayers(allPlayers);
+      } else {
+        fetchRanking();
+      }
     }
-  }, [selectedDivision]);
+  }, [selectedDivision, activeTab, rankingType, allPlayers]);
   
-  // Quando mudar o tipo de ranking ou aba, buscar dados
+  // Quando mudar o tipo de ranking, aba ou season selecionada, buscar dados
   useEffect(() => {
+    if (activeTab === 'general' && rankingType === 'clan') {
+      setRankingType('duelista');
+    }
     if (rankingType === 'duelista' && activeTab === 'season' && !selectedDivision) {
       setSelectedDivision('Legendary');
     }
     fetchRanking();
-  }, [rankingType, activeTab]);
+  }, [rankingType, activeTab, selectedSeasonId]);
 
   const fetchRanking = async () => {
     setLoading(true);
@@ -186,62 +271,54 @@ export default function RankingPage() {
         }
       } else {
         // Buscar ranking de duelistas
-        // Se há divisão selecionada e é season, usar endpoint específico
-        if (activeTab === 'season' && selectedDivision && selectedDivision !== 'all') {
-          const endpoint = `${API_URL}/users/ranking/season/division/${selectedDivision}`;
-          console.log(`🔍 [RankingPage] Buscando ranking por divisão: ${endpoint}`);
-          
-          const response = await axios.get(endpoint, {
-            headers: { Authorization: `Bearer ${token}` },
+        const endpoint = activeTab === 'season' 
+          ? `${API_URL}/users/ranking/season`
+          : `${API_URL}/users/ranking/general`;
+
+        const params = activeTab === 'season' && selectedSeasonId
+          ? { seasonId: selectedSeasonId }
+          : {};
+
+        console.log(`🔍 [RankingPage] Buscando ranking de: ${endpoint}`, params);
+        
+        const response = await axios.get(endpoint, {
+          headers: { Authorization: `Bearer ${token}` },
+          params,
+        });
+        
+        if (Array.isArray(response.data)) {
+          const normalizedData = response.data.map((p: any) => {
+            // Normalizar divisão corretamente
+            let divisionRaw = p.division || 'Bronze';
+            let divisionNormalized = String(divisionRaw).trim();
+            
+            // Normalizar para formato padrão
+            const divisionUpper = divisionNormalized.toUpperCase();
+            if (divisionUpper === 'BRONZE' || divisionUpper === '') divisionNormalized = 'Bronze';
+            else if (divisionUpper === 'SILVER' || divisionUpper === 'PRATA') divisionNormalized = 'Silver';
+            else if (divisionUpper === 'GOLD' || divisionUpper === 'OURO') divisionNormalized = 'Gold';
+            else if (divisionUpper === 'PLATINUM') divisionNormalized = 'Platinum';
+            else if (divisionUpper === 'DIAMOND' || divisionUpper === 'DIAMANTE') divisionNormalized = 'Diamond';
+            else if (divisionUpper === 'MASTER' || divisionUpper === 'MESTRE') divisionNormalized = 'Master';
+            else if (divisionUpper === 'LEGENDARY' || divisionUpper === 'DESAFIANTE') divisionNormalized = 'Legendary';
+            else divisionNormalized = 'Bronze'; // Fallback
+            
+            return {
+              ...p,
+              division: divisionNormalized
+            };
           });
           
-          if (Array.isArray(response.data)) {
-            const normalizedData = response.data.map((p: any) => {
-              const divisionRaw = p.division || 'Bronze';
-              const divisionNormalized = String(divisionRaw).trim();
-              return {
-                ...p,
-                division: divisionNormalized
-              };
-            });
-            setAllPlayers(normalizedData);
-            setPlayers(normalizedData);
+          setAllPlayers(normalizedData);
+          // Aplicar filtro de divisão apenas para ranking da season
+          if (activeTab === 'season' && selectedDivision && selectedDivision !== 'all') {
+            applyDivisionFilter(normalizedData, selectedDivision);
           } else {
-            setAllPlayers([]);
-            setPlayers([]);
+            setPlayers(normalizedData);
           }
         } else {
-          // Buscar todos os jogadores
-          const endpoint = activeTab === 'season' 
-            ? `${API_URL}/users/ranking/season`
-            : `${API_URL}/users/ranking/general`;
-
-          console.log(`🔍 [RankingPage] Buscando ranking de: ${endpoint}`);
-          
-          const response = await axios.get(endpoint, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          
-          if (Array.isArray(response.data)) {
-            const normalizedData = response.data.map((p: any) => {
-              const divisionRaw = p.division || 'Bronze';
-              const divisionNormalized = String(divisionRaw).trim();
-              return {
-                ...p,
-                division: divisionNormalized
-              };
-            });
-            
-            setAllPlayers(normalizedData);
-            if (activeTab === 'season' && selectedDivision) {
-              applyDivisionFilter(normalizedData, selectedDivision);
-            } else {
-              setPlayers(normalizedData);
-            }
-          } else {
-            setAllPlayers([]);
-            setPlayers([]);
-          }
+          setAllPlayers([]);
+          setPlayers([]);
         }
       }
     } catch (error: any) {
@@ -333,41 +410,45 @@ export default function RankingPage() {
             <span className="sm:hidden">Ranking</span>
           </h1>
           <p className="text-slate-400 text-sm md:text-lg">
-            {rankingType === 'duelista' ? 'Veja os melhores duelistas do jogo' : 'Veja os melhores clãs do jogo'}
+            {activeTab === 'general' 
+              ? 'Veja os melhores duelistas do jogo' 
+              : (rankingType === 'duelista' ? 'Veja os melhores duelistas do jogo' : 'Veja os melhores clãs do jogo')}
           </p>
         </motion.div>
 
-        {/* Tabs Duelista/Clã */}
-        <div className="flex gap-2 md:gap-4 mb-4 md:mb-6 justify-center">
-          <button
-            onClick={() => {
-              setRankingType('duelista');
-              setSelectedDivision(activeTab === 'season' ? 'Legendary' : null);
-            }}
-            className={`flex-1 sm:flex-none px-4 sm:px-8 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 text-sm sm:text-lg ${
-              rankingType === 'duelista'
-                ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white shadow-lg shadow-purple-500/50 scale-105'
-                : 'text-slate-400 hover:bg-white/10 hover:text-white hover:scale-105 border border-white/20'
-            }`}
-          >
-            <span className="hidden sm:inline">⚔️ Duelista</span>
-            <span className="sm:hidden">⚔️ Duelista</span>
-          </button>
-          <button
-            onClick={() => {
-              setRankingType('clan');
-              setSelectedDivision(null);
-            }}
-            className={`flex-1 sm:flex-none px-4 sm:px-8 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 text-sm sm:text-lg ${
-              rankingType === 'clan'
-                ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white shadow-lg shadow-purple-500/50 scale-105'
-                : 'text-slate-400 hover:bg-white/10 hover:text-white hover:scale-105 border border-white/20'
-            }`}
-          >
-            <span className="hidden sm:inline">🏰 Clã</span>
-            <span className="sm:hidden">🏰 Clã</span>
-          </button>
-        </div>
+        {/* Tabs Duelista/Clã - Apenas para Ranking da Season */}
+        {activeTab === 'season' && (
+          <div className="flex gap-2 md:gap-4 mb-4 md:mb-6 justify-center">
+            <button
+              onClick={() => {
+                setRankingType('duelista');
+                setSelectedDivision('Legendary');
+              }}
+              className={`flex-1 sm:flex-none px-4 sm:px-8 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 text-sm sm:text-lg ${
+                rankingType === 'duelista'
+                  ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white shadow-lg shadow-purple-500/50 scale-105'
+                  : 'text-slate-400 hover:bg-white/10 hover:text-white hover:scale-105 border border-white/20'
+              }`}
+            >
+              <span className="hidden sm:inline">⚔️ Duelista</span>
+              <span className="sm:hidden">⚔️ Duelista</span>
+            </button>
+            <button
+              onClick={() => {
+                setRankingType('clan');
+                setSelectedDivision(null);
+              }}
+              className={`flex-1 sm:flex-none px-4 sm:px-8 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 text-sm sm:text-lg ${
+                rankingType === 'clan'
+                  ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white shadow-lg shadow-purple-500/50 scale-105'
+                  : 'text-slate-400 hover:bg-white/10 hover:text-white hover:scale-105 border border-white/20'
+              }`}
+            >
+              <span className="hidden sm:inline">🏰 Clã</span>
+              <span className="sm:hidden">🏰 Clã</span>
+            </button>
+          </div>
+        )}
 
         {/* Tabs Season/Geral */}
         <div className="flex gap-2 md:gap-4 mb-4 md:mb-8 justify-center">
@@ -375,7 +456,10 @@ export default function RankingPage() {
             onClick={() => {
               setActiveTab('season');
               if (rankingType === 'duelista') {
-                setSelectedDivision('Legendary'); // Selecionar "Desafiante" por padrão ao entrar no ranking da season
+                // Manter divisão selecionada ou selecionar "Desafiante" por padrão
+                if (!selectedDivision) {
+                  setSelectedDivision('Legendary');
+                }
               }
             }}
             className={`flex-1 sm:flex-none px-4 sm:px-8 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 text-sm sm:text-lg ${
@@ -390,9 +474,10 @@ export default function RankingPage() {
           <button
             onClick={() => {
               setActiveTab('general');
-              if (rankingType === 'duelista') {
-                setSelectedDivision(null); // Resetar filtro ao mudar de aba
-              }
+              // No ranking geral, não há filtro por divisão - mostrar todos
+              // E sempre mostrar duelistas (não clãs)
+              setSelectedDivision(null);
+              setRankingType('duelista');
             }}
             className={`flex-1 sm:flex-none px-4 sm:px-8 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 text-sm sm:text-lg ${
               activeTab === 'general'
@@ -405,7 +490,32 @@ export default function RankingPage() {
           </button>
         </div>
 
-        {/* Filtro de Divisões - Apenas para Ranking da Season de Duelistas */}
+        {/* Filtro de Season - Apenas para Ranking da Season (Duelista) */}
+        {rankingType === 'duelista' && activeTab === 'season' && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4"
+          >
+            <div className="flex flex-wrap gap-2 justify-center items-center">
+              <label className="text-slate-300 text-sm font-medium whitespace-nowrap">Season:</label>
+              <select
+                value={selectedSeasonId ?? ''}
+                onChange={(e) => setSelectedSeasonId(e.target.value ? e.target.value : null)}
+                className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm font-medium focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none min-w-[180px]"
+              >
+                <option value="">Season atual</option>
+                {seasons.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} {s.isActive ? '(ativa)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Filtro de Divisões - Apenas para Ranking da Season */}
         {rankingType === 'duelista' && activeTab === 'season' && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -413,36 +523,42 @@ export default function RankingPage() {
             className="mb-6 md:mb-8"
           >
             <div className="flex gap-1 sm:gap-2 md:gap-3 lg:gap-4 justify-center items-center w-full">
-              {/* Divisões com logos - Ordem da maior para a menor */}
-              {[
-                { name: 'Legendary', displayName: 'Desafiante' },
-                { name: 'Master', displayName: 'Mestre' },
-                { name: 'Diamond', displayName: 'Diamante' },
-                { name: 'Gold', displayName: 'Ouro' },
-                { name: 'Silver', displayName: 'Prata' },
-                { name: 'Bronze', displayName: 'Bronze' },
-              ].map((division) => {
-                const imagePath = getDivisionImage(division.name);
-                const isSelected = selectedDivision?.toUpperCase() === division.name.toUpperCase();
+              {/* Divisões com logos - Apenas divisões disponíveis */}
+              {availableDivisions.map((division) => {
+                const divisionName = typeof division === 'object' && 'name' in division ? division.name : division;
+                const displayNameMap: { [key: string]: string } = {
+                  'Legendary': 'Desafiante',
+                  'Master': 'Mestre',
+                  'Diamond': 'Diamante',
+                  'Gold': 'Ouro',
+                  'Silver': 'Prata',
+                  'Bronze': 'Bronze',
+                };
+                const displayName = typeof division === 'object' && 'displayName' in division 
+                  ? division.displayName 
+                  : displayNameMap[divisionName] || divisionName;
+                const imagePath = getDivisionImage(divisionName);
+                const isSelected = selectedDivision?.toUpperCase() === divisionName.toUpperCase();
                 
                 return (
                   <button
-                    key={division.name}
+                    key={divisionName}
                     onClick={() => {
-                      // Quando clicar, buscar do backend usando o division do users
-                      setSelectedDivision(isSelected ? null : division.name);
+                      // Quando clicar no emblema, sempre mostrar os usuários daquela divisão
+                      setSelectedDivision(divisionName);
                     }}
-                    className={`flex flex-col items-center transition-all duration-300 flex-1 max-w-[280px] sm:max-w-[360px] md:max-w-[500px] lg:max-w-[650px] xl:max-w-[750px] ${
+                    className={`flex flex-col items-center transition-all duration-300 flex-1 max-w-[280px] sm:max-w-[360px] md:max-w-[500px] lg:max-w-[650px] xl:max-w-[750px] cursor-pointer ${
                       isSelected
                         ? 'scale-110 opacity-100'
                         : 'hover:scale-105 opacity-80 hover:opacity-100'
                     }`}
                     style={{ gap: 0 }}
+                    title={`Clique para ver duelistas da divisão ${displayName}`}
                   >
                     {imagePath && (
                       <img
                         src={imagePath}
-                        alt={division.displayName}
+                        alt={displayName}
                         className="object-contain"
                         style={{
                           width: 'clamp(12rem, 20vw, 30rem)',
@@ -457,7 +573,7 @@ export default function RankingPage() {
                         }}
                       />
                     )}
-                    <span className="text-white font-semibold text-[10px] sm:text-xs md:text-sm whitespace-nowrap" style={{ marginTop: '-6rem' }}>{division.displayName}</span>
+                    <span className="text-white font-semibold text-[10px] sm:text-xs md:text-sm whitespace-nowrap" style={{ marginTop: '-6rem' }}>{displayName}</span>
                   </button>
                 );
               })}
@@ -477,11 +593,9 @@ export default function RankingPage() {
                       {activeTab === 'season' ? 'Posição' : '#'}
                     </th>
                     <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-purple-300 font-bold text-sm lg:text-lg">Duelista</th>
-                    {activeTab === 'general' && (
-                      <>
-                        <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-purple-300 font-bold text-sm lg:text-lg">Clã</th>
-                        <th className="px-4 lg:px-6 py-3 lg:py-4 text-center text-purple-300 font-bold text-sm lg:text-lg">Divisão</th>
-                      </>
+                    <th className="px-4 lg:px-6 py-3 lg:py-4 text-center text-purple-300 font-bold text-sm lg:text-lg">Divisão</th>
+                    {activeTab === 'season' && (
+                      <th className="px-4 lg:px-6 py-3 lg:py-4 text-center text-purple-300 font-bold text-sm lg:text-lg">Season</th>
                     )}
                     <th className="px-4 lg:px-6 py-3 lg:py-4 text-right text-purple-300 font-bold text-sm lg:text-lg">Score</th>
                     <th className="px-4 lg:px-6 py-3 lg:py-4 text-center text-purple-300 font-bold text-sm lg:text-lg">V/D</th>
@@ -490,13 +604,13 @@ export default function RankingPage() {
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan={activeTab === 'season' ? 4 : 6} className="px-6 py-12 text-center text-slate-400 text-xl">
+                      <td colSpan={activeTab === 'season' ? 6 : 5} className="px-6 py-12 text-center text-slate-400 text-xl">
                         Carregando ranking...
                       </td>
                     </tr>
                   ) : sortedPlayers.length === 0 ? (
                     <tr>
-                      <td colSpan={activeTab === 'season' ? 4 : 6} className="px-6 py-12 text-center text-slate-400">
+                      <td colSpan={activeTab === 'season' ? 6 : 5} className="px-6 py-12 text-center text-slate-400">
                         Nenhum duelista encontrado
                       </td>
                     </tr>
@@ -542,7 +656,7 @@ export default function RankingPage() {
                                 <span className="truncate max-w-[120px] lg:max-w-none">
                                   {activeTab === 'season' 
                                     ? (player.clanTag ? `|${player.clanTag}| ${player.nickname}` : player.nickname)
-                                    : (player.clanTag ? `|${player.clanTag}| ${player.nickname}` : player.nickname)
+                                    : player.nickname
                                   }
                                 </span>
                                 {isCurrentUser && (
@@ -553,41 +667,30 @@ export default function RankingPage() {
                             </div>
                           </Link>
                         </td>
-                        {activeTab === 'general' && (
-                          <>
-                            <td className="px-4 lg:px-6 py-3 lg:py-5">
-                              {player.group ? (
-                                <Link
-                                  to={`/groups/${player.group.id}`}
-                                  className="text-cyan-400 font-semibold hover:text-cyan-300 transition-colors flex items-center gap-1 lg:gap-2"
-                                >
-                                  <span className="text-xs lg:text-base truncate max-w-[100px] lg:max-w-none">[{player.group.tag}] {player.group.name}</span>
-                                </Link>
-                              ) : (
-                                <span className="text-slate-500 text-xs lg:text-sm">Sem clã</span>
-                              )}
-                            </td>
-                            <td className="px-4 lg:px-6 py-3 lg:py-5 text-center">
-                              <div className="flex items-center justify-center gap-2">
-                                {(() => {
-                                  const divisionImage = getDivisionImage(player.division);
-                                  return divisionImage ? (
-                                    <img 
-                                      src={divisionImage}
-                                      alt={player.division || 'Bronze'}
-                                      className="w-6 h-6 lg:w-8 lg:h-8 object-contain"
-                                      onError={(e) => {
-                                        e.currentTarget.style.display = 'none';
-                                      }}
-                                    />
-                                  ) : null;
-                                })()}
-                                <span className={`font-bold text-sm lg:text-lg ${getDivisionColor(player.division)}`}>
-                                  {player.division || 'Bronze'}
-                                </span>
-                              </div>
-                            </td>
-                          </>
+                        <td className="px-4 lg:px-6 py-3 lg:py-5 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            {(() => {
+                              const divisionImage = getDivisionImage(player.division);
+                              return divisionImage ? (
+                                <img 
+                                  src={divisionImage}
+                                  alt={player.division || 'Bronze'}
+                                  className="w-6 h-6 lg:w-8 lg:h-8 object-contain"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                              ) : null;
+                            })()}
+                            <span className={`font-bold text-sm lg:text-lg ${getDivisionColor(player.division)}`}>
+                              {player.division || 'Bronze'}
+                            </span>
+                          </div>
+                        </td>
+                        {activeTab === 'season' && (
+                          <td className="px-4 lg:px-6 py-3 lg:py-5 text-center text-slate-300 text-sm lg:text-base">
+                            {player.seasonName ?? 'Season atual'}
+                          </td>
                         )}
                         <td className="px-4 lg:px-6 py-3 lg:py-5 text-right">
                           <span className="text-lg lg:text-2xl font-bold text-yellow-400">
@@ -666,7 +769,7 @@ export default function RankingPage() {
                             <span className="truncate">
                               {activeTab === 'season' 
                                 ? (player.clanTag ? `|${player.clanTag}| ${player.nickname}` : player.nickname)
-                                : (player.clanTag ? `|${player.clanTag}| ${player.nickname}` : player.nickname)
+                                : player.nickname
                               }
                             </span>
                             {isCurrentUser && (
@@ -692,39 +795,30 @@ export default function RankingPage() {
                         <span className="text-slate-400">/</span>
                         <span className="text-red-400 font-bold">{player.losses || 0}</span>
                       </div>
-                      {activeTab === 'general' && (
-                        <>
-                          <div>
-                            <span className="text-slate-400">Divisão: </span>
-                            <span className={`font-bold ${getDivisionColor(player.division)} flex items-center gap-1`}>
-                              {(() => {
-                                const divisionImage = getDivisionImage(player.division);
-                                return divisionImage ? (
-                                  <img 
-                                    src={divisionImage}
-                                    alt={player.division || 'Bronze'}
-                                    className="w-5 h-5 object-contain"
-                                    onError={(e) => {
-                                      e.currentTarget.style.display = 'none';
-                                    }}
-                                  />
-                                ) : null;
-                              })()}
-                              {player.division || 'Bronze'}
-                            </span>
-                          </div>
-                          {player.group && (
-                            <div>
-                              <span className="text-slate-400">Clã: </span>
-                              <Link
-                                to={`/groups/${player.group.id}`}
-                                className="text-cyan-400 font-semibold hover:text-cyan-300 transition-colors truncate block"
-                              >
-                                [{player.group.tag}]
-                              </Link>
-                            </div>
-                          )}
-                        </>
+                      <div>
+                        <span className="text-slate-400">Divisão: </span>
+                        <span className={`font-bold ${getDivisionColor(player.division)} flex items-center gap-1`}>
+                          {(() => {
+                            const divisionImage = getDivisionImage(player.division);
+                            return divisionImage ? (
+                              <img 
+                                src={divisionImage}
+                                alt={player.division || 'Bronze'}
+                                className="w-5 h-5 object-contain"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                            ) : null;
+                          })()}
+                          {player.division || 'Bronze'}
+                        </span>
+                      </div>
+                      {activeTab === 'season' && (
+                        <div>
+                          <span className="text-slate-400">Season: </span>
+                          <span className="text-slate-300 font-medium">{player.seasonName ?? 'Season atual'}</span>
+                        </div>
                       )}
                     </div>
                   </motion.div>

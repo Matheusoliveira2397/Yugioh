@@ -193,34 +193,63 @@ export default function FriendsPage() {
         const friendId = senderId.toString();
         const conversation = newMap.get(friendId);
         
+        // Filtrar mensagens com mais de 24 horas
+        const now = new Date();
+        const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        
         if (conversation) {
           // Verificar se a mensagem já existe (evitar duplicatas)
           if (!conversation.messages.some(m => m.id === data.id)) {
-            conversation.messages.push({
+            const allMessages = [...conversation.messages, {
               id: data.id,
               senderId: senderId.toString(),
               receiverId: receiverId.toString(),
               content: data.content,
               createdAt: data.createdAt || new Date().toISOString(),
               read: data.read || false,
-            });
+            }];
+            
+            // Filtrar mensagens com mais de 24 horas e manter apenas as últimas 20
+            const filteredMessages = allMessages
+              .filter(msg => {
+                const msgDate = new Date(msg.createdAt);
+                return msgDate >= twentyFourHoursAgo;
+              })
+              .slice(-20);
+            
+            conversation.messages = filteredMessages;
+          } else {
+            // Mesmo se a mensagem já existe, filtrar as antigas
+            const filteredMessages = conversation.messages
+              .filter(msg => {
+                const msgDate = new Date(msg.createdAt);
+                return msgDate >= twentyFourHoursAgo;
+              })
+              .slice(-20);
+            conversation.messages = filteredMessages;
           }
         } else {
           // Se não há conversa, buscar informações do amigo
           const friend = friends.find(f => f.id.toString() === friendId);
           if (friend) {
-            newMap.set(friendId, {
-              friend,
-              messages: [{
-                id: data.id,
-                senderId: senderId.toString(),
-                receiverId: receiverId.toString(),
-                content: data.content,
-                createdAt: data.createdAt || new Date().toISOString(),
-                read: data.read || false,
-              }],
-              unreadCount: 0,
-            });
+            const newMessage = {
+              id: data.id,
+              senderId: senderId.toString(),
+              receiverId: receiverId.toString(),
+              content: data.content,
+              createdAt: data.createdAt || new Date().toISOString(),
+              read: data.read || false,
+            };
+            
+            // Verificar se a mensagem tem menos de 24 horas
+            const msgDate = new Date(newMessage.createdAt);
+            if (msgDate >= twentyFourHoursAgo) {
+              newMap.set(friendId, {
+                friend,
+                messages: [newMessage],
+                unreadCount: 0,
+              });
+            }
           }
         }
         
@@ -275,9 +304,19 @@ export default function FriendsPage() {
         index === self.findIndex((m: Message) => m.id === msg.id)
       );
       
+      // Filtrar mensagens com mais de 24 horas e manter apenas as últimas 20
+      const now = new Date();
+      const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const filteredMessages = uniqueMessages
+        .filter((msg: Message) => {
+          const msgDate = new Date(msg.createdAt);
+          return msgDate >= twentyFourHoursAgo;
+        })
+        .slice(-20);
+      
       const conversation: Conversation = {
         friend: selectedFriend!,
-        messages: uniqueMessages,
+        messages: filteredMessages,
         unreadCount: 0
       };
       
@@ -638,7 +677,7 @@ export default function FriendsPage() {
                   {/* Mensagens */}
                   <div 
                     id="messages-container"
-                    className="flex-1 overflow-y-auto p-4 space-y-4"
+                    className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-900"
                   >
                     {currentConversation?.messages.length === 0 ? (
                       <div className="flex items-center justify-center h-full text-gray-400">
@@ -681,7 +720,7 @@ export default function FriendsPage() {
                   </div>
 
                   {/* Input de Mensagem */}
-                  <div className="p-4 border-t border-slate-700">
+                  <div className="p-4 border-t border-slate-700 bg-gray-900">
                     <div className="flex gap-2">
                       <input
                         type="text"
@@ -689,7 +728,7 @@ export default function FriendsPage() {
                         onChange={(e) => setMessageInput(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
                         placeholder="Digite sua mensagem..."
-                        className="flex-1 px-4 py-3 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-purple-500"
+                        className="flex-1 bg-gray-800 px-4 py-3 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
                       />
                       <button
                         onClick={sendMessage}

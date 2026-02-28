@@ -57,7 +57,7 @@ git push origin Developer
 Execute este comando completo:
 
 ```powershell
-cd c:\Yugioh
+cd D:\Yugioh
 git add -u
 git add -A
 git commit -m "chore: limpeza completa"

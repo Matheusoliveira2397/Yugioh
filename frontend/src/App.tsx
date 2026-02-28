@@ -33,8 +33,10 @@ import AdminSiteTabsPanel from './pages/AdminSiteTabsPanel';
 import AdminMessagesPanel from './pages/AdminMessagesPanel';
 import AdminAchievementsPanel from './pages/AdminAchievementsPanel';
 import AdminDivisionsPanel from './pages/AdminDivisionsPanel';
+import AdminCashDivisionPanel from './pages/AdminCashDivisionPanel';
 import AdminRandomDuelLevelRangesPanel from './pages/AdminRandomDuelLevelRangesPanel';
 import AdminSocialMediaPanel from './pages/AdminSocialMediaPanel';
+import AdminNewAccountSettingsPanel from './pages/AdminNewAccountSettingsPanel';
 import CreditPage from './pages/CreditPage';
 import HelpPage from './pages/HelpPage';
 import MissionsPage from './pages/MissionsPage';
@@ -43,6 +45,7 @@ import DuelArena from './pages/DuelArena';
 import ArenaPage from './pages/ArenaPage';
 import ActiveDuelsPage from './pages/ActiveDuelsPage';
 import FinishedDuelsPage from './pages/FinishedDuelsPage';
+import NewsDetailPage from './pages/NewsDetailPage';
 import Layout from './components/Layout';
 
 function App() {
@@ -540,6 +543,32 @@ function App() {
         />
 
         <Route
+          path="/admin/new-account-settings"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminNewAccountSettingsPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/cash-division"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminCashDivisionPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
           path="/credit"
           element={
             isAuthenticated ? (
@@ -584,6 +613,19 @@ function App() {
             isAuthenticated ? (
               <Layout>
                 <FinishedDuelsPage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/news/:id"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <NewsDetailPage />
               </Layout>
             ) : (
               <Navigate to="/login" />

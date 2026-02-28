@@ -217,14 +217,19 @@ export default function AdminInitialDecksPanel() {
       return;
     }
 
-    const existingCard = formData.cards.find((c) => c.cardId === cardId);
-    const currentQuantity = existingCard ? existingCard.quantity : 0;
+    // Contar por nome da carta (considera todas as skins)
+    const cardName = card.name;
+    const cardsWithSameName = formData.cards.filter((c) => {
+      const foundCard = allCards.find((ac) => ac.id === c.cardId);
+      return foundCard && foundCard.name === cardName;
+    });
+    const currentQuantity = cardsWithSameName.reduce((sum, c) => sum + c.quantity, 0);
 
     // Verificar se já atingiu o limite máximo de cópias
     if (currentQuantity >= maxCopies) {
       setMessage({ 
         type: 'error', 
-        text: `❌ Você já atingiu o limite máximo de ${maxCopies} cópia(s) desta carta no deck!` 
+        text: `❌ Você já atingiu o limite máximo de ${maxCopies} cópia(s) desta carta no deck! (considerando todas as skins)` 
       });
       return;
     }

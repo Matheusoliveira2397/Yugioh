@@ -6,6 +6,8 @@ import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 import { SeasonsService } from '../seasons/seasons.service';
 import { InitialDecksService } from '../initial-decks/initial-decks.service';
+import { NewAccountSettingsService } from '../new-account-settings/new-account-settings.service';
+import { DivisionsService } from '../divisions/divisions.service';
 
 @Injectable()
 export class AuthService {
@@ -15,6 +17,8 @@ export class AuthService {
     private mailService: MailService,
     private seasonsService: SeasonsService,
     private initialDecksService: InitialDecksService,
+    private newAccountSettingsService: NewAccountSettingsService,
+    private divisionsService: DivisionsService,
   ) {}
 
   async validateUser(username: string, password: string): Promise<any> {
@@ -24,10 +28,13 @@ export class AuthService {
       return null;
     }
 
-    // Verificação de email desabilitada temporariamente
-    // if (!user.emailVerified) {
-    //   throw new UnauthorizedException('Por favor, confirme seu email antes de fazer login');
-    // }
+    // Verificar se o email foi confirmado
+    if (!user.isEmailVerified) {
+      const error: any = new UnauthorizedException('Por favor, confirme seu email antes de fazer login');
+      error.code = 'EMAIL_NOT_VERIFIED';
+      error.email = user.email;
+      throw error;
+    }
 
     if (await bcrypt.compare(password, user.password)) {
       const { password, ...result } = user;
@@ -147,7 +154,17 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
     
-    // Criar usuário com valores padrão
+    // Gerar token de verificação de email
+    const crypto = require('crypto');
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    
+    // Buscar configurações de contas novas
+    const newAccountSettings = await this.newAccountSettingsService.getSettings();
+    
+    // Buscar a divisão mais baixa disponível
+    const lowestDivision = await this.divisionsService.getLowestAvailableDivision();
+    
+    // Criar usuário com valores das configurações
     const user = await this.usersService.create({
       nickname: registerDto.nickname,
       username: registerDto.username,
@@ -161,17 +178,18 @@ export class AuthService {
       winsSeason: 0,
       lossesSeason: 0,
       rating: 1000,
-      credits: 50,
-      cash: 50000,
+      credits: newAccountSettings.initialCredits,
+      cash: newAccountSettings.initialCash,
       profileImage: undefined,
       clanTag: undefined,
       biography: undefined,
       playerClass: 'Novato',
-      division: 'Bronze', // Todos começam na divisão Bronze
+      division: lowestDivision, // Divisão mais baixa disponível
       isOnline: false,
       isBanned: false,
       banReason: undefined,
-      isEmailVerified: true,
+      isEmailVerified: false, // Email não verificado inicialmente
+      emailVerificationToken: verificationToken,
     });
 
     // Criar SeasonRanking para o usuário na season ativa
@@ -184,23 +202,61 @@ export class AuthService {
 
     // Atribuir deck inicial aleatório ao usuário
     try {
-      await this.initialDecksService.assignDeckToUser(user.id);
-    } catch (error) {
-      console.error('Erro ao atribuir deck inicial ao usuário:', error);
-      // Não falha o registro se não houver deck inicial disponível
+      console.log(`🎴 [AuthService] Tentando atribuir deck inicial ao usuário ${user.id}...`);
+      console.log(`🎴 [AuthService] Decks disponíveis configurados: ${newAccountSettings.availableInitialDeckIds?.length || 0}`);
+      
+      // Sempre tentar atribuir um deck inicial
+      // Se houver IDs específicos configurados, usar apenas esses
+      // Caso contrário, usar qualquer deck ativo disponível
+      const deckIds = (newAccountSettings.availableInitialDeckIds && newAccountSettings.availableInitialDeckIds.length > 0) 
+        ? newAccountSettings.availableInitialDeckIds 
+        : undefined;
+      
+      if (deckIds) {
+        console.log(`🎴 [AuthService] Usando decks configurados: ${JSON.stringify(deckIds)}`);
+      } else {
+        console.log(`🎴 [AuthService] Nenhum deck específico configurado, buscando qualquer deck ativo disponível...`);
+      }
+      
+      await this.initialDecksService.assignDeckToUser(user.id, deckIds);
+      console.log(`✅ [AuthService] Deck inicial atribuído com sucesso ao usuário ${user.id}`);
+    } catch (error: any) {
+      console.error('❌ [AuthService] Erro ao atribuir deck inicial ao usuário:', error);
+      console.error(`   Mensagem: ${error?.message || 'Erro desconhecido'}`);
+      console.error(`   Stack: ${error?.stack || 'N/A'}`);
+      // Não falha o registro se não houver deck inicial disponível, mas avisa
+      console.warn('⚠️ [AuthService] Usuário criado sem deck inicial. Configure decks iniciais no painel admin.');
     }
 
-    // Envio de email desabilitado temporariamente
-    // try {
-    //   await this.mailService.sendVerificationEmail(user.email, user.nickname, verificationToken);
-    // } catch (error) {
-    //   console.error('Erro ao enviar email, mas usuário foi criado:', error);
-    //   console.log(`\n🔗 Link de verificação: http://localhost:5173/verify-email/${verificationToken}\n`);
-    // }
+    // Enviar email de verificação
+    let emailSent = false;
+    try {
+      console.log(`📧 [AuthService] Enviando email de verificação para: ${user.email}`);
+      console.log(`📧 [AuthService] Token gerado: ${verificationToken.substring(0, 10)}...`);
+      const emailResult = await this.mailService.sendVerificationEmail(user.email, user.nickname, verificationToken);
+      emailSent = emailResult === true; // Se retornar true, email foi enviado
+      if (emailSent) {
+        console.log(`✅ [AuthService] Email de verificação enviado com sucesso para: ${user.email}`);
+      } else {
+        console.warn(`⚠️ [AuthService] Email não foi enviado, mas usuário foi criado`);
+        console.log(`\n🔗 [AuthService] Link de verificação (copie e cole no navegador):`);
+        console.log(`   ${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email/${verificationToken}\n`);
+      }
+    } catch (error: any) {
+      console.error('❌ [AuthService] Erro ao enviar email, mas usuário foi criado:', error);
+      console.error(`   Detalhes: ${error?.message || 'Erro desconhecido'}`);
+      console.log(`\n🔗 [AuthService] Link de verificação (copie e cole no navegador):`);
+      console.log(`   ${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email/${verificationToken}\n`);
+      emailSent = false;
+    }
 
     return {
-      message: 'Registro realizado com sucesso! Você já pode fazer login.',
+      message: emailSent 
+        ? 'Registro realizado com sucesso! Verifique seu email para confirmar sua conta.'
+        : 'Registro realizado com sucesso! Verifique seu email para confirmar sua conta. Se não recebeu o email, verifique a pasta de spam ou use o link abaixo.',
       email: user.email,
+      emailSent: emailSent,
+      verificationLink: emailSent ? undefined : `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email/${verificationToken}`,
     };
   }
 
@@ -217,6 +273,9 @@ export class AuthService {
 
     await this.usersService.verifyEmail(user.id);
 
+    // Limpar token de verificação após verificação bem-sucedida
+    await this.usersService.clearVerificationToken(user.id);
+
     // Enviar email de boas-vindas
     try {
       await this.mailService.sendWelcomeEmail(user.email, user.nickname);
@@ -227,6 +286,36 @@ export class AuthService {
     return {
       message: 'Email verificado com sucesso! Você já pode fazer login.',
     };
+  }
+
+  async resendVerificationEmail(email: string) {
+    const user = await this.usersService.findByEmail(email);
+    
+    if (!user) {
+      throw new BadRequestException('Email não encontrado');
+    }
+
+    if (user.isEmailVerified) {
+      throw new BadRequestException('Email já foi verificado');
+    }
+
+    // Gerar novo token de verificação
+    const crypto = require('crypto');
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    
+    // Atualizar token no banco
+    await this.usersService.updateVerificationToken(user.id, verificationToken);
+
+    // Enviar email de verificação
+    try {
+      await this.mailService.sendVerificationEmail(user.email, user.nickname, verificationToken);
+      return {
+        message: 'Email de verificação reenviado com sucesso! Verifique sua caixa de entrada.',
+      };
+    } catch (error) {
+      console.error('Erro ao reenviar email:', error);
+      throw new BadRequestException('Erro ao enviar email de verificação');
+    }
   }
 
   async validateToken(token: string) {

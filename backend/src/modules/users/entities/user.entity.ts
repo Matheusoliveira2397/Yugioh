@@ -92,6 +92,9 @@ export class User {
   @Column({ default: false })
   isEmailVerified: boolean;
 
+  @Column({ type: 'varchar', nullable: true })
+  emailVerificationToken: string | null;
+
   // Sistema de Clã
   @Column({ type: 'varchar', nullable: true })
   clanTag: string | null; // Tag do clã (ex: "CLA")

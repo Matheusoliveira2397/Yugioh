@@ -22,6 +22,11 @@ export class AuthController {
     return this.authService.verifyEmail(token);
   }
 
+  @Post('resend-verification-email')
+  async resendVerificationEmail(@Body() body: { email: string }) {
+    return this.authService.resendVerificationEmail(body.email);
+  }
+
   @Get('check-nickname')
   async checkNickname(@Query('nickname') nickname: string) {
     return this.authService.checkNickname(nickname);

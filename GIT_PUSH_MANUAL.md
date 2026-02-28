@@ -6,7 +6,7 @@ Execute estes comandos **um por vez** no PowerShell para ver a saída:
 
 ### **1. Verificar Status:**
 ```powershell
-cd c:\Yugioh
+cd D:\Yugioh
 git status
 ```
 

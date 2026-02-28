@@ -3,8 +3,13 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    overflow-x: hidden;
+  }
   body {
     @apply bg-gray-900 text-white;
+    overflow-x: hidden;
+    min-height: 100dvh;
   }
 }
 
@@ -87,23 +92,52 @@
   }
 
   .custom-scrollbar::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-track {
-    background: rgba(30, 41, 59, 0.5);
+    background: rgba(15, 23, 42, 0.6);
     border-radius: 10px;
+    margin: 4px 0;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, #8b5cf6, #6366f1);
+    background: linear-gradient(180deg, #a855f7, #6366f1, #8b5cf6);
     border-radius: 10px;
-    border: 2px solid rgba(30, 41, 59, 0.5);
+    border: 2px solid rgba(15, 23, 42, 0.8);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(180deg, #7c3aed, #4f46e5);
+    background: linear-gradient(180deg, #9333ea, #4f46e5, #7c3aed);
+    box-shadow: 0 2px 8px rgba(168, 85, 247, 0.5);
+  }
+
+  /* Firefox */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #a855f7 rgba(15, 23, 42, 0.6);
+  }
+
+  /* Marquee infinito — Cartas na Loja */
+  @keyframes shop-cards-marquee-left {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  @keyframes shop-cards-marquee-right {
+    0% { transform: translateX(-50%); }
+    100% { transform: translateX(0); }
+  }
+  .shop-marquee-track {
+    animation: shop-cards-marquee-left 45s linear infinite;
+  }
+  .shop-marquee-track--right {
+    animation: shop-cards-marquee-right 50s linear infinite;
+  }
+  .shop-cards-wrap:hover .shop-marquee-track,
+  .shop-cards-wrap:hover .shop-marquee-track--right {
+    animation-play-state: paused;
   }
 
   .glass-effect {
@@ -128,13 +162,10 @@
     background: transparent !important;
   }
 
-  /* Força transparência total no overlay do modal Graceful Charity */
+  /* Overlay do modal Graceful Charity com blur */
   #graceful-charity-overlay {
-    background-color: transparent !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    background: transparent !important;
-    background-image: none !important;
-    background-color: rgba(0, 0, 0, 0) !important;
+    background-color: rgba(0, 0, 0, 0.5) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
   }
 }

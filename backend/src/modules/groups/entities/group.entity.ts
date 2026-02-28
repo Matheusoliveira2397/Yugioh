@@ -44,6 +44,19 @@ export class Group {
   @Column({ type: 'int', default: 0 })
   credits: number; // Crédito total do clã
 
+  // Configuração de divisão de cash
+  @Column({ type: 'int', nullable: true })
+  cashDivisionDayOfWeek: number | null; // 0 = Domingo, 1 = Segunda, ..., 6 = Sábado
+
+  @Column({ type: 'varchar', nullable: true })
+  cashDivisionTime: string | null; // Formato HH:mm (ex: "14:30")
+
+  @Column({ type: 'int', nullable: true })
+  cashDivisionDefaultMembers: number | null; // Número padrão de membros para divisão (configurado pelo admin)
+
+  @Column({ type: 'int', nullable: true })
+  cashDivisionMembers: number | null; // Número de membros para divisão (configurado pelo líder do grupo)
+
   @Column({ type: 'int', default: 0 })
   totalWins: number; // Vitórias totais do clã
 

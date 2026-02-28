@@ -7,6 +7,7 @@ import { ArenaMatchmakingService } from './arena-matchmaking.service';
 import { ArenaMatchmakingProcessorService } from './arena-matchmaking-processor.service';
 import { ChallengeArena } from './arena.entity';
 import { ArenaSchedule } from './entities/arena-schedule.entity';
+import { ArenaLevelRange } from './entities/arena-level-range.entity';
 import { Duel } from '../duels/entities/duel.entity';
 import { User } from '../users/entities/user.entity';
 import { Group } from '../groups/entities/group.entity';
@@ -15,7 +16,7 @@ import { DuelsModule } from '../duels/duels.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ChallengeArena, ArenaSchedule, Duel, User, Group, GroupMember]),
+    TypeOrmModule.forFeature([ChallengeArena, ArenaSchedule, ArenaLevelRange, Duel, User, Group, GroupMember]),
     forwardRef(() => DuelsModule),
   ],
   controllers: [ArenaController],

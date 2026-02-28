@@ -50,8 +50,13 @@ export class InitialDecksService {
     });
   }
 
-  async getRandomActiveDeck(): Promise<InitialDeck | null> {
-    const activeDecks = await this.findActiveDecks();
+  async getRandomActiveDeck(allowedDeckIds?: string[]): Promise<InitialDeck | null> {
+    let activeDecks = await this.findActiveDecks();
+    
+    // Se houver lista de IDs permitidos, filtrar apenas esses decks
+    if (allowedDeckIds && allowedDeckIds.length > 0) {
+      activeDecks = activeDecks.filter(deck => allowedDeckIds.includes(deck.id));
+    }
     
     if (activeDecks.length === 0) {
       return null;
@@ -171,12 +176,27 @@ export class InitialDecksService {
     await this.initialDeckRepository.remove(deck);
   }
 
-  async assignDeckToUser(userId: number): Promise<void> {
-    const deck = await this.getRandomActiveDeck();
+  async assignDeckToUser(userId: number, allowedDeckIds?: string[]): Promise<void> {
+    console.log(`🔍 [InitialDecksService] Buscando deck inicial para usuário ${userId}...`);
+    console.log(`🔍 [InitialDecksService] IDs permitidos: ${allowedDeckIds ? JSON.stringify(allowedDeckIds) : 'Qualquer deck ativo'}`);
+    
+    const deck = await this.getRandomActiveDeck(allowedDeckIds);
 
     if (!deck) {
-      console.warn(`⚠️ [InitialDecksService] Nenhum deck inicial ativo encontrado para o usuário ${userId}`);
-      return;
+      // Buscar todos os decks ativos para diagnóstico
+      const allActiveDecks = await this.findActiveDecks();
+      console.error(`❌ [InitialDecksService] Nenhum deck inicial ativo encontrado para o usuário ${userId}`);
+      console.error(`   Total de decks ativos no banco: ${allActiveDecks.length}`);
+      if (allActiveDecks.length > 0) {
+        console.error(`   IDs dos decks ativos: ${JSON.stringify(allActiveDecks.map(d => d.id))}`);
+      }
+      if (allowedDeckIds && allowedDeckIds.length > 0) {
+        console.error(`   IDs configurados em availableInitialDeckIds: ${JSON.stringify(allowedDeckIds)}`);
+        console.error(`   💡 Dica: Verifique se os IDs configurados correspondem aos decks ativos no banco`);
+      } else {
+        console.error(`   💡 Dica: Configure pelo menos um deck inicial no painel admin e marque-o como ativo`);
+      }
+      throw new Error(`Nenhum deck inicial disponível. Configure decks iniciais no painel admin.`);
     }
 
     console.log(`🎴 [InitialDecksService] Atribuindo deck inicial "${deck.name}" ao usuário ${userId}`);
