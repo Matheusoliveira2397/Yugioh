@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import axios from 'axios';
+import { getImageUrl } from '../utils/imageUrl';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -402,7 +403,7 @@ export default function GroupsPage() {
                     {/* Logo */}
                     {group.logo ? (
                       <img 
-                        src={`${API_URL}${group.logo}`}
+                        src={getImageUrl(group.logo)}
                         alt={group.name}
                         className="w-16 h-16 rounded-xl object-cover border-2 border-purple-500 shadow-lg"
                         onError={(e) => {

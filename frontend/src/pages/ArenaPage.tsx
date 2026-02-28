@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
 import { useSocket } from '../hooks/useSocket';
 import axios from 'axios';
+import { getImageUrl } from '../utils/imageUrl';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -502,7 +503,7 @@ export default function ArenaPage() {
                           {player.rank}°
                         </div>
                         <img
-                          src={`${API_URL}${player.profileImage}?t=${Date.now()}`}
+                          src={getImageUrl(player.profileImage) + (player.profileImage ? `?t=${Date.now()}` : '')}
                           alt={player.nickname}
                           className="w-12 h-12 rounded-full border-2 border-slate-500 object-cover"
                           onError={(e) => {

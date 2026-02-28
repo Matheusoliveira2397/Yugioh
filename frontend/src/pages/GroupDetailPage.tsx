@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import axios from 'axios';
+import { getImageUrl } from '../utils/imageUrl';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -427,8 +428,8 @@ export default function GroupDetailPage() {
         isPublic: group.isPublic,
         cashDivisionMembers: (group as any).cashDivisionMembers || null,
       });
-      setLogoPreview(group.logo ? `${API_URL}${group.logo}` : null);
-      setBannerPreview(group.banner ? `${API_URL}${group.banner}` : null);
+      setLogoPreview(group.logo ? getImageUrl(group.logo) : null);
+      setBannerPreview(group.banner ? getImageUrl(group.banner) : null);
       setLogoFile(null);
       setBannerFile(null);
       setEditError('');
@@ -518,7 +519,7 @@ export default function GroupDetailPage() {
             {group.banner && (
               <div className="absolute inset-0 z-0">
                 <img
-                  src={`${API_URL}${group.banner}`}
+                  src={getImageUrl(group.banner)}
                   alt={`Banner de ${group.name}`}
                   className="w-full h-full object-cover"
                   onError={(e) => {
@@ -538,7 +539,7 @@ export default function GroupDetailPage() {
                     {/* Logo do Grupo */}
                     {group.logo ? (
                       <img 
-                        src={`${API_URL}${group.logo}`}
+                        src={getImageUrl(group.logo)}
                         alt={group.name}
                         className="w-24 h-24 rounded-2xl object-cover border-2 border-purple-500 shadow-lg"
                         onError={(e) => {
@@ -715,7 +716,7 @@ export default function GroupDetailPage() {
                   {/* Imagem da conquista - maior destaque */}
                   {achievement.icon && (
                     <img
-                      src={`${API_URL}${achievement.icon}`}
+                      src={getImageUrl(achievement.icon)}
                       alt={achievement.title}
                       className="w-24 h-24 object-contain mb-2"
                       onError={(e) => {
@@ -736,7 +737,7 @@ export default function GroupDetailPage() {
                   <div className="mt-auto pt-2 border-t border-white/10 w-full">
                     <div className="flex items-center gap-1.5 justify-center mb-1">
                       <img
-                        src={achievement.user?.profileImage ? `${API_URL}${achievement.user.profileImage}` : '/images/default.png'}
+                        src={getImageUrl(achievement.user?.profileImage)}
                         alt={achievement.user?.nickname || 'Usuário'}
                         className="w-5 h-5 rounded-full border border-purple-500/50 object-cover flex-shrink-0"
                         onError={(e) => {
@@ -852,7 +853,7 @@ export default function GroupDetailPage() {
                     >
                       <div className="flex items-center gap-4">
                         <img
-                          src={request.user?.profileImage ? `${API_URL}${request.user.profileImage}` : '/images/default.png'}
+                          src={getImageUrl(request.user?.profileImage)}
                           alt={request.user?.nickname || 'Usuário'}
                           className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
                           onError={(e) => {
@@ -942,7 +943,7 @@ export default function GroupDetailPage() {
                           {/* Foto do Membro */}
                           {member.user?.profileImage ? (
                             <img
-                              src={`${API_URL}${member.user.profileImage}`}
+                              src={getImageUrl(member.user?.profileImage)}
                               alt={member.user?.nickname || 'Membro'}
                               className="w-14 h-14 rounded-full border-2 border-purple-500/50 object-cover"
                               onError={(e) => {
@@ -1076,7 +1077,7 @@ export default function GroupDetailPage() {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <img
-                            src={`${API_URL}${member.user.profileImage}`}
+                            src={getImageUrl(member.user?.profileImage)}
                             alt={member.user.nickname}
                             className="w-10 h-10 rounded-lg object-cover"
                             onError={(e) => {

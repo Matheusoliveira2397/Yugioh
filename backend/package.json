@@ -51,7 +51,8 @@
     "socket.io": "^4.6.1",
     "socket.io-client": "^4.8.1",
     "typeorm": "^0.3.19",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "@supabase/supabase-js": "^2.45.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.3.0",

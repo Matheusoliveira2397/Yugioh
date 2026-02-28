@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useSocketStore } from '../stores/socketStore';
 import { getSocialIcon } from '../components/SocialMediaIcons';
 import axios from 'axios';
+import { getImageUrl } from '../utils/imageUrl';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -571,7 +572,7 @@ export default function ChatPage() {
                       <img
                         src={
                           msg.profileImage
-                            ? `${API_URL}${msg.profileImage}?t=${Date.now()}`
+                            ? getImageUrl(msg.profileImage) + (msg.profileImage ? `?t=${Date.now()}` : '')
                             : `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMyMessage ? '3b82f6' : 'ef4444'}&color=fff&size=64`
                         }
                         alt={msg.username}
@@ -725,7 +726,7 @@ export default function ChatPage() {
                                   <img
                                     src={
                                       msg.profileImage
-                                        ? `${API_URL}${msg.profileImage}?t=${Date.now()}`
+                                        ? getImageUrl(msg.profileImage) + (msg.profileImage ? `?t=${Date.now()}` : '')
                                         : `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMyMessage ? '3b82f6' : 'ef4444'}&color=fff&size=32`
                                     }
                                     alt={msg.username}
@@ -826,7 +827,7 @@ export default function ChatPage() {
                       <img
                         src={
                           onlineUser.profileImage
-                            ? `${API_URL}${onlineUser.profileImage}?t=${Date.now()}`
+                            ? getImageUrl(onlineUser.profileImage) + (onlineUser.profileImage ? `?t=${Date.now()}` : '')
                             : `https://ui-avatars.com/api/?name=${encodeURIComponent(onlineUser.username)}&background=6366f1&color=fff&size=32`
                         }
                         alt={onlineUser.username}

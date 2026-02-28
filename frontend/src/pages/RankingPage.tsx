@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import axios from 'axios';
+import { getImageUrl } from '../utils/imageUrl';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -644,7 +645,7 @@ export default function RankingPage() {
                             className="flex items-center gap-2 lg:gap-4 hover:opacity-80 transition-opacity"
                           >
                             <img
-                              src={`http://localhost:3000${player.profileImage}`}
+                              src={getImageUrl(player.profileImage)}
                               alt={player.nickname}
                               className="w-10 h-10 lg:w-14 lg:h-14 rounded-xl object-cover border-2 border-purple-500"
                               onError={(e) => {
@@ -757,7 +758,7 @@ export default function RankingPage() {
                         className="flex items-center gap-2 flex-1 min-w-0"
                       >
                         <img
-                          src={`http://localhost:3000${player.profileImage}`}
+                          src={getImageUrl(player.profileImage)}
                           alt={player.nickname}
                           className="w-12 h-12 rounded-xl object-cover border-2 border-purple-500 flex-shrink-0"
                           onError={(e) => {
@@ -882,7 +883,7 @@ export default function RankingPage() {
                             >
                               {group.logo ? (
                                 <img
-                                  src={`http://localhost:3000${group.logo}`}
+                                  src={getImageUrl(group.logo)}
                                   alt={group.name}
                                   className="w-10 h-10 lg:w-14 lg:h-14 rounded-xl object-cover border-2 border-cyan-500"
                                   onError={(e) => {
@@ -906,7 +907,7 @@ export default function RankingPage() {
                               <div className="flex items-center gap-2">
                                 {group.leader.profileImage ? (
                                   <img
-                                    src={`http://localhost:3000${group.leader.profileImage}`}
+                                    src={getImageUrl(group.leader.profileImage)}
                                     alt={group.leader.nickname}
                                     className="w-8 h-8 lg:w-10 lg:h-10 rounded-full object-cover border border-purple-500"
                                     onError={(e) => {
@@ -977,7 +978,7 @@ export default function RankingPage() {
                         >
                           {group.logo ? (
                             <img
-                              src={`http://localhost:3000${group.logo}`}
+                              src={getImageUrl(group.logo)}
                               alt={group.name}
                               className="w-12 h-12 rounded-xl object-cover border-2 border-cyan-500 flex-shrink-0"
                               onError={(e) => {

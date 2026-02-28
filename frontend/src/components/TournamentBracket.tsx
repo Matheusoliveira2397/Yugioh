@@ -47,6 +47,8 @@ interface TournamentBracketProps {
   bracket: Bracket;
 }
 
+import { getImageUrl } from '../utils/imageUrl';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 export default function TournamentBracket({ bracket }: TournamentBracketProps) {
@@ -123,7 +125,7 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
             <div className="w-8 h-8 rounded-full overflow-hidden border border-white/20 flex-shrink-0">
               {match.player1 ? (
                 <img
-                  src={match.player1.profileImage ? `${API_URL}${match.player1.profileImage}` : '/images/default.png'}
+                  src={getImageUrl(match.player1.profileImage)}
                   alt={match.player1.nickname}
                   className="w-full h-full object-cover"
                   onError={(e) => {
@@ -161,7 +163,7 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
             <div className="w-8 h-8 rounded-full overflow-hidden border border-white/20 flex-shrink-0">
               {match.player2 ? (
                 <img
-                  src={match.player2.profileImage ? `${API_URL}${match.player2.profileImage}` : '/images/default.png'}
+                  src={getImageUrl(match.player2.profileImage)}
                   alt={match.player2.nickname}
                   className="w-full h-full object-cover"
                   onError={(e) => {
@@ -314,7 +316,7 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
                 <div className="space-y-2">
                   <div className="w-20 h-20 mx-auto rounded-full overflow-hidden border-4 border-[#00ff88]">
                     <img
-                      src={organizedRounds[totalRounds][0].winner.profileImage ? `${API_URL}${organizedRounds[totalRounds][0].winner.profileImage}` : '/images/default.png'}
+                      src={getImageUrl(organizedRounds[totalRounds][0].winner.profileImage)}
                       alt={organizedRounds[totalRounds][0].winner.nickname}
                       className="w-full h-full object-cover"
                       onError={(e) => {

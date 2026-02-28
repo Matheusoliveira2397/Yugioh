@@ -6,6 +6,8 @@ import axios from 'axios';
 import { logger } from '../utils/logger';
 import LatestCardsMarquee from '../components/LatestCardsMarquee';
 
+import { getImageUrl } from '../utils/imageUrl';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 interface RankingPlayer {
@@ -329,7 +331,7 @@ export default function HomePage() {
                       {player.rank === 1 ? '🥇' : player.rank === 2 ? '🥈' : player.rank === 3 ? '🥉' : `${player.rank}º`}
                     </div>
                     <img
-                      src={player.profileImage ? `http://localhost:3000${player.profileImage}` : '/images/default.png'}
+                      src={getImageUrl(player.profileImage)}
                       alt={player.nickname}
                       className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full flex-shrink-0 object-cover"
                       onError={(e) => {
@@ -376,7 +378,7 @@ export default function HomePage() {
                       {player.rank === 1 ? '🥇' : player.rank === 2 ? '🥈' : player.rank === 3 ? '🥉' : `${player.rank}º`}
                     </div>
                     <img
-                      src={player.profileImage ? `http://localhost:3000${player.profileImage}` : '/images/default.png'}
+                      src={getImageUrl(player.profileImage)}
                       alt={player.nickname}
                       className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full flex-shrink-0 object-cover"
                       onError={(e) => {
@@ -428,7 +430,7 @@ export default function HomePage() {
                       {clan.rank === 1 ? '🥇' : clan.rank === 2 ? '🥈' : clan.rank === 3 ? '🥉' : `${clan.rank}º`}
                     </div>
                     <img
-                      src={clan.logo ? `${API_URL}${clan.logo}` : '/images/default.png'}
+                      src={getImageUrl(clan.logo)}
                       alt={clan.name}
                       className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded object-cover flex-shrink-0 border border-blue-600/50"
                       onError={(e) => {

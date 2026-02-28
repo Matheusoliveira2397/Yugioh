@@ -2,6 +2,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { useSocket } from '../hooks/useSocket';
+import { getImageUrl } from '../utils/imageUrl';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 // Função para obter o caminho da imagem da divisão
 const getDivisionImage = (division: string): string | null => {
@@ -54,8 +57,6 @@ export default function RandomDuelPage() {
   const isOpeningRef = useRef<boolean>(false);
   const searchStartTimeRef = useRef<number | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
   // Contador de tempo enquanto procura duelo
   useEffect(() => {
@@ -320,7 +321,7 @@ export default function RandomDuelPage() {
                         className="absolute inset-0 bg-red-500 rounded-full blur-xl opacity-50"
                       />
                       <img 
-                        src={`http://localhost:3000${duelFound.opponent.profileImage}?t=${Date.now()}`}
+                        src={getImageUrl(duelFound.opponent.profileImage) + (duelFound.opponent.profileImage ? `?t=${Date.now()}` : '')}
                         alt={duelFound.opponent?.username || 'Oponente'}
                         className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 sm:border-4 border-red-500 shadow-lg object-cover"
                         onError={(e) => {
@@ -896,7 +897,7 @@ export default function RandomDuelPage() {
                     className="absolute inset-0 bg-purple-500 rounded-full blur-xl opacity-50"
                   />
                   <img 
-                    src={user.profileImage ? `http://localhost:3000${user.profileImage}?t=${Date.now()}` : '/images/default.png'} 
+                    src={getImageUrl(user.profileImage) + (user.profileImage ? `?t=${Date.now()}` : '')} 
                     alt={user.username}
                     className="relative w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 rounded-full border-2 sm:border-4 border-purple-500 shadow-lg object-cover"
                     onError={(e) => {

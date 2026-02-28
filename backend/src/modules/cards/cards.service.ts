@@ -7,6 +7,7 @@ import { CreateCardDto } from './dto/create-card.dto';
 import { UpdateCardDto } from './dto/update-card.dto';
 import { AddEffectDto } from './dto/add-effect.dto';
 import { YugiohApiService } from './services/yugioh-api.service';
+import { UploadService } from '../upload/upload.service';
 
 @Injectable()
 export class CardsService implements OnModuleInit {
@@ -21,6 +22,7 @@ export class CardsService implements OnModuleInit {
     @Inject(forwardRef(() => ShopService))
     private shopService: ShopService,
     private yugiohApiService: YugiohApiService,
+    private uploadService: UploadService,
   ) {}
 
   async onModuleInit() {
@@ -31,10 +33,7 @@ export class CardsService implements OnModuleInit {
         this.renameImagesExecuted = true;
         console.log('🔄 [CardsService] Iniciando renomeação automática de imagens...');
         try {
-          // Importar UploadService dinamicamente para evitar dependência circular
-          const { UploadService } = await import('../upload/upload.service');
-          const uploadServiceInstance = new UploadService();
-          await this.renameAllCardImagesInternal(uploadServiceInstance);
+          await this.renameAllCardImagesInternal(this.uploadService);
         } catch (error: any) {
           console.error('❌ [CardsService] Erro ao renomear imagens automaticamente:', error.message);
           console.error('❌ [CardsService] Stack:', error.stack);
@@ -1314,9 +1313,7 @@ export class CardsService implements OnModuleInit {
    * Executado automaticamente na inicialização do módulo
    */
   async renameAllCardImages(): Promise<{ success: boolean; total: number; renamed: number; skipped: number; errors: number; message: string }> {
-    const { UploadService } = await import('../upload/upload.service');
-    const uploadServiceInstance = new UploadService();
-    return this.renameAllCardImagesInternal(uploadServiceInstance);
+    return this.renameAllCardImagesInternal(this.uploadService);
   }
 
   private async renameAllCardImagesInternal(uploadService: any): Promise<{ success: boolean; total: number; renamed: number; skipped: number; errors: number; message: string }> {

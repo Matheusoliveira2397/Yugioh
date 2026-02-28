@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useSocketStore } from '../stores/socketStore';
 import axios from 'axios';
+import { getImageUrl } from '../utils/imageUrl';
 
 interface Friend {
   id: number | string;
@@ -529,7 +530,7 @@ export default function FriendsPage() {
                         >
                           <div className="flex items-center gap-3 mb-3">
                             <img
-                              src={request.user.profileImage ? `${API_URL}${request.user.profileImage}` : '/images/default.png'}
+                              src={getImageUrl(request.user.profileImage)}
                               alt={request.user.username}
                               className="w-12 h-12 rounded-full border-2 border-yellow-500 object-cover"
                               onError={(e) => {
@@ -593,7 +594,7 @@ export default function FriendsPage() {
                         <div className="flex items-center gap-3">
                           <div className="relative">
                             <img
-                              src={friend.profileImage ? `${API_URL}${friend.profileImage}` : '/images/default.png'}
+                              src={getImageUrl(friend.profileImage)}
                               alt={friend.username}
                               className="w-12 h-12 rounded-full border-2 border-purple-500 object-cover"
                               onError={(e) => {
@@ -648,7 +649,7 @@ export default function FriendsPage() {
                   <div className="p-4 border-b border-slate-700 flex items-center gap-3">
                     <div className="relative">
                       <img
-                        src={selectedFriend.profileImage ? `${API_URL}${selectedFriend.profileImage}` : '/images/default.png'}
+                        src={getImageUrl(selectedFriend.profileImage)}
                         alt={selectedFriend.username}
                         className="w-12 h-12 rounded-full border-2 border-purple-500 object-cover"
                         onError={(e) => {

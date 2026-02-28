@@ -9,6 +9,7 @@ import DuelLogs from '../components/duel/DuelLogs';
 import DuelField from '../components/duel/DuelField';
 import CardImage from '../components/CardImage';
 import { getCardImage } from '../utils/cardImage';
+import { getImageUrl } from '../utils/imageUrl';
 import TributeSelectionModal from '../components/duel/TributeSelectionModal';
 
 interface DuelData {
@@ -138,7 +139,7 @@ const DuelArena: React.FC = () => {
     } else {
       // Ataque direto - mostrar carta atacante x perfil do duelista alvo
       const targetProfileImage = opponent?.profileImage 
-        ? (opponent.profileImage.startsWith('http') ? opponent.profileImage : `${API_URL}${opponent.profileImage}`)
+        ? getImageUrl(opponent.profileImage)
         : '/images/default.png';
       
       setAttackAnimation({
@@ -998,7 +999,7 @@ const DuelArena: React.FC = () => {
       }) => {
         // O oponente está atacando, então eu sou o alvo
         const myProfileImage = user?.profileImage 
-          ? (user.profileImage.startsWith('http') ? user.profileImage : `${API_URL}${user.profileImage}`)
+          ? getImageUrl(user.profileImage)
           : '/images/default.png';
         
         setAttackAnimation({
@@ -1034,7 +1035,7 @@ const DuelArena: React.FC = () => {
         if (data.isDirectAttack) {
           // Ataque direto cancelado
           const targetProfileImage = opponent?.profileImage 
-            ? (opponent.profileImage.startsWith('http') ? opponent.profileImage : `${API_URL}${opponent.profileImage}`)
+            ? getImageUrl(opponent.profileImage)
             : '/images/default.png';
           
           setAttackAnimation({
@@ -3226,7 +3227,7 @@ const DuelArena: React.FC = () => {
                   isWinner ? 'bg-yellow-500' : 'bg-red-500'
                 }`}></div>
                 <img
-                  src={myPlayer?.profileImage ? `http://localhost:3000${myPlayer.profileImage}?t=${Date.now()}` : '/images/default.png'}
+                  src={getImageUrl(myPlayer?.profileImage) + (myPlayer?.profileImage ? `?t=${Date.now()}` : '')}
                   alt={myPlayer?.nickname || myPlayer?.username}
                   className="relative w-32 h-32 rounded-full border-4 border-white shadow-lg object-cover mx-auto"
                   onError={(e) => {
@@ -3533,7 +3534,7 @@ const DuelArena: React.FC = () => {
               transition={{ duration: 0.2 }}
               src={
                 user.profileImage 
-                  ? `http://localhost:3000${user.profileImage}` 
+                  ? getImageUrl(user.profileImage) 
                   : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.username) + '&background=3b82f6&color=fff&size=128'
               } 
               alt={user.username}
@@ -3675,7 +3676,7 @@ const DuelArena: React.FC = () => {
               transition={{ duration: 0.2 }}
               src={
                 opponent.profileImage 
-                  ? `http://localhost:3000${opponent.profileImage}` 
+                  ? getImageUrl(opponent.profileImage) 
                   : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(opponent.username) + '&background=ef4444&color=fff&size=128'
               } 
               alt={opponent.username}

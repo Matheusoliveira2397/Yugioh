@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore';
 import axios from 'axios';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSocketStore } from '../stores/socketStore';
+import { getImageUrl } from '../utils/imageUrl';
 
 interface FriendRequest {
   id: string;
@@ -292,7 +293,7 @@ export default function NotificationBell() {
                     >
                       <div className="flex items-start gap-3 mb-3">
                         <img
-                          src={request.user.profileImage ? `${API_URL}${request.user.profileImage}` : '/images/default.png'}
+                          src={getImageUrl(request.user.profileImage)}
                           alt={request.user.username}
                           className="w-10 h-10 rounded-full border-2 border-yellow-500 object-cover"
                           onError={(e) => {

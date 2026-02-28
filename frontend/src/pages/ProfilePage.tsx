@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { motion } from 'framer-motion';
 import axios from 'axios';
+import { getImageUrl } from '../utils/imageUrl';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -510,7 +511,7 @@ export const ProfilePage: React.FC = () => {
     );
   }
 
-  const currentImageUrl = previewUrl || `${API_URL}${profileUser.profileImage}`;
+  const currentImageUrl = previewUrl || getImageUrl(profileUser.profileImage);
   // Usar winsSeason/lossesSeason do User se não houver seasonRanking
   const seasonWins = profileUser.seasonRanking?.wins || profileUser.winsSeason || 0;
   const seasonLosses = profileUser.seasonRanking?.losses || profileUser.lossesSeason || 0;
@@ -951,7 +952,7 @@ export const ProfilePage: React.FC = () => {
                   >
                     {achievement.icon ? (
                       <img
-                        src={`${API_URL}${achievement.icon}`}
+                        src={getImageUrl(achievement.icon)}
                         alt={achievement.title}
                         className="w-24 h-24 object-contain mb-3"
                         onError={(e) => {
@@ -998,7 +999,7 @@ export const ProfilePage: React.FC = () => {
                     <div className="flex flex-col items-center">
                       {currentUser?.profileImage ? (
                         <img
-                          src={`${API_URL}${currentUser.profileImage}`}
+                          src={getImageUrl(currentUser.profileImage)}
                           alt={currentUser.nickname}
                           className="w-20 h-20 md:w-24 md:h-24 rounded-full border-2 border-purple-500/50 object-cover"
                           onError={(e) => {
@@ -1020,7 +1021,7 @@ export const ProfilePage: React.FC = () => {
                     <div className="flex flex-col items-center">
                       {directMatchStats.player2?.profileImage ? (
                         <img
-                          src={`${API_URL}${directMatchStats.player2.profileImage}`}
+                          src={getImageUrl(directMatchStats.player2.profileImage)}
                           alt={directMatchStats.player2.nickname}
                           className="w-20 h-20 md:w-24 md:h-24 rounded-full border-2 border-purple-500/50 object-cover"
                           onError={(e) => {
@@ -1180,7 +1181,7 @@ export const ProfilePage: React.FC = () => {
                           {/* Foto do jogador atual */}
                           {profileUser?.profileImage ? (
                             <img
-                              src={`${API_URL}${profileUser.profileImage}`}
+                              src={getImageUrl(profileUser.profileImage)}
                               alt={profileUser?.nickname || profileUser?.username}
                               className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
                               onError={(e) => {
@@ -1214,7 +1215,7 @@ export const ProfilePage: React.FC = () => {
                           {/* Foto do oponente */}
                           {opponent?.profileImage ? (
                             <img
-                              src={`${API_URL}${opponent.profileImage}`}
+                              src={getImageUrl(opponent.profileImage)}
                               alt={opponent?.nickname || opponent?.username}
                               className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
                               onError={(e) => {
@@ -1290,7 +1291,7 @@ export const ProfilePage: React.FC = () => {
                       >
                         <div className="flex items-center gap-3">
                           <img
-                            src={friend.profileImage ? `${API_URL}${friend.profileImage}` : "/images/default.png"}
+                            src={getImageUrl(friend.profileImage)}
                             alt={friend.username}
                             className="w-16 h-16 rounded-full border-2 border-purple-500/50 object-cover"
                             onError={(e) => {
@@ -1370,7 +1371,7 @@ export const ProfilePage: React.FC = () => {
                       >
                         <div className="flex items-center gap-3">
                           <img
-                            src={friend.profileImage ? `${API_URL}${friend.profileImage}` : "/images/default.png"}
+                            src={getImageUrl(friend.profileImage)}
                             alt={friend.username}
                             className="w-16 h-16 rounded-full border-2 border-purple-500/50 object-cover"
                             onError={(e) => {

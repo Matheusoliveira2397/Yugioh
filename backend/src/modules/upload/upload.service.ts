@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import axios from 'axios';
+import { SupabaseStorageService } from './supabase-storage.service';
 
 @Injectable()
 export class UploadService {
@@ -9,7 +10,7 @@ export class UploadService {
   private readonly uploadPath = '/app/uploads/avatars';
   private readonly groupsPath = '/app/uploads/groups';
   private readonly achievementsPath = '/app/uploads/achievements';
-  
+
   // Caminho para salvar no frontend (public/images/cards)
   // Em Docker: usa o volume mapeado /app/frontend-cards
   // Em desenvolvimento local: tenta acessar via caminho relativo
@@ -18,17 +19,17 @@ export class UploadService {
     if (process.env.FRONTEND_CARDS_PATH) {
       return process.env.FRONTEND_CARDS_PATH;
     }
-    
+
     // Se estiver em Docker (volume mapeado)
     if (fs.existsSync('/app/frontend-cards')) {
       return '/app/frontend-cards';
     }
-    
+
     // Tentar encontrar o diretório raiz do projeto
     // __dirname em desenvolvimento: backend/src/modules/upload
     // __dirname em produção: backend/dist/modules/upload
     let projectRoot = __dirname;
-    
+
     // Subir até encontrar a pasta raiz (que contém backend e frontend)
     while (projectRoot !== path.dirname(projectRoot)) {
       const frontendPath = path.join(projectRoot, '..', 'frontend', 'public', 'images', 'cards');
@@ -37,12 +38,12 @@ export class UploadService {
       }
       projectRoot = path.dirname(projectRoot);
     }
-    
+
     // Fallback: caminho relativo padrão
     return path.join(__dirname, '..', '..', '..', '..', 'frontend', 'public', 'images', 'cards');
   })();
 
-  constructor() {
+  constructor(private readonly supabaseStorage: SupabaseStorageService) {
     // Cria a pasta de uploads se não existir
     if (!fs.existsSync(this.uploadPath)) {
       fs.mkdirSync(this.uploadPath, { recursive: true });
@@ -72,46 +73,48 @@ export class UploadService {
   }
 
   async uploadAvatar(file: any, userId: string): Promise<string> {
-    // Validações
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
     if (!allowedMimeTypes.includes(file.mimetype)) {
       throw new Error('Formato de imagem inválido. Use PNG, JPG ou WEBP.');
     }
-
-    // Limite de tamanho: 5MB
     if (file.size > 5 * 1024 * 1024) {
       throw new Error('Imagem muito grande. Tamanho máximo: 5MB.');
     }
 
-    // Gera nome único para o arquivo
     const fileExtension = path.extname(file.originalname);
     const fileName = `user_${userId}_${Date.now()}${fileExtension}`;
+
+    if (this.supabaseStorage.isEnabled()) {
+      const publicUrl = await this.supabaseStorage.upload(
+        'avatars',
+        fileName,
+        file.buffer,
+        file.mimetype,
+      );
+      console.log('✅ Avatar salvo no Supabase:', fileName);
+      return publicUrl;
+    }
+
     const filePath = path.join(this.uploadPath, fileName);
-
-    // Salva o arquivo
     fs.writeFileSync(filePath, file.buffer);
-
-    console.log('✅ Avatar salvo:', fileName);
-
-    // Retorna o caminho relativo (URL que será salva no banco)
+    console.log('✅ Avatar salvo (local):', fileName);
     return `/uploads/avatars/${fileName}`;
   }
 
   async deleteAvatar(imageUrl: string): Promise<void> {
     try {
-      // Se for avatar padrão, não deleta
-      if (imageUrl.includes('/images/default')) {
+      if (!imageUrl || imageUrl.includes('/images/default') || imageUrl.includes('/avatars/default')) {
         return;
       }
-
-      // Extrai o nome do arquivo da URL
+      if (this.supabaseStorage.isSupabaseUrl(imageUrl)) {
+        await this.supabaseStorage.deleteByPublicUrl(imageUrl);
+        return;
+      }
       const fileName = path.basename(imageUrl);
       const filePath = path.join(this.uploadPath, fileName);
-
-      // Verifica se o arquivo existe e deleta
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
-        console.log('✅ Avatar deletado:', fileName);
+        console.log('✅ Avatar deletado (local):', fileName);
       }
     } catch (error) {
       console.error('❌ Erro ao deletar avatar:', error);
@@ -361,81 +364,90 @@ export class UploadService {
   }
 
   async uploadGroupLogo(file: any, groupId: string): Promise<string> {
-    // Validações
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
     if (!allowedMimeTypes.includes(file.mimetype)) {
       throw new Error('Formato de imagem inválido. Use PNG, JPG ou WEBP.');
     }
-
-    // Limite de tamanho: 5MB
     if (file.size > 5 * 1024 * 1024) {
       throw new Error('Imagem muito grande. Tamanho máximo: 5MB.');
     }
 
-    // Gera nome único para o arquivo
     const fileExtension = path.extname(file.originalname);
     const fileName = `group_${groupId}_logo_${Date.now()}${fileExtension}`;
+
+    if (this.supabaseStorage.isEnabled()) {
+      const publicUrl = await this.supabaseStorage.upload(
+        'groups',
+        fileName,
+        file.buffer,
+        file.mimetype,
+      );
+      console.log('✅ Logo do grupo salvo no Supabase:', fileName);
+      return publicUrl;
+    }
+
     const filePath = path.join(this.groupsPath, fileName);
-
-    // Salva o arquivo
     fs.writeFileSync(filePath, file.buffer);
-
-    console.log('✅ Logo do grupo salvo:', fileName);
-
-    // Retorna o caminho relativo (URL que será salva no banco)
+    console.log('✅ Logo do grupo salvo (local):', fileName);
     return `/uploads/groups/${fileName}`;
   }
 
   async uploadGroupBanner(file: any, groupId: string): Promise<string> {
-    // Validações
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
     if (!allowedMimeTypes.includes(file.mimetype)) {
       throw new Error('Formato de imagem inválido. Use PNG, JPG ou WEBP.');
     }
-
-    // Limite de tamanho: 10MB (banners podem ser maiores)
     if (file.size > 10 * 1024 * 1024) {
       throw new Error('Imagem muito grande. Tamanho máximo: 10MB.');
     }
 
-    // Gera nome único para o arquivo
     const fileExtension = path.extname(file.originalname);
     const fileName = `group_${groupId}_banner_${Date.now()}${fileExtension}`;
+
+    if (this.supabaseStorage.isEnabled()) {
+      const publicUrl = await this.supabaseStorage.upload(
+        'groups',
+        fileName,
+        file.buffer,
+        file.mimetype,
+      );
+      console.log('✅ Banner do grupo salvo no Supabase:', fileName);
+      return publicUrl;
+    }
+
     const filePath = path.join(this.groupsPath, fileName);
-
-    // Salva o arquivo
     fs.writeFileSync(filePath, file.buffer);
-
-    console.log('✅ Banner do grupo salvo:', fileName);
-
-    // Retorna o caminho relativo (URL que será salva no banco)
+    console.log('✅ Banner do grupo salvo (local):', fileName);
     return `/uploads/groups/${fileName}`;
   }
 
   async uploadAchievementImage(file: any, achievementTitle: string): Promise<string> {
-    // Validações
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
     if (!allowedMimeTypes.includes(file.mimetype)) {
       throw new Error('Formato de imagem inválido. Use PNG, JPG ou WEBP.');
     }
-
-    // Limite de tamanho: 5MB
     if (file.size > 5 * 1024 * 1024) {
       throw new Error('Imagem muito grande. Tamanho máximo: 5MB.');
     }
 
-    // Gera nome único para o arquivo
     const fileExtension = path.extname(file.originalname);
     const sanitizedName = achievementTitle.toLowerCase().replace(/[^a-z0-9]/g, '_');
     const fileName = `achievement_${sanitizedName}_${Date.now()}${fileExtension}`;
+
+    if (this.supabaseStorage.isEnabled()) {
+      const publicUrl = await this.supabaseStorage.upload(
+        'achievements',
+        fileName,
+        file.buffer,
+        file.mimetype,
+      );
+      console.log('✅ Imagem de conquista salva no Supabase:', fileName);
+      return publicUrl;
+    }
+
     const filePath = path.join(this.achievementsPath, fileName);
-
-    // Salva o arquivo
     fs.writeFileSync(filePath, file.buffer);
-
-    console.log('✅ Imagem de conquista salva:', fileName);
-
-    // Retorna o caminho relativo (URL que será salva no banco)
+    console.log('✅ Imagem de conquista salva (local):', fileName);
     return `/uploads/achievements/${fileName}`;
   }
 }

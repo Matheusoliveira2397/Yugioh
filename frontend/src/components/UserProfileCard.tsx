@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import NotificationBell from './NotificationBell';
 import MessageIcon from './MessageIcon';
+import { getImageUrl } from '../utils/imageUrl';
 
 interface UserProfileCardProps {
   onLinkClick?: () => void; // Para fechar o menu mobile quando um link é clicado
@@ -48,7 +49,7 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({ onLinkClick })
               <div className="w-24 h-24 rounded-2xl overflow-hidden border-3 border-purple-500 shadow-xl shadow-purple-500/50 group-hover:scale-110 group-hover:shadow-purple-500/70 transition-all duration-300 relative">
                 <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-blue-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                 <img
-                  src={`http://localhost:3000${user?.profileImage}?t=${Date.now()}`}
+                  src={getImageUrl(user?.profileImage) + (user?.profileImage ? `?t=${Date.now()}` : '')}
                   alt={user?.nickname}
                   className="w-full h-full object-cover relative z-10"
                   onError={(e) => {

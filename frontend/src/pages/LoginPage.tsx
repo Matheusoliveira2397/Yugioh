@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore';
 import { motion } from 'framer-motion';
 import axios from 'axios';
 import LatestCardsMarquee, { type MarqueeCard } from '../components/LatestCardsMarquee';
+import { getImageUrl } from '../utils/imageUrl';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -262,7 +263,7 @@ export default function LoginPage() {
                       <li key={p.id} className="flex items-center gap-2 text-xs">
                         <span className="text-white/70 w-5">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
                         <img
-                          src={p.profileImage ? (p.profileImage.startsWith('http') ? p.profileImage : `${API_URL}${p.profileImage}`) : '/images/default.png'}
+                          src={getImageUrl(p.profileImage)}
                           alt=""
                           className="w-6 h-6 rounded-full object-cover flex-shrink-0"
                           onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }}
@@ -293,7 +294,7 @@ export default function LoginPage() {
                       <li key={c.id} className="flex items-center gap-2 text-xs">
                         <span className="text-white/70 w-5">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
                         <img
-                          src={c.logo ? `${API_URL}${c.logo}` : '/images/default.png'}
+                          src={getImageUrl(c.logo)}
                           alt=""
                           className="w-6 h-6 rounded object-cover flex-shrink-0"
                           onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }}
