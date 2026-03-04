@@ -40,44 +40,45 @@ export class ArenaMatchmakingService {
     return levelRanges.length > 0 ? levelRanges[levelRanges.length - 1].name : 'Nível 1+';
   }
 
-  // Adicionar jogador na fila da arena
-  async addToArenaQueue(userId: number, socketId: string, level: number): Promise<void> {
-    // Buscar arena atual
+  /**
+   * Adicionar jogador na fila da arena. O duelo será encontrado apenas com jogadores
+   * da mesma faixa de nível configurada na arena (ex.: Nível 1, Nível 2-3, etc.).
+   */
+  async addToArenaQueue(userId: number, socketId: string, level: number): Promise<string | null> {
     const currentArena = await this.arenaService.getCurrentArena();
-    
     if (!currentArena) {
       console.warn(`[addToArenaQueue] Nenhuma arena ativa no momento`);
-      return;
+      return null;
     }
 
-    // Buscar faixas de nível configuradas na arena
-    const levelRanges = currentArena.config?.levelRanges || [];
-    
+    // Usar faixas de nível da arena (Criar Arena); fallback para faixas globais se vazias
+    let levelRanges = (currentArena.config?.levelRanges || []) as Array<{ min: number; max: number; name: string }>;
     if (levelRanges.length === 0) {
-      console.warn(`[addToArenaQueue] Arena não tem faixas de nível configuradas`);
-      return;
+      levelRanges = await this.arenaService.getLevelRanges();
+    }
+    if (levelRanges.length === 0) {
+      console.warn(`[addToArenaQueue] Arena sem faixas de nível configuradas`);
+      return null;
     }
 
-    // Determinar faixa de nível do jogador
     const levelRange = this.getLevelRangeForLevel(level, levelRanges);
-    
     if (!this.arenaQueues.has(levelRange)) {
       this.arenaQueues.set(levelRange, []);
     }
 
     const queue = this.arenaQueues.get(levelRange)!;
     const alreadyInQueue = queue.find(p => p.userId === userId);
-    
     if (!alreadyInQueue) {
       queue.push({
         userId,
         socketId,
         level,
         levelRange,
-        joinedAt: new Date()
+        joinedAt: new Date(),
       });
-      console.log(`[addToArenaQueue] Jogador ${userId} (Nível ${level}) adicionado à faixa ${levelRange}`);
+      console.log(`[addToArenaQueue] Jogador ${userId} (Nível ${level}) na faixa "${levelRange}" – duelo só com mesma faixa`);
     }
+    return levelRange;
   }
 
   // Remover jogador da fila da arena

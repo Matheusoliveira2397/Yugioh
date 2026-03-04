@@ -13,11 +13,17 @@ import { User } from '../users/entities/user.entity';
 import { Group } from '../groups/entities/group.entity';
 import { GroupMember } from '../groups/entities/group-member.entity';
 import { DuelsModule } from '../duels/duels.module';
+import { ShopModule } from '../shop/shop.module';
+import { GroupsModule } from '../groups/groups.module';
+import { SeasonsModule } from '../seasons/seasons.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ChallengeArena, ArenaSchedule, ArenaLevelRange, Duel, User, Group, GroupMember]),
     forwardRef(() => DuelsModule),
+    ShopModule,
+    GroupsModule,
+    SeasonsModule,
   ],
   controllers: [ArenaController],
   providers: [ArenaService, ArenaScheduleService, ArenaMatchmakingService, ArenaMatchmakingProcessorService],

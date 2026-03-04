@@ -14,6 +14,14 @@ export class NewAccountSettings {
   @Column({ type: 'jsonb', default: '[]' })
   availableInitialDeckIds: string[]; // IDs dos decks iniciais que podem ser sorteados
 
+  /** ID do playmat padrão para novas contas (null = nenhum) */
+  @Column({ type: 'varchar', length: 36, nullable: true })
+  defaultPlaymatId: string | null;
+
+  /** ID da skin (sleeve) padrão para novas contas (null = nenhuma) */
+  @Column({ type: 'varchar', length: 36, nullable: true })
+  defaultSkinId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

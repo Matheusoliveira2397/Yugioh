@@ -1,9 +1,11 @@
 import { ReactNode, useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useI18n } from '../i18n/I18nContext';
 import { useAuthStore } from '../stores/authStore';
 import ActiveDuelBanner from './ActiveDuelBanner';
 import ArenaCountdownBanner from './ArenaCountdownBanner';
 import { UserProfileCard } from './UserProfileCard';
+import LanguageSelector from './LanguageSelector';
 import { getSocialIcon } from './SocialMediaIcons';
 import axios from 'axios';
 
@@ -30,6 +32,7 @@ interface SocialMediaLink {
 
 export default function Layout({ children }: LayoutProps) {
   const { refreshUser, isAuthenticated } = useAuthStore();
+  const { t } = useI18n();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeTabs, setActiveTabs] = useState<SiteTab[]>([]);
   const [socialMediaLinks, setSocialMediaLinks] = useState<SocialMediaLink[]>([]);
@@ -113,7 +116,7 @@ export default function Layout({ children }: LayoutProps) {
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 className="lg:hidden flex-shrink-0 min-h-[44px] min-w-[44px] p-2 rounded-lg text-white hover:bg-white/10 transition-colors flex items-center justify-center"
-                aria-label="Abrir ou fechar menu"
+                aria-label={t('layout.openMenu')}
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   {mobileMenuOpen ? (
@@ -244,6 +247,9 @@ export default function Layout({ children }: LayoutProps) {
                   );
                 })}
               </div>
+              <div className="ml-auto flex-shrink-0 pl-2">
+                <LanguageSelector variant="compact" className="[&_button]:border-purple-500/30 [&_button]:text-gray-200 [&_button:hover]:bg-white/10" />
+              </div>
             </div>
           </div>
 
@@ -331,7 +337,7 @@ export default function Layout({ children }: LayoutProps) {
       <footer className="border-t border-gray-700/50 py-3 sm:py-4 px-3 sm:px-4 bg-transparent backdrop-blur-sm relative z-10 mt-auto">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-4">
           <p className="text-gray-400 text-xs sm:text-sm text-center sm:text-left">
-            © 2025 Yu-Gi-Oh! Duel Arena - Todos os direitos reservados
+            © 2025 Yugioh RPG: Champions Of Duels - Todos os direitos reservados
           </p>
           {socialMediaLinks.length > 0 && (
             <div className="flex items-center gap-4">

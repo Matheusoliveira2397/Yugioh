@@ -1,6 +1,7 @@
 import { Controller, Post, Get, Body, UseGuards, Request, Param, Query, Ip } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './guards/local-auth.guard';
+import { LocalMasterAuthGuard } from './guards/local-master-auth.guard';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { UsersService } from '../users/users.service';
@@ -42,6 +43,21 @@ export class AuthController {
     return this.authService.checkEmail(email);
   }
 
+  @Post('forgot-password')
+  async forgotPassword(@Body() body: { email: string }) {
+    return this.authService.forgotPassword(body.email || '');
+  }
+
+  @Post('reset-password/:token')
+  async resetPassword(@Param('token') token: string, @Body() body: { newPassword: string }) {
+    return this.authService.resetPassword(token, body.newPassword || '');
+  }
+
+  @Get('confirm-email-change/:token')
+  async confirmEmailChange(@Param('token') token: string) {
+    return this.usersService.confirmEmailChange(token);
+  }
+
   @UseGuards(LocalAuthGuard)
   @Post('login')
   async login(@Body() loginDto: LoginDto, @Request() req: any, @Ip() ip: string) {
@@ -66,6 +82,24 @@ export class AuthController {
       console.error(`❌ [login] Erro ao atualizar IP para usuário ${req.user.id}:`, error);
     }
     
+    return result;
+  }
+
+  /** Login exclusivo para conta Master. Contas normais não podem usar esta rota. */
+  @UseGuards(LocalMasterAuthGuard)
+  @Post('login-master')
+  async loginMaster(@Body() loginDto: LoginDto, @Request() req: any, @Ip() ip: string) {
+    const result = await this.authService.login(req.user);
+
+    const realIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+                   req.headers['x-real-ip'] || ip || req.ip || req.connection?.remoteAddress || 'unknown';
+
+    try {
+      await this.usersService.updateLastLogin(req.user.id, realIp);
+    } catch (error) {
+      console.error(`[login-master] Erro ao atualizar IP para usuário ${req.user.id}:`, error);
+    }
+
     return result;
   }
 }

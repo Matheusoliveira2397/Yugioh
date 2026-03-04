@@ -11,11 +11,29 @@ interface ResetAllAccountsModalProps {
   onSuccess: () => void;
 }
 
+const RESET_OPTIONS = [
+  { key: 'resetScoreSeason', label: 'Score da temporada (usuários)', description: 'Zera wins/losses da season e ranking da temporada' },
+  { key: 'resetScoreGeral', label: 'Score geral (usuários)', description: 'Zera total score, vitórias/derrotas gerais, level, experiência, rating e divisão' },
+  { key: 'resetCartas', label: 'Cartas e deck', description: 'Remove todas as cartas, decks e volta ao deck inicial (aplica cash/créditos iniciais)' },
+  { key: 'resetCreditsCash', label: 'Créditos e cash', description: 'Volta créditos e cash de todos para o valor inicial (configuração de nova conta)' },
+  { key: 'resetConquistas', label: 'Conquistas', description: 'Remove todas as conquistas dos usuários' },
+  { key: 'resetScoreGeralGrupo', label: 'Score geral do grupo', description: 'Zera total score, vitórias e derrotas dos clãs e membros' },
+  { key: 'resetScoreSeasonGrupo', label: 'Score da temporada do grupo', description: 'Zera score da season dos clãs e membros' },
+] as const;
+
 export default function ResetAllAccountsModal({ isOpen, onClose, onSuccess }: ResetAllAccountsModalProps) {
   const { token } = useAuthStore();
   const [step, setStep] = useState(1);
   const [confirmationText, setConfirmationText] = useState('');
-  const [password, setPassword] = useState('');
+  const [resetOptions, setResetOptions] = useState<Record<string, boolean>>({
+    resetScoreSeason: false,
+    resetScoreGeral: false,
+    resetCartas: false,
+    resetCreditsCash: false,
+    resetConquistas: false,
+    resetScoreGeralGrupo: false,
+    resetScoreSeasonGrupo: false,
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<any>(null);
@@ -23,10 +41,20 @@ export default function ResetAllAccountsModal({ isOpen, onClose, onSuccess }: Re
   const requiredText = 'RESETAR TODAS AS CONTAS';
   const requiredCode = 'RESET_ALL_ACCOUNTS_CONFIRM';
 
+  const toggleOption = (key: string) => {
+    setResetOptions((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const hasAnyOption = Object.values(resetOptions).some(Boolean);
+
   const handleReset = async () => {
     if (step !== 3) return;
     if (confirmationText !== requiredText) {
       setError('Texto de confirmação incorreto');
+      return;
+    }
+    if (!hasAnyOption) {
+      setError('Selecione pelo menos uma opção de reset');
       return;
     }
 
@@ -36,9 +64,15 @@ export default function ResetAllAccountsModal({ isOpen, onClose, onSuccess }: Re
     try {
       const response = await axios.post(
         `${API_URL}/admin/reset-all-accounts`,
-        { confirmationCode: requiredCode },
         {
-          headers: { Authorization: `Bearer ${token}` },
+          confirmationCode: requiredCode,
+          ...resetOptions,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
         }
       );
 
@@ -56,7 +90,15 @@ export default function ResetAllAccountsModal({ isOpen, onClose, onSuccess }: Re
     if (loading) return;
     setStep(1);
     setConfirmationText('');
-    setPassword('');
+    setResetOptions({
+      resetScoreSeason: false,
+      resetScoreGeral: false,
+      resetCartas: false,
+      resetCreditsCash: false,
+      resetConquistas: false,
+      resetScoreGeralGrupo: false,
+      resetScoreSeasonGrupo: false,
+    });
     setError(null);
     setResult(null);
     onClose();
@@ -95,26 +137,37 @@ export default function ResetAllAccountsModal({ isOpen, onClose, onSuccess }: Re
             >
               <div className="bg-red-950/50 border-2 border-red-800 rounded-lg p-4">
                 <h3 className="text-xl font-bold text-red-400 mb-3">
-                  ⚠️ ATENÇÃO: Esta ação irá:
+                  Selecione o que deseja resetar (todas as contas: Player, Admin e Master):
                 </h3>
-                <ul className="space-y-2 text-red-200 text-sm list-disc list-inside">
-                  <li>Zerar TODOS os scores de TODAS as contas</li>
-                  <li>Remover TODAS as cartas compradas</li>
-                  <li>Remover TODOS os decks</li>
-                  <li>Remover TODAS as conquistas</li>
-                  <li>Remover TODOS os clãs</li>
-                  <li>Resetar cash e créditos para valores iniciais</li>
-                  <li>Resetar decks para decks iniciais aleatórios</li>
-                  <li>Resetar level, experiência e rating</li>
-                </ul>
+                <div className="space-y-3">
+                  {RESET_OPTIONS.map(({ key, label, description }) => (
+                    <label
+                      key={key}
+                      className="flex items-start gap-3 p-3 rounded-lg border border-red-800/50 hover:bg-red-900/20 cursor-pointer transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!resetOptions[key]}
+                        onChange={() => toggleOption(key)}
+                        className="mt-1 w-5 h-5 rounded border-red-600 text-red-600 focus:ring-red-500"
+                      />
+                      <div>
+                        <span className="text-red-200 font-semibold block">{label}</span>
+                        <span className="text-red-300/90 text-xs block mt-0.5">{description}</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                {!hasAnyOption && (
+                  <p className="text-yellow-400 text-sm mt-2 font-medium">
+                    Selecione pelo menos uma opção para continuar.
+                  </p>
+                )}
               </div>
 
               <div className="bg-yellow-950/50 border-2 border-yellow-800 rounded-lg p-4">
                 <p className="text-yellow-200 text-sm font-bold">
-                  ⚠️ Esta ação NÃO pode ser desfeita!
-                </p>
-                <p className="text-yellow-300 text-xs mt-2">
-                  Certifique-se de que realmente deseja resetar todo o sistema antes de continuar.
+                  ⚠️ Esta ação afetará TODAS as contas (Player, Admin e Master) e não pode ser desfeita!
                 </p>
               </div>
 
@@ -126,8 +179,9 @@ export default function ResetAllAccountsModal({ isOpen, onClose, onSuccess }: Re
                   Cancelar
                 </button>
                 <button
-                  onClick={() => setStep(2)}
-                  className="px-6 py-2 bg-gradient-to-r from-red-700/90 to-red-800/90 hover:from-red-600 hover:to-red-700 text-white rounded-lg font-bold transition-all duration-200 border border-red-600/50 hover:border-red-500/70 shadow-md hover:shadow-lg"
+                  onClick={() => hasAnyOption && setStep(2)}
+                  disabled={!hasAnyOption}
+                  className="px-6 py-2 bg-gradient-to-r from-red-700/90 to-red-800/90 hover:from-red-600 hover:to-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-all duration-200 border border-red-600/50 hover:border-red-500/70 shadow-md hover:shadow-lg"
                 >
                   Continuar
                 </button>
@@ -195,7 +249,7 @@ export default function ResetAllAccountsModal({ isOpen, onClose, onSuccess }: Re
                   ÚLTIMA CONFIRMAÇÃO
                 </p>
                 <p className="text-red-300 text-sm mb-4">
-                  Você está prestes a resetar TODAS as contas do sistema. Esta é a última chance de cancelar.
+                  Você está prestes a resetar TODAS as contas do sistema (incluindo Admin e Master). Esta é a última chance de cancelar.
                 </p>
                 <div className="bg-black/50 p-3 rounded border border-red-600">
                   <p className="text-red-400 font-bold">
@@ -250,11 +304,11 @@ export default function ResetAllAccountsModal({ isOpen, onClose, onSuccess }: Re
                   ✅ Reset Completo Realizado!
                 </h3>
                 <div className="space-y-2 text-green-200 text-sm">
-                  <p>Usuários resetados: <strong>{result.usersReset}</strong></p>
-                  <p>Cartas deletadas: <strong>{result.cardsDeleted}</strong></p>
-                  <p>Decks deletados: <strong>{result.decksDeleted}</strong></p>
-                  <p>Conquistas deletadas: <strong>{result.achievementsDeleted}</strong></p>
-                  <p>Clãs deletados: <strong>{result.groupsDeleted}</strong></p>
+                  <p>Usuários afetados: <strong>{result.usersReset}</strong></p>
+                  {result.cardsDeleted != null && <p>Cartas removidas: <strong>{result.cardsDeleted}</strong></p>}
+                  {result.decksDeleted != null && <p>Decks removidos: <strong>{result.decksDeleted}</strong></p>}
+                  {result.achievementsDeleted != null && <p>Conquistas removidas: <strong>{result.achievementsDeleted}</strong></p>}
+                  {result.groupsUpdated != null && result.groupsUpdated > 0 && <p>Clãs atualizados (scores): <strong>{result.groupsUpdated}</strong></p>}
                 </div>
               </div>
 

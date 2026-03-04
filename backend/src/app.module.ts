@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import * as path from 'path';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -30,7 +31,8 @@ import { ActivityInterceptor } from './common/interceptors/activity.interceptor'
     // Configuração
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env', '../.env'], // Tenta ambos os caminhos
+      // Garante que backend/.env seja carregado (mesmo rodando da raiz do projeto)
+      envFilePath: [path.join(__dirname, '..', '.env'), '.env', '../.env'],
       expandVariables: true,
     }),
 

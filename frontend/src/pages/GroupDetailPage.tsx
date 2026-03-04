@@ -1044,7 +1044,7 @@ export default function GroupDetailPage() {
                   <th className="px-6 py-4 text-left text-slate-400 font-semibold">#</th>
                   <th className="px-6 py-4 text-left text-slate-400 font-semibold">Membro</th>
                   <th className="px-6 py-4 text-left text-slate-400 font-semibold">Cargo</th>
-                  <th className="px-6 py-4 text-right text-slate-400 font-semibold">Pontuação</th>
+                  <th className="px-6 py-4 text-right text-slate-400 font-semibold">Score</th>
                   <th className="px-6 py-4 text-right text-slate-400 font-semibold">V/D</th>
                 </tr>
               </thead>

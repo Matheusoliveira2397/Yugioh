@@ -39,14 +39,14 @@ export class ChallengeArena {
       top1?: { credits?: number; gems?: number; cash?: number };
       top3?: { credits?: number; gems?: number; cash?: number };
       top10?: { credits?: number; gems?: number; cash?: number };
-      // Premiações por faixa de nível (top 5 de cada faixa)
+      // Premiações por faixa de nível (top 5 de cada faixa): cash, crédito e/ou carta
       levelRangeRewards?: Array<{
-        levelRange: string; // Nome da faixa (ex: "Nível 1", "Nível 2-3")
-        top1?: { cash?: number; score?: number; additionalScore?: number };
-        top2?: { cash?: number; score?: number; additionalScore?: number };
-        top3?: { cash?: number; score?: number; additionalScore?: number };
-        top4?: { cash?: number; score?: number; additionalScore?: number };
-        top5?: { cash?: number; score?: number; additionalScore?: number };
+        levelRange: string;
+        top1?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+        top2?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+        top3?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+        top4?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+        top5?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
       }>;
     };
     // Configuração de horários recorrentes
@@ -55,6 +55,8 @@ export class ChallengeArena {
     durationMinutes?: number; // Duração em minutos
     // Controle de distribuição de prêmios
     rewardsDistributed?: boolean; // Se os prêmios já foram distribuídos
+    // Controle de notificação de abertura (evitar reenvio)
+    notifiedOpen?: boolean;
   };
 
   @CreateDateColumn()

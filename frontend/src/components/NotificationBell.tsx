@@ -26,6 +26,29 @@ interface SystemNotification {
 }
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const NOTIFICATIONS_STORAGE_KEY = 'yugioh_system_notifications';
+const NOTIFICATIONS_MAX = 50;
+
+function loadStoredNotifications(userId: number | string | undefined): SystemNotification[] {
+  if (!userId) return [];
+  try {
+    const raw = localStorage.getItem(`${NOTIFICATIONS_STORAGE_KEY}_${userId}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredNotifications(userId: number | string | undefined, list: SystemNotification[]) {
+  if (!userId) return;
+  try {
+    localStorage.setItem(`${NOTIFICATIONS_STORAGE_KEY}_${userId}`, JSON.stringify(list.slice(0, NOTIFICATIONS_MAX)));
+  } catch {
+    // ignore
+  }
+}
 
 export default function NotificationBell() {
   const { token, user } = useAuthStore();
@@ -33,7 +56,9 @@ export default function NotificationBell() {
   const location = useLocation();
   const { connect, on, getSocket, isConnected } = useSocketStore();
   const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
-  const [systemNotifications, setSystemNotifications] = useState<SystemNotification[]>([]);
+  const [systemNotifications, setSystemNotifications] = useState<SystemNotification[]>(() =>
+    loadStoredNotifications(user?.id)
+  );
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -57,9 +82,22 @@ export default function NotificationBell() {
     }
   };
 
+  // Carregar notificações salvas ao mudar de usuário
+  useEffect(() => {
+    if (user?.id) {
+      setSystemNotifications(loadStoredNotifications(user.id));
+    }
+  }, [user?.id]);
+
+  // Persistir notificações sempre que a lista mudar
+  useEffect(() => {
+    if (user?.id && systemNotifications.length >= 0) {
+      saveStoredNotifications(user.id, systemNotifications);
+    }
+  }, [user?.id, systemNotifications]);
+
   useEffect(() => {
     fetchPendingRequests();
-    // Atualizar a cada 30 segundos
     const interval = setInterval(fetchPendingRequests, 30000);
     return () => clearInterval(interval);
   }, [token]);
@@ -79,37 +117,29 @@ export default function NotificationBell() {
       const timeout = setTimeout(() => {
         const newSocket = getSocket();
         if (newSocket) {
-          setupSystemListener(newSocket);
+          setupListeners(newSocket);
         }
       }, 1000);
       return () => clearTimeout(timeout);
     }
 
-    setupSystemListener(socket);
+    setupListeners(socket);
 
     // Solicitar permissão para notificações do navegador
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
 
-    function setupSystemListener(socketInstance: any) {
+    function setupListeners(socketInstance: any) {
       // Escutar mensagens do sistema
       const handleSystemMessage = (data: SystemNotification) => {
         setSystemNotifications(prev => {
-          // Evitar duplicatas
-          if (prev.some(n => n.id === data.id)) {
-            return prev;
-          }
-          // Manter apenas as últimas 10 notificações do sistema
-          return [data, ...prev].slice(0, 10);
+          if (prev.some(n => n.id === data.id)) return prev;
+          return [data, ...prev].slice(0, NOTIFICATIONS_MAX);
         });
-
-        // Mostrar notificação do navegador se permitido
         if ('Notification' in window && Notification.permission === 'granted') {
           new Notification('📢 Mensagem do Sistema', {
-            body: data.content.length > 50 
-              ? data.content.substring(0, 50) + '...' 
-              : data.content,
+            body: data.content.length > 50 ? data.content.substring(0, 50) + '...' : data.content,
             icon: '/images/yugioh.webp',
           });
         }
@@ -121,6 +151,8 @@ export default function NotificationBell() {
         socketInstance.off('systemMessage', handleSystemMessage);
       };
     }
+
+    setupListeners(socket);
 
     return () => {
       if (socket) {

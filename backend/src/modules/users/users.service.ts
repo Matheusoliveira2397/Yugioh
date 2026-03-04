@@ -8,6 +8,7 @@ import { Season } from '../seasons/entities/season.entity';
 import { GroupMember } from '../groups/entities/group-member.entity';
 import { Group } from '../groups/entities/group.entity';
 import { LevelsService } from '../levels/levels.service';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class UsersService implements OnModuleInit {
@@ -23,6 +24,7 @@ export class UsersService implements OnModuleInit {
     @InjectRepository(Group)
     private groupRepository: Repository<Group>,
     private levelsService: LevelsService,
+    private mailService: MailService,
   ) {}
 
   async onModuleInit() {
@@ -69,6 +71,51 @@ export class UsersService implements OnModuleInit {
       console.error('❌ [UsersService] Erro ao verificar/adicionar coluna emailVerificationToken:', error);
       // Não lançar erro para não impedir a inicialização do módulo
     }
+
+    // Colunas de recuperação de senha
+    try {
+      const resetTokenExists = await this.usersRepository.query(`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'passwordResetToken'
+      `);
+      if (resetTokenExists.length === 0) {
+        await this.usersRepository.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "passwordResetToken" VARCHAR(255) NULL`);
+        await this.usersRepository.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "passwordResetExpiresAt" TIMESTAMP NULL`);
+        console.log('✅ [UsersService] Colunas de recuperação de senha adicionadas');
+      }
+    } catch (e: any) {
+      console.warn('⚠️ [UsersService] Colunas passwordReset:', e?.message);
+    }
+
+    // Colunas de troca de email (confirmação no email atual)
+    try {
+      const colExists = await this.usersRepository.query(`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'emailChangeToken'
+      `);
+      if (colExists.length === 0) {
+        await this.usersRepository.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "pendingNewEmail" VARCHAR(255) NULL`);
+        await this.usersRepository.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "emailChangeToken" VARCHAR(255) NULL`);
+        await this.usersRepository.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "emailChangeExpiresAt" TIMESTAMP NULL`);
+        console.log('✅ [UsersService] Colunas de troca de email adicionadas');
+      }
+    } catch (e: any) {
+      console.warn('⚠️ [UsersService] Colunas emailChange:', e?.message);
+    }
+
+    // Coluna de abas permitidas para ADMIN (criados pelo Master)
+    try {
+      const colExists = await this.usersRepository.query(`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'adminAllowedTabs'
+      `);
+      if (colExists.length === 0) {
+        await this.usersRepository.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "adminAllowedTabs" JSONB NULL`);
+        console.log('✅ [UsersService] Coluna adminAllowedTabs adicionada');
+      }
+    } catch (e: any) {
+      console.warn('⚠️ [UsersService] Coluna adminAllowedTabs:', e?.message);
+    }
   }
 
   // Helper para normalizar profileImage (retorna null se for imagem padrão inexistente)
@@ -112,7 +159,6 @@ export class UsersService implements OnModuleInit {
           'banReason',
           'lastLogin',
           'lastIpAddress',
-          'avatar',
           'isEmailVerified',
           'clanTag',
           'biography',
@@ -125,6 +171,7 @@ export class UsersService implements OnModuleInit {
           'equippedDeckName',
           'createdAt',
           'updatedAt',
+          'adminAllowedTabs',
         ]
       });
       if (!user) {
@@ -175,7 +222,6 @@ export class UsersService implements OnModuleInit {
         'banReason',
         'lastLogin',
         'lastIpAddress',
-        'avatar',
         'isEmailVerified',
         'clanTag',
         'biography',
@@ -218,7 +264,6 @@ export class UsersService implements OnModuleInit {
         'banReason',
         'lastLogin',
         'lastIpAddress',
-        'avatar',
         'isEmailVerified',
         'clanTag',
         'biography',
@@ -261,7 +306,6 @@ export class UsersService implements OnModuleInit {
         'banReason',
         'lastLogin',
         'lastIpAddress',
-        'avatar',
         'isEmailVerified',
         'clanTag',
         'biography',
@@ -298,6 +342,35 @@ export class UsersService implements OnModuleInit {
   async clearVerificationToken(userId: number): Promise<void> {
     await this.usersRepository.update(userId, {
       emailVerificationToken: null,
+    });
+  }
+
+  async findByPasswordResetToken(token: string): Promise<User | null> {
+    return this.usersRepository.findOne({
+      where: { passwordResetToken: token },
+    });
+  }
+
+  async setPasswordResetToken(userId: number, token: string, expiresAt: Date): Promise<void> {
+    await this.usersRepository.update(userId, {
+      passwordResetToken: token,
+      passwordResetExpiresAt: expiresAt,
+    });
+  }
+
+  async clearPasswordResetToken(userId: number): Promise<void> {
+    await this.usersRepository.update(userId, {
+      passwordResetToken: null,
+      passwordResetExpiresAt: null,
+    });
+  }
+
+  async setPasswordByResetToken(userId: number, newPassword: string): Promise<void> {
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await this.usersRepository.update(userId, {
+      password: hashed,
+      passwordResetToken: null,
+      passwordResetExpiresAt: null,
     });
   }
 
@@ -1238,10 +1311,10 @@ export class UsersService implements OnModuleInit {
           profileImage: this.normalizeProfileImage(user.profileImage),
           seasonScore: 0,
           totalScore: user.totalScore || 0,
-          wins: user.winsSeason,
-          losses: user.lossesSeason,
-          division: user.division || 'Bronze', // Usar divisão do usuário
-          globalRank: index + 1, // Rank baseado na posição ordenada por totalScore
+          wins: user.winsGeral ?? 0,
+          losses: user.lossesGeral ?? 0,
+          division: user.division || 'Bronze',
+          globalRank: index + 1,
           group: group || null,
         };
       });
@@ -1257,9 +1330,9 @@ export class UsersService implements OnModuleInit {
           profileImage: this.normalizeProfileImage(user.profileImage),
           seasonScore: 0,
           totalScore: user.totalScore || 0,
-          wins: user.winsSeason,
-          losses: user.lossesSeason,
-          division: user.division || 'Bronze', // Usar divisão do usuário
+          wins: user.winsGeral ?? 0,
+          losses: user.lossesGeral ?? 0,
+          division: user.division || 'Bronze',
           globalRank: 0,
           group: group || null,
         };
@@ -1305,7 +1378,6 @@ export class UsersService implements OnModuleInit {
       const seasonRanking = rankingMap.get(user.id);
       const group = groupMap.get(user.id);
       const clanTag = user.clanTag || (group && group.isActive ? group.tag : null);
-      console.log(`🔍 [getGeneralRanking] User ${user.id} (${user.nickname}): clanTag=${user.clanTag}, groupTag=${group?.tag}, finalClanTag=${clanTag}, totalScore=${user.totalScore}`);
       return {
         id: String(user.id),
         nickname: user.nickname,
@@ -1314,10 +1386,10 @@ export class UsersService implements OnModuleInit {
         seasonScore: seasonRanking?.seasonScore || 0,
         totalScore: user.totalScore || 0,
         level: user.level || 1,
-        wins: seasonRanking?.wins || user.winsSeason,
-        losses: seasonRanking?.losses || user.lossesSeason,
-        division: user.division || null, // Divisão da tabela users (verdadeira) - dinâmica
-        globalRank: index + 1, // Rank baseado na posição ordenada por totalScore
+        wins: user.winsGeral ?? 0,
+        losses: user.lossesGeral ?? 0,
+        division: user.division || null,
+        globalRank: index + 1,
         group: group || null,
       };
     });
@@ -1599,7 +1671,6 @@ export class UsersService implements OnModuleInit {
         'banReason',
         'lastLogin',
         'lastIpAddress',
-        'avatar',
         'isEmailVerified',
         'clanTag',
         'biography',
@@ -1612,6 +1683,7 @@ export class UsersService implements OnModuleInit {
         'equippedDeckName',
         'createdAt',
         'updatedAt',
+        'adminAllowedTabs',
       ]
     });
     
@@ -1881,20 +1953,91 @@ export class UsersService implements OnModuleInit {
     return this.findById(userId);
   }
 
-  // Atualizar email
+  // Atualizar email (após confirmação pelo link no email atual)
   async updateEmail(userId: number, email: string): Promise<User> {
     if (!email || !email.includes('@')) {
       throw new BadRequestException('Email inválido.');
     }
-    
-    // Verificar se o email já está em uso por outro usuário
-    const existingUser = await this.findByEmail(email);
+    const trimmed = email.trim().toLowerCase();
+    const existingUser = await this.findByEmail(trimmed);
     if (existingUser && existingUser.id !== userId) {
       throw new BadRequestException('Este email já está em uso.');
     }
-    
-    await this.usersRepository.update(userId, { email: email.trim() });
+    await this.usersRepository.update(userId, {
+      email: trimmed,
+      pendingNewEmail: null,
+      emailChangeToken: null,
+      emailChangeExpiresAt: null,
+    });
     return this.findById(userId);
+  }
+
+  // Solicitar troca de email: envia link de confirmação para o email ATUAL
+  async requestEmailChange(userId: number, newEmail: string): Promise<{ message: string }> {
+    if (!newEmail || !newEmail.includes('@')) {
+      throw new BadRequestException('Email inválido.');
+    }
+    const newEmailTrimmed = newEmail.trim().toLowerCase();
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new BadRequestException('Usuário não encontrado.');
+    }
+    const currentEmail = (user.email || '').trim().toLowerCase();
+    if (newEmailTrimmed === currentEmail) {
+      throw new BadRequestException('O novo email é igual ao atual.');
+    }
+    const existingUser = await this.findByEmail(newEmailTrimmed);
+    if (existingUser && existingUser.id !== userId) {
+      throw new BadRequestException('Este email já está em uso.');
+    }
+    const crypto = require('crypto');
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1h
+    await this.usersRepository.update(userId, {
+      pendingNewEmail: newEmailTrimmed,
+      emailChangeToken: token,
+      emailChangeExpiresAt: expiresAt,
+    });
+    const sent = await this.mailService.sendEmailChangeConfirmation(
+      currentEmail,
+      user.nickname,
+      token,
+      newEmailTrimmed,
+    );
+    return {
+      message: sent
+        ? 'Enviamos um link de confirmação para seu email atual. Acesse o link para concluir a troca.'
+        : 'Solicitação registrada. Verifique seu email atual (e a pasta de spam) para o link de confirmação.',
+    };
+  }
+
+  async findByEmailChangeToken(token: string): Promise<User | null> {
+    return this.usersRepository.findOne({
+      where: { emailChangeToken: token },
+    });
+  }
+
+  async confirmEmailChange(token: string): Promise<{ message: string }> {
+    const user = await this.findByEmailChangeToken(token);
+    if (!user) {
+      throw new BadRequestException('Link inválido ou expirado.');
+    }
+    const raw = await this.usersRepository.findOne({ where: { id: user.id } });
+    const expiresAt = (raw as any)?.emailChangeExpiresAt;
+    const pendingNew = (raw as any)?.pendingNewEmail;
+    if (expiresAt && new Date(expiresAt) < new Date()) {
+      await this.usersRepository.update(user.id, {
+        pendingNewEmail: null,
+        emailChangeToken: null,
+        emailChangeExpiresAt: null,
+      });
+      throw new BadRequestException('Link expirado. Solicite a troca de email novamente no perfil.');
+    }
+    if (!pendingNew) {
+      throw new BadRequestException('Solicitação de troca não encontrada.');
+    }
+    await this.updateEmail(user.id, pendingNew);
+    return { message: 'Email alterado com sucesso. Use o novo email para fazer login.' };
   }
 
   // Atualizar senha

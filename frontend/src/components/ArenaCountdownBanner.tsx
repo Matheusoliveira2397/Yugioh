@@ -29,16 +29,18 @@ export default function ArenaCountdownBanner() {
     const checkUpcomingArena = async () => {
       try {
         const response = await api.get('/arena/upcoming');
-        if (response.data && response.data.arena && response.data.timeUntilStart) {
-          const timeUntil = response.data.timeUntilStart;
-          // Só mostrar se faltar 10 minutos ou menos
-          if (timeUntil > 0 && timeUntil <= 10 * 60 * 1000) {
+        if (response.data && response.data.arena && response.data.timeUntilStart != null) {
+          const timeUntil = Number(response.data.timeUntilStart);
+          // Mostrar o banner quando faltar 10 minutos ou menos para a arena
+          const tenMinutesMs = 10 * 60 * 1000;
+          if (timeUntil > 0 && timeUntil <= tenMinutesMs) {
             setUpcomingArena(response.data.arena);
             setTimeRemaining(timeUntil);
           } else {
             setUpcomingArena(null);
           }
         } else {
+          // Só esconde se a API não retornar arena (ex.: já passou dos 10 min no servidor)
           setUpcomingArena(null);
         }
       } catch (error: any) {
@@ -56,8 +58,8 @@ export default function ArenaCountdownBanner() {
     // Verificar imediatamente
     checkUpcomingArena();
 
-    // Verificar a cada 5 segundos
-    const interval = setInterval(checkUpcomingArena, 5000);
+    // Verificar a cada 3 segundos para não perder a janela de "faltam 10 minutos"
+    const interval = setInterval(checkUpcomingArena, 3000);
 
     return () => clearInterval(interval);
   }, [user]);
@@ -121,20 +123,20 @@ export default function ArenaCountdownBanner() {
     const activeDuelBanner = document.querySelector('[data-banner="active-duel"]');
     
     if (upcomingArena && !loading && timeRemaining > 0) {
-      const bannerHeight = '64px';
+      const bannerHeight = '48px';
       const hasActiveDuel = activeDuelBanner !== null;
       
       if (nav) {
         if (hasActiveDuel) {
-          // Se houver duelo ativo, adicionar mais 64px (total 128px)
-          nav.style.marginTop = '128px';
+          // Se houver duelo ativo, 48px + 48px (total 96px)
+          nav.style.marginTop = '96px';
         } else {
           nav.style.marginTop = bannerHeight;
         }
       }
       if (sidebar) {
         if (hasActiveDuel) {
-          sidebar.style.marginTop = '128px';
+          sidebar.style.marginTop = '96px';
         } else {
           sidebar.style.marginTop = bannerHeight;
         }
@@ -151,10 +153,10 @@ export default function ArenaCountdownBanner() {
       } else {
         // Se ainda houver duelo ativo, manter apenas o margin do duelo
         if (nav) {
-          nav.style.marginTop = '64px';
+          nav.style.marginTop = '48px';
         }
         if (sidebar) {
-          sidebar.style.marginTop = '64px';
+          sidebar.style.marginTop = '48px';
         }
       }
     }
@@ -191,22 +193,22 @@ export default function ArenaCountdownBanner() {
             borderTop: 'none'
           }}
         >
-          <div className="container mx-auto px-4 py-3" style={{ margin: 0, padding: '12px 16px' }}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="animate-pulse">
-                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+          <div className="container mx-auto px-3 py-1.5" style={{ margin: 0, padding: '6px 12px' }}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="animate-pulse flex-shrink-0">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
                   </svg>
                 </div>
-                <div>
-                  <p className="font-bold text-lg">⚔️ Arena de Duelo Começando em {formatTime(timeRemaining)}</p>
-                  <p className="text-sm opacity-90">{upcomingArena.name}</p>
+                <div className="min-w-0">
+                  <p className="font-bold text-base leading-tight">⚔️ Arena de Duelo Começando em {formatTime(timeRemaining)}</p>
+                  <p className="text-xs opacity-90 leading-tight">{upcomingArena.name}</p>
                 </div>
               </div>
               <button
                 onClick={handleGoToArena}
-                className="px-6 py-2 bg-white text-orange-600 font-bold rounded-lg hover:bg-orange-50 transition-colors shadow-md hover:shadow-lg transform hover:scale-105"
+                className="flex-shrink-0 px-4 py-1.5 text-sm bg-white text-orange-600 font-bold rounded-md hover:bg-orange-50 transition-colors shadow hover:shadow-md"
               >
                 Ir para Arena
               </button>

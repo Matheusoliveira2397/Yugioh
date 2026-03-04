@@ -44,8 +44,9 @@ api.interceptors.response.use(
       error.message = 'Não foi possível conectar ao servidor.';
     }
     
-    // Apenas fazer logout se for erro 401 (não autorizado)
-    if (error.response?.status === 401) {
+    // Em 401: fazer logout e redirecionar só se NÃO for a própria requisição de login (senão a página recarrega ao errar usuário/senha)
+    const isLoginRequest = error.config?.url?.includes('/auth/login');
+    if (error.response?.status === 401 && !isLoginRequest) {
       useAuthStore.getState().logout();
       window.location.href = '/login';
     }

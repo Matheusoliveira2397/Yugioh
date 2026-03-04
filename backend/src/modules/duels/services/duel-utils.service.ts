@@ -9,38 +9,46 @@ import { logger } from '../../../common/utils/logger.util';
 @Injectable()
 export class DuelUtilsService {
   /**
-   * Verifica se uma carta corresponde exatamente a um idCarta específico
-   * Prioriza verificação por nome (compartilhado entre skins)
+   * Verifica se uma carta corresponde EXATAMENTE ao id/nome dado.
+   * Usa apenas igualdade exata (sem includes) para evitar que cartas com nomes parecidos
+   * ativem o efeito errado (ex: "Trap Hole" vs "Bottomless Trap Hole").
+   * @param card Carta a verificar
+   * @param exactIdCarta Id em camelCase (ex: "TrapHole", "BottomlessTrapHole") ou nome exato da carta
    */
   isExactCard(card: any, exactIdCarta: string): boolean {
     if (!card) return false;
-    
-    // Priorizar verificação por nome (compartilhado entre skins)
-    const cardName = (card.name || card.cardName || '').trim().toLowerCase();
-    if (cardName) {
-      // Converter idCarta para nome aproximado (ex: "ChangeOfHeart" -> "change of heart")
-      const exactNameLower = String(exactIdCarta)
-        .replace(/([A-Z])/g, ' $1') // Adicionar espaço antes de maiúsculas
-        .trim()
-        .toLowerCase();
-      
-      // Verificar se o nome corresponde (exato ou contém)
-      if (cardName === exactNameLower || 
-          cardName.includes(exactNameLower) || 
-          exactNameLower.includes(cardName)) {
-        return true;
-      }
-    }
-    
-    // Fallback para idCarta (compatibilidade com cartas antigas)
+
+    const exactNorm = String(exactIdCarta).trim().toLowerCase();
+    // Converter camelCase para nome com espaços: "TrapHole" -> "trap hole", "BottomlessTrapHole" -> "bottomless trap hole"
+    const exactNameFromId = String(exactIdCarta)
+      .replace(/([A-Z])/g, ' $1')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+
+    const cardName = (card.name || card.cardName || '').trim().toLowerCase().replace(/\s+/g, ' ');
     const cardId = card.idCarta || card.id || card.cardId;
-    if (!cardId) return false;
-    
-    // Comparação exata do idCarta (case-insensitive)
-    const cardIdLower = String(cardId).toLowerCase().trim();
-    const exactIdLower = exactIdCarta.toLowerCase().trim();
-    
-    return cardIdLower === exactIdLower || cardIdLower.includes(exactIdLower);
+    const cardIdLower = cardId ? String(cardId).toLowerCase().trim() : '';
+
+    // Nome exato: só corresponde se o nome da carta for exatamente igual (evita "Trap Hole" = "Bottomless Trap Hole")
+    if (cardName && cardName === exactNameFromId) return true;
+    if (cardName && cardName === exactNorm) return true;
+
+    // Id exato: só corresponde se o id da carta for exatamente igual (sem includes)
+    if (cardIdLower && cardIdLower === exactNorm) return true;
+    if (cardIdLower && cardIdLower === exactNameFromId.replace(/\s+/g, '')) return true;
+
+    return false;
+  }
+
+  /**
+   * Verifica se a carta é "Swords of Revealing Light" (por nome ou idCarta, incluindo YGOPRO_72302403)
+   */
+  isSwordsOfRevealingLight(card: any): boolean {
+    if (!card) return false;
+    if (this.isExactCard(card, 'SwordsOfRevealingLight')) return true;
+    const id = String(card.idCarta || card.id || card.cardId || '').toLowerCase().trim();
+    return id === 'ygopro_72302403';
   }
 
   /**

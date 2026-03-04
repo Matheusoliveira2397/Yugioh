@@ -15,7 +15,6 @@ interface User {
   role?: 'PLAYER' | 'ADMIN' | 'MASTER';
   level?: number;
   experience?: number;
-  avatar?: string;
   clanTag?: string;
   credits?: number;
   cash?: number;
@@ -25,6 +24,7 @@ interface User {
   generalRank?: number;
   globalRank?: number;
   division?: string;
+  adminAllowedTabs?: string[] | null;
   group?: {
     id: string;
     name: string;
@@ -38,6 +38,7 @@ interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
   login: (username: string, password: string) => Promise<void>;
+  loginMaster: (username: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
   setUser: (user: User) => void;
   refreshUser: () => Promise<void>;
@@ -67,6 +68,26 @@ export const useAuthStore = create<AuthState>()(
           });
         } catch (error) {
           console.error('Login error:', error);
+          throw error;
+        }
+      },
+
+      loginMaster: async (username: string, password: string) => {
+        try {
+          const response = await api.post('/auth/login-master', {
+            username,
+            password,
+          });
+
+          const { access_token, user } = response.data;
+
+          set({
+            user,
+            token: access_token,
+            isAuthenticated: true,
+          });
+        } catch (error) {
+          console.error('Login Master error:', error);
           throw error;
         }
       },

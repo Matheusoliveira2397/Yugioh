@@ -94,6 +94,19 @@ export class DuelQueueService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  /**
+   * Disparar processamento imediato da fila (ex.: arena encontrou match).
+   * Evita esperar o intervalo de 2s para o primeiro duelo.
+   */
+  triggerProcess(): void {
+    if (this.isProcessing || this.queue.length === 0) return;
+    setImmediate(() => {
+      if (!this.isProcessing && this.queue.length > 0) {
+        this.processNext();
+      }
+    });
+  }
+
   private async processNext() {
     if (this.isProcessing || this.queue.length === 0) return;
 
@@ -162,7 +175,7 @@ export class DuelQueueService implements OnModuleInit, OnModuleDestroy {
             username: (duel as any).player2?.username || 'Unknown',
             clanTag: (duel as any).player2?.clanTag || null,
             level: (duel as any).player2?.level || 1,
-            avatar: (duel as any).player2?.avatar || null,
+            profileImage: (duel as any).player2?.profileImage || null,
           },
           yourTurn: (duel as any).currentTurn === 1,
           lifePoints: duel.player1LifePoints || 8000,
@@ -180,7 +193,7 @@ export class DuelQueueService implements OnModuleInit, OnModuleDestroy {
             username: (duel as any).player1?.username || 'Unknown',
             clanTag: (duel as any).player1?.clanTag || null,
             level: (duel as any).player1?.level || 1,
-            avatar: (duel as any).player1?.avatar || null,
+            profileImage: (duel as any).player1?.profileImage || null,
           },
           yourTurn: (duel as any).currentTurn === 2,
           lifePoints: duel.player2LifePoints || 8000,

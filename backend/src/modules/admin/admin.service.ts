@@ -1,4 +1,4 @@
-import { Injectable, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
+import { Injectable, Inject, forwardRef, OnModuleInit, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not, IsNull, In, MoreThan, LessThan } from 'typeorm';
 import { User, UserRole } from '../users/entities/user.entity';
@@ -30,6 +30,7 @@ import { ChatGateway } from '../chat/chat.gateway';
 import { FriendsGateway } from '../friends/friends.gateway';
 import { Achievement, AchievementType } from '../users/entities/achievement.entity';
 import { UploadService } from '../upload/upload.service';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class AdminService implements OnModuleInit {
@@ -291,6 +292,92 @@ export class AdminService implements OnModuleInit {
     return this.usersRepository.save(user);
   }
 
+  /**
+   * Cria uma conta ADMIN pelo Master. Não exige email; login/senha/nick e abas permitidas.
+   */
+  async createAdminByMaster(
+    masterUserId: number,
+    data: { username: string; nickname: string; password: string; allowedTabs: string[] },
+  ): Promise<{ id: number; username: string; nickname: string }> {
+    const master = await this.usersRepository.findOne({ where: { id: masterUserId }, select: ['id', 'role'] });
+    if (!master || master.role !== UserRole.MASTER) {
+      throw new ForbiddenException('Apenas conta Master pode criar contas Admin.');
+    }
+
+    const username = (data.username || '').trim();
+    const nickname = (data.nickname || '').trim();
+    const password = data.password;
+
+    if (!username || username.length < 2) {
+      throw new BadRequestException('Username deve ter pelo menos 2 caracteres.');
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      throw new BadRequestException('Username deve conter apenas letras, números e underscore.');
+    }
+    if (!nickname || nickname.length < 2) {
+      throw new BadRequestException('Nickname deve ter pelo menos 2 caracteres.');
+    }
+    if (!password || password.length < 6) {
+      throw new BadRequestException('Senha deve ter pelo menos 6 caracteres.');
+    }
+
+    const existingNick = await this.usersRepository.findOne({ where: { nickname } });
+    if (existingNick) {
+      throw new BadRequestException('Este nickname já está em uso.');
+    }
+    const existingUser = await this.usersRepository.findOne({ where: { username } });
+    if (existingUser) {
+      throw new BadRequestException('Este username já está em uso.');
+    }
+
+    const newAccountSettings = await this.newAccountSettingsService.getSettings();
+    const initialCredits = newAccountSettings.initialCredits ?? 50;
+    const initialCash = newAccountSettings.initialCash ?? 50000;
+
+    const availableDivisions = await this.divisionsRepository.find({
+      where: { isAvailable: true },
+      order: { order: 'ASC' },
+      take: 1,
+    });
+    const lowestDivision = availableDivisions.length > 0 ? availableDivisions[0].name : 'Bronze';
+
+    let email = `admin-${username}-${Date.now()}@system`;
+    let exists = await this.usersRepository.findOne({ where: { email } });
+    while (exists) {
+      email = `admin-${username}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@system`;
+      exists = await this.usersRepository.findOne({ where: { email } });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const allowedTabs = Array.isArray(data.allowedTabs) ? data.allowedTabs : [];
+
+    const user = this.usersRepository.create({
+      nickname,
+      username,
+      email,
+      password: hashedPassword,
+      role: UserRole.ADMIN,
+      adminAllowedTabs: allowedTabs.length > 0 ? allowedTabs : null,
+      isEmailVerified: true,
+      level: 1,
+      experience: 0,
+      totalScore: 0,
+      winsGeral: 0,
+      lossesGeral: 0,
+      winsSeason: 0,
+      lossesSeason: 0,
+      rating: 1000,
+      credits: initialCredits,
+      cash: initialCash,
+      division: lowestDivision,
+      playerClass: 'Novato',
+      isOnline: false,
+      isBanned: false,
+    });
+    const saved = await this.usersRepository.save(user);
+    return { id: saved.id, username: saved.username, nickname: saved.nickname };
+  }
+
   // Gestão de Usuários
   async getAllUsers(page: number = 1, limit: number = 50) {
     const skip = (page - 1) * limit;
@@ -301,7 +388,7 @@ export class AdminService implements OnModuleInit {
       order: { createdAt: 'DESC' },
       select: [
         'id', 'username', 'nickname', 'email', 'role', 'rating', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason',
-        'credits', 'cash', 'avatar', 'profileImage', 'isOnline', 'lastIpAddress', 
+        'credits', 'cash', 'profileImage', 'isOnline', 'lastIpAddress', 
         'isBanned', 'banReason', 'createdAt', 'lastLogin', 'level', 'experience', 'clanTag'
       ],
     });
@@ -391,7 +478,7 @@ export class AdminService implements OnModuleInit {
       // Buscar usuários marcados como online no banco (APÓS sincronização)
       const usersFromDb = await this.usersRepository.find({
         where: { isOnline: true, isBanned: false },
-        select: ['id', 'username', 'nickname', 'avatar', 'profileImage', 'rating', 'lastIpAddress', 'clanTag'],
+        select: ['id', 'username', 'nickname', 'profileImage', 'rating', 'lastIpAddress', 'clanTag'],
         order: { rating: 'DESC' },
       });
 
@@ -405,7 +492,7 @@ export class AdminService implements OnModuleInit {
       // Fallback: retornar apenas do banco
       const usersFromDb = await this.usersRepository.find({
         where: { isOnline: true, isBanned: false },
-        select: ['id', 'username', 'nickname', 'avatar', 'profileImage', 'rating', 'lastIpAddress', 'clanTag'],
+        select: ['id', 'username', 'nickname', 'profileImage', 'rating', 'lastIpAddress', 'clanTag'],
         order: { rating: 'DESC' },
       });
       return {
@@ -1399,6 +1486,8 @@ export class AdminService implements OnModuleInit {
     initialCredits?: number;
     initialCash?: number;
     availableInitialDeckIds?: string[];
+    defaultPlaymatId?: string | null;
+    defaultSkinId?: string | null;
   }) {
     return this.newAccountSettingsService.updateSettings(data);
   }
@@ -1406,36 +1495,39 @@ export class AdminService implements OnModuleInit {
   // ========== RESET COMPLETO DO SISTEMA ==========
 
   /**
-   * ⚠️ PERIGOSO: Reseta TODAS as contas do sistema
-   * - Zera scores, vitórias, derrotas
-   * - Remove todas as cartas compradas
-   * - Remove todos os decks
-   * - Remove todas as conquistas
-   * - Remove todos os clãs
-   * - Reseta cash e créditos para valores iniciais
-   * - Reseta deck para um inicial aleatório
-   * - Reseta level, experiência, rating, divisão
+   * ⚠️ PERIGOSO: Reseta contas conforme opções selecionadas
+   * Opções: scoreSeason, scoreGeral, cartas (deck inicial), conquistas, scoreGeralGrupo, scoreSeasonGrupo
    */
-  async resetAllAccounts(confirmationCode: string): Promise<{
+  async resetAllAccounts(confirmationCode: string, options: {
+    resetScoreSeason: boolean;
+    resetScoreGeral: boolean;
+    resetCartas: boolean;
+    resetCreditsCash: boolean;
+    resetConquistas: boolean;
+    resetScoreGeralGrupo: boolean;
+    resetScoreSeasonGrupo: boolean;
+  }): Promise<{
     message: string;
     usersReset: number;
     cardsDeleted: number;
     decksDeleted: number;
     achievementsDeleted: number;
-    groupsDeleted: number;
+    groupsUpdated: number;
   }> {
-    // Verificação de segurança: código de confirmação deve ser "RESET_ALL_ACCOUNTS_CONFIRM"
     if (confirmationCode !== 'RESET_ALL_ACCOUNTS_CONFIRM') {
       throw new Error('Código de confirmação inválido');
     }
 
-    // Buscar configurações iniciais
+    const hasAny = Object.values(options).some(Boolean);
+    if (!hasAny) {
+      throw new Error('Selecione pelo menos uma opção de reset');
+    }
+
     const newAccountSettings = await this.newAccountSettingsService.getSettings();
     const initialCredits = newAccountSettings.initialCredits || 50;
     const initialCash = newAccountSettings.initialCash || 50000;
     const availableDeckIds = newAccountSettings.availableInitialDeckIds || [];
 
-    // Buscar divisão mais baixa
     const availableDivisions = await this.divisionsRepository.find({
       where: { isAvailable: true },
       order: { order: 'ASC' },
@@ -1443,99 +1535,173 @@ export class AdminService implements OnModuleInit {
     });
     const lowestDivision = availableDivisions.length > 0 ? availableDivisions[0].name : 'Bronze';
 
-    // Usar query runner para transação
     const queryRunner = this.usersRepository.manager.connection.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
+    let cardsDeleted = 0;
+    let decksDeleted = 0;
+    let achievementsDeleted = 0;
+    let groupsUpdated = 0;
+    let playerIds: number[] = [];
+
     try {
-      // 1. Buscar todos os usuários (exceto MASTER e ADMIN)
+      await queryRunner.query('SET LOCAL statement_timeout = 300000');
+
+      // Resetar todas as contas (PLAYER, ADMIN e MASTER)
       const allUsers = await queryRunner.manager.find(User, {
-        where: { role: UserRole.PLAYER },
+        where: { role: In([UserRole.PLAYER, UserRole.ADMIN, UserRole.MASTER]) },
+        select: ['id'],
       });
-
-      let usersReset = 0;
-      let cardsDeleted = 0;
-      let decksDeleted = 0;
-      let achievementsDeleted = 0;
-
-      // 2. Para cada usuário, resetar dados
-      for (const user of allUsers) {
-        // Deletar cartas do usuário
-        const deletedCards = await queryRunner.manager.delete(UserCard, { userId: user.id });
-        cardsDeleted += deletedCards.affected || 0;
-
-        // Deletar decks do usuário (deck_cards será deletado por CASCADE)
-        const deletedDecks = await queryRunner.manager.delete(Deck, { userId: user.id });
-        decksDeleted += deletedDecks.affected || 0;
-
-        // Deletar conquistas do usuário
-        const deletedAchievements = await queryRunner.manager.delete(Achievement, { userId: user.id });
-        achievementsDeleted += deletedAchievements.affected || 0;
-
-        // Resetar dados do usuário
-        await queryRunner.manager.update(User, user.id, {
-          totalScore: 0,
-          winsGeral: 0,
-          lossesGeral: 0,
-          winsSeason: 0,
-          lossesSeason: 0,
-          rating: 1000,
-          level: 1,
-          experience: 0,
-          credits: initialCredits,
-          cash: initialCash,
-          division: lowestDivision,
-          equippedDeckName: null,
-          clanTag: null,
-        });
-
-        // Atribuir deck inicial aleatório
-        try {
-          await this.initialDecksService.assignDeckToUser(
-            user.id,
-            availableDeckIds.length > 0 ? availableDeckIds : undefined
-          );
-        } catch (error) {
-          // Se não houver deck inicial, continuar sem deck
-        }
-
-        usersReset++;
+      playerIds = allUsers.map((u) => u.id);
+      if (playerIds.length === 0) {
+        await queryRunner.rollbackTransaction();
+        await queryRunner.release();
+        return {
+          message: 'Nenhuma conta (PLAYER/ADMIN/MASTER) encontrada para reset',
+          usersReset: 0,
+          cardsDeleted: 0,
+          decksDeleted: 0,
+          achievementsDeleted: 0,
+          groupsUpdated: 0,
+        };
       }
 
-      // 3. Deletar todos os clãs (group_members será deletado por CASCADE)
-      const deletedGroups = await queryRunner.manager.delete(Group, {});
-      const groupsDeleted = deletedGroups.affected || 0;
+      if (options.resetCartas) {
+        const deletedCards = await queryRunner.manager
+          .createQueryBuilder()
+          .delete()
+          .from(UserCard)
+          .where('userId IN (:...ids)', { ids: playerIds })
+          .execute();
+        cardsDeleted = deletedCards.affected || 0;
 
-      // 4. Limpar clanTag de todos os usuários (já feito acima, mas garantir)
-      await queryRunner.manager.update(User, {}, { clanTag: null });
+        const deletedDecks = await queryRunner.manager
+          .createQueryBuilder()
+          .delete()
+          .from(Deck)
+          .where('userId IN (:...ids)', { ids: playerIds })
+          .execute();
+        decksDeleted = deletedDecks.affected || 0;
+      }
 
-      // 5. Resetar season rankings
-      await queryRunner.manager.update(SeasonRanking, {}, {
-        wins: 0,
-        losses: 0,
-        seasonScore: 0,
-        rank: 0,
-        divisionPoints: 0,
-      });
+      if (options.resetConquistas) {
+        const deletedAchievements = await queryRunner.manager
+          .createQueryBuilder()
+          .delete()
+          .from(Achievement)
+          .where('userId IN (:...ids)', { ids: playerIds })
+          .execute();
+        achievementsDeleted = deletedAchievements.affected || 0;
+      }
 
-      // Commit da transação
+      const userSet: Record<string, unknown> = {};
+      if (options.resetScoreSeason) {
+        userSet.winsSeason = 0;
+        userSet.lossesSeason = 0;
+      }
+      if (options.resetScoreGeral) {
+        userSet.totalScore = 0;
+        userSet.winsGeral = 0;
+        userSet.lossesGeral = 0;
+        userSet.rating = 1000;
+        userSet.level = 1;
+        userSet.experience = 0;
+        userSet.division = lowestDivision;
+      }
+      if (options.resetCartas || options.resetCreditsCash) {
+        userSet.credits = initialCredits;
+        userSet.cash = initialCash;
+      }
+      if (options.resetCartas) {
+        userSet.equippedDeckName = null;
+      }
+      if (Object.keys(userSet).length > 0) {
+        await queryRunner.manager
+          .createQueryBuilder()
+          .update(User)
+          .set(userSet)
+          .where('id IN (:...ids)', { ids: playerIds })
+          .execute();
+      }
+
+      if (options.resetScoreSeason) {
+        await queryRunner.manager
+          .createQueryBuilder()
+          .update(SeasonRanking)
+          .set({
+            wins: 0,
+            losses: 0,
+            seasonScore: 0,
+            rank: 0,
+            divisionPoints: 0,
+          })
+          .execute();
+      }
+
+      if (options.resetScoreGeralGrupo || options.resetScoreSeasonGrupo) {
+        const groupSet: Record<string, unknown> = {};
+        if (options.resetScoreGeralGrupo) {
+          groupSet.totalScore = 0;
+          groupSet.totalWins = 0;
+          groupSet.totalLosses = 0;
+        }
+        if (options.resetScoreSeasonGrupo) {
+          groupSet.seasonScore = 0;
+        }
+        if (Object.keys(groupSet).length > 0) {
+          const qb = queryRunner.manager.createQueryBuilder().update(Group).set(groupSet);
+          const res = await qb.execute();
+          groupsUpdated = res.affected || 0;
+        }
+        if (options.resetScoreGeralGrupo || options.resetScoreSeasonGrupo) {
+          const memberSet: Record<string, unknown> = {};
+          if (options.resetScoreGeralGrupo) {
+            memberSet.totalScore = 0;
+            memberSet.contributedWins = 0;
+            memberSet.contributedLosses = 0;
+          }
+          if (options.resetScoreSeasonGrupo) {
+            memberSet.seasonScore = 0;
+          }
+          if (Object.keys(memberSet).length > 0) {
+            await queryRunner.manager
+              .createQueryBuilder()
+              .update(GroupMember)
+              .set(memberSet)
+              .execute();
+          }
+        }
+      }
+
       await queryRunner.commitTransaction();
-
-      return {
-        message: 'Reset completo realizado com sucesso',
-        usersReset,
-        cardsDeleted,
-        decksDeleted,
-        achievementsDeleted,
-        groupsDeleted,
-      };
     } catch (error) {
-      // Rollback em caso de erro
       await queryRunner.rollbackTransaction();
       throw error;
     } finally {
       await queryRunner.release();
     }
+
+    if (options.resetCartas && playerIds.length > 0) {
+      for (const userId of playerIds) {
+        try {
+          await this.initialDecksService.assignDeckToUser(
+            userId,
+            availableDeckIds.length > 0 ? availableDeckIds : undefined,
+          );
+        } catch (err) {
+          // ignorar se não houver deck inicial
+        }
+      }
+    }
+
+    return {
+      message: 'Reset realizado com sucesso conforme opções selecionadas',
+      usersReset: playerIds.length,
+      cardsDeleted,
+      decksDeleted,
+      achievementsDeleted,
+      groupsUpdated,
+    };
   }
 }

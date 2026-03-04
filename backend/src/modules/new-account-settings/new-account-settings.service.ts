@@ -21,6 +21,17 @@ export class NewAccountSettingsService implements OnModuleInit {
         WHERE table_name = 'new_account_settings'
       `);
       
+      // Se a tabela já existe, adicionar colunas de cosméticos padrão ANTES de qualquer find()
+      if (tableExists.length > 0) {
+        try {
+          await this.newAccountSettingsRepository.query(`ALTER TABLE new_account_settings ADD COLUMN IF NOT EXISTS "defaultPlaymatId" VARCHAR(36) NULL`);
+          await this.newAccountSettingsRepository.query(`ALTER TABLE new_account_settings ADD COLUMN IF NOT EXISTS "defaultSkinId" VARCHAR(36) NULL`);
+          console.log('🔧 [NewAccountSettingsService] Colunas defaultPlaymatId/defaultSkinId verificadas');
+        } catch (alterErr: any) {
+          console.warn('⚠️ [NewAccountSettingsService] ALTER TABLE (defaultPlaymatId/defaultSkinId):', alterErr?.message || alterErr);
+        }
+      }
+      
       if (tableExists.length === 0) {
         console.log('🔧 [NewAccountSettingsService] Tabela new_account_settings não existe. Criando automaticamente...');
         
@@ -44,6 +55,8 @@ export class NewAccountSettingsService implements OnModuleInit {
             "initialCredits" INTEGER NOT NULL DEFAULT 50,
             "initialCash" INTEGER NOT NULL DEFAULT 50000,
             "availableInitialDeckIds" JSONB NOT NULL DEFAULT '[]',
+            "defaultPlaymatId" VARCHAR(36) NULL,
+            "defaultSkinId" VARCHAR(36) NULL,
             "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             "updatedAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
           )
@@ -56,6 +69,8 @@ export class NewAccountSettingsService implements OnModuleInit {
             initialCredits: 50,
             initialCash: 50000,
             availableInitialDeckIds: [],
+            defaultPlaymatId: null,
+            defaultSkinId: null,
           });
           await this.newAccountSettingsRepository.save(defaultSettings);
           console.log('✅ [NewAccountSettingsService] Configurações padrão de contas novas criadas');
@@ -72,6 +87,8 @@ export class NewAccountSettingsService implements OnModuleInit {
             initialCredits: 50,
             initialCash: 50000,
             availableInitialDeckIds: [],
+            defaultPlaymatId: null,
+            defaultSkinId: null,
           });
           await this.newAccountSettingsRepository.save(defaultSettings);
           console.log('✅ [NewAccountSettingsService] Configurações padrão de contas novas criadas');
@@ -97,6 +114,8 @@ export class NewAccountSettingsService implements OnModuleInit {
         initialCredits: 50,
         initialCash: 50000,
         availableInitialDeckIds: [],
+        defaultPlaymatId: null,
+        defaultSkinId: null,
       });
       settings = await this.newAccountSettingsRepository.save(settings);
     }
@@ -108,6 +127,8 @@ export class NewAccountSettingsService implements OnModuleInit {
     initialCredits?: number;
     initialCash?: number;
     availableInitialDeckIds?: string[];
+    defaultPlaymatId?: string | null;
+    defaultSkinId?: string | null;
   }): Promise<NewAccountSettings> {
     // Buscar todos os registros e pegar o primeiro (deve haver apenas um)
     const allSettings = await this.newAccountSettingsRepository.find({
@@ -122,11 +143,15 @@ export class NewAccountSettingsService implements OnModuleInit {
         initialCredits: data.initialCredits ?? 50,
         initialCash: data.initialCash ?? 50000,
         availableInitialDeckIds: data.availableInitialDeckIds ?? [],
+        defaultPlaymatId: data.defaultPlaymatId ?? null,
+        defaultSkinId: data.defaultSkinId ?? null,
       });
     } else {
       if (data.initialCredits !== undefined) settings.initialCredits = data.initialCredits;
       if (data.initialCash !== undefined) settings.initialCash = data.initialCash;
       if (data.availableInitialDeckIds !== undefined) settings.availableInitialDeckIds = data.availableInitialDeckIds;
+      if (data.defaultPlaymatId !== undefined) settings.defaultPlaymatId = data.defaultPlaymatId;
+      if (data.defaultSkinId !== undefined) settings.defaultSkinId = data.defaultSkinId;
     }
 
     return await this.newAccountSettingsRepository.save(settings);

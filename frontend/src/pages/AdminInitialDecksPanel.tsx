@@ -7,10 +7,12 @@ interface InitialDeckCard {
   id: string;
   cardId: string;
   quantity: number;
+  isExtraDeck?: boolean;
   card: {
     id: string;
     name: string;
     type: string;
+    monsterType?: string;
     cardImage?: string;
     idCarta?: string;
   };
@@ -30,9 +32,16 @@ interface Card {
   id: string;
   name: string;
   type: string;
+  monsterType?: string;
   cardImage?: string;
   idCarta?: string;
   maxCopiesInDeck?: number;
+  isActive?: boolean;
+}
+
+const EXTRA_DECK_MONSTER_TYPES = ['Fusion', 'Synchro', 'Xyz', 'Link'];
+function isExtraDeckCard(card: Card): boolean {
+  return !!card.monsterType && EXTRA_DECK_MONSTER_TYPES.includes(card.monsterType);
 }
 
 export default function AdminInitialDecksPanel() {
@@ -48,7 +57,7 @@ export default function AdminInitialDecksPanel() {
     name: '',
     description: '',
     isActive: true,
-    cards: [] as Array<{ cardId: string; quantity: number }>,
+    cards: [] as Array<{ cardId: string; quantity: number; isExtraDeck?: boolean }>,
   });
 
   useEffect(() => {
@@ -81,15 +90,21 @@ export default function AdminInitialDecksPanel() {
   const loadAllCards = async () => {
     try {
       const response = await api.get('/cards/admin/all');
-      setAllCards(response.data.filter((card: Card) => card.isActive));
+      // Manter cartas ativas; se isActive não vier da API, manter a carta
+      const list = Array.isArray(response.data) ? response.data : [];
+      setAllCards(list.filter((card: Card) => card.isActive !== false));
     } catch (error) {
       console.error('Erro ao carregar cartas:', error);
+      setAllCards([]);
     }
   };
 
   const getTotalCardsInDeck = () => {
     return formData.cards.reduce((sum, c) => sum + c.quantity, 0);
   };
+
+  const getMainDeckCount = () => formData.cards.filter((c) => !c.isExtraDeck).reduce((sum, c) => sum + c.quantity, 0);
+  const getExtraDeckCount = () => formData.cards.filter((c) => c.isExtraDeck).reduce((sum, c) => sum + c.quantity, 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,16 +123,20 @@ export default function AdminInitialDecksPanel() {
       return;
     }
 
-    // Validar tamanho do deck (40-60 cartas)
-    const totalCards = getTotalCardsInDeck();
-    if (totalCards < 40) {
-      setMessage({ type: 'error', text: `❌ O deck deve ter no mínimo 40 cartas! (Atual: ${totalCards})` });
+    const mainCount = getMainDeckCount();
+    const extraCount = getExtraDeckCount();
+    if (mainCount < 40) {
+      setMessage({ type: 'error', text: `❌ O deck principal deve ter no mínimo 40 cartas! (Atual: ${mainCount})` });
       setLoading(false);
       return;
     }
-
-    if (totalCards > 60) {
-      setMessage({ type: 'error', text: `❌ O deck deve ter no máximo 60 cartas! (Atual: ${totalCards})` });
+    if (mainCount > 60) {
+      setMessage({ type: 'error', text: `❌ O deck principal deve ter no máximo 60 cartas! (Atual: ${mainCount})` });
+      setLoading(false);
+      return;
+    }
+    if (extraCount > 15) {
+      setMessage({ type: 'error', text: `❌ O deck adicional deve ter no máximo 15 cartas! (Atual: ${extraCount})` });
       setLoading(false);
       return;
     }
@@ -172,6 +191,7 @@ export default function AdminInitialDecksPanel() {
       cards: deck.cards.map((dc) => ({
         cardId: dc.cardId,
         quantity: dc.quantity,
+        isExtraDeck: !!(dc as InitialDeckCard).isExtraDeck,
       })),
     });
     setShowForm(true);
@@ -206,7 +226,8 @@ export default function AdminInitialDecksPanel() {
   };
 
   const addCardToDeck = (cardId: string) => {
-    const card = allCards.find((c) => c.id === cardId);
+    const idStr = String(cardId);
+    const card = allCards.find((c) => String(c.id) === idStr);
     if (!card) return;
 
     const maxCopies = card.maxCopiesInDeck ?? 3;
@@ -234,27 +255,31 @@ export default function AdminInitialDecksPanel() {
       return;
     }
 
-    // Verificar se adicionar mais uma carta ultrapassa o limite do deck (60)
-    const totalCards = getTotalCardsInDeck();
-    if (totalCards >= 60) {
-      setMessage({ 
-        type: 'error', 
-        text: `❌ O deck já atingiu o limite máximo de 60 cartas!` 
-      });
-      return;
+    const isExtra = isExtraDeckCard(card);
+    if (isExtra) {
+      if (getExtraDeckCount() >= 15) {
+        setMessage({ type: 'error', text: '❌ O deck adicional já tem o máximo de 15 cartas!' });
+        return;
+      }
+    } else {
+      if (getMainDeckCount() >= 60) {
+        setMessage({ type: 'error', text: '❌ O deck principal já tem o máximo de 60 cartas!' });
+        return;
+      }
     }
 
+    const existingCard = formData.cards.find((c) => String(c.cardId) === idStr);
     if (existingCard) {
       setFormData({
         ...formData,
         cards: formData.cards.map((c) =>
-          c.cardId === cardId ? { ...c, quantity: c.quantity + 1 } : c
+          String(c.cardId) === idStr ? { ...c, quantity: c.quantity + 1 } : c
         ),
       });
     } else {
       setFormData({
         ...formData,
-        cards: [...formData.cards, { cardId, quantity: 1 }],
+        cards: [...formData.cards, { cardId: card.id, quantity: 1, isExtraDeck: isExtra }],
       });
     }
     setMessage(null);
@@ -287,18 +312,21 @@ export default function AdminInitialDecksPanel() {
       return;
     }
 
-    // Verificar se adicionar mais cartas ultrapassa o limite do deck (60)
-    const currentTotal = getTotalCardsInDeck();
     const existingCard = formData.cards.find((c) => c.cardId === cardId);
     const currentQuantity = existingCard ? existingCard.quantity : 0;
-    const newTotal = currentTotal - currentQuantity + quantity;
-
-    if (newTotal > 60) {
-      setMessage({ 
-        type: 'error', 
-        text: `❌ O deck não pode ter mais de 60 cartas! (Atual: ${currentTotal}, tentando adicionar até ${newTotal})` 
-      });
-      return;
+    const isExtra = existingCard?.isExtraDeck ?? false;
+    if (isExtra) {
+      const extraTotal = getExtraDeckCount() - currentQuantity + quantity;
+      if (extraTotal > 15) {
+        setMessage({ type: 'error', text: `❌ O deck adicional não pode ter mais de 15 cartas!` });
+        return;
+      }
+    } else {
+      const mainTotal = getMainDeckCount() - currentQuantity + quantity;
+      if (mainTotal > 60) {
+        setMessage({ type: 'error', text: `❌ O deck principal não pode ter mais de 60 cartas!` });
+        return;
+      }
     }
 
     setFormData({
@@ -319,7 +347,8 @@ export default function AdminInitialDecksPanel() {
   );
 
   const getCardInDeck = (cardId: string) => {
-    return formData.cards.find((c) => c.cardId === cardId);
+    const idStr = String(cardId);
+    return formData.cards.find((c) => String(c.cardId) === idStr);
   };
 
   if (loading && decks.length === 0) {
@@ -429,32 +458,30 @@ export default function AdminInitialDecksPanel() {
 
               {/* Cartas no Deck */}
               <div>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                   <label className="block text-white">
-                    Cartas no Deck ({formData.cards.length} tipos • {getTotalCardsInDeck()} cartas totais)
+                    Cartas no Deck ({formData.cards.length} tipos • {getTotalCardsInDeck()} totais)
                   </label>
-                  <div className={`text-sm font-bold ${
-                    getTotalCardsInDeck() < 40 
-                      ? 'text-yellow-400' 
-                      : getTotalCardsInDeck() > 60 
-                        ? 'text-red-400' 
-                        : 'text-green-400'
-                  }`}>
-                    {getTotalCardsInDeck() < 40 
-                      ? `⚠️ Mínimo: 40 cartas` 
-                      : getTotalCardsInDeck() > 60 
-                        ? `❌ Máximo: 60 cartas` 
-                        : `✅ Válido (40-60)`}
+                  <div className="flex gap-4 text-sm font-bold">
+                    <span className={getMainDeckCount() < 40 ? 'text-yellow-400' : getMainDeckCount() > 60 ? 'text-red-400' : 'text-green-400'}>
+                      Principal: {getMainDeckCount()}/40-60
+                    </span>
+                    <span className={getExtraDeckCount() > 15 ? 'text-red-400' : 'text-green-400'}>
+                      Adicional: {getExtraDeckCount()}/15
+                    </span>
                   </div>
                 </div>
-                <div className="bg-slate-900/50 rounded-lg p-4 min-h-[200px] max-h-[500px] overflow-y-auto">
+                <div className="bg-slate-900/50 rounded-lg p-4 min-h-[200px] max-h-[500px] overflow-y-auto space-y-4">
                   {formData.cards.length === 0 ? (
                     <p className="text-slate-400 text-center py-8">
-                      Nenhuma carta adicionada. Use a lista abaixo para adicionar cartas.
+                      Nenhuma carta adicionada. Use a lista abaixo para adicionar cartas. Cartas Fusion, Synchro, Xyz e Link vão para o Deck Adicional.
                     </p>
                   ) : (
-                    <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
-                      {formData.cards.map((deckCard) => {
+                    <>
+                      <div>
+                        <h4 className="text-sm font-bold text-blue-300 mb-2">Deck Principal ({getMainDeckCount()} cartas)</h4>
+                        <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                      {formData.cards.filter((c) => !c.isExtraDeck).map((deckCard) => {
                         const card = allCards.find((c) => c.id === deckCard.cardId);
                         if (!card) return null;
 
@@ -527,7 +554,35 @@ export default function AdminInitialDecksPanel() {
                           </div>
                         );
                       })}
-                    </div>
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-purple-300 mb-2">Deck Adicional ({getExtraDeckCount()} cartas)</h4>
+                        <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                      {formData.cards.filter((c) => c.isExtraDeck).map((deckCard) => {
+                        const card = allCards.find((c) => c.id === deckCard.cardId);
+                        if (!card) return null;
+                        const maxCopies = card.maxCopiesInDeck ?? 3;
+                        const isAtMax = deckCard.quantity >= maxCopies;
+                        return (
+                          <div key={deckCard.cardId} className="bg-slate-800 rounded-lg p-2 border border-purple-700 hover:border-purple-500 transition-all">
+                            <div className="relative mb-2">
+                              <CardImage card={card} className="w-full aspect-[59/86] rounded" fallback="/images/fundoCarta.webp" />
+                              {isAtMax && <div className="absolute top-1 right-1 bg-yellow-500 text-black text-xs font-bold px-1.5 py-0.5 rounded">MAX</div>}
+                            </div>
+                            <div className="text-white text-xs font-bold mb-1 truncate" title={card.name}>{card.name}</div>
+                            <div className="flex items-center gap-1">
+                              <button type="button" onClick={() => updateCardQuantity(deckCard.cardId, deckCard.quantity - 1)} className="px-1.5 py-0.5 bg-red-600 hover:bg-red-500 rounded text-white text-xs">-</button>
+                              <span className={`text-xs font-bold flex-1 text-center ${isAtMax ? 'text-yellow-400' : 'text-white'}`}>{deckCard.quantity}/{maxCopies}</span>
+                              <button type="button" onClick={() => updateCardQuantity(deckCard.cardId, deckCard.quantity + 1)} disabled={isAtMax} className={`px-1.5 py-0.5 rounded text-white text-xs ${isAtMax ? 'bg-gray-600 cursor-not-allowed opacity-50' : 'bg-green-600 hover:bg-green-500'}`}>+</button>
+                            </div>
+                            <button type="button" onClick={() => removeCardFromDeck(deckCard.cardId)} className="w-full mt-1 px-2 py-1 bg-red-700 hover:bg-red-600 rounded text-white text-xs">Remover</button>
+                          </div>
+                        );
+                      })}
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>

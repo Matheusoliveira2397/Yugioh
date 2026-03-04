@@ -89,7 +89,7 @@ export class AttackValidationService {
     if (defenderField && defenderField.spellTrap && Array.isArray(defenderField.spellTrap)) {
       for (const spellTrap of defenderField.spellTrap) {
         if (spellTrap && spellTrap !== null && spellTrap.position === 'face-up') {
-          const isSwordsOfRevealingLight = this.duelUtils.isExactCard(spellTrap, 'SwordsOfRevealingLight');
+          const isSwordsOfRevealingLight = this.duelUtils.isSwordsOfRevealingLight(spellTrap);
           
           if (isSwordsOfRevealingLight) {
             const currentTurnCounter = duel.turnCounter || 1;

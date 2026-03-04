@@ -24,7 +24,6 @@ interface Player {
   level: number;
   experience: number;
   profileImage?: string;
-  avatar?: string;
   createdAt: string;
 }
 
@@ -427,7 +426,7 @@ export default function AdminPlayersPanel() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-3">
                           <img
-                            src={player.profileImage || player.avatar || '/images/default.png'}
+                            src={player.profileImage || '/images/default.png'}
                             alt={player.nickname || player.username}
                             className="w-10 h-10 rounded-full object-cover border-2 border-gray-600"
                           />
@@ -592,7 +591,7 @@ export default function AdminPlayersPanel() {
               <div className="space-y-4">
                 <div className="flex items-center gap-4">
                   <img
-                    src={selectedPlayer.profileImage || selectedPlayer.avatar || '/images/default.png'}
+                    src={selectedPlayer.profileImage || '/images/default.png'}
                     alt={selectedPlayer.nickname || selectedPlayer.username}
                     className="w-20 h-20 rounded-full object-cover border-2 border-purple-500"
                   />

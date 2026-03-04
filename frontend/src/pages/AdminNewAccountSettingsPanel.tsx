@@ -9,6 +9,8 @@ interface NewAccountSettings {
   initialCredits: number;
   initialCash: number;
   availableInitialDeckIds: string[];
+  defaultPlaymatId?: string | null;
+  defaultSkinId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -20,10 +22,26 @@ interface InitialDeck {
   isActive: boolean;
 }
 
+interface Playmat {
+  id: string;
+  name: string;
+  image: string;
+  isActive?: boolean;
+}
+
+interface Sleeve {
+  id: string;
+  name: string;
+  image: string;
+  isActive?: boolean;
+}
+
 export default function AdminNewAccountSettingsPanel() {
   const { user } = useAuthStore();
   const [settings, setSettings] = useState<NewAccountSettings | null>(null);
   const [allDecks, setAllDecks] = useState<InitialDeck[]>([]);
+  const [allPlaymats, setAllPlaymats] = useState<Playmat[]>([]);
+  const [allSleeves, setAllSleeves] = useState<Sleeve[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -32,6 +50,8 @@ export default function AdminNewAccountSettingsPanel() {
     initialCredits: 50,
     initialCash: 50000,
     availableInitialDeckIds: [] as string[],
+    defaultPlaymatId: null as string | null,
+    defaultSkinId: null as string | null,
   });
 
   // Proteção: apenas ADMIN ou MASTER
@@ -42,6 +62,7 @@ export default function AdminNewAccountSettingsPanel() {
   useEffect(() => {
     loadSettings();
     loadAllDecks();
+    loadPlaymatsAndSleeves();
   }, []);
 
   const loadSettings = async () => {
@@ -53,6 +74,8 @@ export default function AdminNewAccountSettingsPanel() {
         initialCredits: response.data.initialCredits || 50,
         initialCash: response.data.initialCash || 50000,
         availableInitialDeckIds: response.data.availableInitialDeckIds || [],
+        defaultPlaymatId: response.data.defaultPlaymatId ?? null,
+        defaultSkinId: response.data.defaultSkinId ?? null,
       });
     } catch (error: any) {
       console.error('Erro ao carregar configurações:', error);
@@ -68,6 +91,19 @@ export default function AdminNewAccountSettingsPanel() {
       setAllDecks(response.data || []);
     } catch (error) {
       console.error('Erro ao carregar decks iniciais:', error);
+    }
+  };
+
+  const loadPlaymatsAndSleeves = async () => {
+    try {
+      const [playmatsRes, sleevesRes] = await Promise.all([
+        api.get('/cosmetics/admin/playmats'),
+        api.get('/cosmetics/admin/sleeves'),
+      ]);
+      setAllPlaymats(playmatsRes.data || []);
+      setAllSleeves(sleevesRes.data || []);
+    } catch (error) {
+      console.error('Erro ao carregar playmats/skins:', error);
     }
   };
 
@@ -178,6 +214,62 @@ export default function AdminNewAccountSettingsPanel() {
                   <p className="text-slate-500 text-sm mt-1">
                     Quantidade de cash que novas contas recebem ao se registrar
                   </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Playmat e Skin padrão */}
+            <div className="border-b border-slate-700 pb-6">
+              <h2 className="text-2xl font-bold text-white mb-4">🎨 Cosméticos Padrão</h2>
+              <p className="text-slate-400 mb-4 text-sm">
+                Playmat e skin de carta que novas contas receberão ao se registrar. Deixe em &quot;Nenhum&quot; para não equipar.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-slate-300 mb-2 font-semibold">Playmat padrão</label>
+                  <select
+                    value={formData.defaultPlaymatId ?? ''}
+                    onChange={(e) => setFormData({ ...formData, defaultPlaymatId: e.target.value || null })}
+                    className="w-full px-4 py-3 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-cyan-500 focus:outline-none"
+                  >
+                    <option value="">Nenhum</option>
+                    {allPlaymats.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                  {formData.defaultPlaymatId && (() => {
+                    const p = allPlaymats.find((x) => x.id === formData.defaultPlaymatId);
+                    const src = p?.image ? (p.image.startsWith('http') ? p.image : `${import.meta.env.VITE_API_URL || ''}${p.image}`) : '';
+                    return src ? (
+                      <div className="mt-2 flex items-center gap-2">
+                        <img src={src} alt="Preview" className="w-16 h-10 object-cover rounded border border-slate-600" />
+                        <span className="text-slate-400 text-sm">Preview</span>
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+                <div>
+                  <label className="block text-slate-300 mb-2 font-semibold">Skin de carta padrão</label>
+                  <select
+                    value={formData.defaultSkinId ?? ''}
+                    onChange={(e) => setFormData({ ...formData, defaultSkinId: e.target.value || null })}
+                    className="w-full px-4 py-3 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-teal-500 focus:outline-none"
+                  >
+                    <option value="">Nenhuma</option>
+                    {allSleeves.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  {formData.defaultSkinId && (() => {
+                    const s = allSleeves.find((x) => x.id === formData.defaultSkinId);
+                    const src = s?.image ? (s.image.startsWith('http') ? s.image : `${import.meta.env.VITE_API_URL || ''}${s.image}`) : '';
+                    return src ? (
+                      <div className="mt-2 flex items-center gap-2">
+                        <img src={src} alt="Preview" className="w-12 h-16 object-cover rounded border border-slate-600" />
+                        <span className="text-slate-400 text-sm">Preview</span>
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
               </div>
             </div>

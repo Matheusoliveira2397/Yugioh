@@ -22,6 +22,9 @@ export class InitialDeckCard {
   @Column({ type: 'int', default: 1 })
   quantity: number;
 
+  @Column({ type: 'boolean', default: false })
+  isExtraDeck: boolean; // true = Deck Adicional (Fusion, Synchro, Xyz, Link)
+
   @ManyToOne(() => InitialDeck, (initialDeck) => initialDeck.cards, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'initialDeckId' })
   initialDeck: InitialDeck;

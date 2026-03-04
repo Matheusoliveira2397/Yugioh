@@ -14,7 +14,7 @@ interface DuelFoundData {
     username?: string;
     clanTag?: string;
     level?: number;
-    avatar?: string;
+    profileImage?: string;
   };
   yourTurn: boolean;
   lifePoints: number;

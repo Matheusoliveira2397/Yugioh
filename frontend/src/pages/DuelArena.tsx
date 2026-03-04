@@ -79,6 +79,18 @@ const DuelArena: React.FC = () => {
   // Ref para o container do campo de duelo (para centralizar a animação)
   const duelFieldContainerRef = useRef<HTMLDivElement>(null);
   
+  // Helper: bônus de ATK da Banner of Courage — acumulativo (cada cópia face-up +200) durante a Fase de Batalha do dono
+  const getBannerOfCourageBonus = (spellTraps: (any | null)[], isCurrentTurnPlayer: boolean): number => {
+    if (currentPhase !== 'BATTLE' || !isCurrentTurnPlayer) return 0;
+    const count = (spellTraps || []).filter((st: any) => {
+      if (!st || st.position !== 'face-up') return false;
+      const id = String(st.idCarta || st.id || st.cardId || '').toLowerCase();
+      const name = String(st.name || st.cardName || '').toLowerCase();
+      return id.includes('bannerofcourage') || name.includes('banner of courage');
+    }).length;
+    return count * 200;
+  };
+
   // Função para acionar animação de ataque imediatamente
   const triggerAttackAnimation = (attackerZoneIndex: number, targetZoneIndex: number | null) => {
     const attackerCard = myMonsters[attackerZoneIndex];
@@ -91,18 +103,23 @@ const DuelArena: React.FC = () => {
       targetCard = opponentMonsters[targetZoneIndex];
     }
     
-    // Calcular dano estimado (ATK do atacante)
+    const turnNum = duelData?.currentTurn ?? currentTurn ?? 1;
+    const isMyTurnPlayer = (isPlayer1 && turnNum === 1) || (!isPlayer1 && turnNum === 2);
+    const myBannerBonus = getBannerOfCourageBonus(mySpellTraps, isMyTurnPlayer);
+    const opponentBannerBonus = getBannerOfCourageBonus(opponentSpellTraps, !isMyTurnPlayer);
+    
+    // Calcular dano estimado (ATK do atacante, incluindo Banner of Courage na Fase de Batalha)
     const attackerAtk = attackerCard.atk || 0;
     const attackerEquipmentBonus = attackerCard.equipmentBonusAtk || 0;
     const attackerSpellCounterBonus = attackerCard.spellCounterBonusAtk || 0;
-    const estimatedDamage = attackerAtk + attackerEquipmentBonus + attackerSpellCounterBonus;
+    const estimatedDamage = attackerAtk + attackerEquipmentBonus + attackerSpellCounterBonus + myBannerBonus;
     
-    // Se for ataque a monstro, calcular dano baseado na diferença de ATK
+    // Se for ataque a monstro, calcular dano baseado na diferença de ATK (incluindo Banner do oponente)
     if (!isDirectAttack && targetCard) {
       const targetAtk = targetCard.atk || 0;
       const targetEquipmentBonus = targetCard.equipmentBonusAtk || 0;
       const targetSpellCounterBonus = targetCard.spellCounterBonusAtk || 0;
-      const targetTotalAtk = targetAtk + targetEquipmentBonus + targetSpellCounterBonus;
+      const targetTotalAtk = targetAtk + targetEquipmentBonus + targetSpellCounterBonus + opponentBannerBonus;
       
       // Se o atacante tem mais ATK, causará dano de batalha
       if (estimatedDamage > targetTotalAtk) {
@@ -248,6 +265,11 @@ const DuelArena: React.FC = () => {
   const [prematureBurialGraveyard, setPrematureBurialGraveyard] = useState<any[]>([]);
   const [selectedPrematureBurialIndex, setSelectedPrematureBurialIndex] = useState<number | null>(null);
   
+  // Estado para Autonomous Action Unit (escolher monstro do cemitério do oponente)
+  const [showAutonomousActionUnitModal, setShowAutonomousActionUnitModal] = useState(false);
+  const [autonomousActionUnitGraveyard, setAutonomousActionUnitGraveyard] = useState<any[]>([]);
+  const [selectedAutonomousActionUnitIndex, setSelectedAutonomousActionUnitIndex] = useState<number | null>(null);
+  
   // Estado para Monster Reincarnation
   const [showMonsterReincarnationDiscardModal, setShowMonsterReincarnationDiscardModal] = useState(false);
   const [monsterReincarnationHand, setMonsterReincarnationHand] = useState<any[]>([]);
@@ -344,6 +366,9 @@ const DuelArena: React.FC = () => {
     opponentMonsters: any[];
   } | null>(null);
   const [selectedSoulTakerMonster, setSelectedSoulTakerMonster] = useState<number | null>(null);
+
+  // Estado para Lightning Storm (escolher 1 efeito)
+  const [showLightningStormModal, setShowLightningStormModal] = useState(false);
   
   // Estado para Chaos Sorcerer Effect
   const [showChaosSorcererEffectModal, setShowChaosSorcererEffectModal] = useState(false);
@@ -412,9 +437,12 @@ const DuelArena: React.FC = () => {
   const [selectedMSTTarget, setSelectedMSTTarget] = useState<{ player: 'player' | 'opponent'; zoneIndex: number } | null>(null);
   const [isSelectingSnowmanEaterTarget, setIsSelectingSnowmanEaterTarget] = useState(false);
   
-  // Estado para Breaker The Magical Warrior
+  // Estado para Breaker The Magical Warrior (modal de escolha de S/T)
   const [isSelectingBreakerTarget, setIsSelectingBreakerTarget] = useState(false);
   const [breakerMonsterZoneIndex, setBreakerMonsterZoneIndex] = useState<number | null>(null);
+  const [selectedBreakerTarget, setSelectedBreakerTarget] = useState<{ player: 'player' | 'opponent'; zoneIndex: number } | null>(null);
+  /** Snapshot das S/T ao abrir o modal (evita lista vazia por estado assíncrono) */
+  const [breakerModalSpellTraps, setBreakerModalSpellTraps] = useState<{ my: (any | null)[]; opp: (any | null)[] } | null>(null);
   
   // Estado para rastrear pendingChoice
   const [currentPendingChoice, setCurrentPendingChoice] = useState<any | null>(null);
@@ -487,7 +515,32 @@ const DuelArena: React.FC = () => {
   const [hasTurnChanged, setHasTurnChanged] = useState(false);
   const previousTurnRef = useRef<number | null>(null);
 
+  // Bloquear nova ação (usar carta/invocar/efeito) enquanto uma invocação ou efeito ainda não foi concluído
+  const hasActionInProgress = Boolean(
+    currentPendingChoice != null ||
+    showOpponentHandRevealed ||
+    showGracefulCharityModal ||
+    tributeModalData != null ||
+    chaosSorcererData != null ||
+    redEyesDarknessMetalDragonData != null ||
+    redEyesDarknessMetalDragonEffectData != null ||
+    showCyberSteinModal ||
+    (showBlsEffectModal && blsEffectData != null) ||
+    chaosSorcererEffectData != null ||
+    selectingSpellTrapSlot != null ||
+    isSelectingBreakerTarget ||
+    isSelectingMSTTarget ||
+    isSelectingSnowmanEaterTarget ||
+    isSelectingChaosSorcererTarget
+  );
+
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+  // Modo espectador: usuário não é jogador do duelo (ex.: admin assistindo)
+  const userIdForSpectator = user?.id != null ? (typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id)) : null;
+  const player1IdFromData = duelData?.player1?.id != null ? (typeof duelData.player1.id === 'string' ? parseInt(duelData.player1.id, 10) : Number(duelData.player1.id)) : null;
+  const player2IdFromData = duelData?.player2?.id != null ? (typeof duelData.player2.id === 'string' ? parseInt(duelData.player2.id, 10) : Number(duelData.player2.id)) : null;
+  const isSpectator = !!(userIdForSpectator != null && player1IdFromData != null && player2IdFromData != null && userIdForSpectator !== player1IdFromData && userIdForSpectator !== player2IdFromData);
 
   // Carregar dados do duelo via WebSocket (INSTANTÂNEO - sem requisições HTTP pesadas)
   // Usar useRef para evitar múltiplas execuções
@@ -977,6 +1030,18 @@ const DuelArena: React.FC = () => {
     // CRÍTICO: A nova aba precisa criar seu próprio socket independente
     let socket = getSocket();
     
+    // Listeners para perda/reconexão do WebSocket: mostrar tela de carregamento ao desconectar
+    const disconnectListener = () => {
+      if (currentDuelId) setLoading(true);
+    };
+    const reconnectListener = () => {
+      if (currentDuelId && currentUserId) {
+        const duelIdStr = typeof currentDuelId === 'string' ? currentDuelId : String(currentDuelId);
+        const numericUserId = typeof currentUserId === 'string' ? parseInt(currentUserId, 10) : Number(currentUserId);
+        joinDuelRoom(duelIdStr, numericUserId);
+      }
+    };
+    
     // Se não há socket ou não está conectado, aguardar a conexão
     // O useSocket já cria o socket automaticamente, mas pode levar alguns milissegundos
     const setupSocket = () => {
@@ -1203,6 +1268,16 @@ const DuelArena: React.FC = () => {
       socket.on('prematureBurialShowGraveyard', prematureBurialListener);
       console.log('✅ [DuelArena] Listener prematureBurialShowGraveyard registrado');
       
+      // Listener para Autonomous Action Unit (escolher monstro do cemitério do oponente)
+      const autonomousActionUnitListener = (data: { opponentGraveyard: any[]; duelId: string | number }) => {
+        if (data.duelId !== duelId && String(data.duelId) !== String(duelId)) return;
+        setAutonomousActionUnitGraveyard(data.opponentGraveyard || []);
+        setShowAutonomousActionUnitModal(true);
+        setSelectedAutonomousActionUnitIndex(null);
+      };
+      socket.on('autonomousActionUnitShowOpponentGraveyard', autonomousActionUnitListener);
+      console.log('✅ [DuelArena] Listener autonomousActionUnitShowOpponentGraveyard registrado');
+      
       // Listener para Monster Reincarnation - descartar carta da mão
       const monsterReincarnationDiscardListener = (data: { playerHand: any[]; duelId: string | number }) => {
         console.log('✨ [MonsterReincarnation Discard Listener] Evento recebido!', data);
@@ -1286,6 +1361,15 @@ const DuelArena: React.FC = () => {
       };
       socket.on('soulTakerShowOpponentMonsters', soulTakerListener);
       console.log('✅ [DuelArena] Listener soulTakerShowOpponentMonsters registrado');
+
+      // Listener para Lightning Storm (escolher 1 efeito: destruir monstros em ataque OU magias/armadilhas do oponente)
+      const lightningStormListener = (data: { duelId: string | number }) => {
+        if (data.duelId === duelId || String(data.duelId) === String(duelId)) {
+          setShowLightningStormModal(true);
+        }
+      };
+      socket.on('lightningStormShowOptions', lightningStormListener);
+      console.log('✅ [DuelArena] Listener lightningStormShowOptions registrado');
 
       // Listener para Exiled Force
       const exiledForceListener = (data: { availableMonsters: Array<{ monster: any; zoneIndex: number; player: 'player' | 'opponent' }>; duelId: string | number; monsterZoneIndex?: number }) => {
@@ -1800,6 +1884,10 @@ const DuelArena: React.FC = () => {
             setSoulTakerData(null);
             setSelectedSoulTakerMonster(null);
           }
+          if (showLightningStormModal) {
+            console.log('🔒 [closePendingChoiceModal] Fechando modal Lightning Storm');
+            setShowLightningStormModal(false);
+          }
           if (showExiledForceModal) {
             console.log('🔒 [closePendingChoiceModal] Fechando modal Exiled Force');
             setShowExiledForceModal(false);
@@ -1846,6 +1934,10 @@ const DuelArena: React.FC = () => {
       };
       socket.on('closePendingChoiceModal', closePendingChoiceModalListener);
       console.log('✅ [DuelArena] Listener closePendingChoiceModal registrado');
+      
+      // Ao perder conexão WebSocket (offline, etc.), voltar para a tela de carregamento
+      socket.on('disconnect', disconnectListener);
+      socket.on('connect', reconnectListener);
       
       // Verificar se o listener foi registrado corretamente
       if (typeof socket.hasListeners === 'function') {
@@ -1978,9 +2070,12 @@ const DuelArena: React.FC = () => {
         currentSocket.off('mysticalSpaceTyphoonShowTargets', mysticalSpaceTyphoonListener);
         currentSocket.off('snowmanEaterShowTargets', snowmanEaterListener);
         currentSocket.off('soulTakerShowOpponentMonsters', soulTakerListener);
+        currentSocket.off('lightningStormShowOptions', lightningStormListener);
         currentSocket.off('exiledForceShowTargets', exiledForceListener);
         currentSocket.off('directAttackAnimation');
         currentSocket.off('attackCancelled');
+        currentSocket.off('disconnect', disconnectListener);
+        currentSocket.off('connect', reconnectListener);
         // Remover listener de conexão se ainda estiver ativo
         if (connectListener) {
           currentSocket.off('connect', connectListener);
@@ -2162,27 +2257,26 @@ const DuelArena: React.FC = () => {
     }
   }, [duelFound, duelData, user?.id]);
 
-  // Escutar mudanças de turno via WebSocket
+  // Fonte da verdade para turno e fase: duelData (atualizado por duelUpdate).
+  // Garante que isMyTurn e currentPhase reflitam sempre o último estado do duelo.
   useEffect(() => {
-    if (currentTurn !== null && user) {
-      // Tentar usar duelData primeiro, depois duelUpdate
-      let player1Id: number | null = null;
-      if (duelData?.player1?.id) {
-        player1Id = typeof duelData.player1.id === 'string' ? parseInt(duelData.player1.id, 10) : Number(duelData.player1.id);
-      }
-      
-      if (player1Id) {
-        const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
-        const isPlayer1 = userId === player1Id;
-        const myTurnNumber = isPlayer1 ? 1 : 2;
-        setIsMyTurn(currentTurn === myTurnNumber);
-      }
+    if (!duelData || !user?.id) return;
+    const player1Id = duelData.player1Id ?? (duelData.player1?.id ? (typeof duelData.player1.id === 'string' ? parseInt(duelData.player1.id, 10) : Number(duelData.player1.id)) : null);
+    if (player1Id == null) return;
+    const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
+    const isPlayer1 = userId === player1Id;
+    const myTurnNumber = isPlayer1 ? 1 : 2;
+    const turn = duelData.currentTurn ?? currentTurn;
+    if (turn != null) {
+      setIsMyTurn(turn === myTurnNumber);
     }
-  }, [currentTurn, duelData, user?.id]);
+    if (duelData.currentPhase) {
+      setCurrentPhase(duelData.currentPhase);
+    }
+  }, [duelData, currentTurn, user?.id]);
 
   // Escutar atualizações do duelo (quando comprar carta, etc)
   // Usar useRef para evitar loops de renderização
-  const lastDuelUpdateTimestampRef = useRef<number>(0);
   const lastDuelUpdateIdRef = useRef<string | null>(null);
   const processedUpdatesRef = useRef<Set<string>>(new Set());
   const processedLogsRef = useRef<Set<string>>(new Set());
@@ -2204,21 +2298,15 @@ const DuelArena: React.FC = () => {
     // Log para debug
     console.log(`📥 [handleDuelUpdate] Recebido update - player1Field: ${!!duelUpdate.player1Field}, player2Field: ${!!duelUpdate.player2Field}`);
     
-    // Criar um ID único baseado em dados relevantes do update
-    const updateId = `${duelUpdate.id || 'no-id'}-${duelUpdate.currentTurn || 0}-${duelUpdate.currentPhase || 'no-phase'}-${duelUpdate.player1LifePoints || 0}-${duelUpdate.player2LifePoints || 0}`;
+    // ID para deduplicar apenas o MESMO payload (evitar processar 2x o mesmo evento).
+    // Incluir hand lengths para não ignorar updates com mesmo turno/fase/LP mas mão/campo diferentes.
+    const p1HandLen = duelUpdate.player1Field?.hand?.length ?? -1;
+    const p2HandLen = duelUpdate.player2Field?.hand?.length ?? -1;
+    const updateId = `${duelUpdate.id || 'no-id'}-${duelUpdate.currentTurn ?? 0}-${duelUpdate.currentPhase ?? 'no-phase'}-${duelUpdate.player1LifePoints ?? 0}-${duelUpdate.player2LifePoints ?? 0}-${p1HandLen}-${p2HandLen}`;
     
-    // Se já processamos este update exato, ignorar
     if (processedUpdatesRef.current.has(updateId)) {
       return;
     }
-    
-    // Usar timestamp para evitar processar atualizações muito próximas
-    const now = Date.now();
-    if (now - lastDuelUpdateTimestampRef.current < 50) {
-      return; // Ignorar atualizações muito próximas (menos de 50ms)
-    }
-    
-    lastDuelUpdateTimestampRef.current = now;
     processedUpdatesRef.current.add(updateId);
     
     // Limpar updates antigos (manter apenas os últimos 100)
@@ -2699,6 +2787,7 @@ const DuelArena: React.FC = () => {
   // Função para finalizar turno
   // Função para descartar uma carta individualmente (na fase END quando tem mais de 6 cartas)
   const handleDiscardCard = (card: any) => {
+    if (isSpectator) return;
     // Verificações de segurança
     if (!duelId || !user?.id || currentPhase !== 'END' || myHand.length <= 6) return;
     if (isDiscarding) return; // Evitar múltiplos cliques
@@ -2942,14 +3031,15 @@ const DuelArena: React.FC = () => {
 
   // Função para colocar carta no campo
   const handlePlaceCardOnField = async (card: any, position: 'attack' | 'defense' | 'set', zoneIndex: number, cardType?: string, isDragged: boolean = false) => {
+    if (isSpectator) return;
     if (!duelId || !user?.id || !isMyTurn) {
       alert('Não é seu turno!');
       return;
     }
 
-    // Verificar se há modal de escolha aberto
-    if (showOpponentHandRevealed || showGracefulCharityModal) {
-      alert('Você precisa completar a escolha pendente antes de fazer outras ações!');
+    // Bloquear se ainda há invocação ou efeito em andamento (não permitir usar outra carta antes de concluir)
+    if (hasActionInProgress) {
+      alert('Termine a invocação ou o efeito em andamento antes de usar outra carta.');
       return;
     }
 
@@ -3346,15 +3436,24 @@ const DuelArena: React.FC = () => {
   }
   
   const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
-  const player1Id = typeof duelData.player1.id === 'string' ? parseInt(duelData.player1.id, 10) : Number(duelData.player1.id);
-  const isPlayer1 = userId === player1Id;
+  const player1Id = typeof duelData.player1?.id === 'string' ? parseInt(duelData.player1.id, 10) : Number(duelData.player1?.id);
+  const player2Id = typeof duelData.player2?.id === 'string' ? parseInt(duelData.player2.id, 10) : Number(duelData.player2?.id);
+  const isPlayer1 = isSpectator ? true : userId === player1Id;
   const opponent = isPlayer1 ? duelData.player2 : duelData.player1;
+  const effectiveIsMyTurn = isMyTurn && !isSpectator;
   const myClanTag = user?.clanTag || '';
   const opponentClanTag = (opponent as any).clanTag || '';
 
   // Cosméticos do duelo (playmat e skin) vindos do backend, por jogador
   const myUserInDuel = isPlayer1 ? (duelData as any).player1 : (duelData as any).player2;
   const opponentInDuel = isPlayer1 ? (duelData as any).player2 : (duelData as any).player1;
+  // No modo espectador: topo = Jogador 1, baixo = Jogador 2 (cada um com seu nome e skin)
+  const player1DuelRef = (duelData as any).player1;
+  const player2DuelRef = (duelData as any).player2;
+  const topPanelUser = isSpectator ? player1DuelRef : opponent;
+  const bottomPanelUser = isSpectator ? player2DuelRef : user;
+  const topPanelClanTag = isSpectator ? (player1DuelRef as any)?.clanTag || '' : opponentClanTag;
+  const bottomPanelClanTag = isSpectator ? (player2DuelRef as any)?.clanTag || '' : myClanTag;
 
   const myPlaymatImageUrl =
     myUserInDuel?.equippedPlaymatImage
@@ -3384,6 +3483,47 @@ const DuelArena: React.FC = () => {
           : `${API_URL}${opponentInDuel.equippedSkinImage}`)
       : '/images/fundoCarta.webp';
 
+  // No modo espectador: skins fixas por posição (Jogador 1 = baixo, Jogador 2 = cima) para não trocar
+  const player1Duel = (duelData as any).player1;
+  const player2Duel = (duelData as any).player2;
+  const skinPlayer1 = player1Duel?.equippedSkinImage
+    ? (player1Duel.equippedSkinImage.startsWith('http') ? player1Duel.equippedSkinImage : `${API_URL}${player1Duel.equippedSkinImage}`)
+    : '/images/fundoCarta.webp';
+  const skinPlayer2 = player2Duel?.equippedSkinImage
+    ? (player2Duel.equippedSkinImage.startsWith('http') ? player2Duel.equippedSkinImage : `${API_URL}${player2Duel.equippedSkinImage}`)
+    : '/images/fundoCarta.webp';
+  // Modo espectador: no layout, campo de CIMA = Player 1, campo de BAIXO = Player 2 (cada um com sua própria skin/playmat)
+  const skinTop = isSpectator ? skinPlayer1 : opponentSkinImageUrl;
+  const skinBottom = isSpectator ? skinPlayer2 : mySkinImageUrl;
+  const playmatTop = isSpectator
+    ? (player1Duel?.equippedPlaymatImage ? (player1Duel.equippedPlaymatImage.startsWith('http') ? player1Duel.equippedPlaymatImage : `${API_URL}${player1Duel.equippedPlaymatImage}`) : undefined)
+    : opponentPlaymatImageUrl;
+  const playmatBottom = isSpectator
+    ? (player2Duel?.equippedPlaymatImage ? (player2Duel.equippedPlaymatImage.startsWith('http') ? player2Duel.equippedPlaymatImage : `${API_URL}${player2Duel.equippedPlaymatImage}`) : undefined)
+    : myPlaymatImageUrl;
+
+  // Espectador: topo = Jogador 1, baixo = Jogador 2 — dados de campo e mão por posição
+  const topFieldMonsters = isSpectator ? myMonsters : opponentMonsters;
+  const topFieldSpellTraps = isSpectator ? mySpellTraps : opponentSpellTraps;
+  const topFieldGraveyard = isSpectator ? myGraveyard : opponentGraveyard;
+  const topFieldExtraDeck = isSpectator ? myExtraDeck : opponentExtraDeck;
+  const topFieldDeckCount = isSpectator ? myDeck.length : opponentDeck.length;
+  const topFieldHandCount = isSpectator ? myHand.length : opponentHand.length;
+  const bottomFieldMonsters = isSpectator ? opponentMonsters : myMonsters;
+  const bottomFieldSpellTraps = isSpectator ? opponentSpellTraps : mySpellTraps;
+  const bottomFieldGraveyard = isSpectator ? opponentGraveyard : myGraveyard;
+  const bottomFieldExtraDeck = isSpectator ? opponentExtraDeck : myExtraDeck;
+  const bottomFieldDeckCount = isSpectator ? opponentDeck.length : myDeck.length;
+  const bottomFieldHandCount = isSpectator ? opponentHand.length : myHand.length;
+  const topHandCountSpectator = isSpectator ? myHand.length : opponentHand.length;
+  const bottomHandCountSpectator = isSpectator ? opponentHand.length : myHand.length;
+
+  // Bônus Banner of Courage (+200 ATK) durante a Fase de Batalha do dono da carta — para exibir no ATK e no cálculo de dano
+  const turnNum = duelData?.currentTurn ?? currentTurn ?? 1;
+  const isMyTurnPlayer = (isPlayer1 && turnNum === 1) || (!isPlayer1 && turnNum === 2);
+  const myBannerBonus = getBannerOfCourageBonus(mySpellTraps, isMyTurnPlayer);
+  const opponentBannerBonus = getBannerOfCourageBonus(opponentSpellTraps, !isMyTurnPlayer);
+
   return (
     <div className="min-h-screen w-full relative pb-1">
 
@@ -3398,6 +3538,13 @@ const DuelArena: React.FC = () => {
           zIndex: -10,
         }}
       />
+
+      {/* Banner modo espectador */}
+      {isSpectator && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-amber-600/90 text-white font-bold rounded-lg shadow-lg border-2 border-amber-400 flex items-center gap-2">
+          👁 Modo espectador — somente visualização
+        </div>
+      )}
       
       <div className="w-full flex flex-col relative z-10">
         {/* Header: Informações dos Duelistas - Modernizado */}
@@ -3519,49 +3666,48 @@ const DuelArena: React.FC = () => {
             transition={{ duration: 0.2 }}
             className="flex items-center gap-1 sm:gap-2 bg-black/20 px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl border-2 border-blue-400/30 shadow-lg transition-all flex-shrink-0 z-10 w-full sm:w-auto"
           >
-            {/* Level - Modernizado */}
+            {/* Level - Modernizado (espectador: Jogador 1) */}
             <motion.div 
               whileHover={{ rotate: 5 }}
               className="flex flex-col items-center bg-transparent px-1.5 sm:px-3 py-1 sm:py-2 rounded-lg border-2 border-white/20 shadow-md"
             >
               <div className="text-white/70 text-[8px] sm:text-[10px] font-bold tracking-wider">LV</div>
-              <div className="text-white text-base sm:text-xl font-bold drop-shadow-lg">{user.level || 1}</div>
+              <div className="text-white text-base sm:text-xl font-bold drop-shadow-lg">{bottomPanelUser?.level ?? user?.level ?? 1}</div>
             </motion.div>
             
-            {/* Avatar Quadrado - Modernizado */}
+            {/* Avatar (espectador: Jogador 1) */}
             <motion.img 
               whileHover={{ rotate: 5 }}
               transition={{ duration: 0.2 }}
               src={
-                user.profileImage 
-                  ? getImageUrl(user.profileImage) 
-                  : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.username) + '&background=3b82f6&color=fff&size=128'
+                bottomPanelUser?.profileImage 
+                  ? getImageUrl(bottomPanelUser.profileImage) 
+                  : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(bottomPanelUser?.username || bottomPanelUser?.nickname || 'P1') + '&background=3b82f6&color=fff&size=128'
               } 
-              alt={user.username}
+              alt={bottomPanelUser?.username || bottomPanelUser?.nickname || ''}
               className="w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-lg sm:rounded-xl border-2 border-blue-400/70 object-cover shadow-lg shadow-blue-500/30 ring-2 ring-blue-500/20"
               onError={(e) => {
-                e.currentTarget.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.username) + '&background=3b82f6&color=fff&size=128';
+                e.currentTarget.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(bottomPanelUser?.username || 'P1') + '&background=3b82f6&color=fff&size=128';
               }}
             />
             
-            {/* Info: Clan + Nick + LP - Modernizado */}
+            {/* Info: Clan + Nick + LP (espectador: Jogador 2 embaixo) */}
             <div className="min-w-0 flex-1">
               <div className="text-[10px] sm:text-xs font-bold text-blue-300 drop-shadow-md truncate">
-                {myClanTag ? `|${myClanTag}| ${user.nickname || user.username}` : (user.nickname || user.username)}
+                {bottomPanelClanTag ? `|${bottomPanelClanTag}| ${bottomPanelUser?.nickname || bottomPanelUser?.username}` : (bottomPanelUser?.nickname || bottomPanelUser?.username)}
               </div>
               <div className="relative">
                 <motion.div 
-                  key={myLifePoints}
+                  key={isSpectator ? opponentLifePoints : myLifePoints}
                   initial={{ scale: 1.2, color: "#ef4444" }}
                   animate={{ scale: 1, color: "#93c5fd" }}
                   transition={{ duration: 0.3 }}
                   className="text-blue-200 font-bold text-sm sm:text-base tracking-wide"
                 >
-                  LP: {myLifePoints.toLocaleString()}
+                  LP: {(isSpectator ? opponentLifePoints : myLifePoints).toLocaleString()}
                 </motion.div>
-                {/* Animação de dano */}
                 <AnimatePresence>
-                  {myDamage !== null && (
+                  {(isSpectator ? opponentDamage : myDamage) !== null && (
                     <motion.div
                       initial={{ opacity: 0, y: 0, scale: 0.5 }}
                       animate={{ opacity: 1, y: -30, scale: 1.2 }}
@@ -3570,14 +3716,14 @@ const DuelArena: React.FC = () => {
                       className="absolute -top-8 left-0 right-0 text-center pointer-events-none z-50"
                     >
                       <div className="text-red-400 font-bold text-lg sm:text-xl drop-shadow-lg">
-                        -{myDamage.toLocaleString()}
+                        -{(isSpectator ? opponentDamage : myDamage)?.toLocaleString()}
                       </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
               </div>
               <div className="text-[8px] sm:text-[10px] text-blue-300/80 font-medium">
-                S: {user.winsSeason || 0}/{user.lossesSeason || 0} | G: {user.winsGeral || 0}/{user.lossesGeral || 0}
+                S: {bottomPanelUser?.winsSeason ?? user?.winsSeason ?? 0}/{bottomPanelUser?.lossesSeason ?? user?.lossesSeason ?? 0} | G: {bottomPanelUser?.winsGeral ?? user?.winsGeral ?? 0}/{bottomPanelUser?.lossesGeral ?? user?.lossesGeral ?? 0}
               </div>
             </div>
           </motion.div>
@@ -3605,7 +3751,9 @@ const DuelArena: React.FC = () => {
               <div className={`text-[10px] mb-0.5 text-center font-bold tracking-widest uppercase ${
                 isMyTurn ? 'text-blue-200' : 'text-slate-400'
               }`}>
-                {isMyTurn ? 'Seu Turno' : 'Turno Oponente'}
+                {isSpectator
+                  ? (currentTurn === 1 ? `Turno de ${(duelData.player1?.nickname || duelData.player1?.username) || 'Jogador 1'}` : `Turno de ${(duelData.player2?.nickname || duelData.player2?.username) || 'Jogador 2'}`)
+                  : (isMyTurn ? 'Seu Turno' : 'Turno Oponente')}
               </div>
               <motion.div 
                 key={turnTimeLeft}
@@ -3630,25 +3778,25 @@ const DuelArena: React.FC = () => {
               transition={{ duration: 0.2 }}
               className="flex items-center gap-2 bg-black/20 px-4 py-2 rounded-xl border-2 border-red-400/30 shadow-lg transition-all"
             >
-            {/* Info: Clan + Nick + LP - Modernizado */}
+            {/* Info: Clan + Nick + LP (espectador: Jogador 1 no topo) */}
             <div className="text-right">
               <div className="text-xs font-bold text-red-300 drop-shadow-md">
-                {opponentClanTag ? `|${opponentClanTag}| ` : ''}
-                {opponent.nickname || opponent.username}
+                {topPanelClanTag ? `|${topPanelClanTag}| ` : ''}
+                {topPanelUser?.nickname || topPanelUser?.username || opponent.nickname || opponent.username}
               </div>
               <div className="relative">
                 <motion.div 
-                  key={opponentLifePoints}
+                  key={isSpectator ? myLifePoints : opponentLifePoints}
                   initial={{ scale: 1.2, color: "#ef4444" }}
                   animate={{ scale: 1, color: "#fca5a5" }}
                   transition={{ duration: 0.3 }}
                   className="text-red-200 font-bold text-base tracking-wide"
                 >
-                  LP: {opponentLifePoints.toLocaleString()}
+                  LP: {(isSpectator ? myLifePoints : opponentLifePoints).toLocaleString()}
                 </motion.div>
-                {/* Animação de dano */}
+                {/* Animação de dano (espectador: topo = Jogador 1) */}
                 <AnimatePresence>
-                  {opponentDamage !== null && (
+                  {(isSpectator ? myDamage : opponentDamage) !== null && (
                     <motion.div
                       initial={{ opacity: 0, y: 0, scale: 0.5 }}
                       animate={{ opacity: 1, y: -30, scale: 1.2 }}
@@ -3657,47 +3805,47 @@ const DuelArena: React.FC = () => {
                       className="absolute -top-8 left-0 right-0 text-center pointer-events-none z-50"
                     >
                       <div className="text-red-400 font-bold text-xl drop-shadow-lg">
-                        -{opponentDamage.toLocaleString()}
+                        -{(isSpectator ? myDamage : opponentDamage)?.toLocaleString()}
                       </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
               </div>
-              {(opponent.winsSeason !== undefined || opponent.winsGeral !== undefined) && (
+              {(topPanelUser?.winsSeason !== undefined || topPanelUser?.winsGeral !== undefined || opponent.winsSeason !== undefined || opponent.winsGeral !== undefined) && (
                 <div className="text-[10px] text-red-300/80 font-medium">
-                  S: {opponent.winsSeason || 0}/{opponent.lossesSeason || 0} | G: {opponent.winsGeral || 0}/{opponent.lossesGeral || 0}
+                  S: {topPanelUser?.winsSeason ?? opponent.winsSeason ?? 0}/{topPanelUser?.lossesSeason ?? opponent.lossesSeason ?? 0} | G: {topPanelUser?.winsGeral ?? opponent.winsGeral ?? 0}/{topPanelUser?.lossesGeral ?? opponent.lossesGeral ?? 0}
                 </div>
               )}
             </div>
             
-            {/* Avatar Quadrado - Modernizado */}
+            {/* Avatar (espectador: Jogador 1) */}
             <motion.img 
               whileHover={{ rotate: -5 }}
               transition={{ duration: 0.2 }}
               src={
-                opponent.profileImage 
-                  ? getImageUrl(opponent.profileImage) 
-                  : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(opponent.username) + '&background=ef4444&color=fff&size=128'
+                (topPanelUser?.profileImage || opponent.profileImage)
+                  ? getImageUrl(topPanelUser?.profileImage || opponent.profileImage) 
+                  : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(topPanelUser?.username || topPanelUser?.nickname || opponent.username || 'P1') + '&background=ef4444&color=fff&size=128'
               } 
-              alt={opponent.username}
+              alt={topPanelUser?.username || opponent.username || ''}
               className="w-12 h-12 rounded-lg border-2 border-red-400/70 object-cover shadow-lg shadow-red-500/30 ring-2 ring-red-500/20"
               onError={(e) => {
-                e.currentTarget.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(opponent.username) + '&background=ef4444&color=fff&size=128';
+                e.currentTarget.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(topPanelUser?.username || 'P1') + '&background=ef4444&color=fff&size=128';
               }}
             />
             
-            {/* Level - Modernizado */}
+            {/* Level (espectador: Jogador 1) */}
             <motion.div 
               whileHover={{ rotate: -5 }}
               className="flex flex-col items-center bg-transparent px-2 py-1.5 rounded-lg border-2 border-white/20 shadow-md"
             >
               <div className="text-white/70 text-[9px] font-bold tracking-wider">LV</div>
-              <div className="text-white text-lg font-bold drop-shadow-lg">{(opponent as any).level || 1}</div>
+              <div className="text-white text-lg font-bold drop-shadow-lg">{(topPanelUser as any)?.level ?? (opponent as any)?.level ?? 1}</div>
             </motion.div>
           </motion.div>
 
-          {/* Mão do Oponente (embaixo do perfil) */}
-          {((showOpponentHandRevealed && cardEffectType === 'forcefulSentry' ? opponentHandRevealed : opponentHand).length > 0) && (
+          {/* Mão do Oponente (embaixo do perfil) - espectador não vê cartas, só a quantidade */}
+          {!isSpectator && ((showOpponentHandRevealed && cardEffectType === 'forcefulSentry' ? opponentHandRevealed : opponentHand).length > 0) && (
             <motion.div 
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -3739,23 +3887,48 @@ const DuelArena: React.FC = () => {
               })}
             </motion.div>
           )}
+          {isSpectator && topHandCountSpectator > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="w-full flex justify-center gap-2 overflow-x-auto px-4 py-3 mt-8"
+            >
+              {Array.from({ length: topHandCountSpectator }).map((_, index) => (
+                <div
+                  key={`opp-hand-back-${index}`}
+                  className="flex-shrink-0 rounded-lg border-2 border-red-400/60 shadow-md"
+                  style={{
+                    width: 120,
+                    height: Math.floor(120 * 1.458),
+                    backgroundImage: `url(${skinTop})`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                    backgroundRepeat: 'no-repeat',
+                  }}
+                />
+              ))}
+            </motion.div>
+          )}
           </div>
           </div>
             {/* Campo do Oponente */}
             <div className="mt-0">
             <DuelField 
-              isOpponent={true} 
-              deckCount={opponentDeck.length} 
-              handCount={opponentHand.length}
-              monsters={opponentMonsters}
-              spellTraps={opponentSpellTraps}
-              graveyard={opponentGraveyard}
-              extraDeck={opponentExtraDeck}
-              playmatImage={opponentPlaymatImageUrl}
-              cardBackImage={opponentSkinImageUrl}
+              isOpponent={true}
+              disabled={isSpectator}
+              deckCount={topFieldDeckCount} 
+              handCount={topFieldHandCount}
+              monsters={topFieldMonsters}
+              spellTraps={topFieldSpellTraps}
+              bannerOfCourageBonus={opponentBannerBonus}
+              graveyard={topFieldGraveyard}
+              extraDeck={topFieldExtraDeck}
+              playmatImage={playmatTop}
+              cardBackImage={skinTop}
               onGraveyardClick={() => setShowOpponentGraveyardModal(true)}
               onExtraDeckClick={() => setShowOpponentExtraDeckModal(true)}
               onMonsterClick={async (targetZoneIndex) => {
+                if (isSpectator) return;
                 if (attackingMonsterIndex !== null) {
                   // Validações - MESMAS do onMonsterDrop para garantir consistência
                   // Verificar se é o turno do jogador
@@ -3842,6 +4015,7 @@ const DuelArena: React.FC = () => {
                 }
               }}
               onMonsterDrop={async (attackerZoneIndex, targetZoneIndex) => {
+                if (isSpectator) return;
                 // Processar ataque via drag and drop - EXATAMENTE o mesmo fluxo do clique
                 // Simular o comportamento de clicar no botão de ataque e depois no monstro alvo
                 
@@ -3924,9 +4098,9 @@ const DuelArena: React.FC = () => {
                 // Limpar o estado de ataque (mesmo comportamento do clique)
                 setAttackingMonsterIndex(null);
               }}
-              isSelectingTarget={attackingMonsterIndex !== null && currentPhase === 'BATTLE' && isMyTurn}
-              canAttack={currentPhase === 'BATTLE' && isMyTurn}
-              isMyTurn={isMyTurn}
+              isSelectingTarget={attackingMonsterIndex !== null && currentPhase === 'BATTLE' && effectiveIsMyTurn}
+              canAttack={currentPhase === 'BATTLE' && effectiveIsMyTurn}
+              isMyTurn={effectiveIsMyTurn}
               currentPhase={currentPhase}
               isSelectingSpellTrapTarget={isSelectingMSTTarget && isMyTurn}
               isSelectingMonsterTarget={(isSelectingSnowmanEaterTarget || isSelectingChaosSorcererTarget) && isMyTurn}
@@ -3960,21 +4134,6 @@ const DuelArena: React.FC = () => {
                   } else {
                     // Mostrar mensagem se tentar escolher um monstro face-down
                     alert('SnowmanEater só pode destruir monstros face-up (ataque ou defesa)');
-                  }
-                  return;
-                }
-                
-                // Se estamos selecionando alvo para Breaker, processar escolha
-                if (isSelectingBreakerTarget && breakerMonsterZoneIndex !== null && zoneIndex !== undefined) {
-                  const targetPlayer = 'opponent'; // Campo do oponente
-                  if (duelId && user?.id) {
-                    performAction(duelId, user.id, 'BREAKER_REMOVE_COUNTER', {
-                      monsterZoneIndex: breakerMonsterZoneIndex,
-                      targetPlayer,
-                      targetZoneIndex: zoneIndex,
-                    });
-                    setIsSelectingBreakerTarget(false);
-                    setBreakerMonsterZoneIndex(null);
                   }
                   return;
                 }
@@ -4181,15 +4340,17 @@ const DuelArena: React.FC = () => {
 
             {/* Meu Campo */}
             <DuelField 
-              isOpponent={false} 
-              deckCount={myDeck.length} 
-              handCount={myHand.length}
-              monsters={myMonsters}
-              spellTraps={filteredMySpellTraps}
-              graveyard={myGraveyard}
-              extraDeck={myExtraDeck}
-              playmatImage={myPlaymatImageUrl}
-              cardBackImage={mySkinImageUrl}
+              isOpponent={false}
+              disabled={isSpectator}
+              deckCount={bottomFieldDeckCount} 
+              handCount={bottomFieldHandCount}
+              monsters={bottomFieldMonsters}
+              spellTraps={isSpectator ? bottomFieldSpellTraps : filteredMySpellTraps}
+              bannerOfCourageBonus={myBannerBonus}
+              graveyard={bottomFieldGraveyard}
+              extraDeck={bottomFieldExtraDeck}
+              playmatImage={playmatBottom}
+              cardBackImage={skinBottom}
               onGraveyardClick={() => setShowGraveyardModal(true)}
               monsterDestroyedThisTurn={monsterDestroyedThisTurn}
               onExtraDeckClick={() => setShowExtraDeckModal(true)}
@@ -4197,7 +4358,7 @@ const DuelArena: React.FC = () => {
                 // Iniciar seleção de alvo (botão só aparece em BATTLE)
                 setAttackingMonsterIndex(zoneIndex);
               }}
-              canAttack={currentPhase === 'BATTLE' && isMyTurn}
+              canAttack={currentPhase === 'BATTLE' && effectiveIsMyTurn}
               onChangePosition={(zoneIndex, newPosition) => {
                 // Mudar posição do monstro
                 if (duelId && user?.id) {
@@ -4208,13 +4369,21 @@ const DuelArena: React.FC = () => {
                 }
               }}
               onBreakerRemoveCounter={(monsterZoneIndex) => {
-                // Ativar efeito do Breaker - iniciar seleção de alvo
                 if (duelId && user?.id) {
+                  setSelectedBreakerTarget(null);
+                  setBreakerModalSpellTraps({
+                    my: Array.isArray(mySpellTraps) ? [...mySpellTraps] : [],
+                    opp: Array.isArray(opponentSpellTraps) ? [...opponentSpellTraps] : [],
+                  });
                   setIsSelectingBreakerTarget(true);
                   setBreakerMonsterZoneIndex(monsterZoneIndex);
                 }
               }}
               onActivateMonsterEffect={(monsterZoneIndex) => {
+                if (hasActionInProgress) {
+                  alert('Termine a invocação ou o efeito em andamento antes de usar outra carta.');
+                  return;
+                }
                 // Verificar qual monstro está na zona para determinar qual efeito ativar
                 const monster = myMonsters[monsterZoneIndex];
                 if (!monster) return;
@@ -4323,7 +4492,7 @@ const DuelArena: React.FC = () => {
                   }
                 }
               }}
-              isMyTurn={isMyTurn}
+              isMyTurn={effectiveIsMyTurn}
               currentPhase={currentPhase}
               currentTurn={currentTurn}
               turnCounter={myTurnCounter}
@@ -4374,6 +4543,10 @@ const DuelArena: React.FC = () => {
                 }
               }}
               onEquipSpellDrop={(card, monsterZoneIndex, spellTrapZoneIndex) => {
+                if (hasActionInProgress) {
+                  alert('Termine a invocação ou o efeito em andamento antes de usar outra carta.');
+                  return;
+                }
                 console.log('🔍 [DuelArena] onEquipSpellDrop chamado:', {
                   cardName: card.name || card.cardName,
                   monsterZoneIndex,
@@ -4443,7 +4616,7 @@ const DuelArena: React.FC = () => {
                 }
               }}
               isSelectingSpellTrapSlot={selectingSpellTrapSlot !== null && currentPhase !== 'BATTLE' && isMyTurn}
-              isSelectingSpellTrapTarget={(isSelectingMSTTarget || isSelectingBreakerTarget) && isMyTurn}
+              isSelectingSpellTrapTarget={isSelectingMSTTarget && isMyTurn}
               isSelectingMonsterTarget={isSelectingSnowmanEaterTarget && isMyTurn}
               onCardClick={(card, zoneIndex) => {
                 // Se estamos selecionando alvo para MST, processar escolha
@@ -4479,21 +4652,6 @@ const DuelArena: React.FC = () => {
                   return;
                 }
                 
-                // Se estamos selecionando alvo para Breaker, processar escolha
-                if (isSelectingBreakerTarget && breakerMonsterZoneIndex !== null && zoneIndex !== undefined) {
-                  const targetPlayer = 'player'; // Campo do próprio jogador
-                  if (duelId && user?.id) {
-                    performAction(duelId, user.id, 'BREAKER_REMOVE_COUNTER', {
-                      monsterZoneIndex: breakerMonsterZoneIndex,
-                      targetPlayer,
-                      targetZoneIndex: zoneIndex,
-                    });
-                    setIsSelectingBreakerTarget(false);
-                    setBreakerMonsterZoneIndex(null);
-                  }
-                  return;
-                }
-                
                 console.log('🔍 [DuelArena] Card clicked:', {
                   name: card?.name,
                   description: card?.description,
@@ -4522,7 +4680,7 @@ const DuelArena: React.FC = () => {
             />
 
             {/* Aviso de seleção de alvo de ataque */}
-            {attackingMonsterIndex !== null && currentPhase === 'BATTLE' && isMyTurn && (
+            {attackingMonsterIndex !== null && currentPhase === 'BATTLE' && effectiveIsMyTurn && (
               <motion.div
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -4662,7 +4820,7 @@ const DuelArena: React.FC = () => {
             </AnimatePresence>
 
             {/* Botão Roubar Turno - Aparece quando não é meu turno e tempo do oponente expirou */}
-            {!isMyTurn && turnTimeRemainingFromServer !== null && turnTimeRemainingFromServer <= 0 && (
+            {!effectiveIsMyTurn && !isSpectator && turnTimeRemainingFromServer !== null && turnTimeRemainingFromServer <= 0 && (
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -4680,8 +4838,8 @@ const DuelArena: React.FC = () => {
               </motion.div>
             )}
 
-            {/* Fases do Jogo - Modernizado - Só aparece quando é meu turno */}
-            {isMyTurn && (
+            {/* Fases do Jogo - Modernizado - Só aparece quando é meu turno (não em modo espectador) */}
+            {effectiveIsMyTurn && (
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -4825,7 +4983,7 @@ const DuelArena: React.FC = () => {
               </motion.div>
             )}
 
-            {/* Minha Mão (cartas visíveis) - Modernizado */}
+            {/* Minha Mão (cartas visíveis) - espectador não vê cartas, só a quantidade */}
             <motion.div 
               initial={{ opacity: 0, y: 50 }}
               animate={{ opacity: 1, y: 0 }}
@@ -4841,6 +4999,7 @@ const DuelArena: React.FC = () => {
                 maxWidth: '100%'
               }}
               onClick={(e) => {
+                if (isSpectator) return;
                 // Fechar zoom se clicar fora das cartas
                 if (e.target === e.currentTarget) {
                   setZoomedCard(null);
@@ -4848,7 +5007,30 @@ const DuelArena: React.FC = () => {
                 }
               }}
             >
-              {myHand.length === 0 ? (
+              {isSpectator ? (
+                bottomHandCountSpectator === 0 ? (
+                  <div className="text-slate-400 text-center py-8 w-full">
+                    <p className="text-lg font-bold">Nenhuma carta na mão</p>
+                  </div>
+                ) : (
+                  <div className="w-full flex justify-center gap-2 overflow-x-auto px-4 py-3 items-center">
+                    {Array.from({ length: bottomHandCountSpectator }).map((_, index) => (
+                      <div
+                        key={`my-hand-back-${index}`}
+                        className="flex-shrink-0 rounded-lg border-2 border-white/30 shadow-md"
+                        style={{
+                          width: 120,
+                          height: Math.floor(120 * 1.458),
+                          backgroundImage: `url(${skinBottom})`,
+                          backgroundSize: 'cover',
+                          backgroundPosition: 'center',
+                          backgroundRepeat: 'no-repeat',
+                        }}
+                      />
+                    ))}
+                  </div>
+                )
+              ) : myHand.length === 0 ? (
                 <div className="text-slate-300 text-center py-8 w-full">
                   <p className="text-lg font-bold">Nenhuma carta na mão</p>
                   <p className="text-sm text-slate-400 mt-2">Deck: {myDeck.length} cartas restantes</p>
@@ -4986,7 +5168,8 @@ const DuelArena: React.FC = () => {
                             {isMonster ? (
                               <>
                                 {(() => {
-                                  const cardLevel = card.level || 0;
+                                  // Nível: suportar card.level, card.card?.level e card.cardLevel (estruturas diferentes da mão/API)
+                                  const cardLevel = Number(card.level ?? card.card?.level ?? card.cardLevel ?? 0) || 0;
                                   // Permitir invocação em MAIN1, MAIN2 ou STANDBY (STANDBY muda automaticamente para MAIN1)
                                   const isInMainPhase = (currentPhase === 'MAIN1' || currentPhase === 'MAIN2' || currentPhase === 'STANDBY');
                                   const availableMonstersCount = myMonsters.filter(m => m !== null && m !== undefined).length;
@@ -5046,6 +5229,10 @@ const DuelArena: React.FC = () => {
                                   const isDisabled = !canSummon;
                                   
                                   const handleSummonClick = async (position: 'attack' | 'defense' | 'set') => {
+                                    if (hasActionInProgress) {
+                                      alert('Termine a invocação ou o efeito em andamento antes de usar outra carta.');
+                                      return;
+                                    }
                                     // Se estiver em STANDBY, mudar automaticamente para MAIN1
                                     if (currentPhase === 'STANDBY') {
                                       console.log(`🔄 [handleSummonClick] Tentativa de invocar na STANDBY - mudando automaticamente para MAIN1`);
@@ -5558,44 +5745,29 @@ const DuelArena: React.FC = () => {
 
                                   return (
                                     <>
-                                      {/* Botões de Invocação Especial do Cyber Dragon: Ataque ou Defesa */}
+                                      {/* Invocação Especial do Cyber Dragon: sempre em Ataque; no mesmo turno pode mudar para Defesa pelo botão no monstro */}
                                       {canSpecialSummonCyberDragon && (
-                                        <>
-                                          <motion.button
-                                            whileHover={{ y: -2 }}
-                                            whileTap={{ scale: 0.9 }}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleSpecialSummonCyberDragon('attack');
-                                            }}
-                                            className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-black/30 border-red-400/70 cursor-pointer"
-                                            title={`Invocação Especial em Ataque (ATK: ${card.atk || 0}) - Não conta como invocação normal`}
-                                          >
-                                            <img 
-                                              src="/images/Duelo/SpecialSummon.png" 
-                                              alt="Special Summon ATK" 
-                                              className="w-6 h-6 object-contain"
-                                            />
-                                          </motion.button>
-                                          <motion.button
-                                            whileHover={{ y: -2 }}
-                                            whileTap={{ scale: 0.9 }}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleSpecialSummonCyberDragon('defense');
-                                            }}
-                                            className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-black/30 border-blue-400/70 cursor-pointer"
-                                            title={`Invocação Especial em Defesa (DEF: ${card.def || 0}) - Não conta como invocação normal`}
-                                          >
-                                            <img 
-                                              src="/images/Duelo/SpecialSummon.png" 
-                                              alt="Special Summon DEF" 
-                                              className="w-6 h-6 object-contain"
-                                            />
-                                          </motion.button>
-                                        </>
+                                        <motion.button
+                                          whileHover={{ y: -2 }}
+                                          whileTap={{ scale: 0.9 }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleSpecialSummonCyberDragon('attack');
+                                          }}
+                                          className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-black/30 border-red-400/70 cursor-pointer"
+                                          title={`Invocação Especial em Ataque (ATK: ${card.atk || 0}) - Não conta como invocação normal. No mesmo turno você pode mudar para Defesa pelo monstro no campo.`}
+                                        >
+                                          <img 
+                                            src="/images/Duelo/SpecialSummon.png" 
+                                            alt="Invocação Especial" 
+                                            className="w-6 h-6 object-contain"
+                                          />
+                                        </motion.button>
                                       )}
                                       
+                                      {/* Ícones de invocação normal (Ataque, Set). Para Cyber Dragon: mostrar também quando puder invocar por tributo (ex.: tem monstro no campo) */}
+                                      {(!isCyberDragon || canSummonWithTribute) && (
+                                      <>
                                       {/* Botão de Invocação Normal em Ataque (face-up) */}
                                       <motion.button
                                         whileHover={!isDisabled ? { y: -2 } : {}}
@@ -5619,7 +5791,7 @@ const DuelArena: React.FC = () => {
                                           : canSummonSwiftGaiaWithoutTribute
                                             ? `Invocar em Ataque (ATK: ${card.atk || 0}) - Pode ser invocado sem tributo (único card na mão)`
                                             : requiredTributes > 0
-                                              ? `Invocar em Ataque (ATK: ${card.atk || 0}) - Precisa de ${requiredTributes} tributo(s)`
+                                              ? `Invocar em Ataque com tributo (ATK: ${card.atk || 0}) - Tributar ${requiredTributes} monstro(s) no campo`
                                               : `Invocar em Ataque (ATK: ${card.atk || 0}) - Invocação Normal`}
                                       >
                                         <img 
@@ -5652,11 +5824,13 @@ const DuelArena: React.FC = () => {
                                           : canSummonSwiftGaiaWithoutTribute
                                             ? `Set (Face-down em Defesa) - Pode ser invocado sem tributo (único card na mão)`
                                             : requiredTributes > 0
-                                              ? `Set (Face-down em Defesa) - Precisa de ${requiredTributes} tributo(s)`
+                                              ? `Set com tributo (Face-down em Defesa) - Tributar ${requiredTributes} monstro(s) no campo`
                                               : `Set (Face-down em Defesa) - DEF: ${card.def || 0}`}
                                       >
                                         <span className="text-sm">🛡️</span>
                                       </motion.button>
+                                      </>
+                                      )}
                                     </>
                                   );
                                 })()}
@@ -5688,11 +5862,14 @@ const DuelArena: React.FC = () => {
                                       const cardId = (card.id || card.cardId || card.idCarta || '').toLowerCase();
                                       const needsModal = 
                                         cardName.includes('mysticalspacetyphoon') ||
-                                        cardName.includes('mysticalspacetyphoon') ||
                                         cardId.includes('mysticalspacetyphoon') ||
                                         cardName.includes('monsterreborn') ||
                                         cardName.includes('changeofheart') ||
                                         cardName.includes('braincontrol') ||
+                                        cardName.includes('soultaker') ||
+                                        cardId.includes('soultaker') ||
+                                        cardName.includes('lightningstorm') ||
+                                        cardId.includes('lightningstorm') ||
                                         cardName.includes('snowmaneater') ||
                                         cardName.includes('lastwill') ||
                                         cardId.includes('lastwill');
@@ -5777,7 +5954,7 @@ const DuelArena: React.FC = () => {
       </div>
 
       {/* Aviso de Descarte (quando está na fase END com mais de 6 cartas) */}
-      {currentPhase === 'END' && isMyTurn && myHand.length > 6 && (
+      {currentPhase === 'END' && !isSpectator && isMyTurn && myHand.length > 6 && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[9999] bg-gradient-to-r from-yellow-600 to-orange-600 text-white px-6 py-3 rounded-xl border-2 border-yellow-400 shadow-2xl ">
           <p className="text-lg font-bold text-center">
             ⚠️ Você tem {myHand.length} cartas na mão! {myHand.length - 6} carta(s) serão descartadas automaticamente ao finalizar o turno.
@@ -6882,6 +7059,119 @@ const DuelArena: React.FC = () => {
                     }`}
                   >
                     {selectedPrematureBurialIndex !== null ? '✅ Reviver e Equipar' : 'Selecione um monstro'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Autonomous Action Unit - escolher 1 monstro do cemitério do oponente */}
+      <AnimatePresence>
+        {showAutonomousActionUnitModal && autonomousActionUnitGraveyard.length > 0 && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-xl"
+            onClick={(e) => {}}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-gradient-to-br from-gray-900/80 via-amber-900/30 to-gray-900/80 backdrop-blur-lg rounded-2xl border-2 border-amber-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              <div className="p-8">
+                <div className="flex justify-between items-center mb-6 border-b-2 border-amber-500/30 pb-4">
+                  <div>
+                    <h2 className="text-4xl font-bold bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent">
+                      Autonomous Action Unit
+                    </h2>
+                    <p className="text-gray-300 mt-2">
+                      Você pagou 1500 LP. Escolha um monstro do cemitério do oponente para reviver no seu campo em ataque (equipado com esta carta). Se a carta ou o monstro for destruído, ambos são destruídos.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id) {
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
+                      setShowAutonomousActionUnitModal(false);
+                      setAutonomousActionUnitGraveyard([]);
+                      setSelectedAutonomousActionUnitIndex(null);
+                    }}
+                    className="text-gray-400 hover:text-red-400 text-4xl font-bold transition-colors hover:scale-110 transform"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="mb-6">
+                  <h3 className="text-2xl font-bold text-white mb-4">Cemitério do Oponente</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    {autonomousActionUnitGraveyard.map((monster: any, index: number) => {
+                      const isSelected = selectedAutonomousActionUnitIndex === index;
+                      return (
+                        <motion.div
+                          key={`autonomous-action-unit-gy-${index}`}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => setSelectedAutonomousActionUnitIndex(index)}
+                          className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
+                            isSelected ? 'border-amber-400 ring-4 ring-amber-400/50 shadow-lg shadow-amber-500/50' : 'border-gray-600 hover:border-amber-500/50'
+                          }`}
+                          style={{ width: '120px', height: '175px' }}
+                        >
+                          <CardImage card={monster} className="w-full h-full" fallback="/images/fundoCarta.webp" />
+                          {isSelected && (
+                            <div className="absolute inset-0 bg-amber-400/30 flex items-center justify-center">
+                              <div className="bg-amber-400/95 text-black px-3 py-1.5 rounded-lg font-bold text-sm">Selecionado</div>
+                            </div>
+                          )}
+                          <div className="absolute bottom-1 left-1 right-1 text-center">
+                            <p className="text-white text-xs font-semibold bg-black/70 px-2 py-1 rounded truncate">
+                              {monster.name || 'Monstro'}
+                            </p>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="flex justify-center gap-4 mt-6">
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id) {
+                        performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                      }
+                      setShowAutonomousActionUnitModal(false);
+                      setAutonomousActionUnitGraveyard([]);
+                      setSelectedAutonomousActionUnitIndex(null);
+                    }}
+                    className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (duelId && user?.id && selectedAutonomousActionUnitIndex !== null) {
+                        performAction(duelId, user.id, 'AUTONOMOUS_ACTION_UNIT_CHOICE', {
+                          chosenMonsterIndex: selectedAutonomousActionUnitIndex,
+                        });
+                        setShowAutonomousActionUnitModal(false);
+                        setAutonomousActionUnitGraveyard([]);
+                        setSelectedAutonomousActionUnitIndex(null);
+                      }
+                    }}
+                    disabled={selectedAutonomousActionUnitIndex === null}
+                    className={`px-8 py-3 rounded-lg font-bold transition-colors ${
+                      selectedAutonomousActionUnitIndex !== null
+                        ? 'bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white cursor-pointer'
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {selectedAutonomousActionUnitIndex !== null ? '✅ Reviver e Equipar' : 'Selecione um monstro'}
                   </button>
                 </div>
               </div>
@@ -8469,6 +8759,235 @@ const DuelArena: React.FC = () => {
         )}
       </AnimatePresence>
 
+      {/* Modal Breaker the Magical Warrior - escolher 1 Spell/Trap no campo para destruir (perde +300 ATK) */}
+      <AnimatePresence>
+        {isSelectingBreakerTarget && breakerMonsterZoneIndex !== null && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-xl"
+            onClick={() => {}}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-gradient-to-br from-gray-900/80 via-gray-800/80 to-gray-900/80 backdrop-blur-lg rounded-2xl border-2 border-purple-500/50 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              <div className="p-8">
+                <div className="flex justify-between items-center mb-6 border-b-2 border-purple-500/30 pb-4">
+                  <div>
+                    <h2 className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-purple-600 bg-clip-text text-transparent">
+                      Breaker the Magical Warrior
+                    </h2>
+                    <p className="text-gray-300 mt-2">
+                      Escolha uma Spell/Trap no campo para destruir. Ao usar o efeito, este monstro perde os 300 de ATK que ganhou na invocação normal.
+                    </p>
+                    <p className="text-purple-200/80 text-sm mt-1">
+                      Clique em uma carta para selecioná-la e depois em &quot;Destruir Spell/Trap&quot;.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setIsSelectingBreakerTarget(false);
+                      setBreakerMonsterZoneIndex(null);
+                      setSelectedBreakerTarget(null);
+                      setBreakerModalSpellTraps(null);
+                    }}
+                    className="text-gray-400 hover:text-red-400 text-4xl font-bold transition-colors hover:scale-110 transform"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {(() => {
+                  // Usar snapshot capturado ao abrir o modal para garantir que as cartas apareçam
+                  const myRaw = breakerModalSpellTraps?.my ?? mySpellTraps ?? [];
+                  const oppRaw = breakerModalSpellTraps?.opp ?? opponentSpellTraps ?? [];
+                  const mySlots = Array.isArray(myRaw) ? [...myRaw] : [];
+                  const oppSlots = Array.isArray(oppRaw) ? [...oppRaw] : [];
+                  while (mySlots.length < 5) mySlots.push(null);
+                  while (oppSlots.length < 5) oppSlots.push(null);
+                  const toCard = (item: any) => (item && typeof item === 'object' && item.card != null ? item.card : item);
+                  const playerList = mySlots
+                    .map((item: any, zoneIndex: number) => {
+                      const card = toCard(item);
+                      return card ? { card, zoneIndex, player: 'player' as const } : null;
+                    })
+                    .filter(Boolean) as Array<{ card: any; zoneIndex: number; player: 'player' }>;
+                  const opponentList = oppSlots
+                    .map((item: any, zoneIndex: number) => {
+                      const card = toCard(item);
+                      return card ? { card, zoneIndex, player: 'opponent' as const } : null;
+                    })
+                    .filter(Boolean) as Array<{ card: any; zoneIndex: number; player: 'opponent' }>;
+                  const total = playerList.length + opponentList.length;
+                  if (total === 0) {
+                    return (
+                      <p className="text-gray-300 text-center py-8">Nenhuma Spell/Trap no campo para escolher.</p>
+                    );
+                  }
+                  return (
+                    <>
+                      {/* Campo do oponente em cima */}
+                      {opponentList.length > 0 && (
+                        <div className="mb-6">
+                          <h3 className="text-2xl font-bold text-white mb-4">Campo do oponente</h3>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                            {opponentList.map(({ card, zoneIndex, player }) => {
+                              const isSelected = selectedBreakerTarget?.player === player && selectedBreakerTarget?.zoneIndex === zoneIndex;
+                              const isFaceDown = card.position === 'set';
+                              return (
+                                <motion.div
+                                  key={`breaker-opponent-${zoneIndex}`}
+                                  role="button"
+                                  tabIndex={0}
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.95 }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedBreakerTarget({ player, zoneIndex });
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      setSelectedBreakerTarget({ player, zoneIndex });
+                                    }
+                                  }}
+                                  className={`relative cursor-pointer rounded-xl border-2 transition-all ${
+                                    isSelected ? 'border-purple-400 ring-4 ring-purple-400/50' : 'border-gray-600 hover:border-purple-500/50'
+                                  }`}
+                                  style={{ width: '120px', height: '175px', overflow: 'hidden' }}
+                                >
+                                  {isFaceDown ? (
+                                    <div
+                                      className="w-full h-full bg-cover bg-center bg-no-repeat"
+                                      style={{ backgroundImage: `url(${opponentSkinImageUrl})` }}
+                                    />
+                                  ) : (
+                                    <CardImage card={card} className="w-full h-full" fallback="/images/fundoCarta.webp" />
+                                  )}
+                                  {isSelected && (
+                                    <div className="absolute inset-0 bg-purple-400/30 flex items-center justify-center pointer-events-none rounded-xl">
+                                      <span className="bg-purple-500 text-white px-3 py-1.5 rounded-lg font-bold text-sm">Selecionado</span>
+                                    </div>
+                                  )}
+                                  <div className="absolute bottom-1 left-1 right-1 text-center pointer-events-none">
+                                    <p className="text-white text-xs font-semibold bg-black/70 px-2 py-1 rounded truncate">
+                                      {isFaceDown ? 'Set' : (card.name || card.cardName || '')}
+                                    </p>
+                                  </div>
+                                </motion.div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {/* Seu campo embaixo */}
+                      {playerList.length > 0 && (
+                        <div className="mb-6">
+                          <h3 className="text-2xl font-bold text-white mb-4">Seu campo</h3>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                            {playerList.map(({ card, zoneIndex, player }) => {
+                              const isSelected = selectedBreakerTarget?.player === player && selectedBreakerTarget?.zoneIndex === zoneIndex;
+                              const isFaceDown = card.position === 'set';
+                              return (
+                                <motion.div
+                                  key={`breaker-player-${zoneIndex}`}
+                                  role="button"
+                                  tabIndex={0}
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.95 }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedBreakerTarget({ player, zoneIndex });
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      setSelectedBreakerTarget({ player, zoneIndex });
+                                    }
+                                  }}
+                                  className={`relative cursor-pointer rounded-xl border-2 transition-all ${
+                                    isSelected ? 'border-purple-400 ring-4 ring-purple-400/50' : 'border-gray-600 hover:border-purple-500/50'
+                                  }`}
+                                  style={{ width: '120px', height: '175px', overflow: 'hidden' }}
+                                >
+                                  {isFaceDown ? (
+                                    <div
+                                      className="w-full h-full bg-cover bg-center bg-no-repeat"
+                                      style={{ backgroundImage: `url(${mySkinImageUrl})` }}
+                                    />
+                                  ) : (
+                                    <CardImage card={card} className="w-full h-full" fallback="/images/fundoCarta.webp" />
+                                  )}
+                                  {isSelected && (
+                                    <div className="absolute inset-0 bg-purple-400/30 flex items-center justify-center pointer-events-none rounded-xl">
+                                      <span className="bg-purple-500 text-white px-3 py-1.5 rounded-lg font-bold text-sm">Selecionado</span>
+                                    </div>
+                                  )}
+                                  <div className="absolute bottom-1 left-1 right-1 text-center pointer-events-none">
+                                    <p className="text-white text-xs font-semibold bg-black/70 px-2 py-1 rounded truncate">
+                                      {isFaceDown ? 'Set' : (card.name || card.cardName || '')}
+                                    </p>
+                                  </div>
+                                </motion.div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex justify-end gap-3 pt-4">
+                        <button
+                          onClick={() => {
+                            setIsSelectingBreakerTarget(false);
+                            setBreakerMonsterZoneIndex(null);
+                            setSelectedBreakerTarget(null);
+                            setBreakerModalSpellTraps(null);
+                          }}
+                          className="px-6 py-2 rounded-lg bg-gray-600 hover:bg-gray-500 text-white font-medium"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (
+                              selectedBreakerTarget &&
+                              duelId &&
+                              user?.id &&
+                              breakerMonsterZoneIndex !== null &&
+                              breakerMonsterZoneIndex >= 0 &&
+                              breakerMonsterZoneIndex < 5
+                            ) {
+                              performAction(duelId, user.id, 'BREAKER_REMOVE_COUNTER', {
+                                monsterZoneIndex: breakerMonsterZoneIndex,
+                                targetPlayer: selectedBreakerTarget.player,
+                                targetZoneIndex: selectedBreakerTarget.zoneIndex,
+                              });
+                              setIsSelectingBreakerTarget(false);
+                              setBreakerMonsterZoneIndex(null);
+                              setSelectedBreakerTarget(null);
+                              setBreakerModalSpellTraps(null);
+                            }
+                          }}
+                          disabled={selectedBreakerTarget === null}
+                          className={`px-6 py-2 rounded-lg font-bold ${
+                            selectedBreakerTarget !== null
+                              ? 'bg-purple-600 hover:bg-purple-500 text-white'
+                              : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                          }`}
+                        >
+                          {selectedBreakerTarget !== null ? 'Destruir Spell/Trap' : 'Escolha uma carta'}
+                        </button>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Modal de UnitedWeStand */}
       <AnimatePresence>
         {showUnitedWeStandModal && unitedWeStandData && (
@@ -9065,6 +9584,84 @@ const DuelArena: React.FC = () => {
                     </button>
                   </div>
                 ) : null}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Lightning Storm - escolher 1 efeito */}
+      <AnimatePresence>
+        {showLightningStormModal && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/20 backdrop-blur-xl"
+            style={{ zIndex: 9999, pointerEvents: 'auto', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' } as React.CSSProperties}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="rounded-2xl border-2 border-amber-500/50 shadow-2xl max-w-lg w-full p-8 bg-black/25 backdrop-blur-xl"
+              style={{ backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' } as React.CSSProperties}
+            >
+              <div className="flex justify-between items-start mb-6 border-b border-amber-500/30 pb-4">
+                <div>
+                  <h2 className="text-2xl font-bold bg-gradient-to-r from-amber-400 to-yellow-500 bg-clip-text text-transparent">
+                    Lightning Storm
+                  </h2>
+                  <p className="text-gray-300 mt-2 text-sm">
+                    Escolha 1 efeito (só pode ativar se você não controlar nenhuma carta com face para cima; 1 vez por turno).
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    if (duelId && user?.id) {
+                      performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                    }
+                    setShowLightningStormModal(false);
+                  }}
+                  className="text-gray-400 hover:text-amber-400 text-2xl font-bold transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="space-y-3 mb-6">
+                <button
+                  onClick={() => {
+                    if (duelId && user?.id) {
+                      performAction(duelId, user.id, 'LIGHTNING_STORM_CHOICE', { effect: 'destroy_attack_monsters' });
+                      setShowLightningStormModal(false);
+                    }
+                  }}
+                  className="w-full text-left px-4 py-3 rounded-xl border-2 border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20 text-white font-medium transition-colors"
+                >
+                  Destruir todos os monstros em posição de ataque que seu oponente controla
+                </button>
+                <button
+                  onClick={() => {
+                    if (duelId && user?.id) {
+                      performAction(duelId, user.id, 'LIGHTNING_STORM_CHOICE', { effect: 'destroy_spells_traps' });
+                      setShowLightningStormModal(false);
+                    }
+                  }}
+                  className="w-full text-left px-4 py-3 rounded-xl border-2 border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20 text-white font-medium transition-colors"
+                >
+                  Destruir todas as magias e armadilhas que seu oponente controla
+                </button>
+              </div>
+              <div className="flex justify-center">
+                <button
+                  onClick={() => {
+                    if (duelId && user?.id) {
+                      performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                    }
+                    setShowLightningStormModal(false);
+                  }}
+                  className="px-6 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg font-bold transition-colors"
+                >
+                  Cancelar
+                </button>
               </div>
             </motion.div>
           </div>

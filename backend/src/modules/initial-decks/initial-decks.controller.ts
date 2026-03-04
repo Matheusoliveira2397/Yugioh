@@ -27,7 +27,7 @@ export class InitialDecksController {
 
   @Post()
   @UseGuards(JwtAuthGuard, AdminGuard)
-  async create(@Body() createDeckDto: { name: string; description?: string; cards: Array<{ cardId: string; quantity: number }> }) {
+  async create(@Body() createDeckDto: { name: string; description?: string; cards: Array<{ cardId: string; quantity: number; isExtraDeck?: boolean }> }) {
     return this.initialDecksService.create(createDeckDto);
   }
 
@@ -35,7 +35,7 @@ export class InitialDecksController {
   @UseGuards(JwtAuthGuard, AdminGuard)
   async update(
     @Param('id') id: string,
-    @Body() updateDeckDto: { name?: string; description?: string; isActive?: boolean; cards?: Array<{ cardId: string; quantity: number }> }
+    @Body() updateDeckDto: { name?: string; description?: string; isActive?: boolean; cards?: Array<{ cardId: string; quantity: number; isExtraDeck?: boolean }> }
   ) {
     return this.initialDecksService.update(id, updateDeckDto);
   }

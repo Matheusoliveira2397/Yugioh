@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import axios from 'axios';
@@ -9,6 +9,7 @@ export default function VerifyEmailPage() {
   const { token } = useParams<{ token: string }>();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('');
+  const successHandled = useRef(false);
 
   useEffect(() => {
     const verifyEmail = async () => {
@@ -20,11 +21,19 @@ export default function VerifyEmailPage() {
 
       try {
         const response = await axios.get(`${API_URL}/auth/verify-email/${token}`);
+        successHandled.current = true;
         setStatus('success');
         setMessage(response.data.message);
       } catch (error: any) {
+        const msg = error.response?.data?.message || 'Erro ao verificar email';
+        if (successHandled.current) return;
+        if (msg.includes('já foi verificado') || msg.includes('já verificad')) {
+          setStatus('success');
+          setMessage('Este email já estava verificado. Você já pode fazer login.');
+          return;
+        }
         setStatus('error');
-        setMessage(error.response?.data?.message || 'Erro ao verificar email');
+        setMessage(msg);
       }
     };
 

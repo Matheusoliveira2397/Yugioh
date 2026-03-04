@@ -446,14 +446,15 @@ export const ProfilePage: React.FC = () => {
         updates.nickname = editForm.nickname;
       }
 
-      // Atualizar email se mudou
-      if (editForm.email && editForm.email !== profileUser.email) {
-        await axios.patch(
-          `${API_URL}/users/${userId}/email`,
-          { email: editForm.email },
+      // Troca de email: envia link de confirmação para o email atual (não altera até confirmar)
+      let emailChangeMessage = '';
+      if (editForm.email && editForm.email.trim() !== (profileUser.email || '').trim()) {
+        const emailRes = await axios.post(
+          `${API_URL}/users/request-email-change`,
+          { newEmail: editForm.email.trim() },
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        updates.email = editForm.email;
+        emailChangeMessage = emailRes.data?.message || 'Enviamos um link de confirmação para seu email atual.';
       }
 
       // Atualizar senha se fornecida
@@ -488,7 +489,7 @@ export const ProfilePage: React.FC = () => {
       setProfileUser(updatedUser);
       useAuthStore.setState({ user: { ...currentUser, ...updates } });
 
-      setMessage('✅ Perfil atualizado com sucesso!');
+      setMessage(emailChangeMessage ? '✅ ' + emailChangeMessage : '✅ Perfil atualizado com sucesso!');
       handleCloseEditModal();
 
       // Recarregar página após 1 segundo
@@ -593,10 +594,10 @@ export const ProfilePage: React.FC = () => {
           className="p-8 mb-8"
           style={{ backgroundColor: 'transparent' }}
         >
-          {/* Layout: Emblema à esquerda, Foto no centro, Informações à direita */}
+          {/* Layout: Foto à esquerda, Informações no centro, Emblema à direita */}
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 mb-8">
-            {/* Emblema do Ranking (Divisão) - À esquerda */}
-            <div className="flex-shrink-0 order-1 sm:order-1">
+            {/* Emblema do Ranking (Divisão) - À direita */}
+            <div className="flex-shrink-0 order-1 sm:order-3">
               {(() => {
                 const getDivisionImage = (div: string): string | null => {
                   if (!div) return null;
@@ -633,10 +634,10 @@ export const ProfilePage: React.FC = () => {
               })()}
             </div>
 
-            {/* Foto do Perfil - No centro */}
+            {/* Foto do Perfil - À esquerda */}
             <motion.div
               whileHover={{ scale: 1.02 }}
-              className="relative flex-shrink-0 order-2 sm:order-2"
+              className="relative flex-shrink-0 order-2 sm:order-1"
             >
               <div className="w-64 h-64 sm:w-72 sm:h-72 md:w-80 md:h-80 rounded-xl overflow-hidden border-2 border-purple-500/50 shadow-2xl">
                 <img
@@ -664,8 +665,8 @@ export const ProfilePage: React.FC = () => {
               )}
             </motion.div>
 
-            {/* Informações do Duelista - À direita */}
-            <div className="flex-1 min-w-0 text-center sm:text-left order-3 sm:order-3">
+            {/* Informações do Duelista - No centro */}
+            <div className="flex-1 min-w-0 text-center sm:text-left order-3 sm:order-2">
               {/* Data de criação - Em cima do Nick */}
               {profileUser.createdAt && (
                 <p className="text-sm text-slate-400 mb-1">
@@ -682,12 +683,7 @@ export const ProfilePage: React.FC = () => {
                 {profileUser.nickname || profileUser.username}
               </h1>
               
-              {/* Email - Em baixo do Nick */}
-              {profileUser.email && (
-                <p className="text-slate-300 mb-2 text-sm sm:text-base">{profileUser.email}</p>
-              )}
-              
-              {/* Clã - Em baixo do Email */}
+              {/* Clã */}
               {profileUser.clanTag && (
                 <p className="text-cyan-400 font-semibold mb-4 text-base sm:text-lg">
                   {groupInfo?.group?.id ? (
@@ -717,7 +713,6 @@ export const ProfilePage: React.FC = () => {
                   <span>⭐</span> Nível <span className="text-base font-bold text-white ml-1">{profileUser.level || 1}</span>
                 </span>
               </div>
-              <p className="text-slate-500 text-sm mt-1">@{profileUser.username}</p>
             </div>
           </div>
 
@@ -1518,16 +1513,17 @@ export const ProfilePage: React.FC = () => {
                   />
                 </div>
 
-                {/* Email */}
+                {/* Trocar email */}
                 <div>
-                  <label className="block text-sm font-semibold text-slate-300 mb-2">Email</label>
+                  <label className="block text-sm font-semibold text-slate-300 mb-2">Trocar email</label>
                   <input
                     type="email"
                     value={editForm.email}
                     onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
                     className="w-full px-4 py-2 bg-slate-700/50 rounded-lg text-white border border-slate-600/50 focus:border-slate-500 focus:outline-none"
-                    placeholder="seu@email.com"
+                    placeholder="novo@email.com"
                   />
+                  <p className="text-xs text-slate-400 mt-1">Enviaremos um link de confirmação para seu email atual. A troca só será feita após clicar no link.</p>
                 </div>
 
                 {/* Senha */}

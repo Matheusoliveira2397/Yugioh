@@ -8,6 +8,7 @@ import { SeasonsService } from '../seasons/seasons.service';
 import { InitialDecksService } from '../initial-decks/initial-decks.service';
 import { NewAccountSettingsService } from '../new-account-settings/new-account-settings.service';
 import { DivisionsService } from '../divisions/divisions.service';
+import { CosmeticsService } from '../cosmetics/cosmetics.service';
 
 @Injectable()
 export class AuthService {
@@ -19,11 +20,42 @@ export class AuthService {
     private initialDecksService: InitialDecksService,
     private newAccountSettingsService: NewAccountSettingsService,
     private divisionsService: DivisionsService,
+    private cosmeticsService: CosmeticsService,
   ) {}
 
-  async validateUser(username: string, password: string): Promise<any> {
-    const user = await this.usersService.findByUsername(username);
-    
+  /**
+   * Valida usuário para login normal (/login).
+   * Contas MASTER não podem logar aqui — devem usar /loginMaster.
+   */
+  async validateUser(login: string, password: string): Promise<any> {
+    const user = await this.validateUserInternal(login, password);
+    if (!user) return null;
+    if (user.role === 'MASTER') {
+      return null; // Força "credenciais inválidas" para não expor que a conta existe
+    }
+    return user;
+  }
+
+  /**
+   * Valida usuário apenas para login Master (/login-master).
+   * Só aceita contas com role MASTER.
+   */
+  async validateUserMaster(login: string, password: string): Promise<any> {
+    const user = await this.validateUserInternal(login, password);
+    if (!user) return null;
+    if (user.role !== 'MASTER') {
+      return null; // Só Master pode logar por esta rota
+    }
+    return user;
+  }
+
+  private async validateUserInternal(login: string, password: string): Promise<any> {
+    const trimmed = login?.trim() ?? '';
+    const isEmail = trimmed.includes('@');
+    const user = isEmail
+      ? await this.usersService.findByEmail(trimmed.toLowerCase())
+      : await this.usersService.findByUsername(trimmed);
+
     if (!user) {
       return null;
     }
@@ -37,10 +69,10 @@ export class AuthService {
     }
 
     if (await bcrypt.compare(password, user.password)) {
-      const { password, ...result } = user;
+      const { password: _, ...result } = user;
       return result;
     }
-    
+
     return null;
   }
 
@@ -80,6 +112,7 @@ export class AuthService {
           seasonRank: fullProfile.seasonRank || null,
           generalRank: fullProfile.generalRank || null,
           globalRank: fullProfile.globalRank || fullProfile.generalRank || null,
+          adminAllowedTabs: fullProfile.adminAllowedTabs ?? null,
         },
       };
   }
@@ -164,7 +197,7 @@ export class AuthService {
     // Buscar a divisão mais baixa disponível
     const lowestDivision = await this.divisionsService.getLowestAvailableDivision();
     
-    // Criar usuário com valores das configurações
+    // Criar usuário com valores das configurações (novas contas: sem playmat, skin Default)
     const user = await this.usersService.create({
       nickname: registerDto.nickname,
       username: registerDto.username,
@@ -190,7 +223,39 @@ export class AuthService {
       banReason: undefined,
       isEmailVerified: false, // Email não verificado inicialmente
       emailVerificationToken: verificationToken,
+      equippedPlaymatId: null,
+      equippedPlaymatImage: null,
+      equippedSkinId: null,
+      equippedSkinImage: null,
     });
+
+    // Aplicar playmat e skin padrão se configurados
+    const cosmeticsUpdate: { equippedPlaymatId?: string; equippedPlaymatImage?: string; equippedSkinId?: string; equippedSkinImage?: string } = {};
+    if (newAccountSettings.defaultPlaymatId) {
+      try {
+        const playmat = await this.cosmeticsService.findOnePlaymat(newAccountSettings.defaultPlaymatId);
+        if (playmat?.image) {
+          cosmeticsUpdate.equippedPlaymatId = playmat.id;
+          cosmeticsUpdate.equippedPlaymatImage = playmat.image;
+        }
+      } catch (_) {
+        // Playmat não encontrado ou inativo, ignorar
+      }
+    }
+    if (newAccountSettings.defaultSkinId) {
+      try {
+        const sleeve = await this.cosmeticsService.findOneSleeve(newAccountSettings.defaultSkinId);
+        if (sleeve?.image) {
+          cosmeticsUpdate.equippedSkinId = sleeve.id;
+          cosmeticsUpdate.equippedSkinImage = sleeve.image;
+        }
+      } catch (_) {
+        // Skin não encontrada ou inativa, ignorar
+      }
+    }
+    if (Object.keys(cosmeticsUpdate).length > 0) {
+      await this.usersService.updateCosmetics(user.id, cosmeticsUpdate);
+    }
 
     // Criar SeasonRanking para o usuário na season ativa
     try {
@@ -324,5 +389,39 @@ export class AuthService {
     } catch (error) {
       throw new UnauthorizedException('Invalid token');
     }
+  }
+
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    const user = await this.usersService.findByEmail(email.trim().toLowerCase());
+    if (!user) {
+      return { message: 'Se esse email estiver cadastrado, você receberá um link para redefinir a senha.' };
+    }
+    const crypto = require('crypto');
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+    await this.usersService.setPasswordResetToken(user.id, token, expiresAt);
+    const sent = await this.mailService.sendPasswordResetEmail(user.email, user.nickname, token);
+    return {
+      message: sent
+        ? 'Enviamos um link para redefinir sua senha no seu email. Verifique a caixa de entrada e o spam.'
+        : 'Se esse email estiver cadastrado, você receberá um link para redefinir a senha.',
+    };
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+    const user = await this.usersService.findByPasswordResetToken(token);
+    if (!user) {
+      throw new BadRequestException('Link inválido ou expirado.');
+    }
+    const expiresAt = (user as any).passwordResetExpiresAt;
+    if (expiresAt && new Date(expiresAt) < new Date()) {
+      await this.usersService.clearPasswordResetToken(user.id);
+      throw new BadRequestException('Link expirado. Solicite uma nova redefinição de senha.');
+    }
+    if (!newPassword || newPassword.length < 6) {
+      throw new BadRequestException('A senha deve ter pelo menos 6 caracteres.');
+    }
+    await this.usersService.setPasswordByResetToken(user.id, newPassword);
+    return { message: 'Senha alterada com sucesso. Faça login com a nova senha.' };
   }
 }

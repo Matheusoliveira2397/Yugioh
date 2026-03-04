@@ -200,7 +200,7 @@ export class CardEffectsModule implements OnModuleInit {
     this.registry.registerSimple(
       ['swords of revealing light', 'swordsofrevealinglight'],
       createSwordsOfRevealingLightEffect(this.duelsService),
-      ['SwordsOfRevealingLight'],
+      ['SwordsOfRevealingLight', 'YGOPRO_72302403'],
       this.duelsService,
     );
     

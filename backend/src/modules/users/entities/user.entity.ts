@@ -34,6 +34,10 @@ export class User {
   @Column({ type: 'enum', enum: UserRole, default: UserRole.PLAYER })
   role: UserRole;
 
+  /** Para ADMIN: IDs das abas do painel admin que pode acessar. Null = todas (compat). */
+  @Column({ type: 'simple-json', nullable: true })
+  adminAllowedTabs: string[] | null;
+
   @Column({ default: 0 })
   winsGeral: number;
 
@@ -86,14 +90,26 @@ export class User {
   @Column({ type: 'varchar', nullable: true })
   lastIpAddress: string;
 
-  @Column({ type: 'varchar', nullable: true })
-  avatar: string;
-
   @Column({ default: false })
   isEmailVerified: boolean;
 
   @Column({ type: 'varchar', nullable: true })
   emailVerificationToken: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  passwordResetToken: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  passwordResetExpiresAt: Date | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  pendingNewEmail: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  emailChangeToken: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  emailChangeExpiresAt: Date | null;
 
   // Sistema de Clã
   @Column({ type: 'varchar', nullable: true })

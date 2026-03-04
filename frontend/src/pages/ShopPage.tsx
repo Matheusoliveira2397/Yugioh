@@ -63,6 +63,8 @@ export default function ShopPage() {
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [showPurchaseConfirm, setShowPurchaseConfirm] = useState(false);
   const [purchaseItem, setPurchaseItem] = useState<{ item: Card | Playmat | Sleeve; method: 'credits' | 'cash' } | null>(null);
+  const [purchaseQuantity, setPurchaseQuantity] = useState(1);
+  const [sellModal, setSellModal] = useState<{ userCard: any; quantity: number } | null>(null);
   const {
     addPlaymat,
     addSkin,
@@ -101,11 +103,15 @@ export default function ShopPage() {
         
         if (cancelled) return;
         
-        if (!Array.isArray(response.data)) {
-          throw new Error('Resposta da API não é um array');
+        const raw = response.data;
+        const dataArray = Array.isArray(raw) ? raw : (raw?.cards ?? raw?.data ?? []);
+        if (!Array.isArray(dataArray)) {
+          setCards([]);
+          setError('Resposta da API em formato inesperado.');
+          return;
         }
         
-        const cardsWithExtras = response.data.map((card: any) => ({
+        const cardsWithExtras = dataArray.map((card: any) => ({
           ...card,
           stock: Math.floor(Math.random() * 250) + 1,
         }));
@@ -155,12 +161,16 @@ export default function ShopPage() {
         
         if (cancelled) return;
         
-        if (!Array.isArray(response.data)) {
-          throw new Error('Resposta da API não é um array');
+        const raw = response.data;
+        const dataArray = Array.isArray(raw) ? raw : (raw?.cards ?? []);
+        if (!Array.isArray(dataArray)) {
+          setInventory([]);
+          setError('Resposta da API em formato inesperado.');
+          return;
         }
         
         if (!cancelled) {
-          setInventory(response.data);
+          setInventory(dataArray);
         }
       } catch (error: any) {
         if (!cancelled) {
@@ -294,6 +304,26 @@ export default function ShopPage() {
     return filtered;
   }, [cards, searchTerm, sortBy, priceMin, priceMax, typeFilters, attributeFilters]);
 
+  // Contagem de cartas por tipo (para exibir nos filtros)
+  const countByType = useMemo(() => {
+    const counts: Record<string, number> = { Monster: 0, Spell: 0, Trap: 0 };
+    cards.forEach(c => {
+      if (c.type && counts[c.type] !== undefined) counts[c.type]++;
+    });
+    return counts;
+  }, [cards]);
+
+  // Contagem de cartas por atributo (para exibir nos filtros)
+  const countByAttribute = useMemo(() => {
+    const counts: Record<string, number> = {};
+    const attrs = ['LIGHT', 'DARK', 'FIRE', 'WATER', 'EARTH', 'WIND', 'DIVINE'];
+    attrs.forEach(a => { counts[a] = 0; });
+    cards.forEach(c => {
+      if (c.attribute && counts[c.attribute] !== undefined) counts[c.attribute]++;
+    });
+    return counts;
+  }, [cards]);
+
   // Paginação
   const getCurrentItems = () => {
     if (category === 'cards') {
@@ -321,39 +351,39 @@ export default function ShopPage() {
     );
   };
 
-  // Função para vender carta
-  const handleSell = async (userCard: any) => {
+  const handleSellClick = (userCard: any) => {
     if (!userCard?.card?.id) {
       alert('Erro: Carta inválida');
       return;
     }
+    const sellable = userCard.sellableQuantity ?? userCard.quantity;
+    if (sellable <= 0) return;
+    setSellModal({ userCard, quantity: 1 });
+  };
 
-    if (sellingCardId === userCard.card.id) {
-      return; // Já está processando
-    }
+  const handleSellConfirm = async () => {
+    if (!sellModal) return;
+    const { userCard, quantity } = sellModal;
+    const sellable = (userCard as any).sellableQuantity ?? userCard.quantity;
+    if (!userCard?.card?.id || quantity < 1 || quantity > sellable) return;
 
-    const confirmMessage = `Deseja vender ${userCard.quantity > 1 ? `1 cópia de ` : ''}"${userCard.card.name}"?\n\nVocê receberá:\n💰 ${Math.floor((userCard.card.priceCredits || 0) / 2)} créditos\n💵 ${Math.floor((userCard.card.priceCash || 0) / 2)} cash`;
-
-    if (!confirm(confirmMessage)) {
-      return;
-    }
-
+    if (sellingCardId === userCard.card.id) return;
     setSellingCardId(userCard.card.id);
+    setSellModal(null);
 
     try {
       const response = await api.post('/shop/sell', {
         cardId: userCard.card.id,
-        quantity: 1,
+        quantity,
       });
 
       alert(`✅ ${response.data.message}\n💰 Créditos: +${response.data.creditsGained || 0}\n💵 Cash: +${response.data.cashGained || 0}`);
 
-      // Recarregar inventário
       const inventoryResponse = await api.get('/shop/inventory');
-      setInventory(inventoryResponse.data);
+      const invData = inventoryResponse.data;
+      setInventory(Array.isArray(invData) ? invData : (invData?.cards ?? []));
 
-      // Atualizar saldo do usuário
-      const userResponse = await api.get('/auth/profile');
+      const userResponse = await api.get('/users/me');
       if (userResponse.data) {
         useAuthStore.getState().setUser(userResponse.data);
       }
@@ -392,6 +422,7 @@ export default function ShopPage() {
     }
 
     setPurchaseItem({ item, method: paymentMethod });
+    setPurchaseQuantity(1);
     setShowPurchaseConfirm(true);
   };
 
@@ -401,7 +432,8 @@ export default function ShopPage() {
     const { item, method: paymentMethod } = purchaseItem;
     const priceCredits = item.priceCredits || 0;
     const priceCash = item.priceCash || 0;
-    const price = paymentMethod === 'credits' ? priceCredits : priceCash;
+    const qty = category === 'cards' ? Math.min(99, Math.max(1, purchaseQuantity)) : 1;
+    const price = (paymentMethod === 'credits' ? priceCredits : priceCash) * qty;
 
     try {
       setLoading(true);
@@ -419,7 +451,7 @@ export default function ShopPage() {
           alert(
             `${
               paymentMethod === 'credits' ? 'Créditos' : 'Cash'
-            } insuficientes! Você tem ${current} mas precisa de ${price}`
+            } insuficientes! Você tem ${current} mas precisa de ${price} (${qty}x)`
           );
           setPurchaseItem(null);
           return;
@@ -428,6 +460,7 @@ export default function ShopPage() {
         const response = await api.post('/shop/purchase', {
           cardId: item.id,
           paymentMethod,
+          quantity: qty,
         });
 
         const updatedUser = {
@@ -438,9 +471,7 @@ export default function ShopPage() {
         
         useAuthStore.getState().setUser(updatedUser);
         alert(
-          `✅ Compra realizada com sucesso!\n\n🎴 ${
-            item.name
-          } foi adicionada ao seu inventário!\n${
+          `✅ Compra realizada com sucesso!\n\n🎴 ${item.name}${qty > 1 ? ` (${qty} cópias)` : ''} adicionada(s) ao seu inventário!\n${
             paymentMethod === 'credits' ? '💰' : '💵'
           } ${price} ${
             paymentMethod === 'credits' ? 'Créditos' : 'Cash'
@@ -605,7 +636,7 @@ export default function ShopPage() {
                                 }}
                                 className="flex items-center gap-0.5 bg-emerald-500/80 hover:bg-emerald-500 backdrop-blur-sm px-1 py-0.5 rounded text-[8px] font-bold text-white transition-all"
                               >
-                                💵 {card.priceCash}
+                                💵 {Math.floor(Number(card.priceCash))}
                               </button>
                             ) : null}
                           </div>
@@ -664,7 +695,7 @@ export default function ShopPage() {
                     setSearchTerm(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="w-full px-4 py-3 border border-white/20 rounded-xl text-white placeholder-gray-300 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/30 transition-all"
+                  className="w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/30 transition-all"
                 />
               </div>
             )}
@@ -799,6 +830,7 @@ export default function ShopPage() {
                               />
                               <span className="text-sm text-white">
                                 {type === 'Monster' ? 'Monstro' : type === 'Spell' ? 'Magia' : 'Armadilha'}
+                                <span className="text-gray-400 ml-1">({countByType[type] ?? 0})</span>
                               </span>
                             </label>
                           ))}
@@ -829,7 +861,10 @@ export default function ShopPage() {
                                 onChange={() => toggleAttributeFilter(attr)}
                                 className="w-4 h-4 text-purple-600 bg-white/10 border-white/20 rounded focus:ring-purple-500"
                               />
-                              <span className="text-sm text-white">{attr}</span>
+                              <span className="text-sm text-white">
+                                {attr}
+                                <span className="text-gray-400 ml-1">({countByAttribute[attr] ?? 0})</span>
+                              </span>
                             </label>
                           ))}
                         </div>
@@ -919,7 +954,7 @@ export default function ShopPage() {
                                   }}
                                   className="flex items-center gap-1 bg-gradient-to-r from-emerald-500/90 to-emerald-600/90 hover:from-emerald-500 hover:to-emerald-600 backdrop-blur-sm px-2 py-1 rounded-lg text-[10px] font-bold text-white transition-all shadow-md hover:shadow-lg"
                                 >
-                                  💵 {card.priceCash}
+                                  💵 {Math.floor(Number(card.priceCash))}
                                 </button>
                               ) : null}
                             </div>
@@ -973,7 +1008,7 @@ export default function ShopPage() {
                                 <div className="flex items-center gap-1 bg-emerald-500/80 backdrop-blur-sm px-2 py-1 rounded">
                                   <span className="text-white text-xs">💵</span>
                                   <span className="text-xs font-bold text-white">
-                                    {playmat.priceCash}
+                                    {Math.floor(Number(playmat.priceCash))}
                                   </span>
                                 </div>
                               ) : null}
@@ -992,7 +1027,7 @@ export default function ShopPage() {
                                   onClick={() => handlePurchaseClick(playmat, 'cash')}
                                   className="flex-1 px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded text-xs font-bold transition-all shadow-lg hover:shadow-emerald-500/60 text-white"
                                 >
-                                  💵 {playmat.priceCash}
+                                  💵 {Math.floor(Number(playmat.priceCash))}
                                 </button>
                               ) : null}
                             </div>
@@ -1052,7 +1087,7 @@ export default function ShopPage() {
                                   onClick={() => handlePurchaseClick(sleeve, 'cash')}
                                   className="flex items-center gap-1 bg-gradient-to-r from-emerald-600/90 to-teal-600/90 hover:from-emerald-600 hover:to-teal-600 backdrop-blur-sm px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-md hover:shadow-lg text-white"
                                 >
-                                  💵 {sleeve.priceCash}
+                                  💵 {Math.floor(Number(sleeve.priceCash))}
                                 </button>
                               ) : null}
                             </div>
@@ -1066,49 +1101,59 @@ export default function ShopPage() {
             )}
 
             {/* Paginação */}
-            {totalPages > 1 && mode === 'buy' && (
-              <div className="flex items-center justify-center gap-2">
-                <button
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                  disabled={currentPage === 1}
-                  className="px-4 py-2 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  &lt;
-                </button>
-                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                  const pageNum = i + 1;
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
-                      className={`px-4 py-2 rounded-lg backdrop-blur-sm transition-all ${
-                        currentPage === pageNum
-                          ? 'bg-purple-600/80 text-white shadow-lg'
-                          : 'bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20'
-                      }`}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-                {totalPages > 5 && (
+            {mode === 'buy' && (totalPages > 1 || currentItems.length > 0) && (
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                {totalPages > 1 && (
                   <>
-                    <span className="px-2 text-gray-300">...</span>
                     <button
-                      onClick={() => setCurrentPage(totalPages)}
-                      className="px-4 py-2 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all"
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                      className="px-4 py-2 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {totalPages}
+                      &lt;
+                    </button>
+                    {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                      const pageNum = i + 1;
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`px-4 py-2 rounded-lg backdrop-blur-sm transition-all ${
+                            currentPage === pageNum
+                              ? 'bg-purple-600/80 text-white shadow-lg'
+                              : 'bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                    {totalPages > 5 && (
+                      <>
+                        <span className="px-2 text-gray-300">...</span>
+                        <button
+                          onClick={() => setCurrentPage(totalPages)}
+                          className="px-4 py-2 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all"
+                        >
+                          {totalPages}
+                        </button>
+                      </>
+                    )}
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                      className="px-4 py-2 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      &gt;
                     </button>
                   </>
                 )}
-                <button
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                  disabled={currentPage === totalPages}
-                  className="px-4 py-2 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  &gt;
-                </button>
+                <span className="text-white text-sm">
+                  Página {currentPage} de {Math.max(totalPages, 1)}
+                  {category === 'cards' && ` (${currentItems.length} cartas)`}
+                  {category === 'playmats' && ` (${currentItems.length} playmats)`}
+                  {category === 'sleeves' && ` (${currentItems.length} skins)`}
+                </span>
               </div>
             )}
           </>
@@ -1126,15 +1171,28 @@ export default function ShopPage() {
                   <div className="text-center py-12 bg-red-900/30 backdrop-blur-md border border-red-500/50 rounded-xl shadow-xl">
                     <p className="text-red-300">{error}</p>
                   </div>
-                ) : inventory.length === 0 ? (
-                  <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
-                    <p className="text-gray-200 text-lg mb-2">📦 Seu inventário está vazio</p>
-                    <p className="text-gray-400 text-sm">Compre cartas na loja para começar a colecionar!</p>
-                  </div>
-                ) : (
+                ) : (() => {
+                  // Na aba Vender: cartas que têm pelo menos 1 cópia na maleta (fora do deck)
+                  const sellList = mode === 'sell' && category === 'cards'
+                    ? inventory.filter((uc: any) => ((uc.sellableQuantity ?? uc.quantity) > 0))
+                    : inventory;
+                  return sellList.length === 0 ? (
+                    <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
+                      <p className="text-gray-200 text-lg mb-2">
+                        {mode === 'sell' && category === 'cards'
+                          ? '📦 Nenhuma carta na maleta para vender'
+                          : '📦 Seu inventário está vazio'}
+                      </p>
+                      <p className="text-gray-400 text-sm">
+                        {mode === 'sell' && category === 'cards'
+                          ? 'Só aparecem aqui as cartas que não estão em nenhum deck.'
+                          : 'Compre cartas na loja para começar a colecionar!'}
+                      </p>
+                    </div>
+                  ) : (
                   <div className="bg-transparent p-4 mb-6">
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                      {inventory.map((userCard: any, index: number) => {
+                      {sellList.map((userCard: any, index: number) => {
                         if (!userCard?.card) return null;
                         const card = userCard.card;
                         const sellPriceCredits = Math.floor((card.priceCredits || 0) / 2);
@@ -1156,11 +1214,15 @@ export default function ShopPage() {
                                 className="w-full h-full object-cover rounded-lg shadow-lg hover:shadow-xl transition-all"
                                 fallback="/images/fundoCarta.webp"
                               />
-                              {userCard.quantity > 1 && (
-                                <div className="absolute top-2 right-2 bg-green-500/90 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-bold text-white shadow-lg border border-white/20">
-                                  x{userCard.quantity}
-                                </div>
-                              )}
+                              {(() => {
+                                const sellableQty = (userCard as any).sellableQuantity ?? userCard.quantity;
+                                if (sellableQty < 1) return null;
+                                return (
+                                  <div className="absolute top-2 right-2 bg-green-500/90 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-bold text-white shadow-lg border border-white/20">
+                                    x{sellableQty}
+                                  </div>
+                                );
+                              })()}
                             </div>
                             <div className="space-y-2 flex-1">
                               <h3 className="text-sm font-bold text-white line-clamp-2 min-h-[2.5rem]" title={card.name}>
@@ -1190,20 +1252,28 @@ export default function ShopPage() {
                                   </div>
                                 )}
                               </div>
-                              <button
-                                onClick={() => handleSell(userCard)}
-                                disabled={isSelling || (sellPriceCredits === 0 && sellPriceCash === 0)}
-                                className="w-full mt-2 px-3 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg text-xs font-bold transition-all shadow-md hover:shadow-lg text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                {isSelling ? '⏳ Vendendo...' : '💰 Vender'}
-                              </button>
+                              {(() => {
+                                const sellableQty = (userCard as any).sellableQuantity ?? userCard.quantity;
+                                const canSell = sellableQty > 0 && (sellPriceCredits > 0 || sellPriceCash > 0);
+                                return (
+                                  <button
+                                    onClick={() => canSell && handleSellClick(userCard)}
+                                    disabled={isSelling || !canSell}
+                                    title={sellableQty <= 0 ? 'Cartas em deck não podem ser vendidas. Só a maleta.' : undefined}
+                                    className="w-full mt-2 px-3 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg text-xs font-bold transition-all shadow-md hover:shadow-lg text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {isSelling ? '⏳ Vendendo...' : sellableQty <= 0 ? '🔒 Em deck' : '💰 Vender'}
+                                  </button>
+                                );
+                              })()}
                             </div>
                           </motion.div>
                         );
                       })}
                     </div>
                   </div>
-                )}
+                  );
+                })()}
               </>
             ) : (
               <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
@@ -1303,7 +1373,7 @@ export default function ShopPage() {
                     }}
                     className="flex-1 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 rounded-lg text-white font-bold transition-all"
                   >
-                    💵 {selectedCard.priceCash} Cash
+                    💵 {Math.floor(Number(selectedCard.priceCash))} Cash
                   </button>
                 ) : null}
               </div>
@@ -1333,20 +1403,38 @@ export default function ShopPage() {
                 <p className="text-white/80 mb-2">
                   <span className="font-semibold">Item:</span> {purchaseItem.item.name}
                 </p>
+                {category === 'cards' && (
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="text-white/80 font-semibold">Quantidade:</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={99}
+                      value={purchaseQuantity}
+                      onChange={(e) => setPurchaseQuantity(Math.min(99, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+                      className="w-20 px-2 py-1 rounded bg-slate-700 text-white border border-white/20"
+                    />
+                  </div>
+                )}
                 <p className="text-white/80 mb-2">
                   <span className="font-semibold">Preço:</span>{' '}
                   {purchaseItem.method === 'credits' ? '💰' : '💵'}{' '}
                   {purchaseItem.method === 'credits' 
-                    ? purchaseItem.item.priceCredits 
-                    : purchaseItem.item.priceCash}{' '}
+                    ? (purchaseItem.item.priceCredits || 0) * (category === 'cards' ? purchaseQuantity : 1)
+                    : Math.floor((purchaseItem.item.priceCash || 0) * (category === 'cards' ? purchaseQuantity : 1))}{' '}
                   {purchaseItem.method === 'credits' ? 'Créditos' : 'Cash'}
+                  {category === 'cards' && purchaseQuantity > 1 && (
+                    <span className="text-white/60 text-sm ml-1">
+                      ({purchaseQuantity} × {purchaseItem.method === 'credits' ? purchaseItem.item.priceCredits : Math.floor(Number(purchaseItem.item.priceCash))})
+                    </span>
+                  )}
                 </p>
                 {user && (
                   <p className="text-white/80">
                     <span className="font-semibold">Seu saldo:</span>{' '}
                     {purchaseItem.method === 'credits' 
                       ? `💰 ${user.credits || 0} Créditos`
-                      : `💵 ${user.cash || 0} Cash`}
+                      : `💵 ${Math.floor(Number(user.cash) || 0)} Cash`}
                   </p>
                 )}
               </div>
@@ -1365,6 +1453,73 @@ export default function ShopPage() {
                   className="flex-1 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg text-white font-bold transition-all"
                 >
                   Confirmar
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* Modal de Confirmação de Venda com Quantidade */}
+        {sellModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4"
+            onClick={() => setSellModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-6 max-w-md w-full border-2 border-white/20"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-2xl font-bold text-white mb-4">Vender carta</h2>
+              <div className="mb-4">
+                <p className="text-white/80 mb-2">
+                  <span className="font-semibold">Carta:</span> {sellModal.userCard.card.name}
+                </p>
+                {(() => {
+                  const sellable = sellModal.userCard.sellableQuantity ?? sellModal.userCard.quantity;
+                  return (
+                    <>
+                      <p className="text-white/80 mb-2">
+                        <span className="font-semibold">Quantidade disponível:</span> {sellable} cópia(s)
+                      </p>
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className="text-white/80 font-semibold">Quantidade a vender:</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={sellable}
+                          value={Math.min(sellModal.quantity, sellable)}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value, 10) || 1;
+                            setSellModal(prev => prev ? { ...prev, quantity: Math.min(sellable, Math.max(1, v)) } : null);
+                          }}
+                          className="w-20 px-2 py-1 rounded bg-slate-700 text-white border border-white/20"
+                        />
+                      </div>
+                    </>
+                  );
+                })()}
+                <p className="text-white/80">
+                  <span className="font-semibold">Valor (metade do preço):</span>{' '}
+                  💰 {Math.floor((sellModal.userCard.card.priceCredits || 0) / 2) * sellModal.quantity} créditos{' '}
+                  💵 {Math.floor((sellModal.userCard.card.priceCash || 0) / 2) * sellModal.quantity} cash
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setSellModal(null)}
+                  className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-white font-bold transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSellConfirm}
+                  className="flex-1 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg text-white font-bold transition-all"
+                >
+                  Vender
                 </button>
               </div>
             </motion.div>

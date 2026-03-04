@@ -82,6 +82,7 @@ export class UsersController {
           equippedPlaymatImage: fullProfile.equippedPlaymatImage || null,
           equippedSkinId: fullProfile.equippedSkinId || null,
           equippedSkinImage: fullProfile.equippedSkinImage || null,
+          adminAllowedTabs: fullProfile.adminAllowedTabs ?? null,
         };
       })(),
       new Promise((_, reject) => 
@@ -294,6 +295,13 @@ export class UsersController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('request-email-change')
+  async requestEmailChange(@Request() req: any, @Body() body: { newEmail: string }) {
+    const userId = typeof req.user.id === 'string' ? parseInt(req.user.id, 10) : Number(req.user.id);
+    return this.usersService.requestEmailChange(userId, body.newEmail || '');
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Patch(':id/email')
   async updateEmail(
     @Param('id') id: string,
@@ -305,11 +313,10 @@ export class UsersController {
       throw new BadRequestException('ID inválido');
     }
 
-    // Verificar se o usuário está atualizando o próprio email
-    const authenticatedUserId = typeof req.user.id === 'string' 
-      ? parseInt(req.user.id, 10) 
+    const authenticatedUserId = typeof req.user.id === 'string'
+      ? parseInt(req.user.id, 10)
       : Number(req.user.id);
-    
+
     if (Number(authenticatedUserId) !== Number(userId)) {
       throw new BadRequestException('Você só pode atualizar seu próprio email');
     }

@@ -1,4 +1,4 @@
-import { Controller, Put, Param, UseGuards, Get, Query, Delete, Post, Body, UseInterceptors, UploadedFile, ParseIntPipe } from '@nestjs/common';
+import { Controller, Put, Param, UseGuards, Get, Query, Delete, Post, Body, UseInterceptors, UploadedFile, ParseIntPipe, Request } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AdminService } from './admin.service';
 import { UsersService } from '../users/users.service';
@@ -7,6 +7,7 @@ import { AdminGuard } from '../auth/guards/admin.guard';
 import { AchievementType } from '../users/entities/achievement.entity';
 import { UploadService } from '../upload/upload.service';
 import { RandomDuelLevelRangesService } from './random-duel-level-ranges.service';
+import { DuelsService } from '../duels/duels.service';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -16,6 +17,7 @@ export class AdminController {
     private usersService: UsersService,
     private uploadService: UploadService,
     private randomDuelLevelRangesService: RandomDuelLevelRangesService,
+    private duelsService: DuelsService,
   ) {}
 
   // Gestão de Usuários
@@ -38,6 +40,16 @@ export class AdminController {
   @Get('users/online')
   getOnlineUsers() {
     return this.adminService.getOnlineUsers();
+  }
+
+  @Get('active-duels')
+  getActiveDuelsForAdmin() {
+    return this.duelsService.getAllActiveDuelsForAdmin();
+  }
+
+  @Delete('active-duels/:id')
+  terminateActiveDuel(@Param('id') id: string) {
+    return this.duelsService.adminTerminateActiveDuel(id);
   }
 
   @Get('users/:id')
@@ -359,14 +371,40 @@ export class AdminController {
     initialCredits?: number;
     initialCash?: number;
     availableInitialDeckIds?: string[];
+    defaultPlaymatId?: string | null;
+    defaultSkinId?: string | null;
   }) {
     return this.adminService.updateNewAccountSettings(body);
   }
 
   // ==================== RESET COMPLETO DO SISTEMA ====================
-  // ⚠️ PERIGOSO: Reseta TODAS as contas do sistema
+  // ⚠️ PERIGOSO: Reseta contas conforme opções selecionadas
   @Post('reset-all-accounts')
-  resetAllAccounts(@Body() body: { confirmationCode: string }) {
-    return this.adminService.resetAllAccounts(body.confirmationCode);
+  resetAllAccounts(@Body() body: {
+    confirmationCode: string;
+    resetScoreSeason?: boolean | string;
+    resetScoreGeral?: boolean | string;
+    resetCartas?: boolean | string;
+    resetCreditsCash?: boolean | string;
+    resetConquistas?: boolean | string;
+    resetScoreGeralGrupo?: boolean | string;
+    resetScoreSeasonGrupo?: boolean | string;
+  }) {
+    const toBool = (v: boolean | string | undefined) => v === true || v === 'true';
+    return this.adminService.resetAllAccounts(body.confirmationCode, {
+      resetScoreSeason: toBool(body.resetScoreSeason),
+      resetScoreGeral: toBool(body.resetScoreGeral),
+      resetCartas: toBool(body.resetCartas),
+      resetCreditsCash: toBool(body.resetCreditsCash),
+      resetConquistas: toBool(body.resetConquistas),
+      resetScoreGeralGrupo: toBool(body.resetScoreGeralGrupo),
+      resetScoreSeasonGrupo: toBool(body.resetScoreSeasonGrupo),
+    });
+  }
+
+  // ==================== CRIAR CONTA ADMIN (APENAS MASTER) ====================
+  @Post('create-admin')
+  createAdmin(@Request() req: any, @Body() body: { username: string; nickname: string; password: string; allowedTabs: string[] }) {
+    return this.adminService.createAdminByMaster(req.user.id, body);
   }
 }

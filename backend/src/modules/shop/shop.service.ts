@@ -5,6 +5,7 @@ import { ShopItem, ShopItemCurrency } from './entities/shop-item.entity';
 import { Card, CardRarity } from '../cards/entities/card.entity';
 import { UserCard } from './entities/user-card.entity';
 import { User } from '../users/entities/user.entity';
+import { DeckCard } from '../decks/entities/deck-card.entity';
 import { PurchaseCardDto, PaymentMethod } from './dto/purchase-card.dto';
 import { EconomyService } from '../economy/economy.service';
 import { CurrencyType, TransactionType } from '../economy/entities/transaction.entity';
@@ -20,6 +21,8 @@ export class ShopService {
     private userRepository: Repository<User>,
     @InjectRepository(Card)
     private cardRepository: Repository<Card>,
+    @InjectRepository(DeckCard)
+    private deckCardRepository: Repository<DeckCard>,
     @Inject(EconomyService)
     private economyService: EconomyService,
   ) {}
@@ -186,36 +189,41 @@ export class ShopService {
     console.log('   - Cash:', user.cash);
     console.log('   - User Object:', JSON.stringify(user, null, 2));
 
-    // 3. VERIFICAR PREÇO E SALDO
-    const { price, canPurchase, missingAmount } = this.checkUserBalance(
+    const quantity = Math.min(Math.max(1, Number(purchaseDto.quantity) || 1), 99);
+
+    // 3. VERIFICAR PREÇO E SALDO (preço unitário * quantidade)
+    const { price: unitPrice, canPurchase, missingAmount } = this.checkUserBalance(
       user,
       card,
       purchaseDto.paymentMethod
     );
+    const totalPrice = unitPrice * quantity;
 
     console.log('🔍 RESULTADO DA VERIFICAÇÃO:');
-    console.log('   - Preço:', price);
+    console.log('   - Preço unitário:', unitPrice, 'Quantidade:', quantity, 'Total:', totalPrice);
     console.log('   - Pode comprar?', canPurchase);
     console.log('   - Falta:', missingAmount);
 
-    if (!canPurchase) {
+    const userBalance = purchaseDto.paymentMethod === 'credits' ? (user.credits || 0) : (user.cash || 0);
+    if (userBalance < totalPrice) {
       throw new BadRequestException(
-        `Saldo insuficiente! Faltam ${missingAmount} ${this.getCurrencyName(purchaseDto.paymentMethod)}`
+        `Saldo insuficiente! Total: ${totalPrice} ${this.getCurrencyName(purchaseDto.paymentMethod)}. Você tem ${userBalance}. Faltam ${totalPrice - userBalance}`
       );
     }
 
-    // 4. DEDUZIR DO SALDO DO USUÁRIO
-    this.deductBalance(user, price, purchaseDto.paymentMethod);
+    // 4. DEDUZIR DO SALDO DO USUÁRIO (total = preço * quantidade)
+    this.deductBalance(user, totalPrice, purchaseDto.paymentMethod);
     await this.userRepository.save(user);
 
-    // 5. ADICIONAR CARTA AO INVENTÁRIO
-    const userCard = await this.addCardToUserInventory(userId, card.id, 'PURCHASE');
+    // 5. ADICIONAR CARTAS AO INVENTÁRIO (quantidade)
+    const userCard = await this.addCardToUserInventory(userId, card.id, 'PURCHASE', quantity);
 
     // 6. LOG
     console.log(`✅ Compra realizada:
       - Usuário: ${user.username}
       - Carta: ${card.name}
-      - Preço: ${price} ${purchaseDto.paymentMethod}
+      - Quantidade: ${quantity}
+      - Total: ${totalPrice} ${purchaseDto.paymentMethod}
       - Saldo restante: ${this.getBalance(user, purchaseDto.paymentMethod)}
     `);
 
@@ -313,8 +321,20 @@ export class ShopService {
     return this.userCardRepository.save(userCard);
   }
 
+  // ==================== QUANTIDADE DE CARTAS EM DECKS DO USUÁRIO ====================
+  /** Retorna quantas cópias da carta estão em decks do usuário (não podem ser vendidas). */
+  async getQuantityInDecks(userId: number, cardId: string): Promise<number> {
+    const count = await this.deckCardRepository
+      .createQueryBuilder('dc')
+      .innerJoin('dc.deck', 'd')
+      .where('d.userId = :userId', { userId })
+      .andWhere('dc.cardId = :cardId', { cardId })
+      .getCount();
+    return count;
+  }
+
   // ==================== BUSCAR INVENTÁRIO DO USUÁRIO ====================
-  async getUserInventory(userId: number): Promise<{ cards: UserCard[]; playmats: any[]; skins: any[] }> {
+  async getUserInventory(userId: number): Promise<{ cards: (UserCard & { quantityInDecks?: number; sellableQuantity?: number })[]; playmats: any[]; skins: any[] }> {
     try {
       const cards = await Promise.race([
         this.userCardRepository.find({
@@ -327,6 +347,30 @@ export class ShopService {
           setTimeout(() => reject(new Error('Query timeout')), 1000)
         )
       ]).catch(() => []);
+
+      // Quantidade de cada carta nos decks do usuário (cardId -> count)
+      const cardIds = cards.map(c => c.cardId);
+      const inDecksMap: Record<string, number> = {};
+      if (cardIds.length > 0) {
+        const rows = await this.deckCardRepository
+          .createQueryBuilder('dc')
+          .innerJoin('dc.deck', 'd')
+          .select('dc.cardId', 'cardId')
+          .addSelect('COUNT(*)', 'cnt')
+          .where('d.userId = :userId', { userId })
+          .andWhere('dc.cardId IN (:...cardIds)', { cardIds })
+          .groupBy('dc.cardId')
+          .getRawMany();
+        rows.forEach((r: { cardId: string; cnt: string }) => {
+          inDecksMap[r.cardId] = parseInt(r.cnt, 10) || 0;
+        });
+      }
+
+      const cardsWithSellable = cards.map(uc => {
+        const quantityInDecks = inDecksMap[uc.cardId] || 0;
+        const sellableQuantity = Math.max(0, uc.quantity - quantityInDecks);
+        return { ...uc, quantityInDecks, sellableQuantity };
+      });
 
       // Buscar usuário para obter playmats e skins comprados
       const user = await this.userRepository.findOne({
@@ -355,7 +399,7 @@ export class ShopService {
         });
       }
 
-      return { cards, playmats, skins };
+      return { cards: cardsWithSellable, playmats, skins };
     } catch (error) {
       console.error('❌ [getUserInventory] Erro ao buscar inventário:', error);
       return { cards: [], playmats: [], skins: [] };
@@ -394,18 +438,41 @@ export class ShopService {
       );
     }
 
+    const quantityInDecks = await this.getQuantityInDecks(userId, cardId);
+    const sellableQuantity = userCard.quantity - quantityInDecks;
+    if (sellableQuantity <= 0) {
+      throw new BadRequestException(
+        'Esta carta está em um ou mais decks. Remova-a dos decks para poder vendê-la (só é possível vender cartas da maleta).'
+      );
+    }
+    if (quantity > sellableQuantity) {
+      throw new BadRequestException(
+        `Você só pode vender ${sellableQuantity} cópia(s) desta carta (as outras ${quantityInDecks} estão em deck(s)).`
+      );
+    }
+
     const card = userCard.card;
     if (!card) {
       throw new NotFoundException('Carta não encontrada');
     }
 
-    // Calcular preço de venda (metade do preço de compra)
-    const sellPriceCredits = card.priceCredits 
-      ? Math.floor(card.priceCredits / 2) 
-      : 0;
-    const sellPriceCash = card.priceCash 
-      ? Math.floor(card.priceCash / 2) 
-      : 0;
+    // Garantir preços da carta (buscar do BD se relação veio sem preço)
+    let buyPriceCredits = Number(card.priceCredits) || 0;
+    let buyPriceCash = Number(card.priceCash) || 0;
+    if (buyPriceCredits === 0 && buyPriceCash === 0) {
+      const cardPrices = await this.cardRepository.findOne({
+        where: { id: cardId },
+        select: ['priceCredits', 'priceCash'],
+      });
+      if (cardPrices) {
+        buyPriceCredits = Number(cardPrices.priceCredits) || 0;
+        buyPriceCash = Number(cardPrices.priceCash) || 0;
+      }
+    }
+
+    // Preço de venda = metade do valor de compra (sempre)
+    const sellPriceCredits = Math.floor(buyPriceCredits / 2);
+    const sellPriceCash = Math.floor(buyPriceCash / 2);
 
     if (sellPriceCredits === 0 && sellPriceCash === 0) {
       throw new BadRequestException('Esta carta não pode ser vendida (sem preço definido)');
@@ -421,50 +488,43 @@ export class ShopService {
       await this.userCardRepository.save(userCard);
     }
 
-    // Adicionar créditos/cash ao usuário
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    // Adicionar créditos/cash ao usuário (apenas via addCurrency para não somar duas vezes)
+    const user = await this.userRepository.findOne({ where: { id: userId }, select: ['username'] });
     if (!user) {
       throw new NotFoundException('Usuário não encontrado');
     }
 
-    if (sellPriceCredits > 0) {
-      user.credits = (user.credits || 0) + (sellPriceCredits * quantity);
-    }
-    if (sellPriceCash > 0) {
-      user.cash = (user.cash || 0) + (sellPriceCash * quantity);
-    }
+    const creditsAmount = sellPriceCredits * quantity;
+    const cashAmount = sellPriceCash * quantity;
 
-    await this.userRepository.save(user);
-
-    // Registrar transação
-    if (sellPriceCredits > 0) {
+    if (creditsAmount > 0) {
       await this.economyService.addCurrency(
         userId,
         CurrencyType.CREDITS,
-        sellPriceCredits * quantity,
+        creditsAmount,
         TransactionType.EARN,
         `Venda de ${quantity} cópia(s) de ${card.name}`,
         { cardId, cardName: card.name, quantity, type: 'CARD_SALE' }
       );
     }
-    if (sellPriceCash > 0) {
+    if (cashAmount > 0) {
       await this.economyService.addCurrency(
         userId,
         CurrencyType.CASH,
-        sellPriceCash * quantity,
+        cashAmount,
         TransactionType.EARN,
         `Venda de ${quantity} cópia(s) de ${card.name}`,
         { cardId, cardName: card.name, quantity, type: 'CARD_SALE' }
       );
     }
 
-    console.log(`💰 Usuário ${user.username} vendeu ${quantity} cópia(s) de ${card.name} por ${sellPriceCredits * quantity} créditos e ${sellPriceCash * quantity} cash`);
+    console.log(`💰 Usuário ${user.username} vendeu ${quantity} cópia(s) de ${card.name} por ${creditsAmount} créditos e ${cashAmount} cash (metade do valor)`);
 
     return {
       success: true,
       message: `Carta(s) vendida(s) com sucesso!`,
-      creditsGained: sellPriceCredits * quantity,
-      cashGained: sellPriceCash * quantity,
+      creditsGained: creditsAmount,
+      cashGained: cashAmount,
       remainingQuantity: userCard.quantity - quantity >= 0 ? userCard.quantity - quantity : 0,
     };
   }

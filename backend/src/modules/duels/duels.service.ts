@@ -927,6 +927,9 @@ export class DuelsService implements OnModuleInit {
             if (monster.equippedSpellTrapZoneIndex !== undefined && monster.equippedSpellTrapZoneIndex !== null) {
               compacted.equippedSpellTrapZoneIndex = monster.equippedSpellTrapZoneIndex;
             }
+            if (monster.equippedZoneIndex !== undefined && monster.equippedZoneIndex !== null) {
+              compacted.equippedZoneIndex = monster.equippedZoneIndex;
+            }
             if (monster.equipmentBonusAtk !== undefined && monster.equipmentBonusAtk !== null) {
               compacted.equipmentBonusAtk = monster.equipmentBonusAtk;
             }
@@ -960,6 +963,13 @@ export class DuelsService implements OnModuleInit {
           if (monster.controlledUntilTurn !== undefined && monster.controlledUntilTurn !== null) {
             compacted.controlledUntilTurn = monster.controlledUntilTurn;
             logger.info(`🔍 [deepCleanField] Preservando controlledUntilTurn para monstro ${compacted.name}: ${monster.controlledUntilTurn}`);
+          }
+          // Breaker the Magical Warrior: preservar bônus de +300 ATK até usar o efeito ou monstro ser destruído
+          if (monster.spellCounters !== undefined && monster.spellCounters !== null) {
+            compacted.spellCounters = monster.spellCounters;
+          }
+          if (monster.spellCounterBonusAtk !== undefined && monster.spellCounterBonusAtk !== null) {
+            compacted.spellCounterBonusAtk = monster.spellCounterBonusAtk;
           }
         }
         if (index < 2) {
@@ -1617,14 +1627,16 @@ export class DuelsService implements OnModuleInit {
       }
     }
     
-    logger.debug(`🔄 [processDrawPhase] Duelo atualizado encontrado. Fase atual: ${updatedDuel.currentPhase}, Hand do player atual: ${(updatedDuel.currentTurn === 1 ? (updatedDuel as any).player1Field?.hand?.length : (updatedDuel as any).player2Field?.hand?.length) || 0}`);
+    logger.debug(`🔄 [processDrawPhase] Duelo atualizado encontrado. Fase atual: ${updatedDuel.currentPhase}, turnCounter: ${(updatedDuel as any).turnCounter}, currentTurn: ${updatedDuel.currentTurn}`);
     
-    // Regra: o duelista que COMEÇA o duelo (primeiro turno, player 1) na DP compra a carta e pula direto para MP2
-    const turnCounter = (updatedDuel as any).turnCounter ?? 1;
-    const isFirstTurnOfFirstPlayer = updatedDuel.currentTurn === 1 && turnCounter === 1;
-    if (isFirstTurnOfFirstPlayer) {
+    // Regra Yu-Gi-Oh!: o duelista que COMEÇA o duelo (escolhido aleatoriamente) na DP compra a carta e pula direto para MP2 (sem STANDBY, MP1, BP).
+    // Quem começa pode ser player 1 ou 2 (currentTurn é definido aleatoriamente na criação do duelo).
+    const turnCounter = (updatedDuel as any).turnCounter;
+    const turnCounterNum = turnCounter != null && turnCounter !== undefined ? Number(turnCounter) : 1;
+    const isFirstTurnOfDuel = turnCounterNum === 1 || (turnCounter == null && updatedDuel.currentPhase === TurnPhase.DRAW);
+    if (isFirstTurnOfDuel) {
       updatedDuel.currentPhase = TurnPhase.MAIN2;
-      logger.debug(`✅ [processDrawPhase] Primeiro turno do primeiro jogador: DP processada (carta comprada), avançando direto para MAIN2`);
+      logger.info(`✅ [processDrawPhase] Primeiro turno do duelo (jogador ${updatedDuel.currentTurn}): DP → MAIN2 (regra: quem começa compra na DP e pula para MP2)`);
     } else {
       // Demais turnos: após DRAW vai para STANDBY normalmente
       updatedDuel.currentPhase = TurnPhase.STANDBY;
@@ -1676,21 +1688,13 @@ export class DuelsService implements OnModuleInit {
       return false;
     }
 
-    // Verificar se o oponente tem Trap Hole setada (face-down)
+    // Verificar se o oponente tem Trap Hole setada (face-down) — isExactCard usa nome/id exato
     let trapHoleZoneIndex = -1;
     for (let i = 0; i < opponentField.spellTrap.length; i++) {
       const trap = opponentField.spellTrap[i];
       if (trap && trap !== null) {
-        const trapId = trap.idCarta || trap.id || trap.cardId;
-        const trapName = (trap.name || trap.cardName || '').toLowerCase();
         const trapPosition = trap.position || 'set';
-        
-        const isTrapHole = trapId === 'TrapHole' || 
-                          trapId === 'traphole' ||
-                          trapName === 'trap hole' ||
-                          this.isExactCard(trap, 'TrapHole');
-        
-        // Trap Hole deve estar setada (face-down)
+        const isTrapHole = this.isExactCard(trap, 'TrapHole');
         if (isTrapHole && trapPosition === 'set') {
           trapHoleZoneIndex = i;
           logger.info(`🕳️ [checkAndActivateTrapHole] Trap Hole encontrada na zona ${i} do oponente`);
@@ -1753,6 +1757,111 @@ export class DuelsService implements OnModuleInit {
     this.activeDuels.set(duelIdStr, duel);
 
     return true; // Monstro foi destruído
+  }
+
+  /**
+   * Verifica e ativa Bottomless Trap Hole do oponente se as condições forem atendidas
+   * Quando seu oponente Invocar um ou mais monstros com 1500 ou mais de ATK: destrua esse(s) monstro(s) e bana-o(s).
+   * Retorna true se o monstro foi destruído e banido, false caso contrário
+   */
+  private async checkAndActivateBottomlessTrapHole(duelId: string | number, duel: Duel, isPlayer1: boolean, monsterZoneIndex: number, monster: any): Promise<boolean> {
+    const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
+
+    if (this.isJinzoOnField(duel)) {
+      logger.info(`🤖 [checkAndActivateBottomlessTrapHole] Jinzo está no campo - Bottomless Trap Hole não pode ser ativada`);
+      return false;
+    }
+
+    if (this.isMirageDragonBlockingTraps(duel, !isPlayer1)) {
+      logger.info(`🐉 [checkAndActivateBottomlessTrapHole] MirageDragon está no campo - Bottomless Trap Hole não pode ser ativada durante Fase de Batalha`);
+      return false;
+    }
+
+    const opponentField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+
+    if (!opponentField || !opponentField.spellTrap || !Array.isArray(opponentField.spellTrap)) {
+      return false;
+    }
+
+    let bottomlessZoneIndex = -1;
+    for (let i = 0; i < opponentField.spellTrap.length; i++) {
+      const trap = opponentField.spellTrap[i];
+      if (trap && trap !== null) {
+        const trapPosition = trap.position || 'set';
+        const isBottomless = this.isExactCard(trap, 'BottomlessTrapHole');
+        if (isBottomless && trapPosition === 'set') {
+          bottomlessZoneIndex = i;
+          logger.info(`🕳️ [checkAndActivateBottomlessTrapHole] Bottomless Trap Hole encontrada na zona ${i} do oponente`);
+          break;
+        }
+      }
+    }
+
+    if (bottomlessZoneIndex === -1) {
+      return false;
+    }
+
+    const monsterAtk = monster.atk || 0;
+    if (monsterAtk < 1500) {
+      logger.info(`ℹ️ [checkAndActivateBottomlessTrapHole] Monstro ${monster.name} tem apenas ${monsterAtk} de ATK (precisa 1500+), Bottomless não ativa`);
+      return false;
+    }
+
+    logger.info(`💥 [checkAndActivateBottomlessTrapHole] Bottomless Trap Hole ativada! Destruindo e banindo ${monster.name} (ATK: ${monsterAtk})`);
+
+    await this.handleEquipmentDestruction(duelId, duel, isPlayer1, monster);
+
+    const ownerField = this.getOwnerFieldForMonster(duel, monster, isPlayer1);
+    if (!ownerField.banished) ownerField.banished = [];
+    ownerField.banished.push(monster);
+    playerField.monsters[monsterZoneIndex] = null;
+
+    if (!playerField.monsterDestroyedThisTurn) {
+      playerField.monsterDestroyedThisTurn = true;
+      logger.info(`✅ [checkAndActivateBottomlessTrapHole] Monstro destruído e banido - Last Will pode ser ativada`);
+    }
+
+    await this.recalculateUnitedWeStandForBothPlayers(duelId, duel);
+
+    const bottomlessTrap = opponentField.spellTrap[bottomlessZoneIndex];
+    if (bottomlessTrap) {
+      if (!opponentField.graveyard) opponentField.graveyard = [];
+      opponentField.graveyard.push(bottomlessTrap);
+      opponentField.spellTrap[bottomlessZoneIndex] = null;
+      logger.info(`✅ [checkAndActivateBottomlessTrapHole] Bottomless Trap Hole movida para o cemitério do oponente após ativação`);
+      await this.recalculateMagePowerAtk(duelId, duel, !isPlayer1);
+    }
+
+    await this.updateDuelInDatabase(duelId, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    } as any);
+    this.activeDuels.set(duelIdStr, duel);
+
+    return true;
+  }
+
+  /**
+   * Verifica apenas Bottomless Trap Hole do oponente após invocação especial (ou qualquer invocação que não seja normal/flip).
+   * Bottomless: quando um monstro é invocado (qualquer tipo) ou virado com 1500+ ATK → destruir e banir.
+   * Não verifica Trap Hole aqui (Trap Hole só em invocação normal ou flip com 1000+ ATK).
+   * @returns true se o monstro foi destruído/banido
+   */
+  async checkTrapsOnMonsterSummon(
+    duelId: string | number,
+    duel: Duel,
+    isPlayer1: boolean,
+    zoneIndex: number,
+    monster: any,
+    position: 'attack' | 'defense',
+  ): Promise<boolean> {
+    if (!monster) return false;
+    const monsterAtk = monster.atk || 0;
+    if (monsterAtk >= 1500) {
+      return await this.checkAndActivateBottomlessTrapHole(duelId, duel, isPlayer1, zoneIndex, monster);
+    }
+    return false;
   }
 
   private async checkAndActivateSakuretsuArmor(
@@ -2339,7 +2448,7 @@ export class DuelsService implements OnModuleInit {
         if (spellTrap && spellTrap !== null && spellTrap.position === 'face-up') {
           const cardId = spellTrap.idCarta || spellTrap.id || spellTrap.cardId;
           const cardName = (spellTrap.name || spellTrap.cardName || '').toLowerCase();
-          const isSwords = this.isExactCard(spellTrap, 'SwordsOfRevealingLight');
+          const isSwords = this.duelUtils.isSwordsOfRevealingLight(spellTrap);
           
           if (isSwords && spellTrap.activationTurnCounter && spellTrap.activatedByPlayer1 !== undefined) {
             // Foi ativada pelo Player1, então deve ser destruída no 3º turno do Player2
@@ -2408,7 +2517,7 @@ export class DuelsService implements OnModuleInit {
         if (spellTrap && spellTrap !== null && spellTrap.position === 'face-up') {
           const cardId = spellTrap.idCarta || spellTrap.id || spellTrap.cardId;
           const cardName = (spellTrap.name || spellTrap.cardName || '').toLowerCase();
-          const isSwords = this.isExactCard(spellTrap, 'SwordsOfRevealingLight');
+          const isSwords = this.duelUtils.isSwordsOfRevealingLight(spellTrap);
           
           if (isSwords && spellTrap.activationTurnCounter && spellTrap.activatedByPlayer1 !== undefined) {
             const activationTurnCounter = spellTrap.activationTurnCounter;
@@ -2688,25 +2797,18 @@ export class DuelsService implements OnModuleInit {
     // Marcar que já usou invocação normal neste turno
     playerField.normalSummonUsed = true;
 
-    // Verificar efeito de Breaker The Magical Warrior (invocado por invocação normal)
-    const breakerCardId = cardToSummon.idCarta || cardToSummon.id || cardToSummon.cardId || '';
+    // Breaker the Magical Warrior: ao ser invocado por invocação normal ganha +300 ATK.
+    // Pode usar o efeito em qualquer turno (não só no turno da invocação): escolher 1 Spell/Trap no campo e destruí-la; ao usar o efeito perde os 300 de ATK.
     const isBreaker = this.isExactCard(cardToSummon, 'BreakerTheMagicalWarrior');
-    
     if (isBreaker) {
-      logger.info(`✨ [normalSummonMonster] Breaker The Magical Warrior invocado por invocação normal - adicionando Marcador de Magia`);
-      
-      // Adicionar 1 Marcador de Magia (máx. 1)
+      logger.info(`✨ [normalSummonMonster] Breaker The Magical Warrior invocado por invocação normal - +300 ATK (pode usar efeito depois para destruir 1 S/T e perder esse bônus)`);
       if (!playerField.monsters[zoneIndex].spellCounters) {
         playerField.monsters[zoneIndex].spellCounters = 0;
       }
       playerField.monsters[zoneIndex].spellCounters = Math.min(1, (playerField.monsters[zoneIndex].spellCounters || 0) + 1);
-      
-      // Calcular e aplicar bônus de ATK (300 por marcador)
       const spellCounters = playerField.monsters[zoneIndex].spellCounters || 0;
       const atkBonus = spellCounters * 300;
       playerField.monsters[zoneIndex].spellCounterBonusAtk = atkBonus;
-      
-      logger.info(`✨ [normalSummonMonster] Breaker: ${spellCounters} Marcador(es) de Magia adicionado(s). Bônus de ATK: +${atkBonus}`);
     }
 
     // Verificar efeito de Thestalos The Firestorm Monarch (invocado por tributo)
@@ -2775,11 +2877,20 @@ export class DuelsService implements OnModuleInit {
       }
     }
 
-    // Verificar Trap Hole do oponente se invocou em ataque
+    // Invocação NORMAL: Bottomless (1500+ ATK) e Trap Hole (1000+ ATK, só em ataque) do oponente
     if (finalPosition === 'attack') {
       const monsterAtk = cardToSummon.atk || 0;
-      if (monsterAtk >= 1000) {
+      let bottomlessActivated = false;
+      if (monsterAtk >= 1500) {
+        bottomlessActivated = await this.checkAndActivateBottomlessTrapHole(duelId, duel, isPlayer1, zoneIndex, cardToSummon);
+      }
+      if (!bottomlessActivated && monsterAtk >= 1000) {
         await this.checkAndActivateTrapHole(duelId, duel, isPlayer1, zoneIndex, cardToSummon);
+      }
+    } else if (finalPosition === 'set') {
+      const monsterAtk = cardToSummon.atk || 0;
+      if (monsterAtk >= 1500) {
+        await this.checkAndActivateBottomlessTrapHole(duelId, duel, isPlayer1, zoneIndex, cardToSummon);
       }
     }
 
@@ -2915,6 +3026,15 @@ export class DuelsService implements OnModuleInit {
       attacksThisTurn: 0,
       specialSummoned: true, // Marcar como invocação especial
     };
+    
+    const placedCyber = playerField.monsters[zoneIndex];
+    if (placedCyber) {
+      const destroyed = await this.checkTrapsOnMonsterSummon(duelId, duel, isPlayer1, zoneIndex, placedCyber, finalPosition as 'attack' | 'defense');
+      if (destroyed) {
+        this.activeDuels.set(duelIdStr, duel);
+        return { success: true };
+      }
+    }
     
     logger.info(`✅ [specialSummonCyberDragon] Cyber Dragon invocado por invocação especial:`, {
       name: cardToSummon.name,
@@ -3106,12 +3226,17 @@ export class DuelsService implements OnModuleInit {
         return { success: false, message: 'Posição inválida' };
       }
       
-      // Verificar Trap Hole do oponente quando vira de face-down para face-up
+      // Flip: Bottomless (1500+ ATK, banir) e Trap Hole (1000+ ATK, destruir) do oponente
       const monsterAtk = monster.atk || 0;
+      if (monsterAtk >= 1500) {
+        const bottomlessActivated = await this.checkAndActivateBottomlessTrapHole(duelId, duel, isPlayer1, zoneIndex, monster);
+        if (bottomlessActivated) {
+          return { success: true };
+        }
+      }
       if (monsterAtk >= 1000) {
         const wasDestroyed = await this.checkAndActivateTrapHole(duelId, duel, isPlayer1, zoneIndex, monster);
         if (wasDestroyed) {
-          // Se foi destruído, não precisa processar mais nada
           return { success: true };
         }
       }
@@ -3537,6 +3662,20 @@ export class DuelsService implements OnModuleInit {
       logger.info(`✅ [placeCardOnField] Player ${isPlayer1 ? 1 : 2} colocou monstro ${cardToPlace.name} na zona ${zoneIndex} em ${position}`);
       logger.info(`🔍 [placeCardOnField] Estado dos monstros após salvar:`, playerField.monsters.map((m: any, i: number) => ({ index: i, card: m?.name || 'null', position: m?.position || 'null' })));
       
+      // Bottomless Trap Hole: qualquer invocação (ataque ou defesa) com 1500+ ATK. Trap Hole: só invocação NORMAL em ataque com 1000+ ATK
+      const placedMonster = playerField.monsters[zoneIndex];
+      const isNormalSummonHere = isMonster && !cardIsOnField && (position === 'attack' || position === 'defense' || position === 'set');
+      if (placedMonster) {
+        const monsterAtk = placedMonster.atk || 0;
+        let bottomlessActivated = false;
+        if (monsterAtk >= 1500 && (finalPosition === 'attack' || finalPosition === 'defense')) {
+          bottomlessActivated = await this.checkAndActivateBottomlessTrapHole(duelId, duel, isPlayer1, zoneIndex, placedMonster);
+        }
+        if (!bottomlessActivated && finalPosition === 'attack' && monsterAtk >= 1000 && isNormalSummonHere) {
+          await this.checkAndActivateTrapHole(duelId, duel, isPlayer1, zoneIndex, placedMonster);
+        }
+      }
+      
       // Garantir que o duelo atualizado está no cache
       this.activeDuels.set(duelIdStr, duel);
     } else {
@@ -3758,10 +3897,12 @@ export class DuelsService implements OnModuleInit {
       'braincontrol', 'brain control',
       'mysticalspacetyphoon', 'mystical space typhoon',
       'soultaker', 'soul taker',
+      'lightningstorm', 'lightning storm',
       'snowmaneater', 'snowman eater',
       'lastwill', 'last will',
       'monsterreincarnation', 'monster reincarnation',
-      'prematureburial', 'premature burial'
+      'prematureburial', 'premature burial',
+      'autonomousactionunit', 'autonomous action unit'
     ];
     
     for (const modalCard of needsModalCards) {
@@ -3877,58 +4018,48 @@ export class DuelsService implements OnModuleInit {
             return 0;
           }
           
-          // Processar efeitos especiais primeiro (antes de destruir)
+          // Processar efeitos especiais (Change of Heart, United We Stand, Mage Power). AAU e Premature Burial são tratados em onSpellTrapRemovedFromField.
           for (const { card, zoneIndex } of cardsToDestroy) {
             const cardName = card.name || card.cardName || 'Desconhecida';
-            
-            // Processar efeitos especiais antes de destruir
             if (this.isExactCard(card, 'ChangeOfHeart') || this.isExactCard(card, 'BrainControl')) {
               logger.info(`💥 [processCardEffect] ${cardName} destruída - devolvendo monstros controlados`);
               await this.returnChangeOfHeartMonsters(duelId, duel, isPlayer1Field);
             } else if (this.isExactCard(card, 'UnitedWeStand') || this.isExactCard(card, 'MagePower')) {
               logger.info(`💥 [processCardEffect] ${cardName} destruída - removendo equipamento`);
               await this.handleEquipmentDestruction(duelId, duel, isPlayer1Field, undefined, card, zoneIndex);
-            } else if (this.isExactCard(card, 'PrematureBurial')) {
-              logger.info(`💥 [processCardEffect] ${cardName} destruída - monstro equipado também vai ao cemitério`);
-              await this.handleEquipmentDestruction(duelId, duel, isPlayer1Field, undefined, card, zoneIndex);
-            } else if (this.isExactCard(card, 'AutonomousActionUnit')) {
-              logger.info(`💥 [processCardEffect] ${cardName} destruída - destruindo monstro equipado`);
-              await this.handleAutonomousActionUnitDestruction(duelId, duel, isPlayer1Field, zoneIndex);
             }
           }
           
-          // Recalcular ATK do MagePower uma única vez após processar todos os efeitos especiais
           await this.recalculateMagePowerAtk(duelId, duel, isPlayer1Field);
           
-          // Agora destruir todas as cartas: Mover para o cemitério e limpar a zona (pular zonas já tratadas por efeito especial, ex: Premature Burial)
+          // Remover todas: AAU/Premature Burial tratados por onSpellTrapRemovedFromField (monstro destruído + carta ao cemitério); demais só ao cemitério
           let destroyed = 0;
           for (const { card, zoneIndex } of cardsToDestroy) {
+            await this.onSpellTrapRemovedFromField(duelId, duel, isPlayer1Field, zoneIndex);
             if (field.spellTrap[zoneIndex] === null || field.spellTrap[zoneIndex] === undefined) {
-              continue; // já foi para o cemitério por efeito especial (ex: Premature Burial)
+              destroyed++;
+              continue;
             }
             const cardName = card.name || card.cardName || 'Desconhecida';
             logger.info(`💥 [processCardEffect] Heavy Storm - Destruindo ${cardName} (zona ${zoneIndex})`);
-            
-            // CRÍTICO: Primeiro mover para o cemitério
-            field.graveyard.push(card);
-            
-            // CRÍTICO: Depois limpar a zona do campo (remover do campo)
+            if (!field.graveyard) field.graveyard = [];
+            field.graveyard.push(field.spellTrap[zoneIndex]);
             field.spellTrap[zoneIndex] = null;
-            
             destroyed++;
             logger.info(`✅ [processCardEffect] ${cardName} removida do campo e movida para o cemitério (zona ${zoneIndex} agora está vazia)`);
           }
           
-          // Verificar se todas as cartas foram realmente removidas
           const remainingCards = field.spellTrap.filter((c: any) => c !== null && c !== undefined).length;
           if (remainingCards > 0) {
             logger.warn(`⚠️ [processCardEffect] Heavy Storm - Ainda há ${remainingCards} carta(s) no campo após destruição!`);
-            // Forçar remoção de qualquer carta restante
             for (let i = 0; i < field.spellTrap.length; i++) {
               if (field.spellTrap[i] !== null && field.spellTrap[i] !== undefined) {
-                const remainingCard = field.spellTrap[i];
-                field.graveyard.push(remainingCard);
-                field.spellTrap[i] = null;
+                await this.onSpellTrapRemovedFromField(duelId, duel, isPlayer1Field, i);
+                if (field.spellTrap[i] !== null && field.spellTrap[i] !== undefined) {
+                  field.graveyard.push(field.spellTrap[i]);
+                  field.spellTrap[i] = null;
+                }
+                destroyed++;
                 logger.info(`🔧 [processCardEffect] Heavy Storm - Forçando remoção de carta restante da zona ${i}`);
               }
             }
@@ -4249,34 +4380,27 @@ export class DuelsService implements OnModuleInit {
             const destroyedCard = opponentField.spellTrap[i];
             const destroyedCardId = destroyedCard.idCarta || destroyedCard.id || destroyedCard.cardId;
             
-            // Change Of Heart / Brain Control: ao serem destruídas, monstro controlado volta ao campo original
             if (this.isExactCard(destroyedCard, 'ChangeOfHeart')) {
               logger.info(`💥 [processCardEffect] Change Of Heart destruída por Harpie's Feather Duster - devolvendo monstro(s) controlado(s) ao dono original`);
-              const returnedCount = await this.returnChangeOfHeartMonsters(duelId, duel, !isPlayer1);
-              logger.info(`✅ [processCardEffect] ${returnedCount} monstro(s) devolvido(s) ao campo original`);
+              await this.returnChangeOfHeartMonsters(duelId, duel, !isPlayer1);
             } else if (this.isExactCard(destroyedCard, 'BrainControl')) {
               logger.info(`💥 [processCardEffect] Brain Control destruída por Harpie's Feather Duster - devolvendo monstro(s) controlado(s) ao dono original`);
-              const returnedCount = await this.returnChangeOfHeartMonsters(duelId, duel, !isPlayer1);
-              logger.info(`✅ [processCardEffect] ${returnedCount} monstro(s) devolvido(s) ao campo original`);
+              await this.returnChangeOfHeartMonsters(duelId, duel, !isPlayer1);
             } else if (this.isExactCard(destroyedCard, 'UnitedWeStand')) {
               logger.info(`💥 [processCardEffect] UnitedWeStand destruída por Harpie's Feather Duster - removendo equipamento`);
               await this.handleEquipmentDestruction(duelId, duel, !isPlayer1, undefined, destroyedCard, i);
             } else if (this.isExactCard(destroyedCard, 'MagePower')) {
               logger.info(`💥 [processCardEffect] MagePower destruída por Harpie's Feather Duster - removendo equipamento`);
               await this.handleEquipmentDestruction(duelId, duel, !isPlayer1, undefined, destroyedCard, i);
-            } else if (this.isExactCard(destroyedCard, 'PrematureBurial')) {
-              logger.info(`💥 [processCardEffect] Premature Burial destruída por Harpie's Feather Duster - monstro equipado também vai ao cemitério`);
-              await this.handleEquipmentDestruction(duelId, duel, !isPlayer1, undefined, destroyedCard, i);
             } else {
-              // Se outra spell/trap foi destruída, recalcular ATK do MagePower ANTES de remover
               await this.recalculateMagePowerAtk(duelId, duel, !isPlayer1);
             }
-            
-            // Só mover para o cemitério e limpar zona se ainda não foi tratado (ex: Premature Burial já fez isso)
+            await this.onSpellTrapRemovedFromField(duelId, duel, !isPlayer1, i);
             if (opponentField.spellTrap[i] !== null && opponentField.spellTrap[i] !== undefined) {
-              destroyedCards.push(destroyedCard);
+              destroyedCards.push(opponentField.spellTrap[i]);
+              if (!opponentField.graveyard) opponentField.graveyard = [];
+              opponentField.graveyard.push(opponentField.spellTrap[i]);
               opponentField.spellTrap[i] = null;
-              opponentField.graveyard.push(destroyedCard);
               logger.info(`💥 [processCardEffect] Spell/Trap destruída: ${destroyedCard.name || destroyedCard.cardName || 'Desconhecida'}`);
             } else {
               destroyedCards.push(destroyedCard);
@@ -5316,11 +5440,18 @@ export class DuelsService implements OnModuleInit {
   }
   
   /**
-   * Retorna o bônus de ATK do BannerOfCourage se estiver ativo durante a fase de batalha
+   * Retorna o bônus de ATK do Banner of Courage: Spell Contínua que fica no campo até ser destruída.
+   * Quando ativada: durante a SUA fase de batalha, todos os seus monstros ganham 200 de ATK.
+   * O efeito é acumulativo: cada Banner of Courage face-up no campo adiciona +200 ATK.
    */
   private getBannerOfCourageBonus(duel: Duel, isPlayer1: boolean, currentPhase: string | TurnPhase): number {
-    // BannerOfCourage só funciona durante a Fase de Batalha
+    // Banner of Courage só funciona durante a Fase de Batalha do dono da carta
     if (currentPhase !== 'BATTLE' && currentPhase !== TurnPhase.BATTLE) {
+      return 0;
+    }
+    const currentTurn = duel.currentTurn; // 1 = Player1, 2 = Player2
+    const isMyBattlePhase = (isPlayer1 && currentTurn === 1) || (!isPlayer1 && currentTurn === 2);
+    if (!isMyBattlePhase) {
       return 0;
     }
     
@@ -5330,20 +5461,19 @@ export class DuelsService implements OnModuleInit {
       return 0;
     }
     
-    // Verificar se BannerOfCourage está no campo (face-up)
-    const hasBannerOfCourage = playerField.spellTrap.some((st: any) => {
+    // Contar quantas Banner of Courage estão face-up no campo (efeito acumulativo: cada uma +200)
+    const count = playerField.spellTrap.filter((st: any) => {
       if (!st) return false;
+      const pos = st.position || '';
+      if (pos !== 'face-up') return false;
       const cardId = st.idCarta || st.id || st.cardId;
-      return cardId === 'BannerOfCourage' || 
-             (typeof cardId === 'string' && cardId.toLowerCase().includes('bannerofcourage'));
-    });
+      const cardName = (st.name || st.cardName || '').toLowerCase();
+      return cardId === 'BannerOfCourage' ||
+             (typeof cardId === 'string' && cardId.toLowerCase().includes('bannerofcourage')) ||
+             cardName.includes('banner of courage');
+    }).length;
     
-    if (hasBannerOfCourage) {
-      logger.info(`🛡️ [getBannerOfCourageBonus] BannerOfCourage ativo - bônus de +200 ATK aplicado`);
-      return 200;
-    }
-    
-    return 0;
+    return count * 200;
   }
 
   /**
@@ -5414,10 +5544,102 @@ export class DuelsService implements OnModuleInit {
   }
   
   /**
-   * Processa a escolha do monstro do cemitério do oponente para Autonomous Action Unit
+   * Processa a escolha do monstro do cemitério do oponente para Autonomous Action Unit:
+   * remove o monstro do cemitério do oponente, invoca por invocação especial no campo do jogador em ataque e equipa com a carta.
    */
   async processAutonomousActionUnitChoice(duelId: string | number, userId: number, chosenMonsterIndex: number): Promise<{ success: boolean; message?: string }> {
-    return this.cardEffectHandlersService.processAutonomousActionUnitChoice(duelId, userId, chosenMonsterIndex);
+    const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
+    const duel = await this.findDuelByIdFromDatabase(duelIdStr, true);
+    if (!duel) {
+      return { success: false, message: 'Duelo não encontrado' };
+    }
+    const pendingChoice = (duel as any).pendingChoice;
+    if (!pendingChoice || pendingChoice.type !== 'AUTONOMOUS_ACTION_UNIT' || pendingChoice.userId !== userId) {
+      return { success: false, message: 'Escolha pendente inválida' };
+    }
+    const data = pendingChoice.data || {};
+    const spellTrapZoneIndex = data.spellTrapZoneIndex;
+    const opponentGraveyardList = data.opponentGraveyard;
+    if (spellTrapZoneIndex === undefined || spellTrapZoneIndex === null || !Array.isArray(opponentGraveyardList)) {
+      return { success: false, message: 'Dados da Autonomous Action Unit inválidos' };
+    }
+    if (chosenMonsterIndex < 0 || chosenMonsterIndex >= opponentGraveyardList.length) {
+      return { success: false, message: 'Monstro selecionado inválido' };
+    }
+    const isPlayer1 = Number(duel.player1Id) === Number(userId);
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    const opponentField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+    if (!playerField) {
+      return { success: false, message: 'Campo do jogador não encontrado' };
+    }
+    if (!Array.isArray(playerField.monsters) || playerField.monsters.length < 5) {
+      playerField.monsters = Array.isArray(playerField.monsters)
+        ? [...playerField.monsters]
+        : [null, null, null, null, null];
+      while (playerField.monsters.length < 5) playerField.monsters.push(null);
+      playerField.monsters = playerField.monsters.slice(0, 5);
+    }
+    const opponentGraveyard = opponentField?.graveyard || [];
+    const opponentMonsters = opponentGraveyard.filter((c: any) => (c.type || c.cardType) === 'Monster');
+    if (chosenMonsterIndex >= opponentMonsters.length) {
+      return { success: false, message: 'Monstro não encontrado no cemitério do oponente' };
+    }
+    let realIndex = -1;
+    let monsterCount = 0;
+    for (let i = 0; i < opponentGraveyard.length; i++) {
+      const card = opponentGraveyard[i];
+      if ((card.type || card.cardType) === 'Monster') {
+        if (monsterCount === chosenMonsterIndex) {
+          realIndex = i;
+          break;
+        }
+        monsterCount++;
+      }
+    }
+    if (realIndex === -1) {
+      return { success: false, message: 'Monstro não encontrado no cemitério' };
+    }
+    const monsterToRevive = opponentGraveyard.splice(realIndex, 1)[0];
+    const emptyMonsterZone = playerField.monsters.findIndex((m: any) => m === null || m === undefined);
+    if (emptyMonsterZone === -1) {
+      opponentGraveyard.push(monsterToRevive);
+      return { success: false, message: 'Não há espaço no campo para invocar o monstro' };
+    }
+    const cardInstanceId = (data.cardInstanceId || data.cardData?.instanceId || `card_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
+    const equipRef = `AutonomousActionUnit:${spellTrapZoneIndex}`;
+    const { equipmentBonusAtk, equipmentBonusDef, equippedCards, equippedCardId, equippedSpellTrapZoneIndex, equippedBy, equippedZoneIndex, ...monsterBase } = monsterToRevive;
+    const currentTurnCounter = playerField?.turnCounter || (duel as any).turnCounter || 1;
+    // Dono original = oponente (monstro veio do cemitério dele); quando AAU for destruída, monstro vai ao cemitério do dono original
+    const originalOwner = isPlayer1 ? 2 : 1;
+    playerField.monsters[emptyMonsterZone] = {
+      ...monsterBase,
+      position: 'attack',
+      summonedTurnNumber: currentTurnCounter,
+      summonedByPlayer: duel.currentTurn,
+      positionChangedThisTurn: false,
+      attackedThisTurn: false,
+      attacksThisTurn: 0,
+      originalOwner,
+      equippedBy: 'AutonomousActionUnit',
+      equippedCardId: 'AutonomousActionUnit',
+      equippedSpellTrapZoneIndex: spellTrapZoneIndex,
+      equippedZoneIndex: spellTrapZoneIndex,
+      equippedCards: [equipRef],
+    };
+    const equipCard = playerField.spellTrap && playerField.spellTrap[spellTrapZoneIndex];
+    if (equipCard) {
+      equipCard.equippedToMonsterZoneIndex = emptyMonsterZone;
+    }
+    (duel as any).pendingChoice = null;
+    this.activeDuels.set(duelIdStr, duel);
+    await this.updateDuelInDatabase(duelId, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+      pendingChoice: null,
+    } as any);
+    await this.recalculateUnitedWeStandForBothPlayers(duelId, duel);
+    logger.info(`✅ [processAutonomousActionUnitChoice] Monstro ${monsterToRevive.name || monsterToRevive.cardName} revivido no campo do jogador e equipado com Autonomous Action Unit`);
+    return { success: true };
   }
 
   
@@ -5432,10 +5654,14 @@ export class DuelsService implements OnModuleInit {
       return;
     }
     
-    // Procurar por monstros equipados com Autonomous Action Unit nesta zona
+    const zoneNum = Number(zoneIndex);
+    // Procurar por monstros equipados com Autonomous Action Unit nesta zona (usar == para string/number)
     for (let i = 0; i < playerField.monsters.length; i++) {
       const monster = playerField.monsters[i];
-      if (monster && monster.equippedZoneIndex === zoneIndex && monster.equippedBy === 'AutonomousActionUnit') {
+      const monsterEquipZone = monster?.equippedZoneIndex ?? monster?.equippedSpellTrapZoneIndex;
+      const zoneMatch = monsterEquipZone !== undefined && monsterEquipZone !== null && (Number(monsterEquipZone) === zoneNum || monsterEquipZone == zoneIndex);
+      const isAAU = monster?.equippedBy === 'AutonomousActionUnit' || (monster?.equippedCardId && String(monster.equippedCardId).toLowerCase().includes('autonomousactionunit'));
+      if (monster && zoneMatch && isAAU) {
         logger.info(`💥 [handleAutonomousActionUnitDestruction] Destruindo monstro ${monster.name || monster.cardName} equipado com Autonomous Action Unit`);
         
         // Remover equipamento do monstro
@@ -5458,13 +5684,46 @@ export class DuelsService implements OnModuleInit {
           logger.info(`✅ [handleAutonomousActionUnitDestruction] Monstro destruído no campo do jogador - Last Will pode ser ativada`);
         }
         
-        logger.info(`✅ [handleAutonomousActionUnitDestruction] Monstro destruído e enviado para o cemitério`);
+        logger.info(`✅ [handleAutonomousActionUnitDestruction] Monstro destruído e enviado para o cemitério do dono original`);
+        
+        // Enviar a carta Autonomous Action Unit ao cemitério e limpar a zona
+        if (playerField.spellTrap && playerField.spellTrap[zoneIndex] !== null && playerField.spellTrap[zoneIndex] !== undefined) {
+          const aauCard = playerField.spellTrap[zoneIndex];
+          if (!playerField.graveyard) playerField.graveyard = [];
+          playerField.graveyard.push(aauCard);
+          playerField.spellTrap[zoneIndex] = null;
+          logger.info(`💥 [handleAutonomousActionUnitDestruction] Autonomous Action Unit enviada ao cemitério`);
+        }
         
         // Recalcular UnitedWeStand para ambos os jogadores (número de monstros face-up mudou)
         await this.recalculateUnitedWeStandForBothPlayers(duelId, duel);
-        
+        await this.updateDuelInDatabase(duelId, {
+          player1Field: (duel as any).player1Field,
+          player2Field: (duel as any).player2Field,
+        } as any);
+        this.activeDuels.set(duelIdStr, duel);
         break; // Só pode haver um monstro equipado com esta carta
       }
+    }
+  }
+
+  /**
+   * Chamar sempre que uma spell/trap for removida/destruída do campo (por qualquer efeito).
+   * Se for Autonomous Action Unit ou Premature Burial, destrói o monstro equipado e envia a carta ao cemitério.
+   * Não faz nada para outras cartas (o caller deve fazer push para graveyard e limpar zona).
+   */
+  async onSpellTrapRemovedFromField(duelId: string | number, duel: Duel, isPlayer1: boolean, zoneIndex: number): Promise<void> {
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    if (!playerField?.spellTrap || zoneIndex < 0 || zoneIndex >= playerField.spellTrap.length) return;
+    const card = playerField.spellTrap[zoneIndex];
+    if (card === null || card === undefined) return;
+    if (this.isExactCard(card, 'AutonomousActionUnit')) {
+      await this.handleAutonomousActionUnitDestruction(duelId, duel, isPlayer1, zoneIndex);
+      return;
+    }
+    if (this.isExactCard(card, 'PrematureBurial')) {
+      await this.handleEquipmentDestruction(duelId, duel, isPlayer1, undefined, card, zoneIndex);
+      return;
     }
   }
   
@@ -6111,6 +6370,15 @@ export class DuelsService implements OnModuleInit {
       effectUsedThisTurn: false,
     };
 
+    const placedDAD = playerField.monsters[zoneIndex];
+    if (placedDAD) {
+      const destroyed = await this.checkTrapsOnMonsterSummon(duelId, duel, isPlayer1, zoneIndex, placedDAD, 'attack');
+      if (destroyed) {
+        this.activeDuels.set(duelIdStr, duel);
+        return { success: true };
+      }
+    }
+
     logger.info(`✅ [specialSummonDarkArmedDragon] Dark Armed Dragon invocado por invocação especial em modo de ataque`);
 
     // Atualizar no banco
@@ -6368,13 +6636,13 @@ export class DuelsService implements OnModuleInit {
       if (!targetSpellTrap || targetSpellTrap === null) {
         return { success: false, message: 'Não há spell/trap na zona especificada' };
       }
-
-      // Mover para o cemitério
-      if (!targetField.graveyard) {
-        targetField.graveyard = [];
+      const targetIsPlayer1 = targetPlayer === 'player' ? isPlayer1 : !isPlayer1;
+      await this.onSpellTrapRemovedFromField(duelIdStr, duel, targetIsPlayer1, targetZoneIndex);
+      if (targetField.spellTrap[targetZoneIndex] !== null && targetField.spellTrap[targetZoneIndex] !== undefined) {
+        if (!targetField.graveyard) targetField.graveyard = [];
+        targetField.graveyard.push(targetField.spellTrap[targetZoneIndex]);
+        targetField.spellTrap[targetZoneIndex] = null;
       }
-      targetField.graveyard.push(targetSpellTrap);
-      targetField.spellTrap[targetZoneIndex] = null;
       logger.info(`✅ [processDarkArmedDragonEffect] Spell/Trap destruído: ${targetSpellTrap.name || targetSpellTrap.cardName}`);
     } else {
       return { success: false, message: 'Tipo de alvo inválido' };
@@ -6719,6 +6987,117 @@ export class DuelsService implements OnModuleInit {
     this.activeDuels.set(duelIdStr, duel);
     
     logger.info(`✅ [processSoulTakerChoice] Efeito processado com sucesso!`);
+    return { success: true };
+  }
+
+  /**
+   * Processa a escolha do Lightning Storm - escolher 1 efeito:
+   * - destroy_attack_monsters: destruir todos os monstros em posição de ataque que o oponente controla
+   * - destroy_spells_traps: destruir todas as magias e armadilhas que o oponente controla
+   * Só pode ativar 1 vez por turno (já validado no gateway).
+   */
+  async processLightningStormChoice(duelId: string | number, userId: number, effect: 'destroy_attack_monsters' | 'destroy_spells_traps'): Promise<{ success: boolean; message?: string }> {
+    const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
+    let duel = await this.findDuelByIdFromDatabase(duelIdStr, true);
+    if (!duel) {
+      return { success: false, message: 'Duelo não encontrado' };
+    }
+    const pendingChoice = (duel as any).pendingChoice;
+    if (!pendingChoice || pendingChoice.type !== 'LIGHTNING_STORM' || pendingChoice.userId !== userId) {
+      return { success: false, message: 'Escolha de Lightning Storm inválida ou expirada' };
+    }
+    const player1IdNum = Number(duel.player1Id);
+    const player2IdNum = Number(duel.player2Id);
+    const userIdNum = Number(userId);
+    const isPlayer1 = player1IdNum === userIdNum;
+    let playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    const opponentField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+    const turnCounter = (duel as any).turnCounter ?? 1;
+
+    const data = pendingChoice.data || {};
+    let lightningStorm: any = null;
+    let cardWasOnField = !!data.cardWasOnField;
+
+    if (!cardWasOnField) {
+      const handIndex = playerField.hand.findIndex((c: any) => {
+        if (data.cardInstanceId && c.instanceId) return c.instanceId === data.cardInstanceId;
+        const cId = c.idCarta || c.id || c.cardId;
+        return cId === data.cardId;
+      });
+      if (handIndex !== -1) {
+        lightningStorm = playerField.hand[handIndex];
+        playerField.hand.splice(handIndex, 1);
+      }
+    } else {
+      const zoneIndex = data.zoneIndex;
+      if (zoneIndex != null && playerField.spellTrap && playerField.spellTrap[zoneIndex]) {
+        lightningStorm = playerField.spellTrap[zoneIndex];
+        playerField.spellTrap[zoneIndex] = null;
+      }
+    }
+
+    if (!lightningStorm) {
+      if (playerField.spellTrap && Array.isArray(playerField.spellTrap)) {
+        for (let i = 0; i < playerField.spellTrap.length; i++) {
+          const card = playerField.spellTrap[i];
+          if (card && (this.isExactCard(card, 'LightningStorm') || (card.name || card.cardName || '').toLowerCase().includes('lightning storm'))) {
+            lightningStorm = card;
+            playerField.spellTrap[i] = null;
+            cardWasOnField = true;
+            break;
+          }
+        }
+      }
+    }
+    if (!lightningStorm) {
+      return { success: false, message: 'Lightning Storm não encontrada' };
+    }
+
+    if (!playerField.graveyard) playerField.graveyard = [];
+    playerField.graveyard.push(lightningStorm);
+
+    playerField.lightningStormActivatedTurn = turnCounter;
+
+    if (effect === 'destroy_attack_monsters' && opponentField?.monsters) {
+      for (let i = 0; i < opponentField.monsters.length; i++) {
+        const m = opponentField.monsters[i];
+        if (m && (m.position === 'attack' || !m.position)) {
+          const ownerField = this.getOwnerFieldForMonster(duel, m, !isPlayer1);
+          if (!ownerField.graveyard) ownerField.graveyard = [];
+          ownerField.graveyard.push(m);
+          opponentField.monsters[i] = null;
+          logger.info(`✅ [processLightningStormChoice] Monstro em ataque destruído: ${m.name || m.cardName}`);
+        }
+      }
+    }
+    if (effect === 'destroy_spells_traps' && opponentField?.spellTrap) {
+      for (let i = 0; i < opponentField.spellTrap.length; i++) {
+        if (!opponentField.spellTrap[i]) continue;
+        await this.onSpellTrapRemovedFromField(duelIdStr, duel, !isPlayer1, i);
+        if (opponentField.spellTrap[i]) {
+          const ownerField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+          if (!ownerField.graveyard) ownerField.graveyard = [];
+          ownerField.graveyard.push(opponentField.spellTrap[i]);
+          opponentField.spellTrap[i] = null;
+          logger.info(`✅ [processLightningStormChoice] Magia/Armadilha destruída`);
+        }
+      }
+    }
+
+    await this.clearPendingChoice(duelId);
+    if (isPlayer1) {
+      (duel as any).player1Field = playerField;
+      (duel as any).player2Field = opponentField;
+    } else {
+      (duel as any).player1Field = opponentField;
+      (duel as any).player2Field = playerField;
+    }
+    await this.updateDuelInDatabase(duelId, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    } as any);
+    this.activeDuels.set(duelIdStr, duel);
+    logger.info(`✅ [processLightningStormChoice] Efeito processado: ${effect}`);
     return { success: true };
   }
   
@@ -7703,7 +8082,7 @@ export class DuelsService implements OnModuleInit {
   }
 
   /**
-   * Processa a remoção de marcador de magia e escolha de alvo para Breaker The Magical Warrior
+   * Breaker the Magical Warrior: ao usar o efeito, escolhe 1 Spell/Trap no campo e a destrói; perde o bônus de +300 ATK.
    */
   async processBreakerRemoveCounter(duelId: string | number, userId: number, monsterZoneIndex: number, targetPlayer: 'player' | 'opponent', targetZoneIndex: number): Promise<{ success: boolean; message?: string }> {
     const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
@@ -7794,13 +8173,20 @@ export class DuelsService implements OnModuleInit {
     // Recalcular ATK do Breaker após remover marcador
     await this.recalculateBreakerAtk(duelIdStr, duel, isPlayer1);
 
+    // Snapshot dos campos para garantir que graveyard e spellTrap sejam persistidos corretamente
+    const player1FieldToSave = JSON.parse(JSON.stringify((duel as any).player1Field));
+    const player2FieldToSave = JSON.parse(JSON.stringify((duel as any).player2Field));
+    logger.info(`✅ [processBreakerRemoveCounter] Salvando - P1 graveyard: ${player1FieldToSave.graveyard?.length ?? 0}, P2 graveyard: ${player2FieldToSave.graveyard?.length ?? 0}`);
+
     // Atualizar no banco
     await this.updateDuelInDatabase(duelId, {
-      player1Field: (duel as any).player1Field,
-      player2Field: (duel as any).player2Field,
+      player1Field: player1FieldToSave,
+      player2Field: player2FieldToSave,
     } as any);
 
-    // Atualizar cache
+    // Atualizar cache com o mesmo estado salvo
+    (duel as any).player1Field = player1FieldToSave;
+    (duel as any).player2Field = player2FieldToSave;
     this.activeDuels.set(duelIdStr, duel);
 
     logger.info(`✅ [processBreakerRemoveCounter] Spell/Trap destruída com sucesso!`);
@@ -7958,36 +8344,27 @@ export class DuelsService implements OnModuleInit {
 
     logger.info(`✨ [processMysticalSpaceTyphoonChoice] Destruindo spell/trap: ${targetCard.name || targetCard.cardName || 'Desconhecida'}`);
 
-    // Verificar se é ChangeOfHeart, BrainControl, UnitedWeStand ou MagePower - processar efeitos especiais
     if (this.isExactCard(targetCard, 'ChangeOfHeart')) {
-      logger.info(`💥 [processMysticalSpaceTyphoonChoice] Change Of Heart destruída - devolvendo monstro(s) controlado(s) ao dono original`);
       await this.returnChangeOfHeartMonsters(duelIdStr, duel, targetIsPlayer1);
     } else if (this.isExactCard(targetCard, 'BrainControl')) {
-      logger.info(`💥 [processMysticalSpaceTyphoonChoice] Brain Control destruída - devolvendo monstro(s) controlado(s) ao dono original`);
       await this.returnChangeOfHeartMonsters(duelIdStr, duel, targetIsPlayer1);
     } else if (this.isExactCard(targetCard, 'UnitedWeStand')) {
-      logger.info(`💥 [processMysticalSpaceTyphoonChoice] UnitedWeStand destruída - removendo equipamento`);
       await this.handleEquipmentDestruction(duelIdStr, duel, targetIsPlayer1, undefined, targetCard, targetZoneIndex);
     } else if (this.isExactCard(targetCard, 'MagePower')) {
-      logger.info(`💥 [processMysticalSpaceTyphoonChoice] MagePower destruída - removendo equipamento`);
-      await this.handleEquipmentDestruction(duelIdStr, duel, targetIsPlayer1, undefined, targetCard, targetZoneIndex);
-    } else if (this.isExactCard(targetCard, 'PrematureBurial')) {
-      logger.info(`💥 [processMysticalSpaceTyphoonChoice] Premature Burial destruída - monstro equipado também vai ao cemitério`);
       await this.handleEquipmentDestruction(duelIdStr, duel, targetIsPlayer1, undefined, targetCard, targetZoneIndex);
     } else {
-      // Se outra spell/trap foi destruída, recalcular ATK do MagePower ANTES de remover
       await this.recalculateMagePowerAtk(duelId, duel, targetIsPlayer1);
     }
+    await this.onSpellTrapRemovedFromField(duelIdStr, duel, targetIsPlayer1, targetZoneIndex);
 
-    // IMPORTANTE: Mover carta alvo para o cemitério (se ainda estiver no campo - Premature Burial já foi tratada acima)
     if (targetField.spellTrap[targetZoneIndex] !== null && targetField.spellTrap[targetZoneIndex] !== undefined) {
       logger.info(`🗑️ [processMysticalSpaceTyphoonChoice] Removendo carta alvo do campo e movendo para o cemitério`);
-      targetField.spellTrap[targetZoneIndex] = null;
       if (!targetField.graveyard) targetField.graveyard = [];
-      targetField.graveyard.push(targetCard);
+      targetField.graveyard.push(targetField.spellTrap[targetZoneIndex]);
+      targetField.spellTrap[targetZoneIndex] = null;
       logger.info(`✅ [processMysticalSpaceTyphoonChoice] Carta alvo "${targetCard.name || targetCard.cardName || 'Desconhecida'}" movida para o cemitério`);
     } else {
-      logger.info(`✅ [processMysticalSpaceTyphoonChoice] Carta alvo já foi enviada ao cemitério por efeito (ex: Premature Burial)`);
+      logger.info(`✅ [processMysticalSpaceTyphoonChoice] Carta alvo já foi enviada ao cemitério por efeito (ex: Premature Burial / AAU)`);
     }
 
     // Segundo: Mover Mystical Space Typhoon para o cemitério (já foi removida do campo/mão anteriormente)
@@ -8220,6 +8597,7 @@ export class DuelsService implements OnModuleInit {
                               cardId.includes('unitedwestand') || cardName.includes('united we stand') ||
                               cardId.includes('magepower') || cardName.includes('mage power') ||
                               cardId.includes('prematureburial') || cardName.includes('premature burial') ||
+                              cardId.includes('autonomousactionunit') || cardName.includes('autonomous action unit') ||
                               cardId.includes('equip') || cardName.includes('equip');
           
           if (isEquipSpell) {
@@ -8248,11 +8626,12 @@ export class DuelsService implements OnModuleInit {
           const equipCardId = (equipCard.idCarta || equipCard.id || equipCard.cardId || '').toString().toLowerCase();
           const equipCardName = (equipCard.name || equipCard.cardName || '').toString().toLowerCase();
           
-          // Verificar se é realmente um equipamento (United We Stand, Mage Power, etc) - por tipo, id ou nome
+          // Verificar se é realmente um equipamento (United We Stand, Mage Power, Premature Burial, Autonomous Action Unit, etc)
           const isEquipSpell = equipCard.spellType === 'Equip' || equipCard.spellType === 'EQUIP' || equipCard.spellType === 'equip' ||
                               equipCardId.includes('unitedwestand') || equipCardName.includes('united we stand') ||
                               equipCardId.includes('magepower') || equipCardName.includes('mage power') ||
                               equipCardId.includes('prematureburial') || equipCardName.includes('premature burial') ||
+                              equipCardId.includes('autonomousactionunit') || equipCardName.includes('autonomous action unit') ||
                               equipCardId.includes('equip') || equipCardName.includes('equip');
           
           if (isEquipSpell) {
@@ -8285,6 +8664,7 @@ export class DuelsService implements OnModuleInit {
                                 cardId.includes('unitedwestand') || cardName.includes('united we stand') ||
                                 cardId.includes('magepower') || cardName.includes('mage power') ||
                                 cardId.includes('prematureburial') || cardName.includes('premature burial') ||
+                                cardId.includes('autonomousactionunit') || cardName.includes('autonomous action unit') ||
                                 cardId.includes('equip') || cardName.includes('equip');
             
             if (isEquipSpell) {
@@ -8364,9 +8744,13 @@ export class DuelsService implements OnModuleInit {
           logger.warn(`⚠️ [handleEquipmentDestruction] Premature Burial destruída mas nenhum monstro equipado encontrado (zona ${spellTrapZoneIndex})`);
         }
 
-        // Premature Burial já foi enviada ao cemitério pelo handleEquipmentDestruction(monster); apenas garantir zona limpa
-        if (playerField.spellTrap && playerField.spellTrap[spellTrapZoneIndex] !== null) {
+        // Garantir que a Premature Burial seja enviada ao cemitério (e zona limpa)
+        if (playerField.spellTrap && playerField.spellTrap[spellTrapZoneIndex] !== null && playerField.spellTrap[spellTrapZoneIndex] !== undefined) {
+          const prematureBurialCard = playerField.spellTrap[spellTrapZoneIndex];
+          if (!playerField.graveyard) playerField.graveyard = [];
+          playerField.graveyard.push(prematureBurialCard);
           playerField.spellTrap[spellTrapZoneIndex] = null;
+          logger.info(`💥 [handleEquipmentDestruction] Premature Burial enviada ao cemitério`);
         }
         logger.info(`💥 [handleEquipmentDestruction] Premature Burial: monstro e carta enviados ao cemitério`);
         await this.updateDuelInDatabase(duelId, {
@@ -8893,7 +9277,7 @@ export class DuelsService implements OnModuleInit {
     if (defenderField && defenderField.spellTrap && Array.isArray(defenderField.spellTrap)) {
       for (const spellTrap of defenderField.spellTrap) {
         if (spellTrap && spellTrap !== null && spellTrap.position === 'face-up') {
-          const isSwordsOfRevealingLight = this.isExactCard(spellTrap, 'SwordsOfRevealingLight');
+          const isSwordsOfRevealingLight = this.duelUtils.isSwordsOfRevealingLight(spellTrap);
           
           if (isSwordsOfRevealingLight) {
             // Verificar se ainda está dentro dos 3 turnos do oponente
@@ -9238,6 +9622,8 @@ export class DuelsService implements OnModuleInit {
 
     let damage = 0;
     let destroyed = false;
+    /** LP do atacante após sofrer dano por atacar monstro em defesa (DEF > ATK); usado para garantir que o re-fetch não perca o valor */
+    let attackerLifePointsAfterDefenseDamage: number | null = null;
     const targetPosition = target.position;
 
     if (targetPosition === 'attack') {
@@ -9257,6 +9643,43 @@ export class DuelsService implements OnModuleInit {
                                    attackerCardId === 'marshmallon' ||
                                    attackerName === 'marshmallon' ||
                                    (typeof attackerCardId === 'string' && attackerCardId.toLowerCase().includes('marshmallon'));
+      const isReflectBounder = targetCardId === 'ReflectBounder' ||
+                              (typeof targetCardId === 'string' && targetCardId.toLowerCase().includes('reflectbounder')) ||
+                              targetName === 'reflect bounder' ||
+                              (typeof targetName === 'string' && targetName.includes('reflect bounder'));
+      
+      // Reflect Bounder: antes do cálculo de dano, se este card está sendo atacado e estava face-up em Ataque: cause dano ao oponente = ATK do monstro atacante
+      let reflectBounderEffectApplied = false;
+      if (isReflectBounder && target.position === 'attack') {
+        const reflectBounderDamage = attackerAtk;
+        const attackerLifePoints = isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints;
+        const newAttackerLifePoints = Math.max(0, attackerLifePoints - reflectBounderDamage);
+        if (isPlayer1) {
+          duel.player1LifePoints = newAttackerLifePoints;
+        } else {
+          duel.player2LifePoints = newAttackerLifePoints;
+        }
+        reflectBounderEffectApplied = true;
+        logger.info(`💥 [attackMonster] Reflect Bounder: dano de efeito ao atacante = ${reflectBounderDamage} (ATK do monstro atacante). LP atacante: ${attackerLifePoints} -> ${newAttackerLifePoints}`);
+        if (newAttackerLifePoints <= 0) {
+          await this.updateDuelInDatabase(duelId, {
+            player1Field: (duel as any).player1Field,
+            player2Field: (duel as any).player2Field,
+            player1LifePoints: duel.player1LifePoints,
+            player2LifePoints: duel.player2LifePoints,
+          } as any);
+          await this.finishDuel(duelId, isPlayer1 ? DuelResult.PLAYER2_WIN : DuelResult.PLAYER1_WIN, isPlayer1 ? duel.player2Id : duel.player1Id);
+          this.activeDuels.set(duelIdStr, duel);
+          return { success: true };
+        }
+        await this.updateDuelInDatabase(duelId, {
+          player1Field: (duel as any).player1Field,
+          player2Field: (duel as any).player2Field,
+          player1LifePoints: duel.player1LifePoints,
+          player2LifePoints: duel.player2LifePoints,
+        } as any);
+        this.activeDuels.set(duelIdStr, duel);
+      }
       
       // Verificar se o ataque vai destruir o monstro do defensor (ATK > ATK ou ATK = ATK)
       // Em empate (ATK = ATK), ambos são destruídos, então a trap também ativa
@@ -9540,6 +9963,7 @@ export class DuelsService implements OnModuleInit {
         }
         if (damage > 0) {
           await this.processWhiteMagicalHatEffect(duelIdStr, duel, isPlayer1, attacker, target);
+          await this.processMaskedSorcererEffect(duelIdStr, duel, isPlayer1, attacker, target);
         }
       } else {
         // Empate: normalmente ambos seriam destruídos
@@ -9640,10 +10064,68 @@ export class DuelsService implements OnModuleInit {
         player1LifePoints: duel.player1LifePoints,
         player2LifePoints: duel.player2LifePoints,
       } as any);
-    } else if (targetPosition === 'defense' || targetPosition === 'set') {
-      // Ataque vs Defesa: comparar ATK do atacante vs DEF do defensor
+      // Reflect Bounder: após o cálculo de dano, destruir este card (se ainda estiver no campo)
+      if (reflectBounderEffectApplied) {
+        duel = await this.findDuelByIdFromDatabase(duelIdStr);
+        if (duel) {
+          const defFieldRb = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+          const reflectBounderCard = defFieldRb?.monsters?.[targetZoneIndex];
+          if (reflectBounderCard) {
+            logger.info(`💥 [attackMonster] Reflect Bounder: destruindo este card após o cálculo de dano`);
+            await this.handleEquipmentDestruction(duelId, duel, !isPlayer1, reflectBounderCard);
+            defFieldRb.monsters[targetZoneIndex] = null;
+            const ownerFieldRb = this.getOwnerFieldForMonster(duel, reflectBounderCard, !isPlayer1);
+            if (!ownerFieldRb.graveyard) ownerFieldRb.graveyard = [];
+            ownerFieldRb.graveyard.push(reflectBounderCard);
+            await this.updateDuelInDatabase(duelId, {
+              player1Field: (duel as any).player1Field,
+              player2Field: (duel as any).player2Field,
+            } as any);
+            this.activeDuels.set(duelIdStr, duel);
+          }
+        }
+      }
+    } else {
+      // Ataque vs Defesa: alvo não está em ataque (defense, set, ou qualquer outro). Comparar ATK do atacante vs DEF do defensor.
       // IMPORTANTE: Só viramos o monstro face-down para cima DEPOIS de verificar traps (Mirror Force, Dimensional Prison, Sakuretsu Armor).
       // Se o atacante for destruído/banido por uma trap antes de resolver o ataque, o monstro face-down NÃO vira.
+
+      // Drillroid: antes do cálculo de dano, se este card atacar um monstro em Posição de Defesa: destrua esse monstro (sem aplicar dano).
+      const attackerCardIdForDrill = attacker.idCarta || attacker.id || attacker.cardId;
+      const attackerNameForDrill = (attacker.name || attacker.cardName || '').toLowerCase();
+      const isDrillroid = attackerCardIdForDrill === 'Drillroid' ||
+                         attackerCardIdForDrill === 'drillroid' ||
+                         (typeof attackerCardIdForDrill === 'string' && attackerCardIdForDrill.toLowerCase().includes('drillroid')) ||
+                         attackerNameForDrill.includes('drillroid') ||
+                         (typeof attackerCardIdForDrill === 'string' && attackerCardIdForDrill.toLowerCase().includes('71218746'));
+      if (isDrillroid) {
+        logger.info(`🔩 [attackMonster] Drillroid atacou monstro em Posição de Defesa - destruindo o alvo antes do cálculo de dano`);
+        await this.handleEquipmentDestruction(duelId, duel, !isPlayer1, target);
+        defenderField.monsters[targetZoneIndex] = null;
+        const ownerFieldDrill = this.getOwnerFieldForMonster(duel, target, !isPlayer1);
+        if (!ownerFieldDrill.graveyard) ownerFieldDrill.graveyard = [];
+        ownerFieldDrill.graveyard.push(target);
+        if (!defenderField.monsterDestroyedThisTurn) {
+          defenderField.monsterDestroyedThisTurn = true;
+          logger.info(`✅ [attackMonster] Monstro destruído no campo do defensor (Drillroid) - Last Will pode ser ativada`);
+        }
+        attacker.attackedThisTurn = true;
+        attacker.attacksThisTurn = (attacker.attacksThisTurn || 0) + 1;
+        if (isPlayer1) {
+          (duel as any).player1Field = attackerField;
+          (duel as any).player2Field = defenderField;
+        } else {
+          (duel as any).player1Field = defenderField;
+          (duel as any).player2Field = attackerField;
+        }
+        await this.updateDuelInDatabase(duelId, {
+          player1Field: (duel as any).player1Field,
+          player2Field: (duel as any).player2Field,
+        } as any);
+        this.activeDuels.set(duelIdStr, duel);
+        logger.info(`✅ [attackMonster] Drillroid: monstro em defesa destruído (sem dano de batalha)`);
+        return { success: true, damage: 0, destroyed: true };
+      }
       
       const targetCardId = target.idCarta || target.id || target.cardId;
       const targetName = (target.name || target.cardName || '').toLowerCase();
@@ -9670,8 +10152,8 @@ export class DuelsService implements OnModuleInit {
       // Recalcular ATK do atacante após possíveis mudanças
       const attackerAtkRecalc = this.getTotalMonsterAtk(attacker, duel, isPlayer1, duel.currentPhase);
       
-      // Calcular DEF total incluindo bônus de equipamentos e spells
-      const targetBaseDef = target.def || 0;
+      // Calcular DEF total incluindo bônus de equipamentos e spells; aceitar .def ou .defense
+      const targetBaseDef = Number(target.def ?? target.defense ?? 0) || 0;
       const targetEquipmentBonusDef = target.equipmentBonusDef || 0;
       const targetSpellCounterBonusDef = target.spellCounterBonusDef || 0;
       const targetDef = targetBaseDef + targetEquipmentBonusDef + targetSpellCounterBonusDef;
@@ -9735,8 +10217,8 @@ export class DuelsService implements OnModuleInit {
         // Recalcular ATK do atacante (base + equipamentos + efeitos)
         const attackerAtkForSakuretsuDef = this.getTotalMonsterAtk(attacker, duel, isPlayer1, duel.currentPhase);
         
-        // Calcular DEF total incluindo bônus de equipamentos e spells
-        const targetBaseDefForSakuretsu = targetBeforeSakuretsuDef.def || 0;
+        // Calcular DEF total incluindo bônus de equipamentos e spells; aceitar .def ou .defense
+        const targetBaseDefForSakuretsu = Number(targetBeforeSakuretsuDef.def ?? targetBeforeSakuretsuDef.defense ?? 0) || 0;
         const targetEquipmentBonusDefForSakuretsu = targetBeforeSakuretsuDef.equipmentBonusDef || 0;
         const targetSpellCounterBonusDefForSakuretsu = targetBeforeSakuretsuDef.spellCounterBonusDef || 0;
         const targetDefForSakuretsu = targetBaseDefForSakuretsu + targetEquipmentBonusDefForSakuretsu + targetSpellCounterBonusDefForSakuretsu;
@@ -9812,8 +10294,8 @@ export class DuelsService implements OnModuleInit {
         // Recalcular ATK do atacante (base + equipamentos + efeitos que aumentam ATK)
         const attackerAtk3 = this.getTotalMonsterAtk(attacker, duel, isPlayer1, duel.currentPhase);
         
-        // Calcular DEF total do defensor (base + equipamentos + efeitos)
-        const targetBaseDef3 = targetAfterTrap2.def || 0;
+        // Calcular DEF total do defensor (base + equipamentos + efeitos); aceitar .def ou .defense
+        const targetBaseDef3 = Number(targetAfterTrap2.def ?? targetAfterTrap2.defense ?? 0) || 0;
         const targetEquipmentBonusDef3 = targetAfterTrap2.equipmentBonusDef || 0;
         const targetSpellCounterBonusDef3 = targetAfterTrap2.spellCounterBonusDef || 0;
         const targetDef3 = targetBaseDef3 + targetEquipmentBonusDef3 + targetSpellCounterBonusDef3;
@@ -10048,6 +10530,7 @@ export class DuelsService implements OnModuleInit {
             logger.info(`💥 [attackMonster] DEF (${targetDef3}) > ATK (${attackerAtk3}) - Atacante perde ${damage} LP`);
             const attackerLifePoints = isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints;
             const newLifePoints = Math.max(0, attackerLifePoints - damage);
+            attackerLifePointsAfterDefenseDamage = newLifePoints;
             
             if (isPlayer1) {
               duel.player1LifePoints = newLifePoints;
@@ -10057,19 +10540,21 @@ export class DuelsService implements OnModuleInit {
 
             logger.info(`💥 [attackMonster] LP do atacante: ${attackerLifePoints} -> ${newLifePoints} (dano: ${damage})`);
 
-            // Salvar Life Points atualizados no banco imediatamente
+            // Salvar Life Points atualizados no banco imediatamente e garantir cache
             await this.updateDuelInDatabase(duelId, {
               player1LifePoints: duel.player1LifePoints,
               player2LifePoints: duel.player2LifePoints,
             } as any);
+            this.activeDuels.set(duelIdStr, duel);
 
             if (newLifePoints <= 0) {
               await this.finishDuel(duelId, isPlayer1 ? DuelResult.PLAYER2_WIN : DuelResult.PLAYER1_WIN, isPlayer1 ? duel.player2Id : duel.player1Id);
             }
             
-            // Processar efeito do WhiteMagicalHat se foi atacada em defesa e o oponente levou dano
+            // Processar efeito do WhiteMagicalHat e MaskedSorcerer se foi atacada em defesa e o oponente levou dano
             if (damage > 0) {
               await this.processWhiteMagicalHatEffect(duelIdStr, duel, isPlayer1, attacker, targetAfterTrap2);
+              await this.processMaskedSorcererEffect(duelIdStr, duel, isPlayer1, attacker, targetAfterTrap2);
             }
           }
         } else if (targetDef3 === attackerAtk3) {
@@ -10085,6 +10570,68 @@ export class DuelsService implements OnModuleInit {
           logger.warn(`⚠️ [attackMonster] DEF (${targetDef3}) < ATK (${attackerAtk3}) - caso inesperado`);
         }
         // O monstro permanece no campo em posição 'defense' (face-up em defesa) apenas se DEF > ATK
+      }
+      } else {
+        // willDestroyDefender === false: ATK <= DEF. Monstro em defesa NÃO é destruído.
+        // Virar alvo se face-down, calcular ATK/DEF e aplicar dano ao atacante (DEF - ATK).
+        duel = await this.findDuelByIdFromDatabase(duelIdStr);
+        if (!duel) {
+          return { success: false, message: 'Duelo não encontrado' };
+        }
+        attackerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+        defenderField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+        attacker = attackerField?.monsters?.[attackerZoneIndex];
+        let targetDefender = defenderField?.monsters?.[targetZoneIndex];
+        if (!attacker || attacker.position !== 'attack' || !targetDefender) {
+          return { success: false, message: 'Seu monstro atacante foi destruído ou banido, ou o alvo não existe mais.' };
+        }
+        if (wasFaceDown && targetDefender.position === 'set') {
+          defenderField.monsters[targetZoneIndex].position = 'defense';
+          await this.updateDuelInDatabase(duelId, {
+            player1Field: (duel as any).player1Field,
+            player2Field: (duel as any).player2Field,
+          } as any);
+          duel = await this.findDuelByIdFromDatabase(duelIdStr);
+          if (!duel) return { success: false, message: 'Duelo não encontrado' };
+          defenderField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+          targetDefender = defenderField?.monsters?.[targetZoneIndex];
+          if (!targetDefender) return { success: false, message: 'Alvo não encontrado após virar' };
+        }
+        const atkAttacker = this.getTotalMonsterAtk(attacker, duel, isPlayer1, duel.currentPhase);
+        const baseDefDef = Number(targetDefender.def ?? targetDefender.defense ?? 0) || 0;
+        const targetDefTotal = baseDefDef + (targetDefender.equipmentBonusDef || 0) + (targetDefender.spellCounterBonusDef || 0);
+        destroyed = false;
+        logger.info(`⚔️ [attackMonster] ATK <= DEF (não destruir): atacante ATK=${atkAttacker}, defensor DEF=${targetDefTotal}`);
+        if (targetDefTotal > atkAttacker) {
+          damage = targetDefTotal - atkAttacker;
+          const isWabokuActiveDef = defenderField && defenderField.wabokuActiveThisTurn === true;
+          if (isWabokuActiveDef) {
+            damage = 0;
+            logger.info(`🛡️ [attackMonster] Waboku ativo - dano ao atacante prevenido`);
+          } else {
+            const attackerLP = isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints;
+            const newLP = Math.max(0, attackerLP - damage);
+            attackerLifePointsAfterDefenseDamage = newLP;
+            if (isPlayer1) duel.player1LifePoints = newLP; else duel.player2LifePoints = newLP;
+            logger.info(`💥 [attackMonster] DEF (${targetDefTotal}) > ATK (${atkAttacker}) - Atacante perde ${damage} LP. LP: ${attackerLP} -> ${newLP}`);
+            await this.updateDuelInDatabase(duelId, {
+              player1LifePoints: duel.player1LifePoints,
+              player2LifePoints: duel.player2LifePoints,
+            } as any);
+            this.activeDuels.set(duelIdStr, duel);
+            if (newLP <= 0) {
+              await this.finishDuel(duelId, isPlayer1 ? DuelResult.PLAYER2_WIN : DuelResult.PLAYER1_WIN, isPlayer1 ? duel.player2Id : duel.player1Id);
+            }
+            // Processar efeito do White Magical Hat e Masked Sorcerer: quando atacado em defesa e o atacante leva dano
+            if (damage > 0) {
+              await this.processWhiteMagicalHatEffect(duelIdStr, duel, isPlayer1, attacker, targetDefender);
+              await this.processMaskedSorcererEffect(duelIdStr, duel, isPlayer1, attacker, targetDefender);
+            }
+          }
+        } else {
+          damage = 0;
+          logger.info(`🛡️ [attackMonster] ATK == DEF: monstro em defesa permanece, nenhum dano`);
+        }
       }
       
       // Processar efeito do Marshmallon APÓS o cálculo de dano
@@ -10114,7 +10661,6 @@ export class DuelsService implements OnModuleInit {
         }
       }
     }
-    }
 
     // IMPORTANTE: Re-buscar o duelo do BANCO para garantir estado persistido (ex: BLS canAttackAgainThisTurn)
     try {
@@ -10122,6 +10668,16 @@ export class DuelsService implements OnModuleInit {
       if (!duel) {
         logger.error(`❌ [attackMonster] Duelo não encontrado após ataque - duelId: ${duelIdStr}`);
         return { success: false, message: 'Duelo não encontrado após ataque' };
+      }
+      
+      // Garantir LP do atacante quando sofreu dano por atacar monstro em defesa (DEF > ATK) — re-fetch pode devolver valor antigo
+      if (attackerLifePointsAfterDefenseDamage !== null) {
+        if (isPlayer1) {
+          duel.player1LifePoints = attackerLifePointsAfterDefenseDamage;
+        } else {
+          duel.player2LifePoints = attackerLifePointsAfterDefenseDamage;
+        }
+        logger.info(`💥 [attackMonster] LP do atacante reaplicados após re-fetch: ${attackerLifePointsAfterDefenseDamage}`);
       }
       
       // Re-obter referências atualizadas do campo
@@ -10244,37 +10800,41 @@ export class DuelsService implements OnModuleInit {
   }
 
   /**
-   * Processa o efeito do MaskedSorcerer: quando causa dano ao oponente, compra uma carta
+   * Processa o efeito do MaskedSorcerer: quando causa dano ao oponente OU quando é atacado em defesa e o oponente leva dano,
+   * o dono do Masked Sorcerer compra uma carta.
+   * @param target - Carta defensor (opcional; quando Masked Sorcerer é atacado em defesa)
    */
   private async processMaskedSorcererEffect(
     duelId: string | number,
     duel: Duel,
     isAttackerPlayer1: boolean,
-    attacker: any
+    attacker: any,
+    target?: any
   ): Promise<void> {
     const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
     try {
-      const attackerCardId = attacker.idCarta || attacker.id || attacker.cardId;
-      const attackerName = (attacker.name || attacker.cardName || '').toLowerCase();
-      
-      // Verificar se o atacante é MaskedSorcerer
-      const isMaskedSorcerer = this.isExactCard(attacker, 'MaskedSorcerer');
-      
-      if (!isMaskedSorcerer) {
+      const attackerIsMaskedSorcerer = this.isExactCard(attacker, 'MaskedSorcerer');
+      const targetIsMaskedSorcerer = target ? this.isExactCard(target, 'MaskedSorcerer') : false;
+
+      if (!attackerIsMaskedSorcerer && !targetIsMaskedSorcerer) {
         return;
       }
-      
-      logger.info(`✨ [processMaskedSorcererEffect] MaskedSorcerer causou dano - processando efeito`);
-      
-      // Identificar o jogador que atacou (quem tem o MaskedSorcerer)
-      const attackerPlayerId = isAttackerPlayer1 ? duel.player1Id : duel.player2Id;
-      
-      // Comprar uma carta para o jogador que tem o MaskedSorcerer
-      await this.drawCard(duelId, attackerPlayerId);
-      
-      logger.info(`✅ [processMaskedSorcererEffect] MaskedSorcerer: Jogador comprou 1 carta após causar dano`);
-      
-      // Atualizar cache (a atualização no banco será feita pelo método chamador)
+
+      // Quem compra é sempre o dono do Masked Sorcerer
+      let controllerPlayerId: number;
+      if (targetIsMaskedSorcerer) {
+        // Masked Sorcerer é o defensor: dono é o defensor (!isAttackerPlayer1)
+        controllerPlayerId = isAttackerPlayer1 ? duel.player2Id : duel.player1Id;
+        logger.info(`✨ [processMaskedSorcererEffect] MaskedSorcerer foi atacado em defesa e oponente levou dano - dono compra 1 carta`);
+      } else {
+        // Masked Sorcerer é o atacante: dono é o atacante
+        controllerPlayerId = isAttackerPlayer1 ? duel.player1Id : duel.player2Id;
+        logger.info(`✨ [processMaskedSorcererEffect] MaskedSorcerer causou dano - dono compra 1 carta`);
+      }
+
+      await this.drawCard(duelId, controllerPlayerId);
+
+      logger.info(`✅ [processMaskedSorcererEffect] MaskedSorcerer: Jogador comprou 1 carta`);
       this.activeDuels.set(duelIdStr, duel);
     } catch (error) {
       logger.error(`❌ [processMaskedSorcererEffect] Erro ao processar efeito do MaskedSorcerer:`, error);
@@ -11214,6 +11774,15 @@ export class DuelsService implements OnModuleInit {
       effectUsedThisTurn: false, // Para rastrear se o efeito foi usado neste turno
     };
     
+    const placedChaos = playerField.monsters[zoneIndex];
+    if (placedChaos) {
+      const destroyed = await this.checkTrapsOnMonsterSummon(duelId, duel, isPlayer1, zoneIndex, placedChaos, finalPosition as 'attack' | 'defense');
+      if (destroyed) {
+        this.activeDuels.set(duelIdStr, duel);
+        return { success: true };
+      }
+    }
+    
     const chaosCheckForLog = this.isChaosSpecialSummonCard(cardToSummon);
     const cardDisplayNameForLog = chaosCheckForLog.isChaos ? chaosCheckForLog.cardName : 'Carta Chaos';
     
@@ -11914,11 +12483,11 @@ export class DuelsService implements OnModuleInit {
     // Descartar todas as cartas do campo do jogador (spell/trap)
     if (playerField.spellTrap && Array.isArray(playerField.spellTrap)) {
       for (let i = 0; i < playerField.spellTrap.length; i++) {
-        const spellTrap = playerField.spellTrap[i];
-        if (spellTrap && spellTrap !== null) {
-          // Mover para o cemitério
+        if (!playerField.spellTrap[i]) continue;
+        await this.onSpellTrapRemovedFromField(duelId, duel, isPlayer1, i);
+        if (playerField.spellTrap[i]) {
           if (!playerField.graveyard) playerField.graveyard = [];
-          playerField.graveyard.push(spellTrap);
+          playerField.graveyard.push(playerField.spellTrap[i]);
           playerField.spellTrap[i] = null;
           totalCardsDiscarded++;
         }
@@ -11963,11 +12532,11 @@ export class DuelsService implements OnModuleInit {
     // Descartar todas as cartas do campo do oponente (spell/trap)
     if (opponentField && opponentField.spellTrap && Array.isArray(opponentField.spellTrap)) {
       for (let i = 0; i < opponentField.spellTrap.length; i++) {
-        const spellTrap = opponentField.spellTrap[i];
-        if (spellTrap && spellTrap !== null) {
-          // Mover para o cemitério
+        if (!opponentField.spellTrap[i]) continue;
+        await this.onSpellTrapRemovedFromField(duelId, duel, !isPlayer1, i);
+        if (opponentField.spellTrap[i]) {
           if (!opponentField.graveyard) opponentField.graveyard = [];
-          opponentField.graveyard.push(spellTrap);
+          opponentField.graveyard.push(opponentField.spellTrap[i]);
           opponentField.spellTrap[i] = null;
           totalCardsDiscarded++;
         }
@@ -12499,6 +13068,16 @@ export class DuelsService implements OnModuleInit {
       specialSummoned: true,
       effectUsedThisTurn: false, // Para rastrear se o efeito foi usado neste turno
     };
+    
+    const placedRedEyes = playerField.monsters[zoneIndex];
+    if (placedRedEyes) {
+      const destroyed = await this.checkTrapsOnMonsterSummon(duelId, duel, isPlayer1, zoneIndex, placedRedEyes, finalPosition as 'attack' | 'defense');
+      if (destroyed) {
+        duel.pendingChoice = null;
+        this.activeDuels.set(duelIdStr, duel);
+        return { success: true };
+      }
+    }
     
     logger.info(`✅ [specialSummonRedEyesDarknessMetalDragon] Red-Eyes Darkness Metal Dragon invocado por invocação especial:`, {
       name: cardToSummon.name,
@@ -13056,8 +13635,9 @@ export class DuelsService implements OnModuleInit {
         }
       }
 
-      // Verificar SwordsOfRevealingLight antes de mudar turno
-      await this.checkAndDestroySwordsOfRevealingLight(duelId, duel);
+      // Verificar SwordsOfRevealingLight antes de mudar turno (usar duelo fresco do banco para turnCounter e dados das cartas)
+      const duelForSwordsCheck = await this.findDuelByIdFromDatabase(duelIdStr) || duel;
+      await this.checkAndDestroySwordsOfRevealingLight(duelId, duelForSwordsCheck);
       const updatedDuel = await this.findDuelByIdFromDatabase(duelIdStr);
       if (updatedDuel) {
         duel = updatedDuel;
@@ -13096,11 +13676,16 @@ export class DuelsService implements OnModuleInit {
     const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
     let duel = this.activeDuels.get(duelIdStr);
     
-    // Se não encontrou em memória, buscar do banco
     if (!duel) {
       const duelFromDb = await this.findDuelByIdFromDatabase(duelIdStr);
       if (!duelFromDb) return null;
       duel = duelFromDb;
+    }
+
+    // DRAW é sempre processada por processDrawPhase (nunca avançar por nextPhase)
+    if (duel.currentPhase === TurnPhase.DRAW) {
+      logger.debug(`⚠️ [nextPhase] Ignorando nextPhase em DRAW - use processDrawPhase`);
+      return null;
     }
 
     const phases = [TurnPhase.DRAW, TurnPhase.STANDBY, TurnPhase.MAIN1, TurnPhase.BATTLE, TurnPhase.MAIN2, TurnPhase.END];
@@ -13152,7 +13737,9 @@ export class DuelsService implements OnModuleInit {
       
       // Se está em END, verificar SwordsOfRevealingLight antes de mudar turno
       if (duel.currentPhase === TurnPhase.END) {
-        await this.checkAndDestroySwordsOfRevealingLight(duelId, duel);
+        // Buscar duelo fresco do banco para ter turnCounter e dados das cartas (ex: activationTurnCounter da Swords) corretos
+        const duelForCheck = await this.findDuelByIdFromDatabase(duelIdStr) || duel;
+        await this.checkAndDestroySwordsOfRevealingLight(duelId, duelForCheck);
         // Re-buscar duelo após verificar SwordsOfRevealingLight
         const updatedDuel = await this.findDuelByIdFromDatabase(duelIdStr);
         if (updatedDuel) {
@@ -13565,11 +14152,12 @@ export class DuelsService implements OnModuleInit {
             const isFaceUp = cardPosition === 'face-up';
             if (isFaceUp) {
               logger.info(`🔄 [advanceToNextTurn] Movendo carta ativada (Change Of Heart/Brain Control) do Player 1 para o cemitério`);
-              if (!player1Field.graveyard) {
-                player1Field.graveyard = [];
+              await this.onSpellTrapRemovedFromField(duelIdStr, duel, true, i);
+              if (player1Field.spellTrap[i]) {
+                if (!player1Field.graveyard) player1Field.graveyard = [];
+                player1Field.graveyard.push(player1Field.spellTrap[i]);
+                player1Field.spellTrap[i] = null;
               }
-              player1Field.graveyard.push(card);
-              player1Field.spellTrap[i] = null;
             } else {
               logger.info(`ℹ️ [advanceToNextTurn] Change Of Heart/Brain Control do Player 1 está setada (face-down) - permanece no campo`);
             }
@@ -13587,11 +14175,12 @@ export class DuelsService implements OnModuleInit {
             const isFaceUp = cardPosition === 'face-up';
             if (isFaceUp) {
               logger.info(`🔄 [advanceToNextTurn] Movendo carta ativada (Change Of Heart/Brain Control) do Player 2 para o cemitério`);
-              if (!player2Field.graveyard) {
-                player2Field.graveyard = [];
+              await this.onSpellTrapRemovedFromField(duelIdStr, duel, false, i);
+              if (player2Field.spellTrap[i]) {
+                if (!player2Field.graveyard) player2Field.graveyard = [];
+                player2Field.graveyard.push(player2Field.spellTrap[i]);
+                player2Field.spellTrap[i] = null;
               }
-              player2Field.graveyard.push(card);
-              player2Field.spellTrap[i] = null;
             } else {
               logger.info(`ℹ️ [advanceToNextTurn] Change Of Heart/Brain Control do Player 2 está setada (face-down) - permanece no campo`);
             }
@@ -13961,9 +14550,8 @@ export class DuelsService implements OnModuleInit {
         // 2. IMEDIATAMENTE APÓS, se o duelista estiver em um clã ativo, o clã também ganha o mesmo scoreEarned
         // 3. O score é adicionado ao member.totalScore e depois o group.totalScore é recalculado
         
-        // IMPORTANTE: Score da Arena NÃO é adicionado ao totalScore geral
-        // O score da arena é calculado separadamente no ranking da arena
-        const shouldAddToTotalScore = duel.origin !== DuelOrigin.ARENA;
+        // Score ganho na arena também soma ao total_score geral do duelista
+        const shouldAddToTotalScore = true;
         
         // Atualizar score do duelista (usar query direta para garantir precisão decimal)
         logger.info(`📊 [finishDuel] ========== ATUALIZANDO SCORE DO DUELISTA ==========`);
@@ -14016,16 +14604,11 @@ export class DuelsService implements OnModuleInit {
             logger.error(`❌ [finishDuel] Erro ao atualizar score (fallback):`, error2.message || error2);
           }
         }
-        } else {
-          // Arena: não adicionar ao totalScore, apenas buscar o score atual
-          logger.info(`📊 [finishDuel] Arena: Score ${scoreEarned} NÃO será adicionado ao totalScore (score da arena é separado)`);
-          const user = await this.usersRepository.findOne({ where: { id: winnerIdNum }, select: ['id', 'totalScore'] });
-          newUserTotalScore = user?.totalScore ? parseFloat(String(user.totalScore)) : 0;
         }
         
         // ========== ATUALIZAR SCORE DO CLÃ (GRUPO) IMEDIATAMENTE APÓS ==========
-        // IMPORTANTE: Clã também NÃO recebe score de arena
-        if (shouldAddToTotalScore) {
+        // Clã recebe score apenas de duelos que não são de arena (arena não soma ao clã)
+        if (duel.origin !== DuelOrigin.ARENA) {
           // CRÍTICO: Atualizar o score do clã no mesmo momento que o score do duelista
           logger.info(`👥 [finishDuel] ========== ATUALIZANDO SCORE DO CLÃ (GRUPO) ==========`);
           logger.info(`👥 [finishDuel] Vencedor: ${winnerIdNum}, Score a adicionar ao clã: ${scoreEarned}, Tipo: ${typeof scoreEarned}`);
@@ -14550,6 +15133,78 @@ export class DuelsService implements OnModuleInit {
     return active;
   }
 
+  /**
+   * Retorna todos os duelos ativos (para painel admin - assistir duelos).
+   */
+  async getAllActiveDuelsForAdmin(): Promise<Duel[]> {
+    const active: Duel[] = [];
+    const seenIds = new Set<string>();
+
+    for (const duel of this.activeDuels.values()) {
+      if (duel.status === DuelStatus.IN_PROGRESS) {
+        active.push(duel);
+        seenIds.add(String(duel.id));
+      }
+    }
+
+    try {
+      const fromDb = await this.duelsRepository.find({
+        where: { status: DuelStatus.IN_PROGRESS },
+        order: { updatedAt: 'DESC' },
+        take: 50,
+      });
+      for (const duel of fromDb) {
+        if (seenIds.has(String(duel.id))) continue;
+        if (duel.player1Field && typeof duel.player1Field === 'string') {
+          (duel as any).player1Field = JSON.parse(duel.player1Field as any);
+        }
+        if (duel.player2Field && typeof duel.player2Field === 'string') {
+          (duel as any).player2Field = JSON.parse(duel.player2Field as any);
+        }
+        active.push(duel);
+        seenIds.add(String(duel.id));
+      }
+    } catch (error) {
+      logger.error('❌ [getAllActiveDuelsForAdmin] Erro ao buscar do banco:', error);
+    }
+
+    return active.sort((a, b) => {
+      const aTime = (a as any).updatedAt?.getTime?.() ?? 0;
+      const bTime = (b as any).updatedAt?.getTime?.() ?? 0;
+      return bTime - aTime;
+    });
+  }
+
+  /**
+   * Encerra um duelo ativo (apenas admin). Marca como CANCELLED e remove do cache.
+   */
+  async adminTerminateActiveDuel(duelId: string): Promise<{ success: boolean; message: string }> {
+    const duelIdStr = duelId?.trim?.() || duelId;
+    if (!duelIdStr) {
+      return { success: false, message: 'ID do duelo inválido' };
+    }
+    try {
+      let duel: Duel | null | undefined = this.activeDuels.get(duelIdStr);
+      if (!duel) {
+        duel = await this.findDuelByIdFromDatabase(duelIdStr);
+      }
+      if (!duel) {
+        return { success: false, message: 'Duelo não encontrado' };
+      }
+      if (duel.status !== DuelStatus.IN_PROGRESS) {
+        return { success: false, message: 'Duelo não está ativo (já finalizado ou cancelado)' };
+      }
+      await this.finishDuel(duelIdStr, DuelResult.CANCELLED, null);
+      this.activeDuels.delete(duelIdStr);
+      this.activeDuelsCountCache = this.activeDuels.size;
+      this.lastCountUpdate = Date.now();
+      return { success: true, message: 'Duelo encerrado com sucesso' };
+    } catch (error: any) {
+      logger.error('❌ [adminTerminateActiveDuel] Erro ao encerrar duelo:', error?.message || error);
+      return { success: false, message: error?.message || 'Erro ao encerrar duelo' };
+    }
+  }
+
   async getActiveDuelForUser(userId: number): Promise<Duel | null> {
     // Buscar primeiro em memória
     let cachedDuel: Duel | null = null;
@@ -14899,7 +15554,6 @@ export class DuelsService implements OnModuleInit {
               'nickname',
               'clanTag',
               'level',
-              'avatar',
               'profileImage',
               'equippedPlaymatId',
               'equippedPlaymatImage',
@@ -14916,7 +15570,6 @@ export class DuelsService implements OnModuleInit {
               'nickname',
               'clanTag',
               'level',
-              'avatar',
               'profileImage',
               'equippedPlaymatId',
               'equippedPlaymatImage',
@@ -15417,26 +16070,23 @@ export class DuelsService implements OnModuleInit {
         this.lastCountUpdate = Date.now();
       logger.info(`✅ [createDuelInternal] Duelo adicionado ao cache. Total de duelos ativos: ${this.activeDuels.size}`);
       
-      // Processar automaticamente a fase DRAW no primeiro turno do primeiro jogador
-      // No primeiro turno, o jogador compra carta automaticamente e vai para STANDBY
-      const isFirstTurn = cachedDuel.turnCounter === 1;
+      // Regra: no primeiro turno o jogador que começa compra na DP e vai direto para MP2. Processar já na criação para evitar race ao dar join.
+      const isFirstTurn = (cachedDuel.turnCounter ?? 1) === 1;
       const isPlayer1Turn = cachedDuel.currentTurn === 1;
       const isFirstTurnOfFirstPlayer = isFirstTurn && isPlayer1Turn;
       
       if (isFirstTurnOfFirstPlayer && cachedDuel.currentPhase === TurnPhase.DRAW) {
-        logger.info(`🔄 [createDuelInternal] Primeiro turno do primeiro jogador detectado - processando fase DRAW automaticamente...`);
+        logger.info(`🔄 [createDuelInternal] Processando DP na criação (primeiro turno → compra + MAIN2)...`);
         try {
-          // Processar a fase DRAW automaticamente (compra carta e vai para STANDBY)
           const updatedDuel = await this.processDrawPhase(savedDuelIdStr);
           if (updatedDuel) {
-            logger.info(`✅ [createDuelInternal] Fase DRAW processada automaticamente - duelo agora está em ${updatedDuel.currentPhase}`);
-            // Atualizar o cache com o duelo atualizado
+            logger.info(`✅ [createDuelInternal] DP processada - duelo em ${updatedDuel.currentPhase} (primeiro turno respeitado)`);
             this.activeDuels.set(savedDuelIdStr, updatedDuel as any);
             cachedDuel = updatedDuel as any;
           }
         } catch (error) {
-          logger.error(`❌ [createDuelInternal] Erro ao processar fase DRAW automaticamente:`, error);
-          // Continuar mesmo se houver erro - o handleJoinDuelRoom pode processar depois
+          logger.error(`❌ [createDuelInternal] Erro ao processar DP na criação:`, error);
+          // handleJoinDuelRoom ainda pode processar quando o jogador der join
         }
       }
       
@@ -15806,6 +16456,16 @@ export class DuelsService implements OnModuleInit {
     if (card.equippedToMonsterZoneIndex !== undefined && card.equippedToMonsterZoneIndex !== null) {
       compacted.equippedToMonsterZoneIndex = card.equippedToMonsterZoneIndex;
     }
+    // CRÍTICO: Preservar dados de ativação da Swords of Revealing Light (destruir na Fase Final do 3º turno do oponente)
+    if (card.activationTurnCounter !== undefined && card.activationTurnCounter !== null) {
+      compacted.activationTurnCounter = card.activationTurnCounter;
+    }
+    if (card.activationTurn !== undefined && card.activationTurn !== null) {
+      compacted.activationTurn = card.activationTurn;
+    }
+    if (card.activatedByPlayer1 !== undefined && card.activatedByPlayer1 !== null) {
+      compacted.activatedByPlayer1 = card.activatedByPlayer1;
+    }
     
     // CRÍTICO: Garantir que idCarta existe ANTES de remover campos nulos (necessário para CardImage)
     if (!compacted.idCarta || compacted.idCarta === null || compacted.idCarta === undefined) {
@@ -15901,7 +16561,7 @@ export class DuelsService implements OnModuleInit {
    * IMPORTANTE: Apenas CONFISCATION, GRACEFUL_CHARITY e FORCEFUL_SENTRY criam pendingChoice persistente
    */
   async setPendingChoice(duelId: string | number, choice: {
-    type: 'CONFISCATION' | 'GRACEFUL_CHARITY' | 'FORCEFUL_SENTRY' | 'BRAIN_CONTROL' | 'SOUL_TAKER' | 'UNITED_WE_STAND' | 'MAGE_POWER' | 'AUTONOMOUS_ACTION_UNIT' | 'MONSTER_REBORN' | 'CHANGE_OF_HEART' | 'CYBER_STEIN' | 'MYSTICAL_SPACE_TYPHOON' | 'SNOWMAN_EATER' | 'CHAOS_SORCERER' | 'DARK_ARMED_DRAGON' | 'RED_EYES_DARKNESS_METAL_DRAGON' | 'REINFORCEMENT_OF_THE_ARMY' | 'LAST_WILL' | 'MONSTER_REINCARNATION' | 'PREMATURE_BURIAL';
+    type: 'CONFISCATION' | 'GRACEFUL_CHARITY' | 'FORCEFUL_SENTRY' | 'BRAIN_CONTROL' | 'SOUL_TAKER' | 'UNITED_WE_STAND' | 'MAGE_POWER' | 'AUTONOMOUS_ACTION_UNIT' | 'MONSTER_REBORN' | 'CHANGE_OF_HEART' | 'CYBER_STEIN' | 'MYSTICAL_SPACE_TYPHOON' | 'SNOWMAN_EATER' | 'CHAOS_SORCERER' | 'DARK_ARMED_DRAGON' | 'RED_EYES_DARKNESS_METAL_DRAGON' | 'REINFORCEMENT_OF_THE_ARMY' | 'LAST_WILL' | 'MONSTER_REINCARNATION' | 'PREMATURE_BURIAL' | 'LIGHTNING_STORM';
     userId: number;
     turnWhenStarted: number;
     phaseWhenStarted: string;

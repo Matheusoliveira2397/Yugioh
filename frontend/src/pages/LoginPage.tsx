@@ -1,9 +1,11 @@
 import { useState, FormEvent, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useI18n } from '../i18n/I18nContext';
 import { useAuthStore } from '../stores/authStore';
 import { motion } from 'framer-motion';
 import axios from 'axios';
 import LatestCardsMarquee, { type MarqueeCard } from '../components/LatestCardsMarquee';
+import LanguageSelector from '../components/LanguageSelector';
 import { getImageUrl } from '../utils/imageUrl';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -45,57 +47,76 @@ interface PublicStats {
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [emailNotVerified, setEmailNotVerified] = useState(false);
   const [userEmail, setUserEmail] = useState('');
   const [resendingEmail, setResendingEmail] = useState(false);
   const [emailResent, setEmailResent] = useState(false);
   const [shopCards, setShopCards] = useState<MarqueeCard[]>([]);
-  const [topPlayers, setTopPlayers] = useState<TopPlayer[]>([]);
-  const [topClans, setTopClans] = useState<TopClan[]>([]);
+  const [topPlayersGlobal, setTopPlayersGlobal] = useState<TopPlayer[]>([]);
+  const [topPlayersSeason, setTopPlayersSeason] = useState<TopPlayer[]>([]);
+  const [topClansGeneral, setTopClansGeneral] = useState<TopClan[]>([]);
+  const [topClansSeason, setTopClansSeason] = useState<TopClan[]>([]);
   const [stats, setStats] = useState<PublicStats | null>(null);
   const navigate = useNavigate();
   const { login } = useAuthStore();
+  const { t } = useI18n();
+
+  const mapPlayer = (p: any) => ({
+    id: String(p.id ?? p.userId ?? ''),
+    nickname: p.nickname ?? '',
+    username: p.username ?? p.nickname,
+    clanTag: p.clanTag,
+    score: p.score ?? p.totalScore ?? 0,
+    wins: p.wins ?? p.winsGeral ?? p.winsSeason ?? 0,
+    losses: p.losses ?? p.lossesGeral ?? p.lossesSeason ?? 0,
+    level: p.level ?? 1,
+    profileImage: p.profileImage,
+  });
+
+  const mapClan = (g: any) => ({
+    id: g.id ?? '',
+    name: g.name ?? '',
+    tag: g.tag ?? '',
+    totalScore: g.totalScore ?? g.seasonScore ?? g.score ?? 0,
+    memberCount: g.memberCount ?? 0,
+    logo: g.logo,
+  });
 
   useEffect(() => {
     Promise.all([
       axios.get(`${API_URL}/cards/shop/for-sale`, { timeout: 20000 }).then((r) => (Array.isArray(r.data) ? r.data.slice(0, 16) : [])).catch(() => []),
+      axios.get(`${API_URL}/users/ranking/general`).then((r) => {
+        if (!Array.isArray(r.data)) return [];
+        return r.data.slice(0, 5).map(mapPlayer);
+      }).catch(() => []),
       axios.get(`${API_URL}/users/ranking/top5`).then((r) => {
         if (!Array.isArray(r.data)) return [];
-        return r.data.slice(0, 5).map((p: any) => ({
-          id: String(p.id ?? p.userId ?? ''),
-          nickname: p.nickname ?? '',
-          username: p.username ?? p.nickname,
-          clanTag: p.clanTag,
-          score: p.score ?? p.totalScore ?? 0,
-          wins: p.wins ?? p.winsGeral ?? p.winsSeason ?? 0,
-          losses: p.losses ?? p.lossesGeral ?? p.lossesSeason ?? 0,
-          level: p.level ?? 1,
-          profileImage: p.profileImage,
-        }));
+        return r.data.slice(0, 5).map(mapPlayer);
       }).catch(() => []),
-      axios.get(`${API_URL}/groups/ranking/top5`).then((r) => {
+      axios.get(`${API_URL}/groups/ranking/general`).then((r) => {
         if (!Array.isArray(r.data)) return [];
-        return r.data.slice(0, 5).map((g: any) => ({
-          id: g.id ?? '',
-          name: g.name ?? '',
-          tag: g.tag ?? '',
-          totalScore: g.totalScore ?? g.score ?? 0,
-          memberCount: g.memberCount ?? 0,
-          logo: g.logo,
-        }));
+        return r.data.slice(0, 3).map(mapClan);
+      }).catch(() => []),
+      axios.get(`${API_URL}/groups/ranking/season`).then((r) => {
+        if (!Array.isArray(r.data)) return [];
+        return r.data.slice(0, 3).map(mapClan);
       }).catch(() => []),
       axios.get(`${API_URL}/public/stats`).then((r) => r.data).catch(() => null),
-    ]).then(([cards, players, clans, publicStats]) => {
+    ]).then(([cards, playersGlobal, playersSeason, clansGeneral, clansSeason, publicStats]) => {
       setShopCards(cards);
-      setTopPlayers(players);
-      setTopClans(clans);
+      setTopPlayersGlobal(playersGlobal);
+      setTopPlayersSeason(playersSeason);
+      setTopClansGeneral(clansGeneral);
+      setTopClansSeason(clansSeason);
       setStats(publicStats);
     });
   }, []);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setError('');
     setEmailNotVerified(false);
     setEmailResent(false);
@@ -105,16 +126,17 @@ export default function LoginPage() {
       navigate('/home');
     } catch (err: any) {
       const errorData = err.response?.data;
-      const message = errorData?.message || 'Usuário ou senha inválidos';
+      const message = errorData?.message || t('login.errorInvalid');
       
       // Verificar se é erro de email não verificado
       if (errorData?.code === 'EMAIL_NOT_VERIFIED' || message.includes('confirme seu email')) {
         setEmailNotVerified(true);
         setUserEmail(errorData?.email || '');
-        setError('Por favor, confirme seu email antes de fazer login. Verifique sua caixa de entrada.');
+        setError(t('login.errorEmailNotVerified'));
       } else {
         setError(message);
       }
+      return;
     }
   };
 
@@ -129,7 +151,7 @@ export default function LoginPage() {
       setEmailResent(true);
       setError('');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Erro ao reenviar email de verificação');
+      setError(err.response?.data?.message || t('login.sending'));
     } finally {
       setResendingEmail(false);
     }
@@ -148,229 +170,307 @@ export default function LoginPage() {
       {/* Overlay suave */}
       <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" aria-hidden />
 
-      {/* Faixa superior: título + login integrados ao layout */}
-      <header className="relative z-10 w-full border-b border-white/10 bg-black/20 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-4">
-          <Link to="/" className="flex-shrink-0">
-            <motion.h1
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.4 }}
-              className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent"
-            >
-              Yu-Gi-Oh! Online
-            </motion.h1>
-          </Link>
+      {/* Header: título + área de login */}
+      <header className="relative z-10 w-full border-b border-white/10 bg-black/30 backdrop-blur-md">
+        <div className="max-w-6xl mx-auto px-4 py-4 sm:py-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              <Link to="/" className="flex-shrink-0">
+                <motion.h1
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.4 }}
+                  className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent"
+                >
+                  {t('login.gameTitle')}
+                </motion.h1>
+              </Link>
+              <LanguageSelector variant="compact" className="sm:ml-2" />
+            </div>
 
-          {/* Entrar no Jogo — compacto, canto superior direito */}
-          <motion.div
-            initial={{ opacity: 0, x: 10 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4, delay: 0.1 }}
-            className="flex flex-wrap items-center gap-2 sm:gap-3"
-          >
-            <form onSubmit={handleSubmit} className="flex flex-wrap items-center gap-2 sm:gap-2">
-              <label htmlFor="username" className="sr-only">Usuário</label>
-              <input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-24 sm:w-28 py-2 px-3 rounded-lg text-sm bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-1 focus:ring-purple-400/60 focus:border-purple-400/50"
-                placeholder="Usuário"
-                required
-              />
-              <label htmlFor="password" className="sr-only">Senha</label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-24 sm:w-28 py-2 px-3 rounded-lg text-sm bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-1 focus:ring-purple-400/60 focus:border-purple-400/50"
-                placeholder="Senha"
-                required
-              />
-              <button
-                type="submit"
-                className="py-2 px-4 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 focus:outline-none focus:ring-2 focus:ring-purple-400/50 transition-all active:scale-[0.98]"
-              >
-                Entrar
-              </button>
-            </form>
-            <span className="text-white/50 text-sm hidden sm:inline">|</span>
-            <Link
-              to="/register"
-              className="text-sm text-purple-300 hover:text-white font-medium transition-colors"
+            <motion.div
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, delay: 0.1 }}
+              className="flex flex-col gap-3 w-full sm:w-auto"
             >
-              Criar conta
-            </Link>
-          </motion.div>
+              <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3">
+                <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2 sm:gap-2" noValidate>
+                  <div className="flex flex-col sm:flex-row gap-2 sm:gap-2">
+                    <label htmlFor="login-input" className="sr-only">{t('login.usernameOrEmail')}</label>
+                    <input
+                      id="login-input"
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      className="flex-1 min-w-[140px] sm:w-36 py-2.5 px-3 rounded-lg text-sm bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:border-purple-400/50"
+                      placeholder={t('login.usernameOrEmail')}
+                      required
+                    />
+                    <label htmlFor="password" className="sr-only">{t('login.password')}</label>
+                    <div className="relative flex-1 sm:w-36 min-w-[140px]">
+                      <input
+                        id="password"
+                        type={showPassword ? 'text' : 'password'}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full py-2.5 pl-3 pr-10 rounded-lg text-sm bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:border-purple-400/50"
+                        placeholder={t('login.password')}
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-white/60 hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-purple-400/60"
+                        title={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+                        aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+                      >
+                        {showPassword ? (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    className="py-2.5 px-5 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:ring-offset-2 focus:ring-offset-transparent transition-all active:scale-[0.98] shrink-0"
+                  >
+                    {t('login.submit')}
+                  </button>
+                </form>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <Link to="/forgot-password" className="text-white/70 hover:text-white transition-colors">
+                  {t('login.forgotPassword')}
+                </Link>
+                <span className="text-white/40">·</span>
+                <Link to="/register" className="text-purple-300 hover:text-white font-medium transition-colors">
+                  {t('login.createAccount')}
+                </Link>
+              </div>
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-lg px-3 py-2.5 text-sm border backdrop-blur-sm"
+                  style={{
+                    borderColor: emailNotVerified ? 'rgba(251,191,36,0.5)' : 'rgba(248,113,113,0.5)',
+                    backgroundColor: emailNotVerified ? 'rgba(251,191,36,0.12)' : 'rgba(248,113,113,0.12)',
+                  }}
+                >
+                  <p className={emailNotVerified ? 'text-amber-100' : 'text-red-100'}>{error}</p>
+                  {emailNotVerified && (
+                    <div className="mt-2 space-y-1">
+                      <p className="text-xs text-amber-200/90">{t('login.didNotReceiveEmail')}</p>
+                      {emailResent ? (
+                        <p className="text-xs text-green-300 font-medium">{t('login.emailResent')}</p>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleResendVerificationEmail}
+                          disabled={resendingEmail}
+                          className="mt-1 py-1.5 px-3 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-medium transition-colors"
+                        >
+                          {resendingEmail ? t('login.sending') : t('login.resendVerification')}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </motion.div>
+          </div>
         </div>
       </header>
 
-      {/* Mensagem de erro — abaixo do header, integrada à tela */}
-      {error && (
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="relative z-10 mx-4 mt-4 max-w-2xl rounded-xl px-4 py-3 text-sm border border-white/10 bg-black/30 backdrop-blur-sm"
-          style={{
-            borderColor: emailNotVerified ? 'rgba(251,191,36,0.4)' : 'rgba(248,113,113,0.4)',
-            backgroundColor: emailNotVerified ? 'rgba(251,191,36,0.15)' : 'rgba(248,113,113,0.15)',
-          }}
-        >
-          <p className={emailNotVerified ? 'text-amber-100' : 'text-red-100'}>{error}</p>
-          {emailNotVerified && (
-            <div className="mt-3 space-y-2">
-              <p className="text-xs text-amber-200/90">Não recebeu o email? Verifique o spam ou reenvie.</p>
-              {emailResent ? (
-                <p className="text-xs text-green-300 font-medium">Email reenviado. Confira sua caixa.</p>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleResendVerificationEmail}
-                  disabled={resendingEmail}
-                  className="py-1.5 px-3 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-medium transition-colors"
-                >
-                  {resendingEmail ? 'Enviando...' : 'Reenviar confirmação'}
-                </button>
-              )}
-            </div>
-          )}
-        </motion.div>
-      )}
+      {/* Conteúdo principal */}
+      <main className="flex-1 relative z-10 pt-4 sm:pt-6 pb-8 px-4">
+        <div className="max-w-6xl w-full mx-auto flex flex-col gap-6">
+          {/* Grid: Rankings à esquerda | Stats + destaque à direita */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
+            {/* Card único: Top Duelistas (Global + Season lado a lado) */}
+            <motion.section
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35 }}
+              className="lg:col-span-5 rounded-2xl border border-white/20 bg-black/30 backdrop-blur-md overflow-hidden shadow-xl"
+            >
+              <div className="px-4 py-3 border-b border-white/10 bg-gradient-to-r from-amber-500/20 to-transparent">
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <span className="text-xl">🏆</span> {t('loginRankings.top5Duelists')}
+                </h2>
+              </div>
+              <div className="p-4 grid grid-cols-2 gap-4 min-h-[200px]">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-amber-400/90 font-semibold mb-2">{t('loginRankings.global')}</p>
+                  {topPlayersGlobal.length === 0 ? (
+                    <p className="text-white/40 text-xs">{t('common.loading')}</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {topPlayersGlobal.map((p, i) => (
+                        <li key={p.id} className="flex items-center gap-2">
+                          <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
+                          <img src={getImageUrl(p.profileImage)} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                          <div className="min-w-0 flex-1">
+                            <span className="text-white text-xs font-medium truncate block">{p.clanTag ? `[${p.clanTag}] ` : ''}{p.nickname || p.username || '—'}</span>
+                            <span className="text-amber-300/90 text-[10px]">{p.score ?? 0} {t('common.pts')}</span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-purple-400/90 font-semibold mb-2">{t('loginRankings.season')}</p>
+                  {topPlayersSeason.length === 0 ? (
+                    <p className="text-white/40 text-xs">{t('common.loading')}</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {topPlayersSeason.map((p, i) => (
+                        <li key={p.id} className="flex items-center gap-2">
+                          <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
+                          <img src={getImageUrl(p.profileImage)} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                          <div className="min-w-0 flex-1">
+                            <span className="text-white text-xs font-medium truncate block">{p.clanTag ? `[${p.clanTag}] ` : ''}{p.nickname || p.username || '—'}</span>
+                            <span className="text-purple-300/90 text-[10px]">{p.score ?? 0} {t('common.pts')}</span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </motion.section>
 
-      {/* Conteúdo principal — esquerda: Top Duelistas, Top Clãs, marquee; direita: O que rolou até agora */}
-      <main className="flex-1 relative z-10 flex flex-col justify-center pt-6 pb-8 px-4">
-        <div className="max-w-6xl w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Coluna esquerda */}
-          <div className="lg:col-span-8 space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <motion.div
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4 }}
-                className="rounded-xl border border-white/15 bg-white/5 backdrop-blur-sm p-4"
-              >
-                <h3 className="text-sm font-bold text-white/90 mb-3 flex items-center gap-2">
-                  <span>🏆</span> Top 5 Duelistas
-                </h3>
-                {topPlayers.length === 0 ? (
-                  <p className="text-white/50 text-xs">Carregando...</p>
+            {/* Card único: Top 3 Clãs (Geral + Season) */}
+            <motion.section
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: 0.05 }}
+              className="lg:col-span-4 rounded-2xl border border-white/20 bg-black/30 backdrop-blur-md overflow-hidden shadow-xl"
+            >
+              <div className="px-4 py-3 border-b border-white/10 bg-gradient-to-r from-rose-500/20 to-transparent">
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <span className="text-xl">⚔️</span> {t('loginRankings.top3Clans')}
+                </h2>
+              </div>
+              <div className="p-4 grid grid-cols-2 gap-4 min-h-[200px]">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-amber-400/90 font-semibold mb-2">{t('loginRankings.general')}</p>
+                  {topClansGeneral.length === 0 ? (
+                    <p className="text-white/40 text-xs">{t('common.loading')}</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {topClansGeneral.map((c, i) => (
+                        <li key={c.id} className="flex items-center gap-2">
+                          <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
+                          <img src={getImageUrl(c.logo)} alt="" className="w-7 h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                          <div className="min-w-0 flex-1">
+                            <span className="text-white text-xs font-medium truncate block">[{c.tag}] {c.name}</span>
+                            <span className="text-amber-300/90 text-[10px]">{c.totalScore ?? 0} {t('common.pts')}</span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-purple-400/90 font-semibold mb-2">{t('loginRankings.season')}</p>
+                  {topClansSeason.length === 0 ? (
+                    <p className="text-white/40 text-xs">{t('common.loading')}</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {topClansSeason.map((c, i) => (
+                        <li key={c.id} className="flex items-center gap-2">
+                          <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
+                          <img src={getImageUrl(c.logo)} alt="" className="w-7 h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                          <div className="min-w-0 flex-1">
+                            <span className="text-white text-xs font-medium truncate block">[{c.tag}] {c.name}</span>
+                            <span className="text-purple-300/90 text-[10px]">{c.totalScore ?? 0} {t('common.pts')}</span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </motion.section>
+
+            {/* Coluna direita: Stats em grid */}
+            <motion.aside
+              initial={{ opacity: 0, x: 8 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.35, delay: 0.1 }}
+              className="lg:col-span-3"
+            >
+              <div className="rounded-2xl border border-white/20 bg-black/30 backdrop-blur-md overflow-hidden shadow-xl sticky top-4">
+                <div className="px-4 py-3 border-b border-white/10 bg-gradient-to-r from-emerald-500/20 to-transparent">
+                  <h2 className="text-base font-bold text-white flex items-center gap-2">
+                    <span className="text-xl">📊</span> {t('loginRankings.statistics')}
+                  </h2>
+                </div>
+                {stats === null ? (
+                  <div className="p-4"><p className="text-white/40 text-xs">{t('common.loading')}</p></div>
                 ) : (
-                  <ul className="space-y-1.5">
-                    {topPlayers.map((p, i) => (
-                      <li key={p.id} className="flex items-center gap-2 text-xs">
-                        <span className="text-white/70 w-5">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
-                        <img
-                          src={getImageUrl(p.profileImage)}
-                          alt=""
-                          className="w-6 h-6 rounded-full object-cover flex-shrink-0"
-                          onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }}
-                        />
-                        <span className="text-white truncate flex-1 min-w-0">
-                          {p.clanTag ? `|${p.clanTag}| ` : ''}{p.nickname || p.username || '—'}
-                        </span>
-                        <span className="text-white/60 shrink-0">{p.score ?? 0}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  <div className="p-4 grid grid-cols-2 gap-3">
+                    <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                      <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.seasonLabel')}</p>
+                      <p className="text-white font-bold text-sm">{stats.currentSeasonNumber}º</p>
+                    </div>
+                    {stats.seasonEndsInDays != null && (
+                      <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.endsIn')}</p>
+                        <p className="text-amber-300 font-bold text-sm">{stats.seasonEndsInDays} {t('loginRankings.days')}</p>
+                      </div>
+                    )}
+                    <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                      <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.duelists')}</p>
+                      <p className="text-white font-bold text-sm">{stats.totalDuelists.toLocaleString('pt-BR')}</p>
+                    </div>
+                    <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                      <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.duels')}</p>
+                      <p className="text-white font-bold text-sm">{stats.totalDuels.toLocaleString('pt-BR')}</p>
+                    </div>
+                    <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 col-span-2">
+                      <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.onlineNow')}</p>
+                      <p className="text-emerald-400 font-bold text-lg">{stats.playersOnline.toLocaleString('pt-BR')}</p>
+                    </div>
+                    <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                      <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.tournaments')}</p>
+                      <p className="text-white font-bold text-sm">{stats.tournamentsFinished.toLocaleString('pt-BR')}</p>
+                    </div>
+                    <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                      <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.cards')}</p>
+                      <p className="text-white font-bold text-sm">{stats.cardsRegistered.toLocaleString('pt-BR')}</p>
+                    </div>
+                    {(stats.maxOnlineToday > 0 || stats.maxOnlineYesterday > 0) && (
+                      <>
+                        {stats.maxOnlineToday > 0 && (
+                          <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                            <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.maxToday')}</p>
+                            <p className="text-white font-bold text-sm">{stats.maxOnlineToday.toLocaleString('pt-BR')}</p>
+                          </div>
+                        )}
+                        {stats.maxOnlineYesterday > 0 && (
+                          <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                            <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.maxYesterday')}</p>
+                            <p className="text-white font-bold text-sm">{stats.maxOnlineYesterday.toLocaleString('pt-BR')}</p>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 )}
-              </motion.div>
-              <motion.div
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.05 }}
-                className="rounded-xl border border-white/15 bg-white/5 backdrop-blur-sm p-4"
-              >
-                <h3 className="text-sm font-bold text-white/90 mb-3 flex items-center gap-2">
-                  <span>⚔️</span> Top 5 Clãs
-                </h3>
-                {topClans.length === 0 ? (
-                  <p className="text-white/50 text-xs">Carregando...</p>
-                ) : (
-                  <ul className="space-y-1.5">
-                    {topClans.map((c, i) => (
-                      <li key={c.id} className="flex items-center gap-2 text-xs">
-                        <span className="text-white/70 w-5">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
-                        <img
-                          src={getImageUrl(c.logo)}
-                          alt=""
-                          className="w-6 h-6 rounded object-cover flex-shrink-0"
-                          onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }}
-                        />
-                        <span className="text-white truncate flex-1 min-w-0">[{c.tag}] {c.name}</span>
-                        <span className="text-white/60 shrink-0">{c.totalScore ?? 0}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </motion.div>
-            </div>
-            <LatestCardsMarquee cards={shopCards} showVerLoja />
+              </div>
+            </motion.aside>
           </div>
 
-          {/* Coluna direita — O que rolou até agora */}
-          <motion.aside
-            initial={{ opacity: 0, x: 12 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4, delay: 0.1 }}
-            className="lg:col-span-4"
-          >
-            <div className="rounded-xl border border-white/15 bg-white/5 backdrop-blur-sm p-4 sticky top-4">
-              <h3 className="text-sm font-bold text-white/90 mb-3 flex items-center gap-2">
-                <span>📊</span> O que rolou até agora
-              </h3>
-              {stats === null ? (
-                <p className="text-white/50 text-xs">Carregando...</p>
-              ) : (
-                <dl className="space-y-2.5 text-xs">
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-white/70">Season atual</dt>
-                    <dd className="text-white font-semibold">{stats.currentSeasonNumber}º</dd>
-                  </div>
-                  {stats.seasonEndsInDays !== null && (
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-white/70">Season termina em</dt>
-                      <dd className="text-white font-semibold">{stats.seasonEndsInDays} dias</dd>
-                    </div>
-                  )}
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-white/70">Duelistas</dt>
-                    <dd className="text-white font-semibold">{stats.totalDuelists.toLocaleString('pt-BR')}</dd>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-white/70">Duelos</dt>
-                    <dd className="text-white font-semibold">{stats.totalDuels.toLocaleString('pt-BR')}</dd>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-white/70">Torneios finalizados</dt>
-                    <dd className="text-white font-semibold">{stats.tournamentsFinished.toLocaleString('pt-BR')}</dd>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-white/70">Cartas cadastradas</dt>
-                    <dd className="text-white font-semibold">{stats.cardsRegistered.toLocaleString('pt-BR')}</dd>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-white/70">Jogadores online</dt>
-                    <dd className="text-green-300 font-semibold">{stats.playersOnline.toLocaleString('pt-BR')}</dd>
-                  </div>
-                  {(stats.maxOnlineToday > 0 || stats.maxOnlineYesterday > 0) && (
-                    <>
-                      <div className="flex justify-between gap-2">
-                        <dt className="text-white/70">Máx. de hoje</dt>
-                        <dd className="text-white font-semibold">{stats.maxOnlineToday.toLocaleString('pt-BR')}</dd>
-                      </div>
-                      <div className="flex justify-between gap-2">
-                        <dt className="text-white/70">Máx. de ontem</dt>
-                        <dd className="text-white font-semibold">{stats.maxOnlineYesterday.toLocaleString('pt-BR')}</dd>
-                      </div>
-                    </>
-                  )}
-                </dl>
-              )}
-            </div>
-          </motion.aside>
+          {/* Marquee de cartas — largura total */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4, delay: 0.15 }}>
+            <LatestCardsMarquee cards={shopCards} showVerLoja />
+          </motion.div>
         </div>
       </main>
     </div>

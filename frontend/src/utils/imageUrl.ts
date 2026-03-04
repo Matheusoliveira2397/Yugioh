@@ -1,5 +1,5 @@
 /**
- * Retorna a URL completa para exibir uma imagem (avatar, logo, troféu, etc.).
+ * Retorna a URL completa para exibir uma imagem (foto de perfil, logo, troféu, etc.).
  * Se a URL já for absoluta (http/https), retorna como está (ex: Supabase Storage).
  * Caso contrário, concatena com a API do backend.
  */

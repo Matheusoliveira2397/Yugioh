@@ -62,8 +62,8 @@ export default function ActiveDuelBanner() {
     const hasArenaBanner = arenaBanner !== null;
     
     if (activeDuel && !loading) {
-      // Se houver barra de arena também, adicionar mais 64px (total 128px)
-      const bannerHeight = hasArenaBanner ? '128px' : '64px';
+      // Se houver barra de arena também, 48px + 48px (total 96px)
+      const bannerHeight = hasArenaBanner ? '96px' : '48px';
       if (nav) {
         nav.style.marginTop = bannerHeight;
       }
@@ -113,22 +113,22 @@ export default function ActiveDuelBanner() {
             padding: 0
           }}
         >
-        <div className="container mx-auto px-4 py-3" style={{ margin: 0, padding: '12px 16px' }}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="animate-pulse">
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+        <div className="container mx-auto px-3 py-1.5" style={{ margin: 0, padding: '6px 12px' }}>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="animate-pulse flex-shrink-0">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
                 </svg>
               </div>
-              <div>
-                <p className="font-bold text-lg">⚔️ Duelo em Andamento</p>
-                <p className="text-sm opacity-90">Você tem um duelo ativo. Clique para continuar!</p>
+              <div className="min-w-0">
+                <p className="font-bold text-base leading-tight">⚔️ Duelo em Andamento</p>
+                <p className="text-xs opacity-90 leading-tight">Você tem um duelo ativo. Clique para continuar!</p>
               </div>
             </div>
             <button
               onClick={handleOpenDuel}
-              className="px-6 py-2 bg-white text-blue-600 font-bold rounded-lg hover:bg-blue-50 transition-colors shadow-md hover:shadow-lg transform hover:scale-105"
+              className="flex-shrink-0 px-4 py-1.5 text-sm bg-white text-blue-600 font-bold rounded-md hover:bg-blue-50 transition-colors shadow hover:shadow-md"
             >
               Clique para abrir o duelo
             </button>

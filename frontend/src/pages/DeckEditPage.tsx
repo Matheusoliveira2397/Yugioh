@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { api } from '../api/axios';
@@ -54,6 +54,9 @@ export default function DeckEditPage() {
   const [selectedCard, setSelectedCard] = useState<UserCard | null>(null);
   const [deckName, setDeckName] = useState(initialDeckName);
   const [deckLoaded, setDeckLoaded] = useState(false);
+  const [maletaSearch, setMaletaSearch] = useState('');
+  const [maletaFilterType, setMaletaFilterType] = useState<string>('all');
+  const [maletaFilterRarity, setMaletaFilterRarity] = useState<string>('all');
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const deckNameTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const savingRef = useRef(false);
@@ -724,6 +727,37 @@ export default function DeckEditPage() {
     return maleta.reduce((total, userCard) => total + userCard.quantity, 0);
   };
 
+  const filteredMaleta = useMemo(() => {
+    const search = maletaSearch.trim().toLowerCase();
+    return maleta.filter((uc) => {
+      if (!uc.card) return false;
+      const nameMatch = !search || uc.card.name.toLowerCase().includes(search);
+      const typeMatch =
+        maletaFilterType === 'all' ||
+        (uc.card.type && uc.card.type.toLowerCase() === maletaFilterType.toLowerCase());
+      const rarityMatch =
+        maletaFilterRarity === 'all' ||
+        (uc.card.rarity || 'Common') === maletaFilterRarity;
+      return nameMatch && typeMatch && rarityMatch;
+    });
+  }, [maleta, maletaSearch, maletaFilterType, maletaFilterRarity]);
+
+  const maletaTypes = useMemo(() => {
+    const types = new Set<string>();
+    maleta.forEach((uc) => {
+      if (uc.card?.type) types.add(uc.card.type);
+    });
+    return ['all', ...Array.from(types).sort()];
+  }, [maleta]);
+
+  const maletaRarities = useMemo(() => {
+    const rarities = new Set<string>();
+    maleta.forEach((uc) => {
+      rarities.add(uc.card?.rarity || 'Common');
+    });
+    return ['all', ...Array.from(rarities).sort()];
+  }, [maleta]);
+
   const saveDeck = async (silent: boolean = false) => {
     if (!user) {
       if (!silent) {
@@ -947,9 +981,9 @@ export default function DeckEditPage() {
                 Extra Deck: {getExtraDeckCount()}/15
               </span>
             </div>
-            <div className="px-4 py-2 rounded-lg bg-gray-800/50 backdrop-blur-sm border-2 border-pink-500/50">
-              <span className="text-pink-400 font-semibold">
-                Cartas na Maleta: {getTotalCardsInMaleta()} ({maleta.length} tipos)
+            <div className="px-4 py-2 rounded-lg bg-gray-800/50 backdrop-blur-sm border-2 border-amber-500/50">
+              <span className="text-amber-400 font-semibold">
+                Maleta: {getTotalCardsInMaleta()} cartas ({maleta.length} tipos)
               </span>
             </div>
           </div>
@@ -1130,132 +1164,199 @@ export default function DeckEditPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
+          className="mt-10"
         >
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-semibold text-pink-400 flex items-center gap-2">
-              Maleta - Suas Cartas ({maleta.length})
-            </h2>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 p-4 rounded-xl bg-gray-900/40 backdrop-blur-sm border border-amber-500/30 shadow-inner">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-amber-700/30 border border-amber-500/40 flex items-center justify-center text-2xl shadow-lg">
+                📦
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-amber-200 tracking-tight">
+                  Maleta
+                </h2>
+                <p className="text-amber-400/90 text-sm">
+                  {maleta.length} tipo(s) · {getTotalCardsInMaleta()} carta(s) disponível(is)
+                </p>
+              </div>
+            </div>
             <button
               onClick={loadMaleta}
               disabled={loading}
-              className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 hover:from-blue-700 hover:via-purple-700 hover:to-pink-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-semibold transition-all transform hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] shadow-md flex items-center gap-2"
+              className="self-start sm:self-center px-4 py-2 rounded-lg font-semibold text-sm transition-all border border-amber-500/50 bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 hover:border-amber-400/60 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {loading ? (
-                <>⏳ Carregando...</>
+                <> <span className="animate-spin">⏳</span> Carregando...</>
               ) : (
                 <>🔄 Atualizar</>
               )}
             </button>
           </div>
+
           {loading ? (
-            <div className="text-center py-16 rounded-xl border-2 border-blue-500/50 bg-transparent backdrop-blur-sm">
-              <p className="text-blue-400 text-xl">⏳ Carregando cartas...</p>
-            </div>
-          ) : maleta.length === 0 ? (
-            <div className="text-center py-16 bg-transparent backdrop-blur-sm rounded-xl border-2 border-pink-500/50 shadow-2xl">
-              <p className="text-6xl mb-4">📭</p>
-              <p className="text-pink-400 text-xl mb-2">Sua maleta está vazia</p>
-              <p className="text-gray-200">Compre cartas na loja para adicioná-las aqui!</p>
-            </div>
-          ) : (
-            <div className="rounded-xl p-6 bg-transparent backdrop-blur-sm border-2 border-pink-500/50 shadow-2xl">
-              <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-10" style={{ gap: '20px' }}>
-                {maleta.map((userCard) => {
-                  // Verificar se card existe
-                  if (!userCard.card) {
-                    console.warn('⚠️ UserCard sem card:', userCard);
-                    return null;
-                  }
-
-                  const card = userCard.card;
-                  const rarity = card.rarity || 'Common';
-                  const cardName = userCard.card?.name;
-                  const cardsInMainDeck = getCardCountInDeck(userCard.cardId, cardName);
-                  const cardsInExtraDeck = getCardCountInExtraDeck(userCard.cardId, cardName);
-                  const totalInDecks = cardsInMainDeck + cardsInExtraDeck;
-                  const available = getAvailableCount(userCard);
-                  const maxCopies = card.maxCopiesInDeck ?? 3;
-                  const isFusion = isFusionMonster(card);
-                  const totalOwned = allUserCards.find(uc => uc.cardId === userCard.cardId)?.quantity || userCard.quantity;
-                  const availableInExtraDeck = totalOwned - totalInDecks;
-                  
-                  // Verificar se pode adicionar: tem cartas disponíveis E não atingiu o limite máximo
-                  const canAdd = available > 0 && 
-                                 maxCopies > 0 && 
-                                 totalInDecks < maxCopies;
-                  
-                  return (
-                    <motion.div
-                      key={userCard.id || `${userCard.cardId}-${Math.random()}`}
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      whileHover={canAdd ? { scale: 1.05 } : {}}
-                      whileTap={canAdd ? { scale: 0.95 } : {}}
-                      className={`relative rounded-lg border-2 bg-gradient-to-br ${getRarityColor(rarity)} w-[70px] h-[105px] flex-shrink-0 m-1 ${
-                        canAdd 
-                          ? 'cursor-pointer shadow-lg hover:shadow-xl transition-all duration-200' 
-                          : 'opacity-50 cursor-not-allowed'
-                      }`}
-                      onClick={() => canAdd && addToDeck(userCard)}
-                      title={`${card.name}\nDisponível: ${available}/${totalOwned}\nNo deck principal: ${cardsInMainDeck}${isFusion ? `\nNo Extra Deck: ${cardsInExtraDeck}` : ''}\nTotal no deck: ${totalInDecks}/${maxCopies}\nLimite máximo: ${maxCopies === 0 ? 'Banida' : maxCopies}${isFusion ? '\n\n⭐ Clique para adicionar ao Extra Deck' : ''}`}
-                    >
-                      {/* Card Image */}
-                      <CardImage
-                        card={card}
-                        className="w-full h-full object-cover rounded-lg"
-                        fallback="/images/fundoCarta.webp"
-                      />
-                      
-                      {/* Available Badge - Cópias disponíveis para adicionar */}
-                      {available > 0 && (
-                        <div className="absolute top-1 left-1 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded z-10 shadow-lg backdrop-blur-sm">
-                          {available}
-                        </div>
-                      )}
-                      
-                      {/* Used Badge - Quantas já estão no deck */}
-                      {totalInDecks > 0 && (
-                        <div className="absolute bottom-1 left-1 bg-gray-800/90 backdrop-blur-sm text-white text-[10px] font-bold px-1.5 py-0.5 rounded z-10 shadow-lg border border-gray-600/50">
-                          Deck: {totalInDecks}
-                        </div>
-                      )}
-
-                      {/* Extra Deck Badge - Quantas já estão no Extra Deck (se for Fusion) */}
-                      {isFusion && cardsInExtraDeck > 0 && (
-                        <div className="absolute bottom-1 right-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded z-10 shadow-lg backdrop-blur-sm">
-                          Extra: {cardsInExtraDeck}
-                        </div>
-                      )}
-                      
-                      {/* Card Name */}
-                      <div className="absolute bottom-0 left-0 right-0 bg-gray-900/80 backdrop-blur-sm text-white text-[8px] px-1 py-0.5 rounded-b-lg line-clamp-1">
-                        {card.name}
-                      </div>
-                      
-                      {/* Hover Overlay - Só aparece se pode adicionar */}
-                      {canAdd && (
-                        <div className="absolute inset-0 bg-purple-500/0 hover:bg-purple-500/20 rounded-lg transition-colors flex items-center justify-center">
-                          <span className="opacity-0 hover:opacity-100 text-white font-bold text-sm">+</span>
-                        </div>
-                      )}
-                      
-                      {/* Overlay quando não pode adicionar mais */}
-                      {!canAdd && (
-                        <div className="absolute inset-0 bg-red-500/30 backdrop-blur-sm rounded-lg flex items-center justify-center border-2 border-red-500/50">
-                          {maxCopies === 0 ? (
-                            <span className="text-red-200 text-[10px] font-bold text-center px-1">BANIDA</span>
-                          ) : totalInDecks >= maxCopies ? (
-                            <span className="text-red-200 text-[10px] font-bold text-center px-1">LIMITE: {maxCopies}</span>
-                          ) : (
-                            <span className="text-red-200 text-[10px] font-bold text-center px-1">SEM CÓPIAS</span>
-                          )}
-                        </div>
-                      )}
-                    </motion.div>
-                  );
-                })}
+            <div className="rounded-2xl border border-amber-500/20 bg-gray-900/30 backdrop-blur-sm overflow-hidden">
+              <div className="py-20 px-6 flex flex-col items-center justify-center gap-4">
+                <div className="w-12 h-12 rounded-full border-2 border-amber-500/40 border-t-amber-400 animate-spin" />
+                <p className="text-amber-300/90 font-medium">Carregando suas cartas...</p>
               </div>
             </div>
+          ) : maleta.length === 0 ? (
+            <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-b from-gray-900/50 to-gray-900/30 backdrop-blur-sm overflow-hidden">
+              <div className="py-20 px-6 text-center">
+                <div className="w-20 h-20 mx-auto mb-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-5xl">
+                  📭
+                </div>
+                <h3 className="text-lg font-bold text-amber-200 mb-2">Maleta vazia</h3>
+                <p className="text-gray-400 text-sm max-w-sm mx-auto mb-6">
+                  Compre cartas na loja para adicioná-las à maleta e montar seus decks.
+                </p>
+                <a
+                  href="/shop"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-amber-500/25 text-amber-200 border border-amber-500/40 hover:bg-amber-500/35 transition-colors"
+                >
+                  Ir para a Loja →
+                </a>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="mb-4 p-4 rounded-xl bg-gray-900/30 backdrop-blur-sm border border-amber-500/20 flex flex-col sm:flex-row gap-3 flex-wrap">
+                <div className="flex-1 min-w-[200px]">
+                  <label className="block text-amber-400/90 text-xs font-medium mb-1.5">Buscar</label>
+                  <input
+                    type="text"
+                    value={maletaSearch}
+                    onChange={(e) => setMaletaSearch(e.target.value)}
+                    placeholder="Nome da carta..."
+                    className="w-full px-3 py-2 rounded-lg bg-gray-800/80 border border-amber-500/30 text-amber-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 text-sm"
+                  />
+                </div>
+                <div className="flex gap-4 flex-wrap items-end">
+                  <div>
+                    <label className="block text-amber-400/90 text-xs font-medium mb-1.5">Tipo</label>
+                    <select
+                      value={maletaFilterType}
+                      onChange={(e) => setMaletaFilterType(e.target.value)}
+                      className="px-3 py-2 rounded-lg bg-gray-800/80 border border-amber-500/30 text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50 text-sm min-w-[120px]"
+                    >
+                      <option value="all">Todos</option>
+                      {maletaTypes.filter((t) => t !== 'all').map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-amber-400/90 text-xs font-medium mb-1.5">Raridade</label>
+                    <select
+                      value={maletaFilterRarity}
+                      onChange={(e) => setMaletaFilterRarity(e.target.value)}
+                      className="px-3 py-2 rounded-lg bg-gray-800/80 border border-amber-500/30 text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50 text-sm min-w-[120px]"
+                    >
+                      <option value="all">Todas</option>
+                      {maletaRarities.filter((r) => r !== 'all').map((r) => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {(maletaSearch || maletaFilterType !== 'all' || maletaFilterRarity !== 'all') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMaletaSearch('');
+                        setMaletaFilterType('all');
+                        setMaletaFilterRarity('all');
+                      }}
+                      className="py-2 px-3 rounded-lg text-amber-400/90 hover:text-amber-300 hover:bg-amber-500/20 border border-amber-500/30 text-sm font-medium transition-colors"
+                    >
+                      Limpar filtros
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-amber-500/20 bg-gray-900/30 backdrop-blur-sm shadow-xl overflow-hidden">
+                <div className="p-5 sm:p-6">
+                  {filteredMaleta.length === 0 ? (
+                    <div className="py-12 text-center">
+                      <p className="text-amber-400/90 font-medium">Nenhuma carta encontrada com os filtros atuais.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMaletaSearch('');
+                          setMaletaFilterType('all');
+                          setMaletaFilterRarity('all');
+                        }}
+                        className="mt-3 text-amber-300 hover:underline text-sm"
+                      >
+                        Limpar filtros
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-amber-400/80 text-sm mb-4">
+                        Mostrando {filteredMaleta.length} de {maleta.length} tipo(s)
+                      </p>
+                      <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12 gap-4">
+                  {filteredMaleta.map((userCard) => {
+                    if (!userCard.card) {
+                      console.warn('⚠️ UserCard sem card:', userCard);
+                      return null;
+                    }
+
+                    const card = userCard.card;
+                    const rarity = card.rarity || 'Common';
+                    const cardName = userCard.card?.name;
+                    const cardsInMainDeck = getCardCountInDeck(userCard.cardId, cardName);
+                    const cardsInExtraDeck = getCardCountInExtraDeck(userCard.cardId, cardName);
+                    const totalInDecks = cardsInMainDeck + cardsInExtraDeck;
+                    const available = getAvailableCount(userCard);
+                    const maxCopies = card.maxCopiesInDeck ?? 3;
+                    const isFusion = isFusionMonster(card);
+                    const totalOwned = allUserCards.find(uc => uc.cardId === userCard.cardId)?.quantity || userCard.quantity;
+                    
+                    const canAdd = available > 0 && maxCopies > 0 && totalInDecks < maxCopies;
+                    
+                    return (
+                      <motion.div
+                        key={userCard.id || `${userCard.cardId}-${Math.random()}`}
+                        initial={{ opacity: 0, scale: 0.92 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        whileHover={canAdd ? { scale: 1.06, y: -2 } : {}}
+                        whileTap={canAdd ? { scale: 0.98 } : {}}
+                        className={`group relative rounded-xl border-2 overflow-hidden w-[72px] h-[108px] flex-shrink-0 transition-all duration-200 bg-gradient-to-br ${getRarityColor(rarity)} ${
+                          canAdd
+                            ? 'cursor-pointer shadow-md hover:shadow-amber-500/20 hover:shadow-lg hover:border-amber-400/50'
+                            : 'opacity-55 cursor-not-allowed border-gray-600/40'
+                        }`}
+                        onClick={() => canAdd && addToDeck(userCard)}
+                        title={`${card.name}\nDisponível: ${available}/${totalOwned}\nNo deck principal: ${cardsInMainDeck}${isFusion ? `\nNo Extra Deck: ${cardsInExtraDeck}` : ''}\nTotal no deck: ${totalInDecks}/${maxCopies}\nLimite máximo: ${maxCopies === 0 ? 'Banida' : maxCopies}${isFusion ? '\n\n⭐ Clique para adicionar ao Extra Deck' : ''}`}
+                      >
+                        <CardImage
+                          card={card}
+                          className="w-full h-full object-cover"
+                          fallback="/images/fundoCarta.webp"
+                        />
+                        {available > 0 && (
+                          <div className="absolute top-1 left-1 min-w-[20px] h-5 px-1.5 rounded-md bg-amber-900/90 border border-amber-500/50 flex items-center justify-center">
+                            <span className="text-amber-200 text-xs font-bold">{available}</span>
+                          </div>
+                        )}
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/75 backdrop-blur-sm text-white text-[9px] leading-tight px-1.5 py-1 rounded-b-[10px] line-clamp-2 font-medium">
+                          {card.name}
+                        </div>
+                        {canAdd && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-amber-400/0 group-hover:bg-amber-400/15 rounded-xl transition-colors pointer-events-none">
+                            <span className="opacity-0 group-hover:opacity-100 text-amber-200 text-2xl font-black drop-shadow-lg transition-opacity">+</span>
+                          </div>
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </>
           )}
         </motion.div>
         </div>

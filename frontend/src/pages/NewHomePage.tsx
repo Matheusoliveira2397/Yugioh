@@ -67,6 +67,8 @@ export default function HomePage() {
   const [news, setNews] = useState<News[]>([]);
   const [shopCards, setShopCards] = useState<Card[]>([]);
   const [viewedNewsIds, setViewedNewsIds] = useState<string[]>([]);
+  const [nextArena, setNextArena] = useState<{ name: string; startTime: string } | null>(null);
+  const [timeUntilNextArena, setTimeUntilNextArena] = useState<number>(0);
   
   // Função para entrar em um clã
   const handleJoinGroup = async (groupId: string) => {
@@ -159,6 +161,15 @@ export default function HomePage() {
     }
   }, [location.pathname, token, user, fetchViewedNews]);
 
+  // Atualizar contagem regressiva da próxima arena a cada segundo
+  useEffect(() => {
+    if (!nextArena || timeUntilNextArena <= 0) return;
+    const timer = setInterval(() => {
+      setTimeUntilNextArena((prev) => Math.max(0, prev - 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [nextArena, timeUntilNextArena]);
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -184,7 +195,7 @@ export default function HomePage() {
       }
 
       // Buscar todas as informações em paralelo (endpoints públicos) - timeout aumentado para evitar problemas com WebSocket
-      const [playersRes, seasonPlayersRes, clansRes, newsRes, cardsRes] = await Promise.all([
+      const [playersRes, seasonPlayersRes, clansRes, newsRes, cardsRes, nextArenaRes] = await Promise.all([
         Promise.race([
           axios.get(`${API_URL}/users/ranking/general`, { headers, timeout: 20000 }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 20000))
@@ -220,6 +231,10 @@ export default function HomePage() {
           logger.error('Erro ao buscar últimas cartas:', err);
           return { data: [] };
         }),
+        Promise.race([
+          axios.get(`${API_URL}/arena/next`, { headers, timeout: 10000 }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
+        ]).catch(() => ({ data: null })),
       ]);
       
       if (playersRes.data && Array.isArray(playersRes.data)) {
@@ -277,6 +292,16 @@ export default function HomePage() {
         logger.warn('Cartas não é um array');
         setShopCards([]);
       }
+
+      if (nextArenaRes?.data?.arena) {
+        const startTime = nextArenaRes.data.arena.startTime;
+        const until = nextArenaRes.data.timeUntilStart ?? (new Date(startTime).getTime() - Date.now());
+        setNextArena({ name: nextArenaRes.data.arena.name, startTime });
+        setTimeUntilNextArena(Math.max(0, until));
+      } else {
+        setNextArena(null);
+        setTimeUntilNextArena(0);
+      }
     } catch (error: any) {
       logger.error('Erro ao buscar dados:', error.response?.data || error.message);
       // Definir arrays vazios em caso de erro
@@ -285,11 +310,21 @@ export default function HomePage() {
       setTopClans([]);
       setNews([]);
       setShopCards([]);
+      setNextArena(null);
+      setTimeUntilNextArena(0);
     } finally {
       setLoading(false);
     }
   };
 
+
+  const formatTimeRemaining = (ms: number): string => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
 
   if (loading) {
     return (
@@ -305,6 +340,28 @@ export default function HomePage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-3 md:gap-4">
         {/* Coluna Esquerda - Rankings (largura limitada para não ficar espaço vazio) */}
         <div className="lg:col-span-4 lg:max-w-[420px] space-y-2 sm:space-y-3">
+          {/* Contador próxima arena */}
+          {nextArena && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              onClick={() => navigate('/arena')}
+              className="rounded-lg p-3 sm:p-4 border border-amber-500/40 bg-gradient-to-r from-amber-900/30 to-orange-900/30 hover:border-amber-400/60 transition-all cursor-pointer"
+            >
+              <h2 className="text-xs sm:text-sm font-bold mb-2 flex items-center gap-1.5 text-amber-200 drop-shadow-lg">
+                ⏰ Próxima Arena
+              </h2>
+              <p className="text-white font-semibold text-sm mb-1 truncate">{nextArena.name}</p>
+              <div className="text-xl sm:text-2xl font-bold text-amber-300 tabular-nums mb-2">
+                {timeUntilNextArena > 0 ? formatTimeRemaining(timeUntilNextArena) : '0:00:00'}
+              </div>
+              <p className="text-white/70 text-[10px] sm:text-xs mb-2">
+                Início: {new Date(nextArena.startTime).toLocaleString('pt-BR')}
+              </p>
+              <span className="text-amber-400 text-xs font-semibold hover:text-amber-300">Ir para Arena →</span>
+            </motion.div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5">
             {/* Top 5 Season */}
             <motion.div

@@ -118,15 +118,12 @@ export class CardEffectHandlersService {
               (typeof cardName === 'string' && cardName.includes('forceful sentry'));
           
           if (isForcefulSentry) {
-            // Inicializar cemitério se não existir
-            if (!playerField.graveyard) {
-              playerField.graveyard = [];
+            await (this.duelsService as any).onSpellTrapRemovedFromField?.(duelId, duel, isPlayer1, i);
+            if (playerField.spellTrap[i]) {
+              if (!playerField.graveyard) playerField.graveyard = [];
+              playerField.graveyard.push(playerField.spellTrap[i]);
+              playerField.spellTrap[i] = null;
             }
-            
-            // Mover para o cemitério
-            playerField.graveyard.push(card);
-            playerField.spellTrap[i] = null;
-            
             logger.info(`✅ [CardEffectHandlersService] The Forceful Sentry movida do campo para o cemitério (cardId: ${cardId}, cardName: ${cardName})`);
             forcefulSentryFound = true;
             break;
@@ -253,15 +250,12 @@ export class CardEffectHandlersService {
           const cardIdLower = String(cardId || '').toLowerCase();
           const cardName = (card.name || card.cardName || '').toLowerCase();
           if (cardIdLower.includes('confiscation') || cardName.includes('confiscation')) {
-            // Inicializar cemitério se não existir
-            if (!playerField.graveyard) {
-              playerField.graveyard = [];
+            await (this.duelsService as any).onSpellTrapRemovedFromField?.(duelId, duel, isPlayer1, i);
+            if (playerField.spellTrap[i]) {
+              if (!playerField.graveyard) playerField.graveyard = [];
+              playerField.graveyard.push(playerField.spellTrap[i]);
+              playerField.spellTrap[i] = null;
             }
-            
-            // Mover para o cemitério
-            playerField.graveyard.push(card);
-            playerField.spellTrap[i] = null;
-            
             logger.info(`✅ [CardEffectHandlersService] Confiscation movida para o cemitério`);
             break;
           }
@@ -457,6 +451,17 @@ export class CardEffectHandlersService {
     };
     
     logger.info(`✅ [CardEffectHandlersService] Monstro ${monsterToRevive.name || monsterToRevive.cardName} revivido no campo do jogador ${isPlayer1 ? 1 : 2}`);
+    
+    // Verificar Bottomless Trap Hole e Trap Hole do oponente (invocação especial em ataque)
+    const placedMonster = playerField.monsters[emptyZoneIndex];
+    if (placedMonster) {
+      const destroyed = await (this.duelsService as any).checkTrapsOnMonsterSummon(duelId, duel, isPlayer1, emptyZoneIndex, placedMonster, 'attack');
+      if (destroyed) {
+        const activeDuels = (this.duelsService as any).activeDuels;
+        if (activeDuels) activeDuels.set(duelIdStr, duel);
+        return { success: true };
+      }
+    }
     
     // Salvar e recalcular United We Stand (monstro face-up entrou no campo)
     await this.duelsService.updateDuelInDatabase(duelId, {

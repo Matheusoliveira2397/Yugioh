@@ -7,6 +7,7 @@ import { User } from './entities/user.entity';
 import { Achievement } from './entities/achievement.entity';
 import { AchievementsService } from './achievements.service';
 import { UploadModule } from '../upload/upload.module';
+import { MailModule } from '../mail/mail.module';
 import { SeasonRanking } from '../seasons/entities/season-ranking.entity';
 import { Season } from '../seasons/entities/season.entity';
 import { GroupMember } from '../groups/entities/group-member.entity';
@@ -17,7 +18,8 @@ import { LevelsModule } from '../levels/levels.module';
   imports: [
     TypeOrmModule.forFeature([User, Achievement, SeasonRanking, Season, GroupMember, Group]),
     UploadModule,
-    LevelsModule, // Importar LevelsModule para ter acesso ao LevelsService
+    MailModule,
+    LevelsModule,
   ],
   controllers: [UsersController, UsersCosmeticsController],
   providers: [UsersService, AchievementsService],

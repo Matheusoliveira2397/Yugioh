@@ -38,6 +38,9 @@ interface DuelFieldProps {
   onEquipSpellDrop?: (card: any, monsterZoneIndex: number, spellTrapZoneIndex?: number) => void; // Callback quando soltar spell equip em um monstro (spellTrapZoneIndex se vier do campo)
   onActivateMonsterEffect?: (monsterZoneIndex: number) => void; // Callback para ativar efeito de monstro (ex: ChaosSorcerer)
   monsterDestroyedThisTurn?: boolean; // Flag para Last Will - indica se um monstro foi destruído neste turno
+  disabled?: boolean; // Modo somente leitura (ex: espectador) — desativa todas as ações
+  /** Bônus de ATK da Banner of Courage durante a Fase de Batalha (0 ou 200) - para exibir no ATK e no cálculo de dano */
+  bannerOfCourageBonus?: number;
 }
 
 const DuelField: React.FC<DuelFieldProps> = ({
@@ -74,7 +77,24 @@ const DuelField: React.FC<DuelFieldProps> = ({
   onEquipSpellDrop,
   onActivateMonsterEffect,
   monsterDestroyedThisTurn = false,
+  disabled = false,
+  bannerOfCourageBonus = 0,
 }) => {
+  const safeOnGraveyardClick = disabled ? undefined : onGraveyardClick;
+  const safeOnExtraDeckClick = disabled ? undefined : onExtraDeckClick;
+  const safeOnMonsterClick = disabled ? undefined : onMonsterClick;
+  const safeOnAttackClick = disabled ? undefined : onAttackClick;
+  const safeOnSpellTrapSlotClick = disabled ? undefined : onSpellTrapSlotClick;
+  const safeOnCardClick = disabled ? undefined : onCardClick;
+  const safeOnActivateCard = disabled ? undefined : onActivateCard;
+  const safeOnChangePosition = disabled ? undefined : onChangePosition;
+  const safeOnBreakerRemoveCounter = disabled ? undefined : onBreakerRemoveCounter;
+  const safeOnMonsterDrop = disabled ? undefined : onMonsterDrop;
+  const safeOnSpellTrapDrop = disabled ? undefined : onSpellTrapDrop;
+  const safeOnMonsterFromHandDrop = disabled ? undefined : onMonsterFromHandDrop;
+  const safeOnEquipSpellDrop = disabled ? undefined : onEquipSpellDrop;
+  const safeOnActivateMonsterEffect = disabled ? undefined : onActivateMonsterEffect;
+
   // 5 Zones para monstros e spell/trap
   const monsterZones = Array(5).fill(null);
   const spellTrapZones = Array(5).fill(null);
@@ -131,11 +151,11 @@ const DuelField: React.FC<DuelFieldProps> = ({
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.4 }}
-      className="relative aspect-[21/9] w-full max-w-5xl mx-auto rounded-2xl border-4 border-white shadow-2xl mb-1 flex items-center justify-center"
+      className="relative aspect-[21/9] w-full max-w-5xl mx-auto rounded-2xl border-2 border-white shadow-2xl mb-1 flex items-center justify-center"
       style={{ overflow: 'visible' }}
       onDragOver={(e) => {
         // Permitir drop apenas no playmat do oponente para ataque direto
-        if (isOpponent && canDirectAttack && onMonsterDrop) {
+        if (isOpponent && canDirectAttack && safeOnMonsterDrop) {
           e.preventDefault();
           e.stopPropagation();
           e.dataTransfer.dropEffect = 'move';
@@ -151,10 +171,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
         e.stopPropagation();
         
         // Ataque direto no playmat do oponente
-        if (isOpponent && canDirectAttack && onMonsterDrop) {
+        if (isOpponent && canDirectAttack && safeOnMonsterDrop) {
           const attackerZoneIndex = parseInt(e.dataTransfer.getData('attackerZoneIndex'), 10);
           if (!isNaN(attackerZoneIndex)) {
-            onMonsterDrop(attackerZoneIndex, null);
+            safeOnMonsterDrop(attackerZoneIndex, null);
           }
         }
         setDraggingCardIndex(null);
@@ -213,7 +233,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
       <div className="grid grid-cols-7 gap-6 mt-6 justify-items-center">
         {/* Field Zone / Graveyard - Modernizado */}
         <motion.div 
-          className="zone-card border-4 border-white rounded-lg w-[100px] h-[146px] transition-all cursor-pointer flex items-center justify-center bg-transparent"
+          className="zone-card border-2 border-white rounded-lg w-[100px] h-[146px] transition-all cursor-pointer flex items-center justify-center bg-transparent"
           style={{ aspectRatio: '59/86' }}>
           <div>
             <div className="text-yellow-300 text-sm font-bold drop-shadow-lg">
@@ -245,13 +265,13 @@ const DuelField: React.FC<DuelFieldProps> = ({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
                 onDragOver={(e) => {
-                  if (isOpponent && onMonsterDrop) {
+                  if (isOpponent && safeOnMonsterDrop) {
                     // Ataque de monstro no oponente
                     e.preventDefault();
                     e.stopPropagation();
                     e.dataTransfer.dropEffect = 'move';
                     e.currentTarget.classList.add('ring-4', 'ring-yellow-400/70', 'bg-yellow-400/20', 'scale-105');
-                  } else if (!isOpponent && !hasMonster && onMonsterFromHandDrop) {
+                  } else if (!isOpponent && !hasMonster && safeOnMonsterFromHandDrop) {
                     // Permitir drop de carta da mão em zona vazia
                     // Verificar se tem dados JSON (carta da mão) - não podemos ler os dados no onDragOver, só verificar tipos
                     const hasCardData = e.dataTransfer.types.includes('application/json');
@@ -280,11 +300,11 @@ const DuelField: React.FC<DuelFieldProps> = ({
                       }
                     } catch (err) {
                       // Se não conseguir ler, assumir que pode ser spell equip e verificar no onDrop
-                      // Permitir drop em qualquer caso se houver onEquipSpellDrop
+                      // Permitir drop em qualquer caso se houver safeOnEquipSpellDrop
                     }
                     
-                    // Permitir drop se for spell equip ou se tiver onEquipSpellDrop (verificação completa no onDrop)
-                    if (onEquipSpellDrop) {
+                    // Permitir drop se for spell equip ou se tiver safeOnEquipSpellDrop (verificação completa no onDrop)
+                    if (safeOnEquipSpellDrop) {
                       e.preventDefault();
                       e.dataTransfer.dropEffect = 'move';
                       e.currentTarget.classList.add('ring-4', 'ring-green-400/70', 'bg-green-400/20', 'scale-105');
@@ -307,22 +327,22 @@ const DuelField: React.FC<DuelFieldProps> = ({
                   e.stopPropagation();
                   e.currentTarget.classList.remove('ring-4', 'ring-yellow-400/70', 'bg-yellow-400/20', 'scale-105', 'ring-green-400/70', 'bg-green-400/20');
                   
-                  if (isOpponent && onMonsterDrop) {
+                  if (isOpponent && safeOnMonsterDrop) {
                     // Ataque de monstro no oponente (pode ser face-up ou face-down)
                     const attackerZoneIndex = parseInt(e.dataTransfer.getData('attackerZoneIndex'), 10);
                     if (!isNaN(attackerZoneIndex)) {
                       if (hasMonster) {
-                        onMonsterDrop(attackerZoneIndex, index);
+                        safeOnMonsterDrop(attackerZoneIndex, index);
                       } else {
                         const hasAnyMonster = monsters.some((m: any) => m !== null && m !== undefined);
                         if (!hasAnyMonster) {
-                          onMonsterDrop(attackerZoneIndex, null);
+                          safeOnMonsterDrop(attackerZoneIndex, null);
                         } else {
                           alert('Você não pode atacar diretamente enquanto o oponente tiver monstros no campo!');
                         }
                       }
                     }
-                  } else if (!isOpponent && !hasMonster && onMonsterFromHandDrop) {
+                  } else if (!isOpponent && !hasMonster && safeOnMonsterFromHandDrop) {
                     // Zona de monstro vazia - verificar se é uma carta da mão sendo solta
                     const cardData = e.dataTransfer.getData('application/json');
                     const attackerZoneIndex = e.dataTransfer.getData('attackerZoneIndex');
@@ -335,7 +355,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                         const isMonster = cardType === 'Monster';
                         
                         if (isMonster) {
-                          onMonsterFromHandDrop(card, index, 'attack');
+                          safeOnMonsterFromHandDrop(card, index, 'attack');
                           setDraggingCardIndex(null);
                           setDragPosition(null);
                           setDraggingCard(null);
@@ -351,8 +371,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                     const spellTrapZoneIndex = e.dataTransfer.getData('spellTrapZoneIndex');
                     const isFromField = spellTrapZoneIndex !== '';
                     
-                    if (!onEquipSpellDrop) {
-                      console.error('❌ [DuelField] onDrop - onEquipSpellDrop não está definido!');
+                    if (!safeOnEquipSpellDrop) {
+                      console.error('❌ [DuelField] onDrop - safeOnEquipSpellDrop não está definido!');
                       return;
                     }
                     
@@ -382,7 +402,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                            cardNameLower.includes('equip');
                       
                       if (isEquipSpell) {
-                        onEquipSpellDrop(card, index, isFromField ? parseInt(spellTrapZoneIndex, 10) : undefined);
+                        safeOnEquipSpellDrop(card, index, isFromField ? parseInt(spellTrapZoneIndex, 10) : undefined);
                         setDraggingCardIndex(null);
                         return;
                       }
@@ -395,36 +415,36 @@ const DuelField: React.FC<DuelFieldProps> = ({
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (isSelectingTarget && isOpponent && hasMonster && onMonsterClick) {
+                  if (isSelectingTarget && isOpponent && hasMonster && safeOnMonsterClick) {
                     // Pode atacar monstro em qualquer posição (ataque ou defesa)
-                    onMonsterClick(index);
-                  } else if (isSelectingTarget && isOpponent && !hasMonster && onMonsterClick) {
+                    safeOnMonsterClick(index);
+                  } else if (isSelectingTarget && isOpponent && !hasMonster && safeOnMonsterClick) {
                     // Ataque direto - só permitir se não houver monstros no campo
                     const hasAnyMonster = monsters.some((m: any) => m !== null && m !== undefined);
                     if (!hasAnyMonster) {
-                      onMonsterClick(-1);
+                      safeOnMonsterClick(-1);
                     } else {
                       // Não permitir ataque direto se houver monstros
                       alert('Você não pode atacar diretamente enquanto o oponente tiver monstros no campo!');
                     }
-                  } else if (hasMonster && onCardClick) {
+                  } else if (hasMonster && safeOnCardClick) {
                     // Se está selecionando alvo de monstro (ex: SnowmanEater, ChaosSorcerer), permitir clicar
                     if (isSelectingMonsterTarget) {
                       // Verificar se o monstro está face-up
                       const isFaceUp = monster.position === 'attack' || monster.position === 'defense';
                       if (isFaceUp) {
-                        onCardClick(monster, index);
+                        safeOnCardClick(monster, index);
                       } else {
                         // Mostrar mensagem se tentar escolher um monstro face-down
                         alert('Você só pode selecionar monstros face-up (ataque ou defesa)');
                       }
                     } else if (!isSelectingTarget) {
                       // Mostrar informações da carta apenas se não estiver selecionando alvo de ataque
-                      onCardClick(monster);
+                      safeOnCardClick(monster);
                     }
                   }
                 }}
-                className={`zone-card rounded-lg w-[100px] h-[146px] transition-all bg-transparent relative border-4 border-white ${
+                className={`zone-card rounded-lg w-[100px] h-[146px] transition-all bg-transparent relative border-2 border-white ${
                   hasMonster 
                     ? isSelectingMonsterTarget && (monster.position === 'attack' || monster.position === 'defense')
                       ? 'ring-4 ring-blue-400/50 cursor-pointer'
@@ -566,14 +586,14 @@ const DuelField: React.FC<DuelFieldProps> = ({
                     transition={{ duration: 0.2 }}
                     onDragOver={(e) => {
                       // Permitir drop de spell equip mesmo no elemento do monstro (suporta múltiplos equips)
-                      if (!isOpponent && hasMonster && (monster.position === 'attack' || monster.position === 'defense') && onEquipSpellDrop) {
+                      if (!isOpponent && hasMonster && (monster.position === 'attack' || monster.position === 'defense') && safeOnEquipSpellDrop) {
                         e.preventDefault();
                         e.stopPropagation();
                         e.dataTransfer.dropEffect = 'move';
                       }
                     }}
                     onDrop={(e) => {
-                      if (!isOpponent && hasMonster && (monster.position === 'attack' || monster.position === 'defense') && onEquipSpellDrop) {
+                      if (!isOpponent && hasMonster && (monster.position === 'attack' || monster.position === 'defense') && safeOnEquipSpellDrop) {
                         e.preventDefault();
                         e.stopPropagation();
                         
@@ -603,7 +623,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                                cardId.includes('malevolentnuzzler');
                           
                           if (isEquipSpell) {
-                            onEquipSpellDrop(card, index, isFromField ? parseInt(spellTrapZoneIndex, 10) : undefined);
+                            safeOnEquipSpellDrop(card, index, isFromField ? parseInt(spellTrapZoneIndex, 10) : undefined);
                             setDraggingCardIndex(null);
                           }
                         } catch (err) {
@@ -679,18 +699,18 @@ const DuelField: React.FC<DuelFieldProps> = ({
                     onClick={(e) => {
                       e.stopPropagation();
                       // Se está selecionando alvo e é monstro do oponente, processar ataque
-                      if (isSelectingTarget && isOpponent && onMonsterClick) {
-                        onMonsterClick(index);
-                      } else if (onCardClick && !isSelectingTarget) {
+                      if (isSelectingTarget && isOpponent && safeOnMonsterClick) {
+                        safeOnMonsterClick(index);
+                      } else if (safeOnCardClick && !isSelectingTarget) {
                         // Mostrar informações da carta apenas se não estiver selecionando alvo
                         // Se está selecionando alvo de monstro (ex: SnowmanEater), passar o índice
                         if (isSelectingMonsterTarget) {
                           const isFaceUp = monster.position === 'attack' || monster.position === 'defense';
                           if (isFaceUp) {
-                            onCardClick(monster, index);
+                            safeOnCardClick(monster, index);
                           }
                         } else {
-                          onCardClick(monster);
+                          safeOnCardClick(monster);
                         }
                       }
                     }}
@@ -704,12 +724,12 @@ const DuelField: React.FC<DuelFieldProps> = ({
                       }}
                       fallback={fallbackCard}
                     />
-                    {/* Indicador de ATK na parte inferior da carta (total = base + equipamentos + efeitos) */}
+                    {/* Indicador de ATK na parte inferior da carta (total = base + equipamentos + Banner of Courage + efeitos) */}
                     {(() => {
                       const baseAtk = Number(monster.atk) || 0;
                       const equipmentBonus = Number(monster.equipmentBonusAtk) || 0;
                       const spellCounterBonus = Number(monster.spellCounterBonusAtk) || 0;
-                      const totalAtk = baseAtk + equipmentBonus + spellCounterBonus;
+                      const totalAtk = baseAtk + equipmentBonus + spellCounterBonus + bannerOfCourageBonus;
                       return (
                         <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 z-20">
                           <div className="px-2 py-1 rounded-lg shadow-lg border-2 bg-black/80 border-red-500/70">
@@ -727,7 +747,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                 ) : null}
                 
                 {/* Botão de ataque - aparece durante Battle Phase em monstros em posição de ataque que ainda não atacaram */}
-                {!isOpponent && canAttack && isAttack && onAttackClick && (() => {
+                {!isOpponent && canAttack && isAttack && safeOnAttackClick && (() => {
                   // Verificar se o monstro não pode atacar neste turno (ex: ChaosSorcerer após usar efeito)
                   if (monster.cannotAttackThisTurn === true) {
                     return false;
@@ -766,19 +786,19 @@ const DuelField: React.FC<DuelFieldProps> = ({
                     whileTap={{ scale: 0.9 }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (onAttackClick) {
-                        onAttackClick(index);
+                      if (safeOnAttackClick) {
+                        safeOnAttackClick(index);
                       }
                     }}
                     className="absolute top-1 left-1 z-50 w-8 h-8 bg-gradient-to-br from-red-600/90 to-red-700/90 hover:from-red-500 hover:to-red-600 border-2 border-red-400/70 rounded-lg flex items-center justify-center transition-all cursor-pointer shadow-lg shadow-red-500/50 hover:shadow-red-500/70"
-                    title={`Atacar com ${monster.name} (ATK: ${(monster.atk || 0) + (monster.equipmentBonusAtk || 0) + (monster.spellCounterBonusAtk || 0)})`}
+                    title={`Atacar com ${monster.name} (ATK: ${(monster.atk || 0) + (monster.equipmentBonusAtk || 0) + (monster.spellCounterBonusAtk || 0) + bannerOfCourageBonus})`}
                   >
                     <span className="text-sm">⚔️</span>
                   </motion.button>
                 )}
                 
                 {/* Botões para mudar posição - apenas nas fases principais, para o próprio jogador, e se não foi invocado no turno atual */}
-                {!isOpponent && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') && onChangePosition && hasMonster && (
+                {!isOpponent && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') && safeOnChangePosition && hasMonster && (
                   (() => {
                     // Usar summonedTurnNumber (do backend) em vez de summonedTurn
                     const summonedTurnNumber = monster.summonedTurnNumber;
@@ -814,8 +834,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                 alert('Você não pode mudar a posição de um monstro no mesmo turno em que foi invocado!');
                                 return;
                               }
-                              if (onChangePosition) {
-                                onChangePosition(index, 'attack');
+                              if (safeOnChangePosition) {
+                                safeOnChangePosition(index, 'attack');
                               }
                             }}
                             className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-gradient-to-br from-red-600/90 to-red-700/90 hover:from-red-500 hover:to-red-600 border-red-400/70 cursor-pointer shadow-red-500/40 hover:shadow-red-500/60"
@@ -844,8 +864,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                 alert('Você não pode mudar a posição de um monstro no mesmo turno em que foi invocado!');
                                 return;
                               }
-                              if (onChangePosition) {
-                                onChangePosition(index, 'defense');
+                              if (safeOnChangePosition) {
+                                safeOnChangePosition(index, 'defense');
                               }
                             }}
                             className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-gradient-to-br from-blue-600/90 to-blue-700/90 hover:from-blue-500 hover:to-blue-600 border-blue-400/70 cursor-pointer shadow-blue-500/40 hover:shadow-blue-500/60"
@@ -855,28 +875,25 @@ const DuelField: React.FC<DuelFieldProps> = ({
                           </motion.button>
                         )}
                         
-                        {/* Botão para ativar efeito do Breaker The Magical Warrior (remover marcador) */}
+                        {/* Botão para ativar efeito do Breaker the Magical Warrior: escolher 1 S/T no campo para destruir (perde +300 ATK) */}
                         {(() => {
                           const monsterCardId = monster.idCarta || monster.id || monster.cardId || '';
                           const isBreaker = monsterCardId.toLowerCase().includes('breakerthemagicalwarrior') ||
                                             monsterCardId.toLowerCase().includes('breaker') ||
                                             monster.name?.toLowerCase().includes('breaker');
-                          const hasSpellCounters = monster.spellCounters && monster.spellCounters > 0;
-                          const canActivateBreaker = !isOpponent && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') && 
-                                                     isBreaker && hasSpellCounters && onBreakerRemoveCounter;
-                          
+                          const hasAtkBonus = monster.spellCounters && monster.spellCounters > 0;
+                          const canActivateBreaker = !isOpponent && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') &&
+                                                     isBreaker && hasAtkBonus && safeOnBreakerRemoveCounter;
                           return canActivateBreaker ? (
                             <motion.button
                               whileHover={{ y: -2 }}
                               whileTap={{ scale: 0.9 }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (onBreakerRemoveCounter) {
-                                  onBreakerRemoveCounter(index);
-                                }
+                                if (safeOnBreakerRemoveCounter) safeOnBreakerRemoveCounter(index);
                               }}
                               className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-gradient-to-br from-purple-600/90 to-purple-700/90 hover:from-purple-500 hover:to-purple-600 border-purple-400/70 cursor-pointer shadow-purple-500/40 hover:shadow-purple-500/60"
-                              title={`Remover Marcador de Magia e destruir 1 Spell/Trap (${monster.spellCounters} marcador(es))`}
+                              title="Escolher 1 Spell/Trap no campo para destruir (este monstro perde os +300 de ATK)"
                             >
                               <span className="text-sm">✨</span>
                             </motion.button>
@@ -893,7 +910,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                                   (typeof monsterCardId === 'string' && monsterCardId.toLowerCase().includes('chaossorcerer'));
                           const effectUsedThisTurn = monster.effectUsedThisTurn === true;
                           const canActivateChaosSorcerer = !isOpponent && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') && 
-                                                           isChaosSorcerer && !effectUsedThisTurn && onActivateMonsterEffect;
+                                                           isChaosSorcerer && !effectUsedThisTurn && safeOnActivateMonsterEffect;
                           
                           return canActivateChaosSorcerer ? (
                             <motion.button
@@ -901,8 +918,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                               whileTap={{ scale: 0.9 }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (onActivateMonsterEffect) {
-                                  onActivateMonsterEffect(index);
+                                if (safeOnActivateMonsterEffect) {
+                                  safeOnActivateMonsterEffect(index);
                                 }
                               }}
                               className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-gradient-to-br from-indigo-600/90 to-purple-600/90 hover:from-indigo-500 hover:to-purple-500 border-indigo-400/70 cursor-pointer shadow-indigo-500/40 hover:shadow-indigo-500/60"
@@ -928,7 +945,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                                       (typeof monsterName === 'string' && monsterName.includes('chaos emperor dragon'));
                           const effectUsedThisTurn = monster.effectUsedThisTurn === true;
                           const canActivateChaosEmperorDragon = !isOpponent && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') && 
-                                                                 isChaosEmperorDragon && !effectUsedThisTurn && onActivateMonsterEffect;
+                                                                 isChaosEmperorDragon && !effectUsedThisTurn && safeOnActivateMonsterEffect;
                           
                           return canActivateChaosEmperorDragon ? (
                             <motion.button
@@ -936,8 +953,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                               whileTap={{ scale: 0.9 }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (onActivateMonsterEffect) {
-                                  onActivateMonsterEffect(index);
+                                if (safeOnActivateMonsterEffect) {
+                                  safeOnActivateMonsterEffect(index);
                                 }
                               }}
                               className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-gradient-to-br from-red-600/90 to-orange-600/90 hover:from-red-500 hover:to-orange-500 border-red-400/70 cursor-pointer shadow-red-500/40 hover:shadow-red-500/60"
@@ -957,7 +974,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                                        monsterName.includes('black luster soldier');
                           const effectUsedThisTurn = monster.effectUsedThisTurn === true;
                           const canActivateBLSEffect = !isOpponent && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') &&
-                                                       isBlackLusterSoldier && !effectUsedThisTurn && onActivateMonsterEffect;
+                                                       isBlackLusterSoldier && !effectUsedThisTurn && safeOnActivateMonsterEffect;
                           
                           return canActivateBLSEffect ? (
                             <motion.button
@@ -965,8 +982,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                               whileTap={{ scale: 0.9 }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (onActivateMonsterEffect) {
-                                  onActivateMonsterEffect(index);
+                                if (safeOnActivateMonsterEffect) {
+                                  safeOnActivateMonsterEffect(index);
                                 }
                               }}
                               className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-gradient-to-br from-amber-600/90 to-yellow-600/90 hover:from-amber-500 hover:to-yellow-500 border-amber-400/70 cursor-pointer shadow-amber-500/40 hover:shadow-amber-500/60"
@@ -990,7 +1007,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                                                (typeof monsterName === 'string' && monsterName.includes('red-eyes darkness metal dragon'));
                           const effectUsedThisTurn = monster.effectUsedThisTurn === true;
                           const canActivateRedEyesEffect = !isOpponent && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') && 
-                                                          isRedEyesDarknessMetalDragon && !effectUsedThisTurn && onActivateMonsterEffect;
+                                                          isRedEyesDarknessMetalDragon && !effectUsedThisTurn && safeOnActivateMonsterEffect;
                           
                           return canActivateRedEyesEffect ? (
                             <motion.button
@@ -998,8 +1015,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                               whileTap={{ scale: 0.9 }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (onActivateMonsterEffect) {
-                                  onActivateMonsterEffect(index);
+                                if (safeOnActivateMonsterEffect) {
+                                  safeOnActivateMonsterEffect(index);
                                 }
                               }}
                               className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-gradient-to-br from-red-600/90 to-orange-600/90 hover:from-red-500 hover:to-orange-500 border-red-400/70 cursor-pointer shadow-red-500/40 hover:shadow-red-500/60"
@@ -1022,7 +1039,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                               (typeof monsterCardId === 'string' && monsterCardId.toLowerCase().includes('cyberstein'));
                           const effectUsedThisTurn = monster.effectUsedThisTurn === true;
                           const canActivateCyberSteinEffect = !isOpponent && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') && 
-                                                             isCyberStein && !effectUsedThisTurn && onActivateMonsterEffect;
+                                                             isCyberStein && !effectUsedThisTurn && safeOnActivateMonsterEffect;
                           
                           return canActivateCyberSteinEffect ? (
                             <motion.button
@@ -1030,8 +1047,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                               whileTap={{ scale: 0.9 }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (onActivateMonsterEffect) {
-                                  onActivateMonsterEffect(index);
+                                if (safeOnActivateMonsterEffect) {
+                                  safeOnActivateMonsterEffect(index);
                                 }
                               }}
                               className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-gradient-to-br from-cyan-600/90 to-blue-600/90 hover:from-cyan-500 hover:to-blue-500 border-cyan-400/70 cursor-pointer shadow-cyan-500/40 hover:shadow-cyan-500/60"
@@ -1057,7 +1074,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                                     (typeof monsterName === 'string' && monsterName.includes('dark armed dragon'));
                           const effectUsedThisTurn = monster.effectUsedThisTurn === true;
                           const canActivateDarkArmedDragonEffect = !isOpponent && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') &&
-                                                                   isDarkArmedDragon && !effectUsedThisTurn && onActivateMonsterEffect;
+                                                                   isDarkArmedDragon && !effectUsedThisTurn && safeOnActivateMonsterEffect;
                           
                           return canActivateDarkArmedDragonEffect ? (
                             <motion.button
@@ -1065,8 +1082,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                               whileTap={{ scale: 0.9 }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (onActivateMonsterEffect) {
-                                  onActivateMonsterEffect(index);
+                                if (safeOnActivateMonsterEffect) {
+                                  safeOnActivateMonsterEffect(index);
                                 }
                               }}
                               className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-gradient-to-br from-purple-600/90 to-indigo-600/90 hover:from-purple-500 hover:to-indigo-500 border-purple-400/70 cursor-pointer shadow-purple-500/40 hover:shadow-purple-500/60"
@@ -1090,7 +1107,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                                 (typeof monsterName === 'string' && monsterName.includes('exiled force'));
                           const effectUsedThisTurn = monster.effectUsedThisTurn === true;
                           const canActivateExiledForceEffect = !isOpponent && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') &&
-                                                               isExiledForce && !effectUsedThisTurn && onActivateMonsterEffect;
+                                                               isExiledForce && !effectUsedThisTurn && safeOnActivateMonsterEffect;
                           
                           return canActivateExiledForceEffect ? (
                             <motion.button
@@ -1098,8 +1115,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                               whileTap={{ scale: 0.9 }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (onActivateMonsterEffect) {
-                                  onActivateMonsterEffect(index);
+                                if (safeOnActivateMonsterEffect) {
+                                  safeOnActivateMonsterEffect(index);
                                 }
                               }}
                               className="w-8 h-8 border-2 rounded-lg flex items-center justify-center transition-all shadow-lg bg-gradient-to-br from-orange-600/90 to-red-600/90 hover:from-orange-500 hover:to-red-500 border-orange-400/70 cursor-pointer shadow-orange-500/40 hover:shadow-orange-500/60"
@@ -1123,13 +1140,13 @@ const DuelField: React.FC<DuelFieldProps> = ({
                   initial={{ opacity: 0, scale: 0.8 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ duration: 0.3 }}
-                  className={`absolute group ${isSelectingTarget && isOpponent ? 'cursor-pointer' : onCardClick ? 'cursor-pointer' : ''}`}
+                  className={`absolute group ${isSelectingTarget && isOpponent ? 'cursor-pointer' : safeOnCardClick ? 'cursor-pointer' : ''}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     // Permitir clicar na carta em defesa para atacar
-                    if (isSelectingTarget && isOpponent && onMonsterClick) {
-                      onMonsterClick(index);
-                    } else if (onCardClick && !isSelectingTarget) {
+                    if (isSelectingTarget && isOpponent && safeOnMonsterClick) {
+                      safeOnMonsterClick(index);
+                    } else if (safeOnCardClick && !isSelectingTarget) {
                       // Só mostrar informações se a carta estiver face-up OU se não for do oponente
                       // Cartas viradas para baixo do oponente não devem revelar informações
                       if (monster.position !== 'set' || !isOpponent) {
@@ -1137,10 +1154,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
                         if (isSelectingMonsterTarget) {
                           const isFaceUp = monster.position === 'attack' || monster.position === 'defense';
                           if (isFaceUp) {
-                            onCardClick(monster, index);
+                            safeOnCardClick(monster, index);
                           }
                         } else {
-                          onCardClick(monster);
+                          safeOnCardClick(monster);
                         }
                       }
                     }
@@ -1155,8 +1172,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                     alignItems: 'center',
                     justifyContent: 'center',
                     zIndex: 30,
-                    // Permitir pointer-events quando está selecionando alvo OU quando há onMonsterDrop (para permitir drag and drop em monstros face-down)
-                    pointerEvents: (isSelectingTarget && isOpponent) || onCardClick || (isOpponent && onMonsterDrop) ? 'auto' : 'none',
+                    // Permitir pointer-events quando está selecionando alvo OU quando há safeOnMonsterDrop (para permitir drag and drop em monstros face-down)
+                    pointerEvents: (isSelectingTarget && isOpponent) || safeOnCardClick || (isOpponent && safeOnMonsterDrop) ? 'auto' : 'none',
                     overflow: 'visible',
                   }}
                 >
@@ -1167,7 +1184,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                       className={isSelectingTarget && isOpponent ? 'ring-4 ring-yellow-400/70' : ''}
                       onDragOver={(e) => {
                         // Permitir drop de ataque em monstros face-down do oponente
-                        if (isOpponent && onMonsterDrop) {
+                        if (isOpponent && safeOnMonsterDrop) {
                           e.preventDefault();
                           e.stopPropagation();
                           e.dataTransfer.dropEffect = 'move';
@@ -1179,14 +1196,14 @@ const DuelField: React.FC<DuelFieldProps> = ({
                       }}
                       onDrop={(e) => {
                         // Permitir atacar monstros face-down do oponente
-                        if (isOpponent && onMonsterDrop) {
+                        if (isOpponent && safeOnMonsterDrop) {
                           e.preventDefault();
                           e.stopPropagation();
                           e.currentTarget.classList.remove('ring-4', 'ring-yellow-400/70', 'bg-yellow-400/20', 'scale-105');
                           
                           const attackerZoneIndex = parseInt(e.dataTransfer.getData('attackerZoneIndex'), 10);
                           if (!isNaN(attackerZoneIndex)) {
-                            onMonsterDrop(attackerZoneIndex, index);
+                            safeOnMonsterDrop(attackerZoneIndex, index);
                           }
                         }
                       }}
@@ -1207,7 +1224,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                     // Face-up em defesa (defense): mostrar imagem do monstro
                     (() => (
                         <div
-                          className={isSelectingTarget && isOpponent ? 'ring-4 ring-yellow-400/70' : onCardClick ? 'cursor-pointer' : ''}
+                          className={isSelectingTarget && isOpponent ? 'ring-4 ring-yellow-400/70' : safeOnCardClick ? 'cursor-pointer' : ''}
                           style={{
                             transform: 'rotate(90deg)', // Rotacionar 90 graus para ficar deitada
                             transformOrigin: 'center center',
@@ -1221,7 +1238,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                           }}
                           onDragOver={(e) => {
                             // Permitir drop de ataque em monstros em defesa face-up do oponente
-                            if (isOpponent && onMonsterDrop) {
+                            if (isOpponent && safeOnMonsterDrop) {
                               e.preventDefault();
                               e.stopPropagation();
                               e.dataTransfer.dropEffect = 'move';
@@ -1233,32 +1250,32 @@ const DuelField: React.FC<DuelFieldProps> = ({
                           }}
                           onDrop={(e) => {
                             // Permitir atacar monstros em defesa face-up do oponente
-                            if (isOpponent && onMonsterDrop) {
+                            if (isOpponent && safeOnMonsterDrop) {
                               e.preventDefault();
                               e.stopPropagation();
                               e.currentTarget.classList.remove('ring-4', 'ring-yellow-400/70', 'bg-yellow-400/20', 'scale-105');
                               
                               const attackerZoneIndex = parseInt(e.dataTransfer.getData('attackerZoneIndex'), 10);
                               if (!isNaN(attackerZoneIndex)) {
-                                onMonsterDrop(attackerZoneIndex, index);
+                                safeOnMonsterDrop(attackerZoneIndex, index);
                               }
                             }
                           }}
                           onClick={(e) => {
                             e.stopPropagation();
                             // Se está selecionando alvo e é monstro do oponente, processar ataque
-                            if (isSelectingTarget && isOpponent && onMonsterClick) {
-                              onMonsterClick(index);
-                            } else if (onCardClick && !isSelectingTarget) {
+                            if (isSelectingTarget && isOpponent && safeOnMonsterClick) {
+                              safeOnMonsterClick(index);
+                            } else if (safeOnCardClick && !isSelectingTarget) {
                               // Mostrar informações da carta apenas se não estiver selecionando alvo
                               // Se está selecionando alvo de monstro (ex: SnowmanEater), passar o índice
                         if (isSelectingMonsterTarget) {
                           const isFaceUp = monster.position === 'attack' || monster.position === 'defense';
                           if (isFaceUp) {
-                            onCardClick(monster, index);
+                            safeOnCardClick(monster, index);
                           }
                         } else {
-                          onCardClick(monster);
+                          safeOnCardClick(monster);
                         }
                             }
                           }}
@@ -1313,8 +1330,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
 
         {/* Graveyard / Field Zone - Modernizado */}
         <motion.div 
-          onClick={onGraveyardClick}
-          className="zone-card border-4 border-white rounded-lg w-[100px] h-[146px] relative overflow-hidden transition-all cursor-pointer bg-transparent"
+          onClick={safeOnGraveyardClick}
+          className="zone-card border-2 border-white rounded-lg w-[100px] h-[146px] relative overflow-hidden transition-all cursor-pointer bg-transparent"
           style={{ aspectRatio: '59/86' }}>
           {graveyard.length > 0 ? (
             <>
@@ -1357,8 +1374,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
       <div className="grid grid-cols-7 gap-6 justify-items-center mt-12">
         {/* Extra Deck / Deck - Modernizado */}
         <motion.div 
-              onClick={onExtraDeckClick}
-              className="zone-card border-4 border-white rounded-lg w-[100px] h-[146px] relative overflow-hidden bg-transparent transition-all cursor-pointer hover:shadow-lg hover:shadow-white/30"
+              onClick={safeOnExtraDeckClick}
+              className="zone-card border-2 border-white rounded-lg w-[100px] h-[146px] relative overflow-hidden bg-transparent transition-all cursor-pointer hover:shadow-lg hover:shadow-white/30"
               style={{ aspectRatio: '59/86' }}>
           {extraDeck && extraDeck.length > 0 ? (
             <>
@@ -1402,31 +1419,31 @@ const DuelField: React.FC<DuelFieldProps> = ({
               transition={{ delay: index * 0.05 }}
               onClick={(e) => {
                 e.stopPropagation();
-                if (isSelectingSpellTrapSlot && !isOpponent && isEmpty && onSpellTrapSlotClick) {
-                  onSpellTrapSlotClick(index);
-                } else if (isSelectingSpellTrapTarget && !isEmpty && spellTrap && onCardClick) {
+                if (isSelectingSpellTrapSlot && !isOpponent && isEmpty && safeOnSpellTrapSlotClick) {
+                  safeOnSpellTrapSlotClick(index);
+                } else if (isSelectingSpellTrapTarget && !isEmpty && spellTrap && safeOnCardClick) {
                   // Selecionando alvo para destruir spell/trap
-                  onCardClick(spellTrap, index);
-                } else if (spellTrap && onCardClick && !isSelectingSpellTrapSlot && !isSelectingSpellTrapTarget) {
-                  onCardClick(spellTrap, index);
+                  safeOnCardClick(spellTrap, index);
+                } else if (spellTrap && safeOnCardClick && !isSelectingSpellTrapSlot && !isSelectingSpellTrapTarget) {
+                  safeOnCardClick(spellTrap, index);
                 }
               }}
               onDragOver={(e) => {
-                if (!isOpponent && isEmpty && onSpellTrapDrop) {
+                if (!isOpponent && isEmpty && safeOnSpellTrapDrop) {
                   e.preventDefault();
                   e.stopPropagation();
                   e.currentTarget.classList.add('ring-4', 'ring-green-400', 'bg-green-400/20');
                 }
               }}
               onDragLeave={(e) => {
-                if (!isOpponent && isEmpty && onSpellTrapDrop) {
+                if (!isOpponent && isEmpty && safeOnSpellTrapDrop) {
                   e.currentTarget.classList.remove('ring-4', 'ring-green-400', 'bg-green-400/20');
                 }
               }}
               onDrop={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                if (!isOpponent && isEmpty && onSpellTrapDrop) {
+                if (!isOpponent && isEmpty && safeOnSpellTrapDrop) {
                   e.currentTarget.classList.remove('ring-4', 'ring-green-400', 'bg-green-400/20');
                   
                   const cardData = e.dataTransfer.getData('application/json');
@@ -1437,14 +1454,14 @@ const DuelField: React.FC<DuelFieldProps> = ({
                       const isTrap = cardType === 'Trap';
                       // Trap só pode ser setada, Spell pode ser setada ou ativada
                       const position = isTrap ? 'set' : 'set'; // Por padrão, setar. O usuário pode ativar depois se for Spell
-                      onSpellTrapDrop(card, index, position);
+                      safeOnSpellTrapDrop(card, index, position);
                     } catch (error) {
                       console.error('Erro ao processar drop de spell/trap:', error);
                     }
                   }
                 }
               }}
-              className={`zone-card rounded-lg w-[100px] h-[146px] transition-all bg-transparent relative overflow-hidden border-4 border-white ${
+              className={`zone-card rounded-lg w-[100px] h-[146px] transition-all bg-transparent relative overflow-hidden border-2 border-white ${
                 spellTrap 
                   ? isSelectingSpellTrapTarget
                     ? 'ring-4 ring-yellow-400/50 cursor-pointer'
@@ -1531,11 +1548,11 @@ const DuelField: React.FC<DuelFieldProps> = ({
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (onCardClick && !isSelectingSpellTrapSlot) {
+                          if (safeOnCardClick && !isSelectingSpellTrapSlot) {
                             // Só mostrar informações se a carta estiver face-up OU se não for do oponente
                             // Cartas viradas para baixo do oponente não devem revelar informações
                             if (spellTrap.position === 'face-up' || !isOpponent) {
-                              onCardClick(spellTrap, index);
+                              safeOnCardClick(spellTrap, index);
                             }
                           }
                         }}
@@ -1621,11 +1638,11 @@ const DuelField: React.FC<DuelFieldProps> = ({
                           }
                           
                           e.stopPropagation();
-                          if (onCardClick && !isSelectingSpellTrapSlot) {
+                          if (safeOnCardClick && !isSelectingSpellTrapSlot) {
                             // Só mostrar informações se a carta estiver face-up OU se não for do oponente
                             // Cartas viradas para baixo do oponente não devem revelar informações
                             if (spellTrap.position === 'face-up' || !isOpponent) {
-                              onCardClick(spellTrap, index);
+                              safeOnCardClick(spellTrap, index);
                             }
                           }
                         }}
@@ -1645,7 +1662,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                             return false; // Não mostrar botão se Last Will e nenhum monstro foi destruído
                           }
                           
-                          return !isOpponent && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') && onActivateCard && 
+                          return !isOpponent && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') && safeOnActivateCard && 
                                  spellTrap.position === 'set' && 
                                  (spellTrap.type === 'Spell' || spellTrap.cardType === 'Spell');
                         })() && (
@@ -1657,8 +1674,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                             onClick={(e) => {
                               e.stopPropagation();
                               e.preventDefault();
-                              if (onActivateCard) {
-                                onActivateCard(spellTrap, index);
+                              if (safeOnActivateCard) {
+                                safeOnActivateCard(spellTrap, index);
                               }
                             }}
                             onMouseDown={(e) => {
@@ -1682,7 +1699,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
 
         {/* Deck / Extra Deck - Modernizado */}
         <motion.div 
-          className="zone-card border-4 border-white rounded-lg w-[100px] h-[146px] relative overflow-hidden transition-all cursor-pointer bg-transparent"
+          className="zone-card border-2 border-white rounded-lg w-[100px] h-[146px] relative overflow-hidden transition-all cursor-pointer bg-transparent"
           style={{ aspectRatio: '59/86' }}>
           {deckCount > 0 ? (
             <>

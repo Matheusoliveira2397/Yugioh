@@ -86,6 +86,7 @@ import { EconomyModule } from '../economy/economy.module';
   ],
   exports: [
     DuelsService, // CRÍTICO: Exportar DuelsService para CardEffectsModule
+    DuelQueueService,
     DuelsGateway,
     CardEffectsService,
     DuelUtilsService,

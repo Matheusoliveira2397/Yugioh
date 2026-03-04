@@ -66,7 +66,7 @@ export class InitialDecksService {
     return activeDecks[randomIndex];
   }
 
-  async create(createDeckDto: { name: string; description?: string; cards: Array<{ cardId: string; quantity: number }> }): Promise<InitialDeck> {
+  async create(createDeckDto: { name: string; description?: string; cards: Array<{ cardId: string; quantity: number; isExtraDeck?: boolean }> }): Promise<InitialDeck> {
     try {
       console.log('📝 [InitialDecksService] Criando deck inicial:', {
         name: createDeckDto.name,
@@ -116,6 +116,7 @@ export class InitialDecksService {
             initialDeckId: deckId,
             cardId: cardData.cardId,
             quantity: cardData.quantity,
+            isExtraDeck: !!cardData.isExtraDeck,
           });
         });
 
@@ -132,7 +133,7 @@ export class InitialDecksService {
     }
   }
 
-  async update(id: string, updateDeckDto: { name?: string; description?: string; isActive?: boolean; cards?: Array<{ cardId: string; quantity: number }> }): Promise<InitialDeck> {
+  async update(id: string, updateDeckDto: { name?: string; description?: string; isActive?: boolean; cards?: Array<{ cardId: string; quantity: number; isExtraDeck?: boolean }> }): Promise<InitialDeck> {
     const deck = await this.findOne(id);
 
     if (updateDeckDto.name !== undefined) {
@@ -161,6 +162,7 @@ export class InitialDecksService {
             initialDeckId: id,
             cardId: cardData.cardId,
             quantity: cardData.quantity,
+            isExtraDeck: !!cardData.isExtraDeck,
           })
         );
 
@@ -211,62 +213,53 @@ export class InitialDecksService {
       console.log(`✅ [InitialDecksService] Cartas adicionadas ao inventário do usuário`);
     }
 
-    // Criar um deck "Deck Inicial" com as cartas do deck inicial sorteado
-    // Expandir as quantidades: se uma carta tem quantity: 3, adicionar 3 vezes ao deck
-    const deckCardIds: string[] = [];
+    // Separar cartas do deck principal e do deck adicional (Fusion, Synchro, Xyz, Link)
+    const EXTRA_DECK_MONSTER_TYPES = ['Fusion', 'Synchro', 'Xyz', 'Link'];
+    const mainDeckCardIds: string[] = [];
+    const extraDeckCardIds: string[] = [];
     if (deck.cards && deck.cards.length > 0) {
       for (const deckCard of deck.cards) {
-        // Adicionar a carta N vezes (onde N é a quantity)
+        const isExtra = deckCard.isExtraDeck === true || (deckCard.card && EXTRA_DECK_MONSTER_TYPES.includes(String(deckCard.card.monsterType || '')));
+        const target = isExtra ? extraDeckCardIds : mainDeckCardIds;
         for (let i = 0; i < deckCard.quantity; i++) {
-          deckCardIds.push(deckCard.cardId);
+          target.push(deckCard.cardId);
         }
       }
     }
 
-    // Validar tamanho do deck (deve ter entre 40-60 cartas)
-    if (deckCardIds.length < 40 || deckCardIds.length > 60) {
-      console.warn(`⚠️ [InitialDecksService] Deck inicial "${deck.name}" tem ${deckCardIds.length} cartas (recomendado: 40-60). Criando deck mesmo assim.`);
+    if (mainDeckCardIds.length < 40 || mainDeckCardIds.length > 60) {
+      console.warn(`⚠️ [InitialDecksService] Deck inicial "${deck.name}" tem ${mainDeckCardIds.length} cartas no deck principal (recomendado: 40-60). Criando deck mesmo assim.`);
+    }
+    if (extraDeckCardIds.length > 15) {
+      console.warn(`⚠️ [InitialDecksService] Deck inicial "${deck.name}" tem ${extraDeckCardIds.length} cartas no deck adicional (máx. 15). Criando deck mesmo assim.`);
     }
 
-    // Criar o deck "Deck Inicial" diretamente (sem validação de tamanho, pois é deck inicial obrigatório)
     const deckName = 'Deck Inicial';
     try {
-      // Criar deck diretamente no banco
       const deckEntity = this.decksRepository.create({
         name: deckName,
         userId,
       });
       const savedDeck = await this.decksRepository.save(deckEntity);
 
-      // Adicionar cartas ao deck
-      if (deckCardIds.length > 0) {
-        console.log(`📦 [InitialDecksService] Criando ${deckCardIds.length} cartas para o deck...`);
-        const deckCards = deckCardIds.map((cardId) =>
+      const toCreate: { deckId: string; cardId: string; isExtraDeck: boolean }[] = [];
+      mainDeckCardIds.forEach((cardId) => toCreate.push({ deckId: savedDeck.id, cardId, isExtraDeck: false }));
+      extraDeckCardIds.forEach((cardId) => toCreate.push({ deckId: savedDeck.id, cardId, isExtraDeck: true }));
+
+      if (toCreate.length > 0) {
+        console.log(`📦 [InitialDecksService] Criando ${mainDeckCardIds.length} cartas no deck principal e ${extraDeckCardIds.length} no deck adicional...`);
+        const deckCards = toCreate.map((item) =>
           this.deckCardsRepository.create({
-            deckId: savedDeck.id,
-            cardId,
+            deckId: item.deckId,
+            cardId: item.cardId,
+            isExtraDeck: item.isExtraDeck,
           })
         );
-        const savedDeckCards = await this.deckCardsRepository.save(deckCards);
-        console.log(`✅ [InitialDecksService] ${savedDeckCards.length} cartas salvas no deck`);
-        
-        // Verificar se as cartas foram salvas corretamente
-        const verifyCards = await this.deckCardsRepository.find({
-          where: { deckId: savedDeck.id },
-          relations: ['card'],
-        });
-        console.log(`🔍 [InitialDecksService] Verificação: ${verifyCards.length} cartas encontradas no banco para o deck ${savedDeck.id}`);
-        if (verifyCards.length > 0) {
-          console.log(`🔍 [InitialDecksService] Primeiras 3 cartas:`, verifyCards.slice(0, 3).map(dc => ({
-            cardId: dc.cardId,
-            cardName: dc.card?.name || 'N/A',
-          })));
-        }
-      } else {
-        console.warn(`⚠️ [InitialDecksService] Nenhuma carta para adicionar ao deck!`);
+        await this.deckCardsRepository.save(deckCards);
+        console.log(`✅ [InitialDecksService] ${deckCards.length} cartas salvas no deck`);
       }
 
-      console.log(`✅ [InitialDecksService] Deck "${deckName}" criado com ID: ${savedDeck.id} (${deckCardIds.length} cartas do deck inicial "${deck.name}")`);
+      console.log(`✅ [InitialDecksService] Deck "${deckName}" criado com ID: ${savedDeck.id} (${mainDeckCardIds.length} principal + ${extraDeckCardIds.length} adicional)`);
 
       // Equipar o deck automaticamente
       const updatedUser = await this.usersService.updateCosmetics(userId, {

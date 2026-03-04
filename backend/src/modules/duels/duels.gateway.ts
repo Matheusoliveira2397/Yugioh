@@ -58,6 +58,16 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     private arenaMatchmakingProcessorService: ArenaMatchmakingProcessorService,
   ) {}
 
+  /** Emite notificação do sistema para um usuário (ex.: premiação da arena). O frontend escuta 'systemMessage'. */
+  emitSystemMessageToUser(userId: number, data: { id: string; type: string; content: string; createdAt: string }) {
+    this.server.to(`user_${userId}`).emit('systemMessage', data);
+  }
+
+  /** Emite notificação do sistema para todos os clientes conectados (ex.: arena abriu). */
+  emitSystemMessageToAll(data: { id: string; type: string; content: string; createdAt: string }) {
+    this.server.emit('systemMessage', data);
+  }
+
   afterInit(server: Server) {
     this.matchmakingService.setServer(server);
     this.duelQueueService.setServer(server);
@@ -449,20 +459,27 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         return;
       }
 
-      const userLevel = user.level || 1;
-      
-      // Adicionar à fila da arena (método agora é async)
-      await this.arenaMatchmakingService.addToArenaQueue(userId, client.id, userLevel);
+      const userLevel = user.level ?? 1;
+
+      // Adicionar à fila da arena por faixa de nível (só encontra duelo com jogadores da mesma faixa)
+      const levelRange = await this.arenaMatchmakingService.addToArenaQueue(userId, client.id, userLevel);
+      if (levelRange === null) {
+        client.emit('duelError', { message: 'Não foi possível entrar na fila. Verifique se a arena tem faixas de nível configuradas.' });
+        return;
+      }
+
       client.join(`user_${userId}`);
-      
-      // Obter tamanho total da fila
-      const queueSize = this.arenaMatchmakingService.getQueueSize();
-      
-      console.log(`🔍 [handleSearchArenaDuel] Usuário ${userId} (Nível ${userLevel}) procurando duelo na arena (Socket: ${client.id})`);
-      client.emit('searchingArenaDuel', { 
-        message: 'Procurando oponente na arena...',
-        queueSize: queueSize
+      const queueSize = this.arenaMatchmakingService.getQueueSize(levelRange);
+
+      console.log(`🔍 [handleSearchArenaDuel] Usuário ${userId} (Nível ${userLevel}, faixa ${levelRange}) procurando duelo na arena`);
+      client.emit('searchingArenaDuel', {
+        message: 'Procurando oponente na sua faixa de nível...',
+        queueSize,
+        levelRange,
       });
+
+      // Disparar matchmaking na próxima tick para não esperar o intervalo (até 1.5s)
+      this.arenaMatchmakingProcessorService.triggerProcess();
     } catch (error) {
       console.error(`❌ [handleSearchArenaDuel] Erro:`, error);
       const errorMessage = error instanceof Error ? error.message : 'Erro ao processar busca na arena';
@@ -671,23 +688,34 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         return;
       }
 
-      // Verificar permissão
       const duelPlayer1Id = Number(duel.player1Id);
       const duelPlayer2Id = Number(duel.player2Id);
       const numericUserId = Number(userId);
-      
-      if (duelPlayer1Id !== numericUserId && duelPlayer2Id !== numericUserId) {
+
+      // Permitir ADMIN/MASTER assistir qualquer duelo como espectador
+      let isSpectator = false;
+      const joiningUser = await this.usersService.getUserById(numericUserId);
+      if (joiningUser && (joiningUser.role === 'ADMIN' || joiningUser.role === 'MASTER')) {
+        if (duelPlayer1Id !== numericUserId && duelPlayer2Id !== numericUserId) {
+          isSpectator = true;
+        }
+      }
+
+      // Verificar permissão (jogador ou espectador admin)
+      if (!isSpectator && duelPlayer1Id !== numericUserId && duelPlayer2Id !== numericUserId) {
         client.emit('duelError', { message: 'Você não é um dos jogadores deste duelo' });
         return;
       }
 
-      // Verificar se o jogador tem deck equipado antes de entrar no duelo
-      const hasDeck = await this.duelsService.hasEquippedDeck(numericUserId);
-      if (!hasDeck) {
-        client.emit('duelError', { 
-          message: 'Você não tem deck equipado. Por favor, equipe um deck antes de entrar no duelo.' 
-        });
-        return;
+      // Verificar se o jogador tem deck equipado antes de entrar no duelo (não exigir para espectador)
+      if (!isSpectator) {
+        const hasDeck = await this.duelsService.hasEquippedDeck(numericUserId);
+        if (!hasDeck) {
+          client.emit('duelError', { 
+            message: 'Você não tem deck equipado. Por favor, equipe um deck antes de entrar no duelo.' 
+          });
+          return;
+        }
       }
 
       // Entrar nas rooms
@@ -810,18 +838,16 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         // Depois emitir para todos na room
         this.server.to(`duel_${duelId}`).emit('duelUpdate', drawPhaseDuelData);
         
-        // Pequeno delay para o frontend mostrar "Draw Phase" antes de processar
-        await new Promise(resolve => setTimeout(resolve, 400));
+        // Delay curto para o frontend mostrar "Draw Phase" antes de processar (evitar travar)
+        await new Promise(resolve => setTimeout(resolve, 200));
         const updatedDuel = await this.duelsService.processDrawPhase(duelId);
         
         if (updatedDuel) {
           duel = updatedDuel;
-          // Atualizar os campos também
           player1Field = (duel as any).player1Field;
           player2Field = (duel as any).player2Field;
           
-          // Emitir atualização com a fase correta após processar DRAW
-          // Se for o primeiro turno do primeiro jogador, será MAIN2, caso contrário será STANDBY
+          // Emitir atualização: primeiro turno do P1 → MAIN2; demais → STANDBY
           const nextPhaseDuelData = {
             id: duel.id,
             player1Id: duel.player1Id,
@@ -1069,10 +1095,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         };
         this.server.to(`duel_${duelId}`).emit('duelUpdate', drawPhaseDuelData);
         
-        // Pequeno delay para mostrar o popup da fase
-        await new Promise(resolve => setTimeout(resolve, 400));
+        await new Promise(resolve => setTimeout(resolve, 200));
         
-        // Processar DRAW phase (comprar carta e avançar para próxima fase)
         const finalDuel = await this.duelsService.processDrawPhase(duelId);
         if (finalDuel) {
           const player1Field = (finalDuel as any).player1Field;
@@ -1088,7 +1112,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             player1LifePoints: finalDuel.player1LifePoints,
             player2LifePoints: finalDuel.player2LifePoints,
             currentTurn: finalDuel.currentTurn,
-            currentPhase: finalDuel.currentPhase, // Usar a fase atual (BATTLE ou STANDBY)
+            currentPhase: finalDuel.currentPhase,
             status: finalDuel.status,
             duelTime: (finalDuel as any).duelTime || 0,
             turnTime: (finalDuel as any).turnTime || 90,
@@ -1246,10 +1270,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         };
         this.server.to(`duel_${duelId}`).emit('duelUpdate', drawPhaseDuelData);
         
-        // Pequeno delay para mostrar o popup da fase
-        await new Promise(resolve => setTimeout(resolve, 400));
+        await new Promise(resolve => setTimeout(resolve, 200));
         
-        // Processar DRAW phase (pode já ter sido processado automaticamente pelo advanceToNextTurn)
         const finalDuel = await this.duelsService.processDrawPhase(duelId);
         if (finalDuel) {
           const player1Field = (finalDuel as any).player1Field;
@@ -1278,7 +1300,6 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           };
           this.server.to(`duel_${duelId}`).emit('duelUpdate', standbyDuelData);
         } else {
-          // Draw Phase já foi processada automaticamente pelo advanceToNextTurn
           // Buscar duelo atualizado do banco
           const currentDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
           if (currentDuel) {
@@ -2075,16 +2096,19 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
                                       actionType === 'FORCEFUL_SENTRY_CHOICE' ||
                                       actionType === 'MYSTICAL_SPACE_TYPHOON_CHOICE' ||
                                       actionType === 'SOUL_TAKER_CHOICE' ||
+                                      actionType === 'LIGHTNING_STORM_CHOICE' ||
                                       actionType === 'SNOWMAN_EATER_CHOICE' ||
                                       actionType === 'CHAOS_SORCERER_CHOICE' ||
                                       actionType === 'CHANGE_OF_HEART_CHOICE' ||
                                       actionType === 'BRAIN_CONTROL_CHOICE' ||
                                       actionType === 'MONSTER_REBORN_CHOICE' ||
                                       actionType === 'PREMATURE_BURIAL_CHOICE' ||
+                                      actionType === 'AUTONOMOUS_ACTION_UNIT_CHOICE' ||
                                       actionType === 'LAST_WILL_CHOICE' ||
                                       actionType === 'MONSTER_REINCARNATION_DISCARD_CHOICE' ||
                                       actionType === 'MONSTER_REINCARNATION_GRAVEYARD_CHOICE' ||
-                                      actionType === 'CANCEL_CARD_ACTIVATION';
+                                      actionType === 'CANCEL_CARD_ACTIVATION' ||
+                                      actionType === 'BREAKER_REMOVE_COUNTER';
           
           // Se há escolha pendente e não é uma ação de escolha permitida, bloquear
           if (!isAllowedChoiceAction && pendingChoice.userId === userId) {
@@ -3342,45 +3366,6 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
           this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
         }
-      } else if (actionType === 'BREAKER_REMOVE_COUNTER') {
-        // Buscar duelo atualizado para enviar atualização
-        let updatedDuel = this.duelsService.findDuelByIdLight(duelId);
-        if (!updatedDuel) {
-          updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId);
-          if (!updatedDuel) {
-            client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
-            return;
-          }
-        }
-
-        // Preparar dados atualizados
-        const player1Field = (updatedDuel as any).player1Field;
-        const player2Field = (updatedDuel as any).player2Field;
-        const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
-
-        const duelData = {
-          id: updatedDuel.id,
-          player1Id: updatedDuel.player1Id,
-          player2Id: updatedDuel.player2Id,
-          player1: (updatedDuel as any).player1,
-          player2: (updatedDuel as any).player2,
-          player1LifePoints: updatedDuel.player1LifePoints,
-          player2LifePoints: updatedDuel.player2LifePoints,
-          currentTurn: updatedDuel.currentTurn,
-          currentPhase: updatedDuel.currentPhase || 'MAIN1',
-          status: updatedDuel.status,
-          duelTime: (updatedDuel as any).duelTime || 0,
-          turnTime: (updatedDuel as any).turnTime || 90,
-          turnTimeRemaining: turnTimeRemaining,
-          turnStartedAt: (updatedDuel as any).turnStartedAt,
-          player1Field: player1Field,
-          player2Field: player2Field,
-          pendingChoice: (updatedDuel as any).pendingChoice || null,
-          createdAt: updatedDuel.createdAt,
-          updatedAt: updatedDuel.updatedAt,
-        };
-
-        this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
       } else if (actionType === 'EQUIP_SPELL') {
         // Equipar spell equip diretamente da mão para um monstro
         const { cardId, monsterZoneIndex, spellTrapZoneIndex } = actionData;
@@ -3856,7 +3841,9 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             
             // Verificar se é Mystical Space Typhoon, Soul Taker, Change Of Heart ou Brain Control ANTES de chamar processCardEffect
             const cardNameLower = (cardToProcess.name || cardToProcess.cardName || '').toLowerCase();
+            const cardIdFromCard = cardToProcess.idCarta || cardToProcess.id || cardToProcess.cardId;
             const cardIdLower = String(cardId || '').toLowerCase();
+            const cardIdFromCardLower = String(cardIdFromCard || '').toLowerCase();
             const isMysticalSpaceTyphoon = cardId === 'MysticalSpaceTyphoon' ||
                                           cardId === 'mysticalspacetyphoon' ||
                                           cardIdLower.includes('mysticalspacetyphoon') ||
@@ -3886,7 +3873,17 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
                                      cardId === 'prematureburial' ||
                                      cardIdLower.includes('prematureburial') ||
                                      cardNameLower.includes('premature burial');
-            const needsModalBeforeField = isMysticalSpaceTyphoon || isSoulTaker || isChangeOfHeart || isBrainControl || isMonsterReborn || isLastWill || isMonsterReincarnation || isPrematureBurial;
+            const isAutonomousActionUnit = cardId === 'AutonomousActionUnit' ||
+                                          cardId === 'autonomousactionunit' ||
+                                          cardIdLower.includes('autonomousactionunit') ||
+                                          cardNameLower.includes('autonomous action unit');
+            const isLightningStorm = cardId === 'LightningStorm' ||
+                                     cardId === 'lightningstorm' ||
+                                     cardIdLower.includes('lightningstorm') ||
+                                     cardIdFromCardLower.includes('lightningstorm') ||
+                                     cardNameLower.includes('lightning storm') ||
+                                     cardIdFromCardLower.includes('ygopro_14532163');
+            const needsModalBeforeField = isMysticalSpaceTyphoon || isSoulTaker || isChangeOfHeart || isBrainControl || isMonsterReborn || isLastWill || isMonsterReincarnation || isPrematureBurial || isAutonomousActionUnit || isLightningStorm;
             
             let createdPendingChoice = false;
             
@@ -4498,6 +4495,63 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
               }
             }
             
+            if (isLightningStorm) {
+              // Lightning Storm: só pode ativar se não controlar nenhuma carta com face para cima; 1 vez por turno; escolher 1 efeito
+              console.log(`✨ [handleDuelAction] Lightning Storm detectada - validando condições e criando pendingChoice`);
+              
+              const playerFieldLS = isPlayer1Check ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
+              const turnCounterLS = (updatedDuel as any).turnCounter ?? 1;
+              const lightningStormUsedThisTurn = (playerFieldLS?.lightningStormActivatedTurn === turnCounterLS);
+              if (lightningStormUsedThisTurn) {
+                client.emit('duelError', { message: 'Só pode ativar 1 "Lightning Storm" por turno.' });
+                return;
+              }
+              let hasFaceUp = false;
+              (playerFieldLS?.monsters || []).forEach((m: any) => {
+                if (m && (m.position === 'attack' || m.position === 'defense')) hasFaceUp = true;
+              });
+              (playerFieldLS?.spellTrap || []).forEach((st: any) => {
+                if (st && st.position === 'face-up') hasFaceUp = true;
+              });
+              if (hasFaceUp) {
+                client.emit('duelError', { message: 'Só pode ativar Lightning Storm se você não controlar nenhuma carta com face para cima.' });
+                return;
+              }
+              if (!cardIsOnField && updatedDuel) {
+                if (updatedDuel.currentPhase === TurnPhase.BATTLE) {
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN2);
+                } else if (updatedDuel.currentPhase === TurnPhase.STANDBY) {
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN1);
+                }
+              }
+              if (!updatedDuel) {
+                client.emit('duelError', { message: 'Erro ao processar Lightning Storm' });
+                return;
+              }
+              const zoneIndexForLS = cardIsOnField ? zoneIndex : null;
+              await this.duelsService.setPendingChoice(duelId, {
+                type: 'LIGHTNING_STORM',
+                userId: userId,
+                turnWhenStarted: updatedDuel.currentTurn,
+                phaseWhenStarted: updatedDuel.currentPhase || 'MAIN1',
+                data: {
+                  cardId: cardId,
+                  cardName: cardToProcess.name || cardToProcess.cardName,
+                  zoneIndex: zoneIndexForLS,
+                  cardInstanceId: cardToProcess.instanceId,
+                  cardData: cardToProcess,
+                  cardWasOnField: cardIsOnField,
+                }
+              });
+              updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+              client.emit('lightningStormShowOptions', { duelId });
+              if (updatedDuel) {
+                (updatedDuel as any).pendingChoice = (await this.duelsService.findDuelByIdFromDatabase(duelId, true))?.pendingChoice ?? null;
+                this.server.to(`duel_${duelId}`).emit('duelUpdate', updatedDuel);
+              }
+              return;
+            }
+            
             if (isChangeOfHeart) {
               // Change Of Heart precisa criar pendingChoice manualmente (mesmo padrão do Mystical Space Typhoon)
               console.log(`✨ [handleDuelAction] Change Of Heart detectada - criando pendingChoice manualmente`);
@@ -4837,6 +4891,102 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
               });
               if (updatedDuelWithPending) {
                 this.server.to(`duel_${duelId}`).emit('duelUpdate', updatedDuelWithPending);
+              }
+              return;
+            }
+            
+            if (isAutonomousActionUnit) {
+              console.log(`✨ [handleDuelAction] Autonomous Action Unit detectada - pagar 1500 LP e escolher monstro do cemitério do oponente`);
+              if (!cardIsOnField && updatedDuel) {
+                if (updatedDuel.currentPhase === TurnPhase.BATTLE) {
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN2);
+                } else if (updatedDuel.currentPhase === TurnPhase.STANDBY) {
+                  updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN1);
+                }
+              }
+              const currentLP = isPlayer1Check ? (updatedDuel as any).player1LifePoints : (updatedDuel as any).player2LifePoints;
+              if (currentLP < 1500) {
+                client.emit('duelError', { message: 'Autonomous Action Unit: você precisa de pelo menos 1500 LP para ativar.' });
+                return;
+              }
+              const playerFieldAAU = isPlayer1Check ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
+              const opponentFieldAAU = isPlayer1Check ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
+              const opponentGraveyardAAU = opponentFieldAAU?.graveyard || [];
+              const opponentMonstersAAU = opponentGraveyardAAU.filter((c: any) => {
+                const cardType = c.type || c.cardType;
+                return cardType === 'Monster';
+              });
+              if (opponentMonstersAAU.length === 0) {
+                client.emit('duelError', { message: 'Autonomous Action Unit: não há monstros no cemitério do oponente.' });
+                return;
+              }
+              const playerMonstersAAU = playerFieldAAU?.monsters || [null, null, null, null, null];
+              const emptyMonsterZone = playerMonstersAAU.findIndex((m: any) => m === null || m === undefined);
+              if (emptyMonsterZone === -1) {
+                client.emit('duelError', { message: 'Autonomous Action Unit: não há espaço no seu campo para invocar o monstro.' });
+                return;
+              }
+              if (!updatedDuel) {
+                client.emit('duelError', { message: 'Erro ao processar Autonomous Action Unit' });
+                return;
+              }
+              // Pagar 1500 LP
+              if (isPlayer1Check) {
+                (updatedDuel as any).player1LifePoints = Math.max(0, (updatedDuel as any).player1LifePoints - 1500);
+              } else {
+                (updatedDuel as any).player2LifePoints = Math.max(0, (updatedDuel as any).player2LifePoints - 1500);
+              }
+              // Colocar a carta no campo (zona de spell/trap) se estava na mão
+              let spellTrapZoneIndexAAU = zoneIndex;
+              if (!cardIsOnField) {
+                if (!playerFieldAAU.spellTrap || !Array.isArray(playerFieldAAU.spellTrap)) {
+                  playerFieldAAU.spellTrap = [null, null, null, null, null];
+                }
+                spellTrapZoneIndexAAU = playerFieldAAU.spellTrap.findIndex((s: any) => s === null || s === undefined);
+                if (spellTrapZoneIndexAAU === -1) {
+                  client.emit('duelError', { message: 'Autonomous Action Unit: não há zona de Magia/Armadilha disponível.' });
+                  return;
+                }
+                const hand = playerFieldAAU.hand || [];
+                const cardIndexInHand = hand.findIndex((c: any) => c && (c.instanceId === cardToProcess.instanceId || (c.id || c.cardId) === cardId));
+                if (cardIndexInHand >= 0) {
+                  const cardToPlace = hand.splice(cardIndexInHand, 1)[0];
+                  playerFieldAAU.spellTrap[spellTrapZoneIndexAAU] = { ...cardToPlace, position: 'face-up' };
+                  playerFieldAAU.hand = hand;
+                }
+              } else {
+                if (playerFieldAAU.spellTrap && playerFieldAAU.spellTrap[zoneIndex]) {
+                  playerFieldAAU.spellTrap[zoneIndex].position = 'face-up';
+                }
+                spellTrapZoneIndexAAU = zoneIndex;
+              }
+              await this.duelsService.updateDuelInDatabase(duelId, {
+                player1Field: (updatedDuel as any).player1Field,
+                player2Field: (updatedDuel as any).player2Field,
+                player1LifePoints: (updatedDuel as any).player1LifePoints,
+                player2LifePoints: (updatedDuel as any).player2LifePoints,
+              } as any);
+              await this.duelsService.setPendingChoice(duelId, {
+                type: 'AUTONOMOUS_ACTION_UNIT',
+                userId: userId,
+                turnWhenStarted: updatedDuel.currentTurn,
+                phaseWhenStarted: updatedDuel.currentPhase || 'MAIN1',
+                data: {
+                  spellTrapZoneIndex: spellTrapZoneIndexAAU,
+                  cardId: cardId,
+                  cardName: cardToProcess.name || cardToProcess.cardName,
+                  cardInstanceId: cardToProcess.instanceId,
+                  cardData: cardToProcess,
+                  opponentGraveyard: opponentMonstersAAU,
+                }
+              });
+              const updatedDuelAAU = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+              client.emit('autonomousActionUnitShowOpponentGraveyard', {
+                opponentGraveyard: opponentMonstersAAU,
+                duelId: duelId,
+              });
+              if (updatedDuelAAU) {
+                this.server.to(`duel_${duelId}`).emit('duelUpdate', updatedDuelAAU);
               }
               return;
             }
@@ -5271,6 +5421,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         let isChangeOfHeartCard = isChangeOfHeartCardEarly; // Reutilizar verificação anterior
         let isBrainControlCard = false;
         let isSoulTakerCard = false;
+        let isLightningStormCard = false;
         let isUnitedWeStandCard = false;
         let isMagePowerCard = false;
         let isMysticalSpaceTyphoonCard = false;
@@ -5324,6 +5475,12 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
                    (typeof cardId === 'string' && cardId.toLowerCase().includes('mysticalspacetyphoon'))) {
           isMysticalSpaceTyphoonCard = true;
           console.log(`✅ [handleDuelAction] MysticalSpaceTyphoon detectada pelo cardId original: ${cardId}`);
+        } else if (cardId === 'LightningStorm' ||
+                   cardId === 'lightningstorm' ||
+                   (typeof cardId === 'string' && cardId.toLowerCase().includes('lightningstorm')) ||
+                   (typeof originalCardName === 'string' && originalCardName.includes('lightning storm'))) {
+          isLightningStormCard = true;
+          console.log(`✅ [handleDuelAction] LightningStorm detectada pelo cardId/nome: ${cardId}/${originalCardName}`);
         }
         
         // Também verificar no campo após placeCardOnField (fallback)
@@ -5728,7 +5885,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         
         // Verificar se a carta ativada é The Forceful Sentry (apenas se não for Confiscation, GracefulCharity, MonsterReborn, ChangeOfHeart, BrainControl, UnitedWeStand, MagePower, MysticalSpaceTyphoon ou ReinforcementOfTheArmy)
         // IMPORTANTE: Não excluir isForcefulSentryCard da verificação - ela precisa ser processada aqui
-        if ((actionType === 'ACTIVATE_SPELL_TRAP' || actionType === 'SET_SPELL_TRAP') && finalPosition === 'face-up' && !isConfiscationCard && !isGracefulCharityCard && !isMonsterRebornCard && !isChangeOfHeartCard && !isBrainControlCard && !isSoulTakerCard && !isUnitedWeStandCard && !isMagePowerCard && !isMysticalSpaceTyphoonCard && !isReinforcementOfTheArmyCard && updatedDuel) {
+        if ((actionType === 'ACTIVATE_SPELL_TRAP' || actionType === 'SET_SPELL_TRAP') && finalPosition === 'face-up' && !isConfiscationCard && !isGracefulCharityCard && !isMonsterRebornCard && !isChangeOfHeartCard && !isBrainControlCard && !isSoulTakerCard && !isLightningStormCard && !isUnitedWeStandCard && !isMagePowerCard && !isMysticalSpaceTyphoonCard && !isReinforcementOfTheArmyCard && updatedDuel) {
           const isPlayer1 = Number(updatedDuel.player1Id) === Number(userId);
           const player1Field = (updatedDuel as any).player1Field;
           const player2Field = (updatedDuel as any).player2Field;
@@ -5822,7 +5979,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         
         // Se for Confiscation, GracefulCharity, ForcefulSentry ou MonsterReborn, já foram processados acima
         // Se não for, emitir duelUpdate normalmente
-        if (!isConfiscationCard && !isGracefulCharityCard && !isForcefulSentryCard && !isMonsterRebornCard && !isChangeOfHeartCard && !isBrainControlCard && !isSoulTakerCard && !isUnitedWeStandCard && !isMagePowerCard && !isReinforcementOfTheArmyCard) {
+        if (!isConfiscationCard && !isGracefulCharityCard && !isForcefulSentryCard && !isMonsterRebornCard && !isChangeOfHeartCard && !isBrainControlCard && !isSoulTakerCard && !isLightningStormCard && !isUnitedWeStandCard && !isMagePowerCard && !isReinforcementOfTheArmyCard) {
           if (!updatedDuel) {
             console.error(`❌ [handleDuelAction] Não foi possível buscar duelo atualizado do banco`);
             client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
@@ -6430,11 +6587,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           return;
         }
 
-        // Limpar escolha pendente
-        await this.duelsService.clearPendingChoice(duelId);
-
-        // Buscar duelo atualizado
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId);
+        // Buscar duelo atualizado do banco (processAutonomousActionUnitChoice já limpou pendingChoice e salvou os campos)
+        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
         if (!updatedDuel) {
           client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
           return;
@@ -6809,6 +6963,48 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
         console.log(`✅ [SOUL_TAKER_CHOICE] Emitindo duelUpdate - id: ${duelData.id}, player1Field: ${!!duelData.player1Field}, player2Field: ${!!duelData.player2Field}, pendingChoice: ${duelData.pendingChoice}`);
         this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
+      } else if (actionType === 'LIGHTNING_STORM_CHOICE') {
+        const { effect } = actionData;
+        if (effect !== 'destroy_attack_monsters' && effect !== 'destroy_spells_traps') {
+          client.emit('duelError', { message: 'Escolha de efeito inválida' });
+          return;
+        }
+        const result = await this.duelsService.processLightningStormChoice(duelId, userId, effect);
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro ao processar Lightning Storm' });
+          return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const updatedDuelAfterLS = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        if (!updatedDuelAfterLS) {
+          client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
+          return;
+        }
+        const player1Field = (updatedDuelAfterLS as any).player1Field;
+        const player2Field = (updatedDuelAfterLS as any).player2Field;
+        const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuelAfterLS);
+        const duelData = {
+          id: updatedDuelAfterLS.id,
+          player1Id: updatedDuelAfterLS.player1Id,
+          player2Id: updatedDuelAfterLS.player2Id,
+          player1: (updatedDuelAfterLS as any).player1 || null,
+          player2: (updatedDuelAfterLS as any).player2 || null,
+          player1LifePoints: updatedDuelAfterLS.player1LifePoints,
+          player2LifePoints: updatedDuelAfterLS.player2LifePoints,
+          currentTurn: updatedDuelAfterLS.currentTurn,
+          currentPhase: updatedDuelAfterLS.currentPhase,
+          status: updatedDuelAfterLS.status,
+          duelTime: (updatedDuelAfterLS as any).duelTime || 0,
+          turnTime: (updatedDuelAfterLS as any).turnTime || 90,
+          turnTimeRemaining,
+          turnStartedAt: (updatedDuelAfterLS as any).turnStartedAt,
+          player1Field,
+          player2Field,
+          pendingChoice: null,
+          createdAt: updatedDuelAfterLS.createdAt,
+          updatedAt: updatedDuelAfterLS.updatedAt,
+        };
+        this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
       } else if (actionType === 'UNITED_WE_STAND_CHOICE') {
         // Processar escolha do UnitedWeStand
         const { chosenMonsterZoneIndex } = actionData;
@@ -7153,7 +7349,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           updatedAt: updatedDuelAfterBreaker.updatedAt,
         };
 
-        console.log(`✅ [BREAKER_REMOVE_COUNTER] Emitindo duelUpdate - id: ${duelData.id}, player1Field: ${!!duelData.player1Field}, player2Field: ${!!duelData.player2Field}`);
+        console.log(`✅ [BREAKER_REMOVE_COUNTER] Emitindo duelUpdate - id: ${duelData.id}, P1 graveyard: ${(player1Field as any)?.graveyard?.length ?? 0}, P2 graveyard: ${(player2Field as any)?.graveyard?.length ?? 0}`);
         this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
       } else if (actionType === 'ATTACK') {
         // Processar ataque
@@ -8225,6 +8421,12 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         
         if (!result.success) {
           console.error(`❌ [handleAutoChoice] ForcefulSentry: Erro ao processar escolha:`, result.message);
+        }
+      } else if (pendingChoice.type === 'LIGHTNING_STORM') {
+        console.log(`🤖 [handleAutoChoice] Lightning Storm: aplicando efeito padrão (destroy_attack_monsters)`);
+        const result = await this.duelsService.processLightningStormChoice(duelId, userId, 'destroy_attack_monsters');
+        if (!result.success) {
+          console.error(`❌ [handleAutoChoice] Lightning Storm: Erro ao processar:`, result.message);
         }
       }
       

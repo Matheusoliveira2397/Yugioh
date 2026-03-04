@@ -1,0 +1,111 @@
+{
+  "common": {
+    "loading": "Carregando...",
+    "save": "Salvar",
+    "cancel": "Cancelar",
+    "close": "Fechar",
+    "confirm": "Confirmar",
+    "back": "Voltar",
+    "next": "Próximo",
+    "previous": "Anterior",
+    "search": "Buscar",
+    "edit": "Editar",
+    "delete": "Excluir",
+    "yes": "Sim",
+    "no": "Não",
+    "pts": "pts",
+    "language": "Idioma"
+  },
+  "login": {
+    "gameTitle": "Yugioh RPG: Champions Of Duels",
+    "usernameOrEmail": "Usuário ou email",
+    "password": "Senha",
+    "submit": "Entrar",
+    "forgotPassword": "Esqueceu a senha?",
+    "createAccount": "Criar conta",
+    "showPassword": "Mostrar senha",
+    "hidePassword": "Ocultar senha",
+    "errorInvalid": "Login ou senha incorretos.",
+    "errorEmailNotVerified": "Por favor, confirme seu email antes de fazer login. Verifique sua caixa de entrada.",
+    "didNotReceiveEmail": "Não recebeu o email? Verifique o spam ou reenvie.",
+    "emailResent": "Email reenviado. Confira sua caixa.",
+    "resendVerification": "Reenviar confirmação",
+    "sending": "Enviando..."
+  },
+  "loginRankings": {
+    "top5Duelists": "Top 5 Duelistas",
+    "top3Clans": "Top 3 Clãs",
+    "global": "Global",
+    "season": "Season",
+    "general": "Geral",
+    "statistics": "Estatísticas",
+    "seasonLabel": "Season",
+    "endsIn": "Termina em",
+    "days": "dias",
+    "duelists": "Duelistas",
+    "duels": "Duelos",
+    "onlineNow": "Online agora",
+    "tournaments": "Torneios",
+    "cards": "Cartas",
+    "maxToday": "Máx. hoje",
+    "maxYesterday": "Máx. ontem"
+  },
+  "layout": {
+    "openMenu": "Abrir ou fechar menu",
+    "logout": "Sair"
+  },
+  "marquee": {
+    "viewShop": "Ver loja",
+    "latestCards": "Últimas cartas",
+    "latestCardsAdded": "Últimas cartas Adicionadas",
+    "noCardsAvailable": "Nenhuma carta disponível no momento.",
+    "goToShop": "Ir para a loja"
+  },
+  "home": {
+    "title": "Início",
+    "welcome": "Bem-vindo"
+  },
+  "ranking": {
+    "title": "Ranking",
+    "global": "Global",
+    "season": "Season",
+    "duelists": "Duelistas",
+    "clans": "Clãs"
+  },
+  "shop": {
+    "title": "Loja",
+    "buy": "Comprar",
+    "sell": "Vender"
+  },
+  "profile": {
+    "title": "Perfil",
+    "editProfile": "Editar perfil"
+  },
+  "duel": {
+    "title": "Duelo",
+    "randomDuel": "Duelo aleatório",
+    "arena": "Arena",
+    "attack": "Atacar",
+    "defense": "Defesa",
+    "endTurn": "Encerrar turno"
+  },
+  "groups": {
+    "title": "Clãs",
+    "myClan": "Meu clã",
+    "createClan": "Criar clã"
+  },
+  "missions": {
+    "title": "Missões"
+  },
+  "drops": {
+    "title": "Drops"
+  },
+  "chat": {
+    "title": "Chat",
+    "send": "Enviar",
+    "placeholder": "Digite uma mensagem..."
+  },
+  "tournaments": {
+    "title": "Torneios"
+  }
+}

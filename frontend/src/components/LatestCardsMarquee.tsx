@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useI18n } from '../i18n/I18nContext';
 import { motion } from 'framer-motion';
 import { getCardImage } from '../utils/cardImage';
 
@@ -60,6 +61,7 @@ export default function LatestCardsMarquee({
   className = '',
 }: LatestCardsMarqueeProps) {
   const navigate = useNavigate();
+  const { t } = useI18n();
 
   if (cards.length === 0) {
     return (
@@ -71,16 +73,16 @@ export default function LatestCardsMarquee({
       >
         <h2 className="text-xs font-bold flex items-center justify-center gap-1.5 text-white/80 mb-1">
           <span>🎴</span>
-          <span>Últimas cartas Adicionadas</span>
+          <span>{t('marquee.latestCardsAdded')}</span>
         </h2>
-        <p className="text-white/60 text-xs">Nenhuma carta disponível no momento.</p>
+        <p className="text-white/60 text-xs">{t('marquee.noCardsAvailable')}</p>
         {showVerLoja && (
           <button
             type="button"
             onClick={() => navigate('/shop')}
             className="mt-2 text-sm text-blue-400 hover:text-blue-300 font-medium"
           >
-            Ir para a loja
+            {t('marquee.goToShop')}
           </button>
         )}
       </motion.div>
@@ -97,7 +99,7 @@ export default function LatestCardsMarquee({
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <h2 className="text-xs md:text-sm font-bold flex items-center gap-1.5 text-white drop-shadow-lg">
           <span className="text-sm">🎴</span>
-          <span>Últimas cartas Adicionadas</span>
+          <span>{t('marquee.latestCardsAdded')}</span>
           <span className="text-[9px] font-normal text-white/50 hidden sm:inline">— passe o mouse para pausar</span>
         </h2>
         {showVerLoja && (
@@ -106,7 +108,7 @@ export default function LatestCardsMarquee({
             onClick={() => navigate('/shop')}
             className="text-xs md:text-sm font-semibold text-blue-300 hover:text-blue-200 transition-colors whitespace-nowrap shrink-0"
           >
-            Ver loja →
+            {t('marquee.viewShop')} →
           </button>
         )}
       </div>
@@ -116,17 +118,6 @@ export default function LatestCardsMarquee({
             {[...cards, ...cards].map((card, index) => (
               <CardMarqueeItem
                 key={`top-${card.id}-${index}`}
-                card={card}
-                onClick={() => navigate('/shop')}
-              />
-            ))}
-          </div>
-        </div>
-        <div className="overflow-hidden mt-1 md:mt-1.5">
-          <div className="shop-marquee-track--right flex gap-2 md:gap-2.5 w-max py-0.5">
-            {[...[...cards].reverse(), [...cards].reverse()].map((card, index) => (
-              <CardMarqueeItem
-                key={`bottom-${card.id}-${index}`}
                 card={card}
                 onClick={() => navigate('/shop')}
               />

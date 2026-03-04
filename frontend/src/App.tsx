@@ -1,8 +1,12 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import LoginPage from './pages/LoginPage';
+import LoginMasterPage from './pages/LoginMasterPage';
 import RegisterPage from './pages/RegisterPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import ConfirmEmailChangePage from './pages/ConfirmEmailChangePage';
 import HomePage from './pages/NewHomePage';
 import DeckBuilderPage from './pages/DeckBuilderPage';
 import DeckEditPage from './pages/DeckEditPage';
@@ -37,6 +41,8 @@ import AdminCashDivisionPanel from './pages/AdminCashDivisionPanel';
 import AdminRandomDuelLevelRangesPanel from './pages/AdminRandomDuelLevelRangesPanel';
 import AdminSocialMediaPanel from './pages/AdminSocialMediaPanel';
 import AdminNewAccountSettingsPanel from './pages/AdminNewAccountSettingsPanel';
+import AdminWatchDuelPage from './pages/AdminWatchDuelPage';
+import AdminActiveDuelsPanel from './pages/AdminActiveDuelsPanel';
 import CreditPage from './pages/CreditPage';
 import HelpPage from './pages/HelpPage';
 import MissionsPage from './pages/MissionsPage';
@@ -60,8 +66,12 @@ function App() {
     >
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/loginMaster" element={<LoginMasterPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/verify-email/:token" element={<VerifyEmailPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+        <Route path="/confirm-email-change/:token" element={<ConfirmEmailChangePage />} />
         
         <Route
           path="/"
@@ -433,6 +443,32 @@ function App() {
             isAuthenticated ? (
               <Layout>
                 <AdminArenaPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/watch-duel"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminWatchDuelPage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/active-duels"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminActiveDuelsPanel />
               </Layout>
             ) : (
               <Navigate to="/login" />

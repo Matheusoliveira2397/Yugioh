@@ -10,7 +10,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 interface RankingPlayer {
   id: string;
   username: string;
-  avatar?: string;
+  profileImage?: string;
   totalScore?: number;
   level?: number;
   wins: number;
@@ -51,7 +51,7 @@ interface ChatMessage {
   username: string;
   message: string;
   timestamp: string;
-  avatar?: string;
+  profileImage?: string;
 }
 
 export default function HomePage() {

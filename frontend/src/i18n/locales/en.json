@@ -1,0 +1,111 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "confirm": "Confirm",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "search": "Search",
+    "edit": "Edit",
+    "delete": "Delete",
+    "yes": "Yes",
+    "no": "No",
+    "pts": "pts",
+    "language": "Language"
+  },
+  "login": {
+    "gameTitle": "Yugioh RPG: Champions Of Duels",
+    "usernameOrEmail": "Username or email",
+    "password": "Password",
+    "submit": "Log in",
+    "forgotPassword": "Forgot password?",
+    "createAccount": "Create account",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "errorInvalid": "Incorrect username or password.",
+    "errorEmailNotVerified": "Please verify your email before logging in. Check your inbox.",
+    "didNotReceiveEmail": "Didn't receive the email? Check spam or resend.",
+    "emailResent": "Email resent. Check your inbox.",
+    "resendVerification": "Resend verification",
+    "sending": "Sending..."
+  },
+  "loginRankings": {
+    "top5Duelists": "Top 5 Duelists",
+    "top3Clans": "Top 3 Clans",
+    "global": "Global",
+    "season": "Season",
+    "general": "General",
+    "statistics": "Statistics",
+    "seasonLabel": "Season",
+    "endsIn": "Ends in",
+    "days": "days",
+    "duelists": "Duelists",
+    "duels": "Duels",
+    "onlineNow": "Online now",
+    "tournaments": "Tournaments",
+    "cards": "Cards",
+    "maxToday": "Max today",
+    "maxYesterday": "Max yesterday"
+  },
+  "layout": {
+    "openMenu": "Open or close menu",
+    "logout": "Log out"
+  },
+  "marquee": {
+    "viewShop": "View shop",
+    "latestCards": "Latest cards",
+    "latestCardsAdded": "Latest cards added",
+    "noCardsAvailable": "No cards available at the moment.",
+    "goToShop": "Go to shop"
+  },
+  "home": {
+    "title": "Home",
+    "welcome": "Welcome"
+  },
+  "ranking": {
+    "title": "Ranking",
+    "global": "Global",
+    "season": "Season",
+    "duelists": "Duelists",
+    "clans": "Clans"
+  },
+  "shop": {
+    "title": "Shop",
+    "buy": "Buy",
+    "sell": "Sell"
+  },
+  "profile": {
+    "title": "Profile",
+    "editProfile": "Edit profile"
+  },
+  "duel": {
+    "title": "Duel",
+    "randomDuel": "Random duel",
+    "arena": "Arena",
+    "attack": "Attack",
+    "defense": "Defense",
+    "endTurn": "End turn"
+  },
+  "groups": {
+    "title": "Clans",
+    "myClan": "My clan",
+    "createClan": "Create clan"
+  },
+  "missions": {
+    "title": "Missions"
+  },
+  "drops": {
+    "title": "Drops"
+  },
+  "chat": {
+    "title": "Chat",
+    "send": "Send",
+    "placeholder": "Type a message..."
+  },
+  "tournaments": {
+    "title": "Tournaments"
+  }
+}

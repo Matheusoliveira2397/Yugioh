@@ -25,6 +25,9 @@ interface Arena {
   endTime: string;
   participants: number;
   scoreMultiplier: number;
+  config?: {
+    levelRanges?: Array<{ min: number; max: number; name: string }>;
+  };
 }
 
 interface ArenaRanking {
@@ -37,12 +40,13 @@ interface ArenaRanking {
   wins: number;
   losses: number;
   score: number;
+  remainingDuels?: number;
   groupLogo?: string;
 }
 
 export default function ArenaPage() {
   const { token, user } = useAuthStore();
-  const { isConnected, duelFound, cancelSearch, getSocket } = useSocket();
+  const { isConnected, duelFound, clearDuelFound, cancelSearch, getSocket } = useSocket();
   const [currentArena, setCurrentArena] = useState<Arena | null>(null);
   const [upcomingArenas, setUpcomingArenas] = useState<Arena[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +56,7 @@ export default function ArenaPage() {
   const [isSearchingArena, setIsSearchingArena] = useState(false);
   const [division, setDivision] = useState<string>('');
   const [queueSize, setQueueSize] = useState<number>(0);
+  const [arenaLevelRange, setArenaLevelRange] = useState<string>('');
   const [isCreatingDuel, setIsCreatingDuel] = useState(false);
   const [userArenaPoints, setUserArenaPoints] = useState<number>(0);
   const [remainingDuels, setRemainingDuels] = useState<number>(50);
@@ -63,6 +68,11 @@ export default function ArenaPage() {
   useEffect(() => {
     fetchArenas();
     fetchLevelRanges();
+    // Limpar match anterior ao abrir a página (ex.: voltou de um duelo) para poder procurar de novo (até 50 duelos por arena)
+    clearDuelFound();
+    // Atualizar a cada 30s para pegar a arena quando abrir no horário (criada pelo cron)
+    const interval = setInterval(fetchArenas, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchLevelRanges = async () => {
@@ -166,6 +176,7 @@ export default function ArenaPage() {
     const searchingListener = (data: any) => {
       setIsSearchingArena(true);
       setQueueSize(data.queueSize || 0);
+      setArenaLevelRange(data.levelRange || '');
       if (data.division) {
         setDivision(data.division);
       }
@@ -174,6 +185,7 @@ export default function ArenaPage() {
     const cancelledListener = () => {
       setIsSearchingArena(false);
       setQueueSize(0);
+      setArenaLevelRange('');
     };
 
     const errorListener = (data: any) => {
@@ -182,69 +194,59 @@ export default function ArenaPage() {
     };
 
     const duelFoundListener = (data: any) => {
-      console.log('✅ [ArenaPage] Match encontrado na arena:', data);
-      
+      console.log('✅ [ArenaPage] Match/duelo encontrado na arena:', data);
       if (data?.duelId) {
-        console.log('✅ [ArenaPage] Duelo já foi criado automaticamente');
         setIsSearchingArena(false);
-        return;
+        setIsCreatingDuel(false);
       }
-      
-      if (data?.player1Id && data?.player2Id && !isCreatingDuel) {
-        console.log('📤 [ArenaPage] Criando duelo da arena...');
-        setIsCreatingDuel(true);
-        setIsSearchingArena(false);
-        
-        const payload = {
-          player1Id: Number(data.player1Id),
-          player2Id: Number(data.player2Id),
-          origin: 'ARENA'
-        };
-        
-        const duelCreatedHandler = (duelData: any) => {
-          console.log('✅ [ArenaPage] Duelo criado:', duelData);
-          setIsCreatingDuel(false);
-          socket.off('duelCreated', duelCreatedHandler);
-        };
-        
-        socket.on('duelCreated', duelCreatedHandler);
-        
-        socket.emit('createDuelFromMatch', payload, (response: any) => {
-          console.log('📥 [ArenaPage] Resposta do servidor:', response);
-        });
-        
-        setTimeout(() => {
-          socket.off('duelCreated', duelCreatedHandler);
-          setIsCreatingDuel(false);
-        }, 10000);
-      }
+    };
+
+    const duelCreatedListener = () => {
+      setIsSearchingArena(false);
+      setIsCreatingDuel(false);
     };
 
     socket.on('searchingArenaDuel', searchingListener);
     socket.on('searchCancelled', cancelledListener);
     socket.on('duelError', errorListener);
     socket.on('duelFound', duelFoundListener);
+    socket.on('duelCreated', duelCreatedListener);
 
     return () => {
       socket.off('searchingArenaDuel', searchingListener);
       socket.off('searchCancelled', cancelledListener);
       socket.off('duelError', errorListener);
       socket.off('duelFound', duelFoundListener);
+      socket.off('duelCreated', duelCreatedListener);
     };
-  }, [user, getSocket, isCreatingDuel]);
+  }, [user, getSocket]);
+
+  const ARENA_ENTERED_KEY = (arenaId: string) => `arena_entered_${arenaId}`;
 
   const fetchArenas = async () => {
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      
+      // Arena atual = instância da arena criada pelo admin em "Criar Arena"
       const currentRes = await axios.get(`${API_URL}/arena/current`, { headers });
       if (currentRes.data.arena) {
-        setCurrentArena(currentRes.data.arena);
+        const arena = currentRes.data.arena;
+        setCurrentArena(arena);
+        // Se o usuário já entrou nesta arena (ex.: antes de recarregar ou voltar de um duelo), manter "dentro da arena"
+        if (typeof localStorage !== 'undefined' && localStorage.getItem(ARENA_ENTERED_KEY(arena.id)) === '1') {
+          setInArena(true);
+        }
+      } else {
+        setCurrentArena(null);
       }
 
-      const upcomingRes = await axios.get(`${API_URL}/arena/upcoming`, { headers });
-      if (upcomingRes.data.arenas) {
-        setUpcomingArenas(upcomingRes.data.arenas);
+      // Próxima arena (sempre buscar para mostrar contador: "próxima em X")
+      const nextRes = await axios.get(`${API_URL}/arena/next`, { headers });
+      if (nextRes.data?.arena) {
+        setUpcomingArenas([nextRes.data.arena]);
+        const startTime = new Date(nextRes.data.arena.startTime).getTime();
+        setTimeUntilNextArena(Math.max(0, startTime - Date.now()));
+      } else {
+        setUpcomingArenas([]);
       }
     } catch (error) {
       console.error('Erro ao buscar arenas:', error);
@@ -279,7 +281,7 @@ export default function ArenaPage() {
             setUserArenaPoints(userRanking.score || 0);
             // Calcular duelos restantes (assumindo limite de 50 duelos por arena)
             const totalDuels = userRanking.wins + userRanking.losses;
-            setRemainingDuels(Math.max(0, 50 - totalDuels));
+            setRemainingDuels(userRanking.remainingDuels ?? Math.max(0, 50 - totalDuels));
             break;
           }
         }
@@ -294,6 +296,9 @@ export default function ArenaPage() {
       const headers = { Authorization: `Bearer ${token}` };
       await axios.post(`${API_URL}/arena/join/${arenaId}`, {}, { headers });
       setInArena(true);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(ARENA_ENTERED_KEY(arenaId), '1');
+      }
     } catch (error: any) {
       alert(error.response?.data?.message || 'Erro ao entrar na arena');
     }
@@ -342,64 +347,62 @@ export default function ArenaPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-2xl">⏳ Carregando arenas...</div>
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <div className="text-lg text-gray-400">⏳ Carregando arenas...</div>
       </div>
     );
   }
 
-  // Obter rankings ordenados pelas faixas configuradas
-  const sortedRankings = levelRanges.map(range => ({
+  // Dentro da arena: só as faixas de nível ativas (configuradas na arena); senão usa a lista global
+  const activeLevelRanges =
+    currentArena?.config?.levelRanges?.length
+      ? currentArena.config.levelRanges
+      : levelRanges;
+  const sortedRankings = activeLevelRanges.map(range => ({
     name: range.name,
     rankings: arenaRankings[range.name] || []
   }));
 
   return (
-    <div className="max-w-7xl mx-auto pl-2 sm:pl-4 pr-2 sm:pr-4 py-4 sm:py-6 -ml-2 sm:ml-0">
+    <div className="max-w-4xl mx-auto px-3 sm:px-4 py-3 sm:py-5">
       {currentArena && inArena ? (
         <>
           {/* Banner Superior */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-xl p-3 sm:p-6 mb-4 sm:mb-6 border border-amber-400/30"
+            className="rounded-lg p-3 sm:p-4 mb-3 sm:mb-4 border border-amber-400/30"
           >
-            <div className="flex items-center justify-between text-white gap-2 sm:gap-4">
-              {/* Arena Points */}
+            <div className="flex items-center justify-between text-white gap-2 sm:gap-3">
               <div className="text-center flex-1">
-                <div className="text-xs sm:text-sm font-semibold mb-1">Arena Points</div>
-                <div className="text-2xl sm:text-4xl font-bold">{userArenaPoints}</div>
+                <div className="text-xs font-semibold mb-0.5">Arena Points</div>
+                <div className="text-xl sm:text-2xl font-bold">{userArenaPoints}</div>
               </div>
-
-              {/* Timer Central */}
               <div className="text-center flex-1">
-                <div className="text-xl sm:text-3xl md:text-5xl font-bold mb-1">{formatTimeRemaining(timeRemaining)}</div>
-                <div className="text-xs sm:text-sm font-semibold">para finalizar</div>
+                <div className="text-lg sm:text-xl md:text-2xl font-bold mb-0.5">{formatTimeRemaining(timeRemaining)}</div>
+                <div className="text-xs font-semibold">para finalizar</div>
               </div>
-
-              {/* Duelos Restantes */}
               <div className="text-center flex-1">
-                <div className="text-xs sm:text-sm font-semibold mb-1">Duelos Restantes</div>
-                <div className="text-2xl sm:text-4xl font-bold">{remainingDuels}</div>
+                <div className="text-xs font-semibold mb-0.5">Duelos Restantes</div>
+                <div className="text-xl sm:text-2xl font-bold">{remainingDuels}</div>
               </div>
             </div>
           </motion.div>
 
-          {/* Contador para Próxima Arena (quando a atual está prestes a terminar) */}
-          {nextArena && timeUntilNextArena > 0 && timeRemaining < 3600000 && (
+          {nextArena && timeUntilNextArena > 0 && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="rounded-xl p-4 mb-4 bg-gradient-to-r from-blue-900/50 to-indigo-900/50 border-2 border-blue-500/50"
+              className="rounded-lg p-3 mb-3 sm:mb-4 bg-gradient-to-r from-blue-900/50 to-indigo-900/50 border border-blue-500/50"
             >
               <div className="text-center text-white">
-                <div className="text-sm font-semibold text-gray-300 mb-2">
-                  Próxima Arena: <span className="font-bold text-blue-400">{nextArena.name}</span>
+                <div className="text-xs font-semibold text-gray-300 mb-1">
+                  Próxima arena: <span className="font-bold text-blue-400">{nextArena.name}</span>
                 </div>
-                <div className="text-2xl sm:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
+                <div className="text-lg sm:text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
                   {formatTimeRemaining(timeUntilNextArena)}
                 </div>
-                <div className="text-xs text-gray-400 mt-1">
+                <div className="text-xs text-gray-400 mt-0.5">
                   Início: {new Date(nextArena.startTime).toLocaleString('pt-BR')}
                 </div>
               </div>
@@ -410,22 +413,22 @@ export default function ArenaPage() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="mb-8"
+            className="mb-5 sm:mb-6"
           >
             {isCreatingDuel ? (
-              <div className="rounded-xl p-8 border-2 border-blue-500 text-center">
+              <div className="rounded-lg p-5 sm:p-6 border-2 border-blue-500 text-center">
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-                  className="w-16 h-16 border-8 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"
+                  className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-3"
                 />
-                <h3 className="text-2xl font-bold text-blue-400 mb-2">Criando Duelo...</h3>
-                <p className="text-gray-300">Aguarde enquanto o duelo é criado...</p>
+                <h3 className="text-lg font-bold text-blue-400 mb-1">Criando Duelo...</h3>
+                <p className="text-sm text-gray-300">Aguarde enquanto o duelo é criado...</p>
               </div>
             ) : duelFound ? (
-              <div className="rounded-xl p-8 border-2 border-green-500 text-center">
-                <h3 className="text-2xl font-bold text-green-400 mb-4">⚔️ Duelo Encontrado!</h3>
-                <p className="text-gray-300 mb-2">
+              <div className="rounded-lg p-5 sm:p-6 border-2 border-green-500 text-center">
+                <h3 className="text-lg font-bold text-green-400 mb-2">⚔️ Duelo Encontrado!</h3>
+                <p className="text-sm text-gray-300 mb-2">
                   Oponente: <span className="font-bold text-red-400">
                     {duelFound.opponent?.clanTag ? `|${duelFound.opponent.clanTag}| ` : ''}
                     {duelFound.opponent?.username || 'Oponente'}
@@ -433,32 +436,38 @@ export default function ArenaPage() {
                 </p>
                 {duelFound.duelId ? (
                   <button 
-                    onClick={() => window.open(`/duel/${duelFound.duelId}`, '_blank')}
-                    className="mt-4 bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-8 rounded-lg text-xl transition-all"
+                    onClick={() => {
+                      window.open(`/duel/${duelFound.duelId}`, '_blank');
+                      setTimeout(() => clearDuelFound(), 1500);
+                    }}
+                    className="mt-3 bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-6 rounded-lg text-base transition-all"
                   >
                     ⚔️ Entrar no Duelo
                   </button>
                 ) : (
-                  <p className="text-yellow-400">Aguardando criação do duelo...</p>
+                  <p className="text-sm text-yellow-400">Aguardando criação do duelo...</p>
                 )}
               </div>
             ) : isSearchingArena ? (
-              <div className="rounded-xl p-8 border-2 border-red-500 text-center">
+              <div className="rounded-lg p-5 sm:p-6 border-2 border-red-500 text-center">
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-                  className="w-16 h-16 border-8 border-red-500 border-t-transparent rounded-full mx-auto mb-4"
+                  className="w-12 h-12 border-4 border-red-500 border-t-transparent rounded-full mx-auto mb-3"
                 />
-                <h3 className="text-2xl font-bold text-red-400 mb-2">Procurando Oponente...</h3>
-                <p className="text-gray-300 mb-1">Divisão: <span className="font-bold text-purple-400">{division}</span></p>
+                <h3 className="text-lg font-bold text-red-400 mb-1">Procurando Oponente...</h3>
+                <p className="text-sm text-gray-300 mb-0.5">
+                  Faixa: <span className="font-bold text-purple-400">{arenaLevelRange || division}</span>
+                </p>
+                <p className="text-xs text-gray-400 mb-2">Duelo apenas com jogadores da mesma faixa.</p>
                 {queueSize > 0 && (
-                  <p className="text-gray-400 text-sm mb-4">
-                    {queueSize} jogador(es) na sua divisão procurando duelo
+                  <p className="text-xs text-gray-400 mb-3">
+                    {queueSize} jogador(es) na sua faixa
                   </p>
                 )}
                 <button 
                   onClick={handleCancelArenaSearch}
-                  className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-6 rounded-lg transition-all"
+                  className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg text-sm transition-all"
                 >
                   Cancelar Busca
                 </button>
@@ -467,62 +476,66 @@ export default function ArenaPage() {
               <button
                 onClick={handleSearchArenaDuel}
                 disabled={!isConnected}
-                className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-bold py-4 sm:py-6 md:py-8 rounded-xl text-xl sm:text-2xl md:text-3xl transition-all shadow-2xl hover:shadow-green-500/50 disabled:cursor-not-allowed flex items-center justify-center gap-2 sm:gap-4"
+                className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-bold py-3 sm:py-4 rounded-xl text-lg sm:text-xl transition-all shadow-lg hover:shadow-green-500/50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                <span className="text-3xl sm:text-4xl md:text-5xl">⚔️</span>
+                <span className="text-2xl">⚔️</span>
                 <span>Procurar Duelo</span>
-                <span className="text-3xl sm:text-4xl md:text-5xl">⚔️</span>
+                <span className="text-2xl">⚔️</span>
               </button>
             )}
           </motion.div>
 
-          {/* Painéis de Ranking - Lado a lado dinamicamente */}
-          <div className={`grid grid-cols-1 ${sortedRankings.length === 2 ? 'md:grid-cols-2' : sortedRankings.length === 3 ? 'md:grid-cols-2 lg:grid-cols-3' : sortedRankings.length >= 4 ? 'md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-2'} gap-3 sm:gap-4 md:gap-6`}>
+          {/* Painéis de Ranking */}
+          <div className={`grid grid-cols-1 ${sortedRankings.length === 2 ? 'md:grid-cols-2' : sortedRankings.length === 3 ? 'md:grid-cols-2 lg:grid-cols-3' : sortedRankings.length >= 4 ? 'md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-2'} gap-3`}>
             {sortedRankings.map((divisionData, index) => (
               <motion.div
                 key={divisionData.name}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
-                className="rounded-xl p-3 sm:p-4 md:p-6 border-2 border-white/20 hover:border-purple-500/50 transition-all duration-300"
+                className="rounded-lg p-3 sm:p-4 border-2 border-white/20 hover:border-purple-500/50 transition-all duration-300"
               >
-                <h3 className="text-lg sm:text-xl md:text-2xl font-bold mb-3 sm:mb-4 text-center text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-blue-300">{divisionData.name}</h3>
+                <h3 className="text-base sm:text-lg font-bold mb-2 sm:mb-3 text-center text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-blue-300">{divisionData.name}</h3>
                 
                 {loadingRankings ? (
-                  <div className="text-center py-8 text-gray-400">Carregando...</div>
+                  <div className="text-center py-6 text-gray-400 text-sm">Carregando...</div>
                 ) : divisionData.rankings.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">Nenhum duelista nesta divisão ainda</div>
+                  <div className="text-center py-6 text-gray-500 text-sm">Nenhum duelista nesta divisão ainda</div>
                 ) : (
-                  <div className="space-y-2 max-h-[600px] overflow-y-auto custom-scrollbar">
-                    {divisionData.rankings.map((player) => (
-                      <div
-                        key={player.userId}
-                        className="flex items-center gap-3 p-3 rounded-lg hover:bg-white/10 transition-colors border border-white/10"
-                      >
-                        <div className="text-lg font-bold text-white w-8">
-                          {player.rank}°
-                        </div>
-                        <img
-                          src={getImageUrl(player.profileImage) + (player.profileImage ? `?t=${Date.now()}` : '')}
-                          alt={player.nickname}
-                          className="w-12 h-12 rounded-full border-2 border-slate-500 object-cover"
-                          onError={(e) => {
-                            e.currentTarget.src = '/images/default.png';
-                          }}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="font-bold text-white truncate flex items-center gap-2">
-                            <span>{player.clanTag ? `|${player.clanTag}| ${player.nickname}` : player.nickname}</span>
+                  <div className="space-y-1.5 max-h-[380px] overflow-y-auto custom-scrollbar">
+                    {divisionData.rankings.map((player) => {
+                      const dr = player.remainingDuels ?? Math.max(0, 50 - (player.wins + player.losses));
+                      const rankBg = player.rank === 1 ? 'bg-amber-500/30 border-amber-400' : player.rank === 2 ? 'bg-slate-400/30 border-slate-300' : player.rank === 3 ? 'bg-amber-700/30 border-amber-600' : 'border-white/10';
+                      return (
+                        <div
+                          key={player.userId}
+                          className={`flex items-center gap-2 p-2 rounded-lg hover:bg-white/10 transition-colors border ${rankBg}`}
+                        >
+                          <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                            player.rank === 1 ? 'bg-amber-500 text-black' : player.rank === 2 ? 'bg-slate-300 text-slate-800' : player.rank === 3 ? 'bg-amber-600 text-white' : 'bg-white/20 text-white'
+                          }`}>
+                            {player.rank}°
                           </div>
-                          <div className="text-sm text-gray-300">
-                            AP: {player.score} | DR: {player.wins}
+                          <img
+                            src={getImageUrl(player.profileImage) + (player.profileImage ? `?t=${Date.now()}` : '')}
+                            alt={player.nickname}
+                            className="w-9 h-9 rounded-full border-2 border-slate-500 object-cover flex-shrink-0"
+                            onError={(e) => {
+                              e.currentTarget.src = '/images/default.png';
+                            }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold text-white text-sm truncate">
+                              {player.clanTag ? `[${player.clanTag}] ${player.nickname}` : player.nickname}
+                            </div>
+                            <div className="text-xs text-gray-300 flex items-center gap-2">
+                              <span><strong className="text-amber-400">AP:</strong> {player.score}</span>
+                              <span><strong className="text-blue-300">DR:</strong> {dr}</span>
+                            </div>
                           </div>
                         </div>
-                        <div className="text-2xl">
-                          {getDivisionIcon(divisionData.name)}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </motion.div>
@@ -533,64 +546,50 @@ export default function ArenaPage() {
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="rounded-xl p-6 sm:p-12 text-center"
+          className="rounded-lg p-4 sm:p-6 text-center"
         >
-          {/* Badge de Arena Ativa */}
-          <div className="mb-4 inline-block px-4 py-2 bg-green-600/20 border-2 border-green-500 rounded-full">
-            <span className="text-green-400 font-bold text-sm">✓ ARENA ATIVA</span>
+          <div className="mb-3 inline-block px-3 py-1.5 bg-green-600/20 border-2 border-green-500 rounded-full">
+            <span className="text-green-400 font-bold text-xs">✓ ARENA ATIVA</span>
           </div>
           
-          <h2 className="text-2xl sm:text-3xl font-bold mb-4">{currentArena.name}</h2>
-          <p className="text-lg sm:text-xl text-gray-400 mb-6">{currentArena.description}</p>
+          <h2 className="text-xl sm:text-2xl font-bold mb-3">{currentArena.name}</h2>
+          <p className="text-sm sm:text-base text-gray-400 mb-4">{currentArena.description}</p>
           
-          {/* Informações da Arena */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 text-center">
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-              <div className="text-xs text-gray-400 mb-1">⏰ Início</div>
-              <div className="text-sm font-bold text-white">
-                {new Date(currentArena.startTime).toLocaleString('pt-BR', { 
-                  day: '2-digit', 
-                  month: '2-digit', 
-                  hour: '2-digit', 
-                  minute: '2-digit' 
-                })}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-center">
+            <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+              <div className="text-xs text-gray-400 mb-0.5">⏰ Início</div>
+              <div className="text-xs font-bold text-white">
+                {new Date(currentArena.startTime).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
               </div>
             </div>
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-              <div className="text-xs text-gray-400 mb-1">⏰ Término</div>
-              <div className="text-sm font-bold text-white">
-                {new Date(currentArena.endTime).toLocaleString('pt-BR', { 
-                  day: '2-digit', 
-                  month: '2-digit', 
-                  hour: '2-digit', 
-                  minute: '2-digit' 
-                })}
+            <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+              <div className="text-xs text-gray-400 mb-0.5">⏰ Término</div>
+              <div className="text-xs font-bold text-white">
+                {new Date(currentArena.endTime).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
               </div>
             </div>
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-              <div className="text-xs text-gray-400 mb-1">👥 Participantes</div>
-              <div className="text-sm font-bold text-white">{currentArena.participants}</div>
+            <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+              <div className="text-xs text-gray-400 mb-0.5">👥 Participantes</div>
+              <div className="text-xs font-bold text-white">{currentArena.participants}</div>
             </div>
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-              <div className="text-xs text-gray-400 mb-1">📊 Multiplicador</div>
-              <div className="text-sm font-bold text-white">x{currentArena.scoreMultiplier}</div>
+            <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+              <div className="text-xs text-gray-400 mb-0.5">📊 Multiplicador</div>
+              <div className="text-xs font-bold text-white">x{currentArena.scoreMultiplier}</div>
             </div>
           </div>
           
-          {/* Imagem ArenaDeDuelos Clicável */}
           <motion.div
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="cursor-pointer mb-6 relative group"
+            className="cursor-pointer mb-4 relative group"
             onClick={() => handleJoinArena(currentArena.id)}
           >
-            <div className="relative rounded-xl overflow-hidden border-4 border-red-500/50 group-hover:border-red-500 transition-all shadow-2xl">
+            <div className="relative rounded-lg overflow-hidden border-2 border-red-500/50 group-hover:border-red-500 transition-all shadow-lg">
               <img
                 src="/images/ArenaDeDuelos.jpg"
                 alt="Arena de Duelos"
-                className="w-full h-auto max-h-[600px] object-contain"
+                className="w-full h-auto max-h-[340px] object-contain"
                 onError={(e) => {
-                  // Fallback para outra imagem se a primeira não carregar
                   const target = e.currentTarget as HTMLImageElement;
                   if (target.src.includes('ArenaDeDuelos.jpg')) {
                     target.src = '/images/CampoDeDuelo01.jpg';
@@ -599,52 +598,57 @@ export default function ArenaPage() {
                   }
                 }}
               />
-              {/* Overlay para adicionar efeito hover */}
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center pointer-events-none">
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-red-600/90 text-white font-bold py-4 px-8 rounded-lg text-xl sm:text-2xl">
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-red-600/90 text-white font-bold py-2.5 px-6 rounded-lg text-base">
                   🔥 CLIQUE PARA ENTRAR! 🔥
                 </div>
               </div>
             </div>
           </motion.div>
           
-          {/* Botão alternativo */}
           <button
             onClick={() => handleJoinArena(currentArena.id)}
-            className="bg-red-600 hover:bg-red-700 text-white font-bold py-4 sm:py-6 px-8 sm:px-12 rounded-lg text-xl sm:text-2xl transition-all shadow-lg hover:shadow-red-500/50"
+            className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 sm:py-4 px-6 sm:px-8 rounded-lg text-base sm:text-lg transition-all shadow-lg hover:shadow-red-500/50"
           >
             🔥 ENTRAR NA ARENA AGORA! 🔥
           </button>
+
+          {nextArena && timeUntilNextArena > 0 && (
+            <div className="mt-4 rounded-lg p-3 bg-blue-900/30 border border-blue-500/50 text-center text-white">
+              <div className="text-xs text-gray-300">Próxima edição: <span className="font-bold text-blue-400">{nextArena.name}</span> em {formatTimeRemaining(timeUntilNextArena)}</div>
+            </div>
+          )}
         </motion.div>
       ) : (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="rounded-xl p-12 text-center"
+          className="rounded-lg p-6 text-center"
         >
-          <div className="text-6xl mb-4">⏰</div>
-          <h2 className="text-3xl font-bold mb-2">Nenhuma Arena Ativa</h2>
+          <div className="text-4xl mb-3">⏰</div>
+          <h2 className="text-xl sm:text-2xl font-bold mb-2">Nenhuma Arena Ativa</h2>
           
-          {nextArena && timeUntilNextArena > 0 ? (
-            <>
-              <div className="mb-6">
-                <p className="text-xl text-gray-300 mb-4">
-                  Próxima Arena: <span className="font-bold text-purple-400">{nextArena.name}</span>
-                </p>
-                <div className="bg-gradient-to-r from-purple-900/50 to-indigo-900/50 rounded-xl p-6 border-2 border-purple-500/50 inline-block">
-                  <div className="text-sm font-semibold text-gray-300 mb-2">Tempo até a próxima arena:</div>
-                  <div className="text-5xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 mb-2">
-                    {formatTimeRemaining(timeUntilNextArena)}
-                  </div>
-                  <div className="text-sm text-gray-400">
-                    Início: {new Date(nextArena.startTime).toLocaleString('pt-BR')}
-                  </div>
+          {nextArena ? (
+            <div className="mt-4">
+              <p className="text-gray-300 mb-2">
+                Próxima arena: <span className="font-bold text-purple-400">{nextArena.name}</span>
+              </p>
+              <div className="bg-gradient-to-r from-purple-900/50 to-indigo-900/50 rounded-xl p-5 sm:p-6 border-2 border-purple-500/50 inline-block min-w-[200px]">
+                <div className="text-xs font-semibold text-gray-300 mb-2 uppercase tracking-wide">Contagem regressiva</div>
+                <div className="text-3xl sm:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 tabular-nums">
+                  {timeUntilNextArena > 0 ? formatTimeRemaining(timeUntilNextArena) : '0:00:00'}
+                </div>
+                <div className="text-xs text-gray-400 mt-2">
+                  Início: {new Date(nextArena.startTime).toLocaleString('pt-BR')}
                 </div>
               </div>
-            </>
+              <p className="text-sm text-gray-500 mt-4">
+                As arenas abrem em horários programados. Volte quando o contador chegar a zero!
+              </p>
+            </div>
           ) : (
-            <p className="text-xl text-gray-400">
-              As arenas aparecem em horários específicos. Aguarde a próxima!
+            <p className="text-sm text-gray-400 mt-2">
+              Nenhuma arena programada no momento. As arenas aparecem em horários específicos.
             </p>
           )}
         </motion.div>

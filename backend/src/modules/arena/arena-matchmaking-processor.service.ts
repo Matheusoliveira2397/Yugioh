@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ArenaMatchmakingService } from './arena-matchmaking.service';
 import { DuelsService } from '../duels/duels.service';
+import { DuelQueueService } from '../duels/duel-queue.service';
+import { DuelOrigin } from '../duels/entities/duel.entity';
 import { User } from '../users/entities/user.entity';
 import { Server } from 'socket.io';
 import { logger } from '../../common/utils/logger.util';
@@ -16,13 +18,14 @@ import { logger } from '../../common/utils/logger.util';
 @Injectable()
 export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleDestroy {
   private processingInterval: NodeJS.Timeout | null = null;
-  private readonly PROCESSING_INTERVAL_MS = 10000; // 10 segundos (reduzir frequência e priorizar HTTP)
+  private readonly PROCESSING_INTERVAL_MS = 1500; // 1.5 s – matchmaking da arena mais rápido
   private server: Server | null = null;
   private isProcessing = false; // Flag para evitar processamento simultâneo
 
   constructor(
     private arenaMatchmakingService: ArenaMatchmakingService,
     private duelsService: DuelsService,
+    private duelQueueService: DuelQueueService,
     @InjectRepository(User)
     private userRepository: Repository<User>,
   ) {}
@@ -60,31 +63,13 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
     logger.info('🚀 [ArenaMatchmakingProcessor] Iniciando processador global de matchmaking da Arena...');
     
     this.processingInterval = setInterval(() => {
-      // CRÍTICO: Verificar duelos ativos de forma não bloqueante
-      // Usar setImmediate para dar prioridade a HTTP antes de verificar
       setImmediate(() => {
-        const activeDuels = this.duelsService.getActiveDuelsCount();
-        if (activeDuels > 0) {
-          // Parar o intervalo completamente e reiniciar quando não houver duelos
-          this.stop();
-          // Reiniciar após 10 segundos (quando duelos terminarem)
-          setTimeout(() => {
-            if (this.duelsService.getActiveDuelsCount() === 0) {
-              this.start();
-            }
-          }, 10000);
-          return;
+        // Não parar o matchmaking da arena por causa de duelos ativos; só dar um yield se houver muitos
+        if (!this.isProcessing) {
+          this.processQueues().catch(error => {
+            logger.error('❌ [ArenaMatchmakingProcessor] Erro no processamento:', error);
+          });
         }
-        
-        // Yield ao Event Loop novamente (prioriza HTTP)
-        setImmediate(() => {
-          // Não bloquear - processar de forma assíncrona
-          if (!this.isProcessing) {
-            this.processQueues().catch(error => {
-              logger.error('❌ [ArenaMatchmakingProcessor] Erro no processamento:', error);
-            });
-          }
-        });
       });
     }, this.PROCESSING_INTERVAL_MS);
 
@@ -100,6 +85,19 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
       this.processingInterval = null;
       console.log('🛑 [ArenaMatchmakingProcessor] Processador parado');
     }
+  }
+
+  /**
+   * Disparar uma rodada de processamento na próxima tick (ex.: quando alguém entra na fila).
+   * Assim o match não espera só o intervalo fixo.
+   */
+  triggerProcess(): void {
+    if (this.isProcessing) return;
+    setImmediate(() => {
+      this.processQueues().catch(error => {
+        logger.error('❌ [ArenaMatchmakingProcessor] Erro no trigger:', error);
+      });
+    });
   }
 
   /**
@@ -119,37 +117,27 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
       // Yield antes de processar (prioriza HTTP)
       await new Promise(resolve => setImmediate(resolve));
       
-      // Yield adicional se houver muitos duelos ativos (reduz carga)
+      // Leve yield só com muitos duelos ativos
       const activeDuels = this.duelsService.getActiveDuelsCount();
-      if (activeDuels > 10) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+      if (activeDuels > 20) {
+        await new Promise(resolve => setTimeout(resolve, 30));
       }
-      
-      // Obter todas as faixas de nível e seus jogadores
-      const levelRanges = this.arenaMatchmakingService.getLevelRanges();
-      
-      // Processar cada faixa de nível
-      for (const levelRange of levelRanges) {
-        // Yield entre faixas
-        await new Promise(resolve => setTimeout(resolve, 50));
-        
-        const players = this.arenaMatchmakingService.getQueueForLevelRange(levelRange);
-        
-        if (players.length === 0) {
-          continue; // Fila vazia, pular
-        }
 
-        // Processar jogadores de forma sequencial (um por vez)
+      const levelRanges = this.arenaMatchmakingService.getLevelRanges();
+
+      for (const levelRange of levelRanges) {
+        await new Promise(resolve => setImmediate(resolve));
+
+        const players = this.arenaMatchmakingService.getQueueForLevelRange(levelRange);
+
+        if (players.length === 0) continue;
+
         for (const player of players) {
           try {
-            // Verificar se ainda está na fila antes de processar
-            if (!this.arenaMatchmakingService.isInArenaQueue(player.userId)) {
-              continue; // Já foi removido da fila, pular
-            }
+            if (!this.arenaMatchmakingService.isInArenaQueue(player.userId)) continue;
 
-            // Yield antes de buscar oponente
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
+            await new Promise(resolve => setImmediate(resolve));
+
             // Tentar encontrar oponente na mesma divisão
             const match = await this.arenaMatchmakingService.findArenaOpponent(player.userId);
             
@@ -159,12 +147,12 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
                 const [opponentUser, player1User] = await Promise.all([
                   this.userRepository.findOne({
                     where: { id: match.opponent.userId },
-                    select: ['id', 'username', 'nickname', 'clanTag', 'level', 'avatar', 'profileImage'],
+                    select: ['id', 'username', 'nickname', 'clanTag', 'level', 'profileImage'],
                     cache: false, // Não usar cache para dados em tempo real
                   }),
                   this.userRepository.findOne({
                     where: { id: match.player1Id },
-                    select: ['id', 'username', 'nickname', 'clanTag', 'level', 'avatar', 'profileImage'],
+                    select: ['id', 'username', 'nickname', 'clanTag', 'level', 'profileImage'],
                     cache: false,
                   })
                 ]);
@@ -175,13 +163,13 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
                   username: opponentUser.nickname || opponentUser.username,
                   clanTag: opponentUser.clanTag,
                   level: opponentUser.level || 1,
-                  avatar: opponentUser.avatar || opponentUser.profileImage,
+                  profileImage: opponentUser.profileImage,
                 } : {
                   userId: match.opponent.userId,
                   username: 'Unknown',
                   clanTag: null,
                   level: match.opponent.level || 1,
-                  avatar: null,
+                  profileImage: null,
                 };
                 
                 // Adicionar informações do player1 ao match para uso no notifyPlayers
@@ -189,7 +177,7 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
                   username: player1User.nickname || player1User.username,
                   clanTag: player1User.clanTag,
                   level: player1User.level || 1,
-                  avatar: player1User.avatar || player1User.profileImage,
+                  profileImage: player1User.profileImage,
                 } : null;
                 
                 // Substituir opponent no match com as informações completas
@@ -198,8 +186,15 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
                 logger.warn(`⚠️ [ArenaMatchmakingProcessor] Erro ao buscar informações dos jogadores:`, error);
               }
               
-              // Match encontrado! Notificar jogadores (SEM criar duelo automaticamente)
-              this.notifyPlayers(match);
+              // Match encontrado! Enfileirar criação do duelo (fila emite duelCreated com duelId para ambos)
+              const player1Id = match.player1Id;
+              const player2Id = match.player2Id;
+              if (player1Id && player2Id) {
+                this.duelQueueService
+                  .enqueueDuelCreation(player1Id, player2Id, '', DuelOrigin.ARENA)
+                  .catch((err) => logger.error('❌ [ArenaMatchmakingProcessor] Erro ao enfileirar duelo da arena:', err));
+                this.duelQueueService.triggerProcess();
+              }
               // findArenaOpponent já remove os jogadores da fila
             }
           } catch (error) {
@@ -213,63 +208,6 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
       logger.error('❌ [ArenaMatchmakingProcessor] Erro crítico ao processar filas:', error);
     } finally {
       this.isProcessing = false;
-    }
-  }
-
-  /**
-   * Notificar jogadores sobre match encontrado usando rooms Socket.IO
-   */
-  private notifyPlayers(match: { opponent: any; duel: any; player1Id?: number; player2Id?: number; player1Info?: any }) {
-    if (!this.server) {
-      logger.error('❌ [ArenaMatchmakingProcessor] Servidor Socket.IO não configurado');
-      return;
-    }
-
-    try {
-      const { opponent, duel, player1Id, player2Id, player1Info } = match as any;
-      
-      // Se não tem opponent ou IDs, não notificar
-      if (!opponent || !player1Id || !player2Id) {
-        logger.warn(`⚠️ [ArenaMatchmakingProcessor] Dados inválidos:`, { opponent, player1Id, player2Id });
-        return;
-      }
-
-      // NOVA ABORDAGEM: Apenas notificar match encontrado (SEM criar duelo)
-      // O duelo será criado quando o jogador entrar na arena
-      // Isso evita bloquear o Event Loop
-      const matchData1 = {
-        player1Id: player1Id,
-        player2Id: player2Id,
-        opponent: {
-          id: player2Id,
-          username: opponent.username || 'Unknown',
-          clanTag: opponent.clanTag || null,
-          level: opponent.level || 1,
-          avatar: opponent.avatar || null,
-        },
-      };
-      
-      const matchData2 = {
-        player1Id: player1Id,
-        player2Id: player2Id,
-        opponent: {
-          id: player1Id,
-          username: player1Info?.username || 'Unknown',
-          clanTag: player1Info?.clanTag || null,
-          level: player1Info?.level || 1,
-          avatar: player1Info?.avatar || null,
-        },
-      };
-
-      // Notificar player1 usando room (todas as abas recebem)
-      this.server.to(`user_${player1Id}`).emit('duelFound', matchData1);
-
-      // Notificar player2 usando room (todas as abas recebem)
-      this.server.to(`user_${player2Id}`).emit('duelFound', matchData2);
-
-      logger.debug(`✅ [ArenaMatchmakingProcessor] Match encontrado: Player1=${player1Id} vs Player2=${player2Id}`);
-    } catch (error) {
-      logger.error('❌ [ArenaMatchmakingProcessor] Erro ao notificar jogadores:', error);
     }
   }
 }

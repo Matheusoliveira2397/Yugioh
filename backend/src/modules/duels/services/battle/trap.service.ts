@@ -16,6 +16,7 @@ import { logger } from '../../../../common/utils/logger.util';
  * - Waboku
  * - Defense Draw
  * - Trap Hole
+ * - Bottomless Trap Hole
  */
 @Injectable()
 export class TrapService {
@@ -107,6 +108,20 @@ export class TrapService {
     // Por enquanto, delegar para DuelsService
     // TODO: Migrar implementação completa para cá
     return (this.duelsService as any).checkAndActivateTrapHole(duelId, duel, isPlayer1, monsterZoneIndex, monster);
+  }
+
+  /**
+   * Verifica e ativa Bottomless Trap Hole se as condições forem atendidas
+   * (monstro com 1500+ ATK invocado pelo oponente: destruir e banir)
+   */
+  async checkAndActivateBottomlessTrapHole(
+    duelId: string | number,
+    duel: Duel,
+    isPlayer1: boolean,
+    monsterZoneIndex: number,
+    monster: any
+  ): Promise<boolean> {
+    return (this.duelsService as any).checkAndActivateBottomlessTrapHole(duelId, duel, isPlayer1, monsterZoneIndex, monster);
   }
 }
 

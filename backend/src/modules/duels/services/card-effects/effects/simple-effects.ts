@@ -278,29 +278,22 @@ export const createHarpiesFeatherDusterEffect = (duelsService: any): SimpleCardE
         const destroyedCard = opponentField.spellTrap[i];
         const destroyedCardId = destroyedCard.idCarta || destroyedCard.id || destroyedCard.cardId;
         
-        // Processar efeitos especiais antes de destruir
         if (destroyedCardId === 'ChangeOfHeart' || 
             (typeof destroyedCardId === 'string' && destroyedCardId.toLowerCase().includes('changeofheart'))) {
-          logger.info(`💥 [HarpiesFeatherDuster] ChangeOfHeart destruída - devolvendo monstros controlados`);
           await (duelsService as any).returnChangeOfHeartMonsters(duelId, duel, !isPlayer1);
         } else if (isExactCard(destroyedCard, 'BrainControl')) {
-          logger.info(`💥 [HarpiesFeatherDuster] BrainControl destruída - devolvendo monstros controlados`);
           await (duelsService as any).returnChangeOfHeartMonsters(duelId, duel, !isPlayer1);
         } else if (isExactCard(destroyedCard, 'UnitedWeStand') || isExactCard(destroyedCard, 'MagePower')) {
-          logger.info(`💥 [HarpiesFeatherDuster] ${destroyedCard.name || destroyedCard.cardName} destruída - removendo equipamento`);
-          await (duelsService as any).handleEquipmentDestruction(duelId, duel, !isPlayer1, undefined, destroyedCard, i);
-        } else if (isExactCard(destroyedCard, 'PrematureBurial')) {
-          logger.info(`💥 [HarpiesFeatherDuster] Premature Burial destruída - monstro equipado também vai ao cemitério`);
           await (duelsService as any).handleEquipmentDestruction(duelId, duel, !isPlayer1, undefined, destroyedCard, i);
         } else {
-          // Se outra spell/trap foi destruída, recalcular ATK do MagePower ANTES de remover
           await (duelsService as any).recalculateMagePowerAtk(duelId, duel, !isPlayer1);
         }
-        
+        await (duelsService as any).onSpellTrapRemovedFromField(duelId, duel, !isPlayer1, i);
         destroyedCards.push(destroyedCard);
         if (opponentField.spellTrap[i] !== null && opponentField.spellTrap[i] !== undefined) {
+          if (!opponentField.graveyard) opponentField.graveyard = [];
+          opponentField.graveyard.push(opponentField.spellTrap[i]);
           opponentField.spellTrap[i] = null;
-          opponentField.graveyard.push(destroyedCard);
           logger.info(`💥 [HarpiesFeatherDuster] Spell/Trap destruída: ${destroyedCard.name || destroyedCard.cardName || 'Desconhecida'}`);
         } else {
           logger.info(`💥 [HarpiesFeatherDuster] Spell/Trap destruída (já enviada por efeito): ${destroyedCard.name || destroyedCard.cardName || 'Desconhecida'}`);
@@ -515,60 +508,47 @@ export const createHeavyStormEffect = (duelsService: any): SimpleCardEffectFunct
         return 0;
       }
       
-      // Processar efeitos especiais primeiro (antes de destruir)
-      // CRÍTICO: Usar duelsService.isExactCard para Change Of Heart/Brain Control (reconhece por nome e id)
       for (const { card, zoneIndex } of cardsToDestroy) {
         const cardName = card.name || card.cardName || 'Desconhecida';
         const isChangeOrBrain = (duelsService as any).isExactCard?.(card, 'ChangeOfHeart') || (duelsService as any).isExactCard?.(card, 'BrainControl') || isExactCard(card, 'ChangeOfHeart') || isExactCard(card, 'BrainControl');
-        
-        // Processar efeitos especiais antes de destruir
         if (isChangeOrBrain) {
           logger.info(`💥 [HeavyStorm] ${cardName} destruída - devolvendo monstros controlados`);
           await (duelsService as any).returnChangeOfHeartMonsters(duelId, duel, isPlayer1Field);
         } else if (isExactCard(card, 'UnitedWeStand') || isExactCard(card, 'MagePower')) {
           logger.info(`💥 [HeavyStorm] ${cardName} destruída - removendo equipamento`);
           await (duelsService as any).handleEquipmentDestruction(duelId, duel, isPlayer1Field, undefined, card, zoneIndex);
-        } else if ((duelsService as any).isExactCard?.(card, 'PrematureBurial') || isExactCard(card, 'PrematureBurial')) {
-          logger.info(`💥 [HeavyStorm] ${cardName} destruída - monstro equipado também vai ao cemitério`);
-          await (duelsService as any).handleEquipmentDestruction(duelId, duel, isPlayer1Field, undefined, card, zoneIndex);
-        } else if (isExactCard(card, 'AutonomousActionUnit')) {
-          logger.info(`💥 [HeavyStorm] ${cardName} destruída - destruindo monstro equipado`);
-          await (duelsService as any).handleAutonomousActionUnitDestruction(duelId, duel, isPlayer1Field, zoneIndex);
         }
       }
       
-      // Recalcular ATK do MagePower uma única vez após processar todos os efeitos especiais
       await (duelsService as any).recalculateMagePowerAtk(duelId, duel, isPlayer1Field);
       
-      // Agora destruir todas as cartas: Mover para o cemitério e limpar a zona (pular zonas já tratadas, ex: Premature Burial)
       let destroyed = 0;
       for (const { card, zoneIndex } of cardsToDestroy) {
+        await (duelsService as any).onSpellTrapRemovedFromField(duelId, duel, isPlayer1Field, zoneIndex);
         if (field.spellTrap[zoneIndex] === null || field.spellTrap[zoneIndex] === undefined) {
+          destroyed++;
           continue;
         }
         const cardName = card.name || card.cardName || 'Desconhecida';
         logger.info(`💥 [HeavyStorm] Destruindo ${cardName} (zona ${zoneIndex})`);
-        
-        // CRÍTICO: Primeiro mover para o cemitério
-        field.graveyard.push(card);
-        
-        // CRÍTICO: Depois limpar a zona do campo (remover do campo)
+        if (!field.graveyard) field.graveyard = [];
+        field.graveyard.push(field.spellTrap[zoneIndex]);
         field.spellTrap[zoneIndex] = null;
-        
         destroyed++;
         logger.info(`✅ [HeavyStorm] ${cardName} removida do campo e movida para o cemitério`);
       }
       
-      // Verificar se todas as cartas foram realmente removidas
       const remainingCards = field.spellTrap.filter((c: any) => c !== null && c !== undefined).length;
       if (remainingCards > 0) {
         logger.warn(`⚠️ [HeavyStorm] Ainda há ${remainingCards} carta(s) no campo após destruição!`);
-        // Forçar remoção de qualquer carta restante
         for (let i = 0; i < field.spellTrap.length; i++) {
           if (field.spellTrap[i] !== null && field.spellTrap[i] !== undefined) {
-            const remainingCard = field.spellTrap[i];
-            field.graveyard.push(remainingCard);
-            field.spellTrap[i] = null;
+            await (duelsService as any).onSpellTrapRemovedFromField(duelId, duel, isPlayer1Field, i);
+            if (field.spellTrap[i] !== null && field.spellTrap[i] !== undefined) {
+              field.graveyard.push(field.spellTrap[i]);
+              field.spellTrap[i] = null;
+            }
+            destroyed++;
             logger.info(`🔧 [HeavyStorm] Forçando remoção de carta restante da zona ${i}`);
           }
         }
@@ -729,7 +709,10 @@ export const createDarkHoleEffect = (duelsService: any): SimpleCardEffectFunctio
 };
 
 /**
- * Swords Of Revealing Light - Bloqueia ataques do oponente por 3 turnos
+ * Swords of Revealing Light
+ * Após a ativação desta carta, ela permanece no campo, mas você deve destruí-la durante a Fase Final do 3º turno do seu oponente.
+ * Quando esta carta é ativada: Se o seu oponente controlar um monstro virado para baixo, vire todos os monstros que ele controla virados para cima.
+ * Enquanto esta carta estiver virada para cima no campo, os monstros do seu oponente não podem declarar um ataque.
  */
 export const createSwordsOfRevealingLightEffect = (duelsService: any): SimpleCardEffectFunction => {
   return async (context: CardEffectContext) => {
@@ -761,16 +744,8 @@ export const createSwordsOfRevealingLightEffect = (duelsService: any): SimpleCar
           opponentField.monsters[i].position = 'defense';
           logger.info(`✨ [SwordsOfRevealingLight] ${monster.name || monster.cardName || 'Monstro'} virado face-up`);
           
-          // Verificar se é Fiber Jar, SnowmanEater, MorphingJar ou Dekoichi e processar efeito de flip
-          const monsterCardId = monster.idCarta || monster.id || monster.cardId;
-          const isFiberJar = (monsterCardId === 'FiberJar' || (typeof monsterCardId === 'string' && monsterCardId.toLowerCase().includes('fiberjar')));
-          const isSnowmanEater = (monsterCardId === 'SnowmanEater' || (typeof monsterCardId === 'string' && monsterCardId.toLowerCase().includes('snowmaneater')));
-          const isMorphingJar = (monsterCardId === 'MorphingJar' || (typeof monsterCardId === 'string' && monsterCardId.toLowerCase().includes('morphingjar')));
-          const isDekoichi = (monsterCardId === 'DekoichiTheBattlechantedLocomotive' || (typeof monsterCardId === 'string' && monsterCardId.toLowerCase().includes('dekoichi')));
-          
-          if (isFiberJar || isSnowmanEater || isMorphingJar || isDekoichi) {
-            await (duelsService as any).cardEffectsService.processFlipEffect(duelId, duel, !isPlayer1, monster, i);
-          }
+          // Processar efeito Flip de qualquer monstro que tenha (Fiber Jar, Snowman Eater, Morphing Jar, Dekoichi, etc.)
+          await (duelsService as any).cardEffectsService.processFlipEffect(duelId, duel, !isPlayer1, opponentField.monsters[i], i);
         }
       }
     } else {

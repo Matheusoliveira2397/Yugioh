@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, LessThan, Between, In } from 'typeorm';
 import { ChallengeArena } from './arena.entity';
@@ -8,6 +8,10 @@ import { Duel, DuelStatus, DuelResult } from '../duels/entities/duel.entity';
 import { User } from '../users/entities/user.entity';
 import { Group } from '../groups/entities/group.entity';
 import { GroupMember } from '../groups/entities/group-member.entity';
+import { ShopService } from '../shop/shop.service';
+import { DuelsGateway } from '../duels/duels.gateway';
+import { GroupsService } from '../groups/groups.service';
+import { SeasonsService } from '../seasons/seasons.service';
 
 @Injectable()
 export class ArenaService implements OnModuleInit {
@@ -24,6 +28,11 @@ export class ArenaService implements OnModuleInit {
     private groupRepository: Repository<Group>,
     @InjectRepository(GroupMember)
     private groupMemberRepository: Repository<GroupMember>,
+    private shopService: ShopService,
+    @Inject(forwardRef(() => DuelsGateway))
+    private duelsGateway: DuelsGateway,
+    private groupsService: GroupsService,
+    private seasonsService: SeasonsService,
   ) {}
 
   async onModuleInit() {
@@ -119,25 +128,27 @@ export class ArenaService implements OnModuleInit {
     }
   }
 
+  /**
+   * Retorna a arena ativa no momento. Considera apenas INSTÂNCIAS (arenas do dia),
+   * nunca os modelos/templates (isRecurring = true). Assim a arena que abre é sempre
+   * a que foi criada no horário configurado pelo cron.
+   */
   async getCurrentArena(): Promise<ChallengeArena | null> {
     try {
       const now = new Date();
-      
       const arena = await Promise.race([
-        this.arenaRepository.findOne({
-          where: {
-            isActive: true,
-            startTime: LessThan(now),
-            endTime: MoreThan(now),
-          },
-          order: { startTime: 'DESC' },
-          select: ['id', 'name', 'description', 'startTime', 'endTime', 'isActive', 'participants', 'scoreMultiplier', 'bonusGems']
-        }),
-        new Promise<null>((_, reject) => 
+        this.arenaRepository
+          .createQueryBuilder('a')
+          .where('a.isActive = :active', { active: true })
+          .andWhere('a.startTime < :now', { now })
+          .andWhere('a.endTime > :now', { now })
+          .andWhere(`(a.config->>'isRecurring' IS NULL OR a.config->>'isRecurring' <> 'true')`)
+          .orderBy('a.startTime', 'DESC')
+          .getOne(),
+        new Promise<ChallengeArena | null>((_, reject) =>
           setTimeout(() => reject(new Error('Query timeout: getCurrentArena')), 2000)
-        )
+        ),
       ]).catch(() => null);
-
       return arena;
     } catch (error) {
       console.error(`[getCurrentArena] Erro:`, error);
@@ -145,24 +156,24 @@ export class ArenaService implements OnModuleInit {
     }
   }
 
+  /**
+   * Próxima arena agendada. Apenas instâncias (não templates).
+   */
   async getNextArena(): Promise<ChallengeArena | null> {
     try {
       const now = new Date();
-      
       const arena = await Promise.race([
-        this.arenaRepository.findOne({
-          where: {
-            isActive: true,
-            startTime: MoreThan(now),
-          },
-          order: { startTime: 'ASC' },
-          select: ['id', 'name', 'description', 'startTime', 'endTime', 'isActive', 'participants', 'scoreMultiplier', 'bonusGems']
-        }),
-        new Promise<null>((_, reject) => 
+        this.arenaRepository
+          .createQueryBuilder('a')
+          .where('a.isActive = :active', { active: true })
+          .andWhere('a.startTime > :now', { now })
+          .andWhere(`(a.config->>'isRecurring' IS NULL OR a.config->>'isRecurring' <> 'true')`)
+          .orderBy('a.startTime', 'ASC')
+          .getOne(),
+        new Promise<ChallengeArena | null>((_, reject) =>
           setTimeout(() => reject(new Error('Query timeout: getNextArena')), 2000)
-        )
+        ),
       ]).catch(() => null);
-
       return arena;
     } catch (error) {
       console.error(`[getNextArena] Erro:`, error);
@@ -256,192 +267,186 @@ export class ArenaService implements OnModuleInit {
     }
   }
 
-  // Buscar ranking por divisão de nível para uma arena - ULTRA OTIMIZADO
-  async getArenaRankingByDivision(arenaId: string, division: string) {
+  /** Pontos por vitória e derrota na arena (conforme regra: vitória 10, derrota 3) */
+  private static readonly ARENA_WIN_POINTS = 10;
+  private static readonly ARENA_LOSS_POINTS = 3;
+  private static readonly ARENA_MAX_DUELS = 50;
+
+  // Buscar ranking por faixa de nível: vitória = 10 pts, derrota = 3 pts; filtro por nível do jogador
+  async getArenaRankingByDivision(arenaId: string, division: string, levelRangeBounds?: { min: number; max: number }) {
     try {
       const arena = await Promise.race([
         this.arenaRepository.findOne({
           where: { id: arenaId },
-          select: ['id', 'startTime', 'endTime', 'scoreMultiplier']
+          select: ['id', 'startTime', 'endTime', 'config'],
         }),
-        new Promise<null>((_, reject) => 
+        new Promise<null>((_, reject) =>
           setTimeout(() => reject(new Error('Query timeout: findOne arena')), 2000)
-        )
+        ),
       ]).catch(() => null);
 
-      if (!arena) {
-        return [];
+      if (!arena) return [];
+
+      let min = levelRangeBounds?.min ?? 1;
+      let max = levelRangeBounds?.max ?? 999;
+      if (!levelRangeBounds) {
+        const ranges = (arena.config as any)?.levelRanges || (await this.getLevelRanges());
+        const range = (ranges as Array<{ min: number; max: number; name: string }>).find(r => r.name === division);
+        if (range) {
+          min = range.min;
+          max = range.max;
+        }
       }
 
-      // Query ULTRA OTIMIZADA - sem eager loading, apenas campos essenciais
       const duels: Duel[] = await Promise.race([
         this.duelRepository
           .createQueryBuilder('duel')
-          .select([
-            'duel.id',
-            'duel.player1Id',
-            'duel.player2Id',
-            'duel.result',
-            'duel.finishedAt'
-          ])
+          .select(['duel.id', 'duel.player1Id', 'duel.player2Id', 'duel.result', 'duel.finishedAt'])
           .where('duel.status = :status', { status: DuelStatus.FINISHED })
           .andWhere('duel.finishedAt BETWEEN :startTime AND :endTime', {
             startTime: arena.startTime,
-            endTime: arena.endTime
+            endTime: arena.endTime,
           })
-          .limit(1000) // Limitar a 1000 duelos máximo
+          .limit(1000)
           .getMany(),
-        new Promise<Duel[]>((_, reject) => 
+        new Promise<Duel[]>((_, reject) =>
           setTimeout(() => reject(new Error('Query timeout: getArenaRankingByDivision')), 3000)
-        )
+        ),
       ]).catch(() => [] as Duel[]);
 
-      if (duels.length === 0) {
-        return [];
-      }
+      if (duels.length === 0) return [];
 
-      // Buscar players apenas dos duelos encontrados (uma query só)
       const playerIds = new Set<number>();
-      duels.forEach(duel => {
-        playerIds.add(duel.player1Id);
-        playerIds.add(duel.player2Id);
+      duels.forEach(d => {
+        playerIds.add(d.player1Id);
+        playerIds.add(d.player2Id);
       });
 
       const players: User[] = await Promise.race([
         this.userRepository.find({
           where: Array.from(playerIds).map(id => ({ id })),
-          select: ['id', 'nickname', 'clanTag', 'profileImage', 'level', 'division']
+          select: ['id', 'nickname', 'clanTag', 'profileImage', 'level'],
         }),
-        new Promise<User[]>((_, reject) => 
+        new Promise<User[]>((_, reject) =>
           setTimeout(() => reject(new Error('Query timeout: find players')), 2000)
-        )
+        ),
       ]).catch(() => [] as User[]);
 
       const playerMap = new Map(players.map(p => [p.id, p]));
+      const inRange = (level: number) => level >= min && level <= max;
 
-      // Calcular scores por jogador na divisão
       const playerScores: Map<number, { wins: number; losses: number; score: number; user: User | null }> = new Map();
 
       for (const duel of duels) {
         const p1 = playerMap.get(duel.player1Id);
         const p2 = playerMap.get(duel.player2Id);
-        
         if (!p1 || !p2) continue;
 
-        // Buscar divisão do campo division da tabela users
-        const p1Division = p1.division || 'Bronze';
-        const p2Division = p2.division || 'Bronze';
-
-        // Só contar duelos onde ambos estão na mesma divisão
-        if (p1Division !== division || p2Division !== division) continue;
-
-        // Calcular score base
-        const baseScore = 100;
-        const multiplier = arena.scoreMultiplier || 1.5;
-        const scoreGained = Math.floor(baseScore * multiplier);
+        const l1 = p1.level ?? 1;
+        const l2 = p2.level ?? 1;
+        if (!inRange(l1) || !inRange(l2)) continue;
 
         if (duel.result === DuelResult.PLAYER1_WIN) {
           const p1Data = playerScores.get(p1.id) || { wins: 0, losses: 0, score: 0, user: p1 };
           p1Data.wins++;
-          p1Data.score += scoreGained;
+          p1Data.score += ArenaService.ARENA_WIN_POINTS;
           playerScores.set(p1.id, p1Data);
-
           const p2Data = playerScores.get(p2.id) || { wins: 0, losses: 0, score: 0, user: p2 };
           p2Data.losses++;
+          p2Data.score += ArenaService.ARENA_LOSS_POINTS;
           playerScores.set(p2.id, p2Data);
         } else if (duel.result === DuelResult.PLAYER2_WIN) {
           const p2Data = playerScores.get(p2.id) || { wins: 0, losses: 0, score: 0, user: p2 };
           p2Data.wins++;
-          p2Data.score += scoreGained;
+          p2Data.score += ArenaService.ARENA_WIN_POINTS;
           playerScores.set(p2.id, p2Data);
-
           const p1Data = playerScores.get(p1.id) || { wins: 0, losses: 0, score: 0, user: p1 };
           p1Data.losses++;
+          p1Data.score += ArenaService.ARENA_LOSS_POINTS;
           playerScores.set(p1.id, p1Data);
         }
       }
 
-      // Buscar grupos dos jogadores para pegar as logos
       const userIds = Array.from(playerScores.values())
-        .filter(data => data.user !== null)
-        .map(data => data.user!.id);
-      
+        .filter(d => d.user !== null)
+        .map(d => d.user!.id);
       const groupMembers = await this.groupMemberRepository.find({
         where: { userId: In(userIds), isActive: true },
         relations: ['group'],
-        select: ['userId', 'groupId']
+        select: ['userId', 'groupId'],
+      });
+      const groupMap = new Map<number, string>();
+      groupMembers.forEach(m => {
+        if (m.group?.logo) groupMap.set(m.userId, m.group.logo);
       });
 
-      const groupMap = new Map<number, string>();
-      for (const member of groupMembers) {
-        if (member.group && member.group.logo) {
-          groupMap.set(member.userId, member.group.logo);
-        }
-      }
-
-      // Converter para array e ordenar por score
       const ranking = Array.from(playerScores.values())
-        .filter(data => data.user !== null)
+        .filter(d => d.user !== null)
         .sort((a, b) => b.score - a.score)
-        .slice(0, 5) // Top 5
-        .map((data, index) => ({
-          rank: index + 1,
-          userId: data.user!.id,
-          nickname: data.user!.nickname,
-          clanTag: data.user!.clanTag,
-          profileImage: data.user!.profileImage,
-          level: data.user!.level || 1,
-          wins: data.wins,
-          losses: data.losses,
-          score: data.score,
-          groupLogo: groupMap.get(data.user!.id) || undefined,
-        }));
+        .slice(0, 100)
+        .map((data, index) => {
+          const totalDuels = data.wins + data.losses;
+          const remainingDuels = Math.max(0, ArenaService.ARENA_MAX_DUELS - totalDuels);
+          return {
+            rank: index + 1,
+            userId: data.user!.id,
+            nickname: data.user!.nickname,
+            clanTag: data.user!.clanTag,
+            profileImage: data.user!.profileImage,
+            level: data.user!.level ?? 1,
+            wins: data.wins,
+            losses: data.losses,
+            score: data.score,
+            remainingDuels,
+            groupLogo: groupMap.get(data.user!.id) || undefined,
+          };
+        });
 
       return ranking;
     } catch (error) {
-      console.error(`[getArenaRankingByDivision] Erro ao buscar ranking:`, error);
-      // Retornar array vazio em caso de erro - não travar o sistema
+      console.error(`[getArenaRankingByDivision] Erro:`, error);
       return [];
     }
   }
 
-  // Buscar todos os rankings por divisão de uma arena - OTIMIZADO
+  // Buscar todos os rankings por faixa de nível da arena (usa levelRanges da arena se existir)
   async getAllArenaRankings(arenaId: string) {
     try {
-      const levelRanges = await this.getLevelRanges();
-      const divisions = levelRanges.map(r => r.name);
-      
-      // Executar todas as queries em paralelo com timeout
-      const rankingsPromises = divisions.map(division => 
+      const arena = await this.arenaRepository.findOne({
+        where: { id: arenaId },
+        select: ['id', 'config'],
+      });
+      const levelRanges =
+        arena && (arena.config as any)?.levelRanges?.length
+          ? ((arena.config as any).levelRanges as Array<{ min: number; max: number; name: string }>)
+          : await this.getLevelRanges();
+      const divisions = levelRanges.map((r: { min: number; max: number; name: string }) => ({
+        name: r.name,
+        min: r.min,
+        max: r.max,
+      }));
+
+      const rankingsPromises = divisions.map((div: { name: string; min: number; max: number }) =>
         Promise.race([
-          this.getArenaRankingByDivision(arenaId, division),
-          new Promise<any[]>((resolve) => 
+          this.getArenaRankingByDivision(arenaId, div.name, { min: div.min, max: div.max }),
+          new Promise<any[]>((resolve) =>
             setTimeout(() => {
-              console.warn(`[getAllArenaRankings] Timeout para divisão ${division}`);
+              console.warn(`[getAllArenaRankings] Timeout para divisão ${div.name}`);
               resolve([]);
             }, 5000)
-          )
+          ),
         ])
       );
 
       const results = await Promise.all(rankingsPromises);
-      
       const rankings: Record<string, any[]> = {};
-      divisions.forEach((division, index) => {
-        rankings[division] = results[index] || [];
+      divisions.forEach((div: { name: string }, index: number) => {
+        rankings[div.name] = results[index] || [];
       });
-
       return rankings;
     } catch (error) {
-      console.error(`[getAllArenaRankings] Erro ao buscar rankings:`, error);
-      // Retornar objeto vazio em caso de erro
-      return {
-        'Nível 1': [],
-        'Nível 2-3': [],
-        'Nível 4-5': [],
-        'Nível 6-10': [],
-        'Nível 11+': []
-      };
+      console.error(`[getAllArenaRankings] Erro:`, error);
+      return {};
     }
   }
 
@@ -469,14 +474,15 @@ export class ArenaService implements OnModuleInit {
     const config = data.config || {};
     
     // Se não tem levelRangeRewards mas tem top5Rewards e levelRanges, gerar automaticamente
+    const emptyReward = () => ({ cash: 0, credits: 0, cardId: undefined, score: 0, additionalScore: 0 });
     if (!config.rewards?.levelRangeRewards && config.rewards?.top5Rewards && config.levelRanges?.length > 0) {
       config.rewards.levelRangeRewards = config.levelRanges.map((range: any) => ({
         levelRange: range.name || range,
-        top1: config.rewards.top5Rewards.top1 || { cash: 0, score: 0, additionalScore: 0 },
-        top2: config.rewards.top5Rewards.top2 || { cash: 0, score: 0, additionalScore: 0 },
-        top3: config.rewards.top5Rewards.top3 || { cash: 0, score: 0, additionalScore: 0 },
-        top4: config.rewards.top5Rewards.top4 || { cash: 0, score: 0, additionalScore: 0 },
-        top5: config.rewards.top5Rewards.top5 || { cash: 0, score: 0, additionalScore: 0 },
+        top1: { ...emptyReward(), ...config.rewards.top5Rewards.top1 },
+        top2: { ...emptyReward(), ...config.rewards.top5Rewards.top2 },
+        top3: { ...emptyReward(), ...config.rewards.top5Rewards.top3 },
+        top4: { ...emptyReward(), ...config.rewards.top5Rewards.top4 },
+        top5: { ...emptyReward(), ...config.rewards.top5Rewards.top5 },
       }));
     }
     
@@ -525,10 +531,12 @@ export class ArenaService implements OnModuleInit {
       data.config = { ...(arena.config || {}), ...data.config };
     }
 
-    if (data.startTime) data.startTime = new Date(data.startTime);
-    if (data.endTime) data.endTime = new Date(data.endTime);
+    // Não sobrescrever startTime/endTime com null (colunas NOT NULL)
+    const { startTime, endTime, ...rest } = data as Partial<ChallengeArena> & { startTime?: Date | null; endTime?: Date | null };
+    if (startTime != null) (rest as any).startTime = new Date(startTime);
+    if (endTime != null) (rest as any).endTime = new Date(endTime);
 
-    Object.assign(arena, data);
+    Object.assign(arena, rest);
     return await this.arenaRepository.save(arena);
   }
 
@@ -537,7 +545,37 @@ export class ArenaService implements OnModuleInit {
   }
 
   /**
-   * Distribuir prêmios para os top 5 de cada faixa de nível quando a arena termina
+   * Marca a arena como premiação distribuída (persistência garantida em JSONB, sem sobrescrever o config).
+   */
+  private async markArenaRewardsDistributed(arenaId: string, _currentConfig?: ChallengeArena['config']): Promise<void> {
+    await this.arenaRepository.query(
+      `UPDATE challenge_arenas
+       SET config = jsonb_set(COALESCE(config, '{}'::jsonb), '{rewardsDistributed}', 'true')
+       WHERE id = $1`,
+      [arenaId],
+    );
+  }
+
+  /**
+   * Marca rewardsDistributed = true só se ainda não estiver true (atômico).
+   * Usa jsonb_set para não sobrescrever o resto do config.
+   * Retorna true se esta chamada foi a que marcou; false se já estava marcado.
+   */
+  private async markArenaRewardsDistributedIfNotAlready(arenaId: string, _currentConfig?: ChallengeArena['config']): Promise<boolean> {
+    const result = await this.arenaRepository.query(
+      `UPDATE challenge_arenas
+       SET config = jsonb_set(COALESCE(config, '{}'::jsonb), '{rewardsDistributed}', 'true')
+       WHERE id = $1
+         AND (config IS NULL OR (config->>'rewardsDistributed') IS DISTINCT FROM 'true')
+       RETURNING id`,
+      [arenaId],
+    );
+    return Array.isArray(result) && result.length > 0;
+  }
+
+  /**
+   * Distribuir prêmios para os top 5 de cada faixa de nível quando a arena termina.
+   * Usa UPDATE atômico para marcar rewardsDistributed e evitar premiação repetida (cron ou múltiplas instâncias).
    */
   async distributeArenaRewards(arenaId: string): Promise<void> {
     try {
@@ -547,30 +585,52 @@ export class ArenaService implements OnModuleInit {
         return;
       }
 
-      // Verificar se já foram distribuídos os prêmios
-      if (arena.config?.rewardsDistributed === true) {
-        console.log(`[distributeArenaRewards] Prêmios da arena ${arenaId} já foram distribuídos`);
+      const now = new Date();
+      if (new Date(arena.endTime) > now) {
+        console.warn(`[distributeArenaRewards] Arena ${arenaId} ainda não terminou. Premiação não distribuída.`);
+        return;
+      }
+
+      // Checagem em memória (evitar trabalho desnecessário; aceita boolean ou string do JSONB)
+      const raw = arena.config?.rewardsDistributed as boolean | string | undefined;
+      const alreadyDistributed = raw === true || String(raw) === 'true';
+      if (alreadyDistributed) {
+        console.log(`[distributeArenaRewards] Prêmios da arena ${arenaId} já foram distribuídos (cache).`);
         return;
       }
 
       const rewards = arena.config?.rewards?.levelRangeRewards;
       if (!rewards || rewards.length === 0) {
         console.log(`[distributeArenaRewards] Nenhuma premiação configurada para a arena ${arenaId}`);
-        // Marcar como distribuído mesmo sem prêmios
-        arena.config = { ...arena.config, rewardsDistributed: true };
-        await this.arenaRepository.save(arena);
+        await this.markArenaRewardsDistributed(arenaId, arena.config);
         return;
       }
 
-      const levelRanges = arena.config?.levelRanges || await this.getLevelRanges();
+      // Atômico: só quem conseguir marcar no banco prossegue. Evita premiação repetida mesmo com cron a cada 5 min ou múltiplas instâncias.
+      const claimed = await this.markArenaRewardsDistributedIfNotAlready(arenaId, arena.config);
+      if (!claimed) {
+        console.log(`[distributeArenaRewards] Prêmios da arena ${arenaId} já foram marcados como distribuídos por outro processo. Abortando.`);
+        return;
+      }
+      // Re-buscar arena para ter config atualizado (com rewardsDistributed = true)
+      const arenaAfterClaim = await this.arenaRepository.findOne({ where: { id: arenaId } });
+      if (!arenaAfterClaim) return;
+      const arenaRef = arenaAfterClaim;
+
+      const levelRanges = arenaRef.config?.levelRanges || await this.getLevelRanges();
       let totalDistributed = 0;
+
+      const arenaName = (arenaRef.config as any)?.name || arenaRef.name || 'Arena';
+      const levelRangesList = (Array.isArray(levelRanges) ? levelRanges : []) as Array<{ min: number; max: number; name: string }>;
 
       // Para cada faixa de nível configurada
       for (const levelRangeReward of rewards) {
         const levelRangeName = levelRangeReward.levelRange;
-        
-        // Buscar ranking top 5 dessa faixa
-        const ranking = await this.getArenaRankingByDivision(arenaId, levelRangeName);
+        const rangeDef = levelRangesList.find((r) => r.name === levelRangeName);
+        const levelRangeBounds = rangeDef ? { min: rangeDef.min, max: rangeDef.max } : undefined;
+
+        // Buscar ranking top 5 dessa faixa (com bounds para filtrar por nível)
+        const ranking = await this.getArenaRankingByDivision(arenaId, levelRangeName, levelRangeBounds);
         const top5 = ranking.slice(0, 5);
 
         // Distribuir prêmios para cada posição
@@ -584,12 +644,14 @@ export class ArenaService implements OnModuleInit {
             const user = await this.userRepository.findOne({ where: { id: player.userId } });
             if (!user) continue;
 
-            // Calcular valores a adicionar
             const cashToAdd = reward.cash || 0;
+            const creditsToAdd = reward.credits || 0;
             const totalScoreToAdd = (reward.score || 0) + (reward.additionalScore || 0);
+            const cardId = reward.cardId;
 
-            if (cashToAdd > 0 || totalScoreToAdd > 0) {
-              // Usar SQL direto para garantir precisão
+            const hasAnyReward = cashToAdd > 0 || creditsToAdd > 0 || totalScoreToAdd > 0 || (cardId && cardId.trim() !== '');
+
+            if (hasAnyReward) {
               const updateFields: string[] = [];
               const updateValues: any[] = [];
               let paramIndex = 1;
@@ -597,6 +659,12 @@ export class ArenaService implements OnModuleInit {
               if (cashToAdd > 0) {
                 updateFields.push(`cash = COALESCE(cash, 0) + $${paramIndex}`);
                 updateValues.push(cashToAdd);
+                paramIndex++;
+              }
+
+              if (creditsToAdd > 0) {
+                updateFields.push(`credits = COALESCE(credits, 0) + $${paramIndex}`);
+                updateValues.push(creditsToAdd);
                 paramIndex++;
               }
 
@@ -609,20 +677,63 @@ export class ArenaService implements OnModuleInit {
               if (updateFields.length > 0) {
                 updateValues.push(player.userId);
                 await this.userRepository.query(
-                  `UPDATE users SET ${updateFields.join(', ')} WHERE id = $${paramIndex} RETURNING id, cash, total_score`,
+                  `UPDATE users SET ${updateFields.join(', ')} WHERE id = $${paramIndex} RETURNING id, cash, credits, total_score`,
                   updateValues
                 );
-                totalDistributed++;
-                console.log(`[distributeArenaRewards] Prêmio distribuído para ${user.nickname} (${levelRangeName}, posição ${position}): cash=${cashToAdd}, score=${totalScoreToAdd}`);
+              }
+
+              // Score da premiação: somar ao ranking da season e ao grupo (ranking semanal, season e geral do grupo)
+              if (totalScoreToAdd > 0) {
+                try {
+                  await this.seasonsService.updateUserRanking(player.userId, totalScoreToAdd, true);
+                } catch (seasonErr: any) {
+                  console.warn(`[distributeArenaRewards] Erro ao atualizar ranking da season para usuário ${player.userId}:`, seasonErr?.message || seasonErr);
+                }
+                try {
+                  await this.groupsService.updateMemberScore(player.userId, totalScoreToAdd);
+                } catch (groupErr: any) {
+                  console.warn(`[distributeArenaRewards] Erro ao atualizar score do grupo para usuário ${player.userId}:`, groupErr?.message || groupErr);
+                }
+              }
+
+              if (cardId && cardId.trim() !== '') {
+                try {
+                  await this.shopService.addCardToUserInventory(
+                    player.userId,
+                    cardId,
+                    'REWARD',
+                    1,
+                  );
+                } catch (cardError) {
+                  console.error(`[distributeArenaRewards] Erro ao dar carta ${cardId} para usuário ${player.userId}:`, cardError);
+                }
+              }
+
+              totalDistributed++;
+              console.log(`[distributeArenaRewards] Prêmio distribuído para ${user.nickname} (${levelRangeName}, posição ${position}): cash=${cashToAdd}, credits=${creditsToAdd}, score=${totalScoreToAdd}, card=${cardId || '-'}`);
+
+              // Notificar o duelista na campainha
+              const parts: string[] = [];
+              if (cashToAdd > 0) parts.push(`${cashToAdd} Cash`);
+              if (creditsToAdd > 0) parts.push(`${creditsToAdd} Créditos`);
+              if (totalScoreToAdd > 0) parts.push(`${totalScoreToAdd} pontos`);
+              if (cardId && cardId.trim() !== '') parts.push('1 Carta');
+              const rewardText = parts.length ? parts.join(', ') : 'Premiação';
+              const content = `Premiação ${arenaName}: ${rewardText}. ${position}º lugar na faixa ${levelRangeName}.`;
+              try {
+                this.duelsGateway.emitSystemMessageToUser(player.userId, {
+                  id: `arena-reward-${arenaId}-${player.userId}-${Date.now()}`,
+                  type: 'system',
+                  content,
+                  createdAt: new Date().toISOString(),
+                });
+              } catch (notifErr) {
+                console.warn(`[distributeArenaRewards] Falha ao notificar usuário ${player.userId}:`, notifErr);
               }
             }
           }
         }
       }
-
-      // Marcar como distribuído
-      arena.config = { ...arena.config, rewardsDistributed: true };
-      await this.arenaRepository.save(arena);
 
       console.log(`[distributeArenaRewards] ✅ Prêmios da arena ${arenaId} distribuídos. Total: ${totalDistributed} jogadores premiados`);
     } catch (error) {
@@ -631,34 +742,75 @@ export class ArenaService implements OnModuleInit {
   }
 
   /**
-   * Verificar e distribuir prêmios de arenas finalizadas
+   * Encerrar arenas cujo horário de término já passou (isActive = false).
+   * Roda a cada minuto para que a arena "feche" logo após o fim, antes de qualquer premiação.
    */
-  @Cron(CronExpression.EVERY_5_MINUTES) // Verificar a cada 5 minutos
+  @Cron(CronExpression.EVERY_MINUTE)
+  async closeEndedArenas(): Promise<void> {
+    try {
+      const now = new Date();
+      const ended = await this.arenaRepository.find({
+        where: { isActive: true, endTime: LessThan(now) },
+      });
+      for (const arena of ended) {
+        await this.arenaRepository.update(arena.id, { isActive: false });
+        console.log(`[closeEndedArenas] Arena ${arena.name} (${arena.id}) encerrada (horário de término passou).`);
+      }
+    } catch (error) {
+      console.error('[closeEndedArenas] Erro ao encerrar arenas:', error);
+    }
+  }
+
+  /**
+   * Distribuir prêmios apenas de arenas já encerradas (endTime no passado).
+   * Roda a cada 5 min; a premiação só cai depois que a arena já foi fechada por closeEndedArenas.
+   */
+  @Cron(CronExpression.EVERY_5_MINUTES)
   async checkAndDistributeRewards(): Promise<void> {
     try {
       const now = new Date();
-      
-      // Buscar arenas que terminaram mas ainda não tiveram prêmios distribuídos
-      const finishedArenas = await this.arenaRepository.find({
-        where: {
-          isActive: true,
-          endTime: LessThan(now),
-        },
-      });
+      // Buscar apenas arenas encerradas que ainda NÃO tiveram premiação (evita reprocessar e reenviar notificações)
+      const rows = await this.arenaRepository.query(
+        `SELECT id FROM challenge_arenas
+         WHERE "endTime" < $1
+           AND (config IS NULL OR (config->>'rewardsDistributed') IS DISTINCT FROM 'true')
+         ORDER BY "endTime" ASC`,
+        [now],
+      );
+      const arenaIds = (rows || []).map((r: { id: string }) => r.id as string);
 
-      for (const arena of finishedArenas) {
-        // Verificar se já foram distribuídos
-        if (arena.config?.rewardsDistributed !== true) {
-          console.log(`[checkAndDistributeRewards] Distribuindo prêmios da arena ${arena.name} (${arena.id})`);
-          await this.distributeArenaRewards(arena.id);
-          
-          // Desativar arena após distribuir prêmios
-          arena.isActive = false;
-          await this.arenaRepository.save(arena);
-        }
+      for (const arenaId of arenaIds) {
+        const arena = await this.arenaRepository.findOne({ where: { id: arenaId } });
+        if (!arena) continue;
+        console.log(`[checkAndDistributeRewards] Distribuindo prêmios da arena ${arena.name} (${arena.id}) (arena já encerrada).`);
+        await this.distributeArenaRewards(arena.id);
+        await this.arenaRepository.update(arena.id, { isActive: false });
       }
     } catch (error) {
       console.error('[checkAndDistributeRewards] Erro ao verificar arenas finalizadas:', error);
+    }
+  }
+
+  /**
+   * A cada minuto: se há arena ativa e ainda não notificamos "arena abriu", emite notificação para todos e marca.
+   */
+  @Cron(CronExpression.EVERY_MINUTE)
+  async checkAndNotifyArenaOpened(): Promise<void> {
+    try {
+      const current = await this.getCurrentArena();
+      if (!current || (current.config as any)?.notifiedOpen === true) return;
+
+      const arenaName = (current.config as any)?.name || current.name || 'Arena';
+      this.duelsGateway.emitSystemMessageToAll({
+        id: `arena-opened-${current.id}-${Date.now()}`,
+        type: 'system',
+        content: `⚔️ A arena "${arenaName}" abriu! Participe agora na Arena de Duelos.`,
+        createdAt: new Date().toISOString(),
+      });
+      current.config = { ...(current.config || {}), notifiedOpen: true };
+      await this.arenaRepository.save(current);
+    } catch (error) {
+      console.warn('[checkAndNotifyArenaOpened]', error);
     }
   }
 }

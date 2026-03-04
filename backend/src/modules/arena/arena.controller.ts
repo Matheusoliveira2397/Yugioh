@@ -22,24 +22,38 @@ export class ArenaController {
 
   @Get('next')
   async getNextArena() {
-    const current = await this.arenaService.getCurrentArena();
-    if (current) {
-      return { arena: current, message: 'Arena já está ativa!' };
-    }
-
-    const next = await this.arenaService.getNextArena();
-    if (!next) {
-      return { arena: null, message: 'Nenhuma arena programada' };
-    }
-
     const now = new Date();
-    const timeUntil = next.startTime.getTime() - now.getTime();
-
-    return {
-      arena: next,
-      timeUntilStart: timeUntil,
-      startsAt: next.startTime,
-    };
+    // 1) Próxima arena já instanciada (startTime > now)
+    let next = await this.arenaService.getNextArena();
+    if (next) {
+      const startTime = next.startTime instanceof Date ? next.startTime : new Date(next.startTime);
+      return {
+        arena: next,
+        timeUntilStart: startTime.getTime() - now.getTime(),
+        startsAt: startTime,
+      };
+    }
+    // 2) Nenhuma instância futura: usar horários (schedules) para contagem regressiva até a próxima arena (hoje ou outro dia)
+    const scheduled = await this.arenaScheduleService.getNextScheduledStart();
+    if (scheduled) {
+      const startTime = scheduled.startTime instanceof Date ? scheduled.startTime : new Date(scheduled.startTime);
+      const durationMs = (scheduled.durationMinutes ?? 120) * 60 * 1000;
+      return {
+        arena: {
+          id: 'scheduled',
+          name: scheduled.name,
+          startTime: startTime.toISOString(),
+          endTime: new Date(startTime.getTime() + durationMs).toISOString(),
+          description: `Próxima arena: ${scheduled.name}`,
+          isActive: false,
+          participants: 0,
+          scoreMultiplier: 1,
+        },
+        timeUntilStart: startTime.getTime() - now.getTime(),
+        startsAt: startTime,
+      };
+    }
+    return { arena: null, message: 'Nenhuma arena programada' };
   }
 
   @Get('upcoming')
@@ -49,21 +63,42 @@ export class ArenaController {
       return { arena: null, message: 'Arena já está ativa' };
     }
 
-    const next = await this.arenaService.getNextArena();
-    if (!next) {
-      return { arena: null, message: 'Nenhuma arena programada' };
+    const now = new Date();
+    const tenMinutesInMs = 10 * 60 * 1000;
+    const marginMs = 2000;
+
+    let startTime: Date;
+    let arenaForBanner: any;
+
+    const nextInstance = await this.arenaService.getNextArena();
+    if (nextInstance) {
+      startTime = nextInstance.startTime instanceof Date ? nextInstance.startTime : new Date(nextInstance.startTime);
+      arenaForBanner = nextInstance;
+    } else {
+      const scheduled = await this.arenaScheduleService.getNextScheduledStart();
+      if (!scheduled) {
+        return { arena: null, message: 'Nenhuma arena programada' };
+      }
+      startTime = scheduled.startTime instanceof Date ? scheduled.startTime : new Date(scheduled.startTime);
+      const durationMs = (scheduled.durationMinutes ?? 120) * 60 * 1000;
+      arenaForBanner = {
+        id: 'scheduled',
+        name: scheduled.name,
+        startTime: startTime.toISOString(),
+        endTime: new Date(startTime.getTime() + durationMs).toISOString(),
+        description: `Próxima arena: ${scheduled.name}`,
+        isActive: false,
+        participants: 0,
+        scoreMultiplier: 1,
+      };
     }
 
-    const now = new Date();
-    const timeUntil = next.startTime.getTime() - now.getTime();
-    const tenMinutesInMs = 10 * 60 * 1000; // 10 minutos em milissegundos
-
-    // Retornar apenas se a arena começa em menos de 10 minutos
-    if (timeUntil > 0 && timeUntil <= tenMinutesInMs) {
+    const timeUntil = startTime.getTime() - now.getTime();
+    if (timeUntil > 0 && timeUntil <= tenMinutesInMs + marginMs) {
       return {
-        arena: next,
+        arena: arenaForBanner,
         timeUntilStart: timeUntil,
-        startsAt: next.startTime,
+        startsAt: startTime,
       };
     }
 
@@ -117,7 +152,18 @@ export class ArenaController {
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Post('admin/create')
   async createArena(@Body() createArenaDto: any) {
-    return await this.arenaService.createArenaAdmin(createArenaDto);
+    const arena = await this.arenaService.createArenaAdmin(createArenaDto);
+    // Se o horário da arena for agora (ou nos próximos 15 min), criar a instância do dia na hora
+    this.arenaScheduleService.createTodayArenas().catch(() => {});
+    return arena;
+  }
+
+  /** Força a criação das instâncias de hoje a partir dos modelos (Criar Arena). Use se a arena não abriu no horário. */
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @Post('admin/create-today-instances')
+  async createTodayInstances() {
+    await this.arenaScheduleService.createTodayArenas();
+    return { message: 'Verificação concluída. Se havia modelo no horário, a arena foi criada.' };
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
@@ -202,7 +248,9 @@ export class ArenaController {
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Put('admin/:id')
   async updateArena(@Param('id') id: string, @Body() updateArenaDto: any) {
-    return await this.arenaService.updateArena(id, updateArenaDto);
+    const arena = await this.arenaService.updateArena(id, updateArenaDto);
+    this.arenaScheduleService.createTodayArenas().catch(() => {});
+    return arena;
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
