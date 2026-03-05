@@ -18,7 +18,10 @@ const globalChatUsers = new Map<number, { userId: number; username: string; nick
 
 @WebSocketGateway({
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    origin: (() => {
+      const o = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map((s) => s.trim()).filter(Boolean);
+      return o.length ? o : ['http://localhost:5173'];
+    })(),
     credentials: true,
   },
   transports: ['websocket', 'polling'],

@@ -190,9 +190,11 @@ async function bootstrap() {
     index: false, // Não servir index.html quando arquivo não for encontrado
   });
 
-  // Habilitar CORS
+  // Habilitar CORS (aceita várias origens separadas por vírgula: https://www.site.com,https://site.com)
+  const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
+  const corsOrigins = corsOrigin.split(',').map((o) => o.trim()).filter(Boolean);
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    origin: corsOrigins.length > 1 ? corsOrigins : corsOrigins[0] || 'http://localhost:5173',
     credentials: true,
   });
 
