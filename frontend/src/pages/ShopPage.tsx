@@ -47,6 +47,7 @@ interface Sleeve {
 
 type SortOption = 'name' | 'priceAsc' | 'priceDesc';
 type CardTypeFilter = 'Monster' | 'Spell' | 'Trap';
+type MonsterTypeFilter = 'Normal' | 'Effect' | 'Fusion';
 type ShopCategory = 'cards' | 'playmats' | 'sleeves';
 
 export default function ShopPage() {
@@ -77,6 +78,7 @@ export default function ShopPage() {
   const [priceMax, setPriceMax] = useState('');
   const [typeFilters, setTypeFilters] = useState<CardTypeFilter[]>(['Monster', 'Spell', 'Trap']);
   const [attributeFilters, setAttributeFilters] = useState<string[]>([]);
+  const [monsterTypeFilters, setMonsterTypeFilters] = useState<MonsterTypeFilter[]>([]);
   
   // Paginação
   const [currentPage, setCurrentPage] = useState(1);
@@ -279,6 +281,14 @@ export default function ShopPage() {
       );
     }
 
+    if (monsterTypeFilters.length > 0) {
+      filtered = filtered.filter(card => {
+        if (card.type !== 'Monster') return true;
+        const mt = (card.monsterType || '').trim();
+        return mt && monsterTypeFilters.includes(mt as MonsterTypeFilter);
+      });
+    }
+
     if (priceMin) {
       const min = Number(priceMin);
       filtered = filtered.filter(card => (card.priceCredits || 0) >= min);
@@ -302,7 +312,7 @@ export default function ShopPage() {
     });
 
     return filtered;
-  }, [cards, searchTerm, sortBy, priceMin, priceMax, typeFilters, attributeFilters]);
+  }, [cards, searchTerm, sortBy, priceMin, priceMax, typeFilters, attributeFilters, monsterTypeFilters]);
 
   // Contagem de cartas por tipo (para exibir nos filtros)
   const countByType = useMemo(() => {
@@ -324,8 +334,127 @@ export default function ShopPage() {
     return counts;
   }, [cards]);
 
+  const MONSTER_TYPES: MonsterTypeFilter[] = ['Normal', 'Effect', 'Fusion'];
+
+  // Contagem de monstros por tipo (Normal, Effect, Fusion) – só cartas Monster
+  const countByMonsterType = useMemo(() => {
+    const counts: Record<string, number> = { Normal: 0, Effect: 0, Fusion: 0 };
+    cards.forEach(c => {
+      if (c.type === 'Monster' && c.monsterType && counts[c.monsterType] !== undefined)
+        counts[c.monsterType]++;
+    });
+    return counts;
+  }, [cards]);
+
+  // Lista base para venda (cartas com pelo menos 1 cópia vendável)
+  const sellListBase = useMemo(() => {
+    return inventory.filter((uc: any) => ((uc.sellableQuantity ?? uc.quantity) > 0));
+  }, [inventory]);
+
+  // Filtrar e ordenar cartas na aba Vender (mesma lógica que Comprar)
+  const filteredAndSortedSellList = useMemo(() => {
+    let filtered = [...sellListBase];
+
+    if (searchTerm) {
+      filtered = filtered.filter((uc: any) => {
+        const card = uc.card;
+        if (!card) return false;
+        return (
+          card.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          card.description?.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+      });
+    }
+
+    if (typeFilters.length > 0) {
+      filtered = filtered.filter((uc: any) => uc.card && typeFilters.includes(uc.card.type as CardTypeFilter));
+    }
+
+    if (attributeFilters.length > 0 && attributeFilters.length < 7) {
+      filtered = filtered.filter((uc: any) =>
+        uc.card?.attribute && attributeFilters.includes(uc.card.attribute)
+      );
+    }
+
+    if (monsterTypeFilters.length > 0) {
+      filtered = filtered.filter((uc: any) => {
+        const card = uc.card;
+        if (!card || card.type !== 'Monster') return card ? true : false;
+        const mt = (card.monsterType || '').trim();
+        return mt && monsterTypeFilters.includes(mt as MonsterTypeFilter);
+      });
+    }
+
+    const priceCredits = (uc: any) => uc.card?.priceCredits ?? 0;
+    if (priceMin) {
+      const min = Number(priceMin);
+      filtered = filtered.filter((uc: any) => priceCredits(uc) >= min);
+    }
+    if (priceMax) {
+      const max = Number(priceMax);
+      filtered = filtered.filter((uc: any) => priceCredits(uc) <= max);
+    }
+
+    filtered.sort((a: any, b: any) => {
+      const cardA = a.card;
+      const cardB = b.card;
+      if (!cardA || !cardB) return 0;
+      switch (sortBy) {
+        case 'name':
+          return (cardA.name || '').localeCompare(cardB.name || '');
+        case 'priceAsc':
+          return (cardA.priceCredits || 0) - (cardB.priceCredits || 0);
+        case 'priceDesc':
+          return (cardB.priceCredits || 0) - (cardA.priceCredits || 0);
+        default:
+          return 0;
+      }
+    });
+
+    return filtered;
+  }, [sellListBase, searchTerm, sortBy, priceMin, priceMax, typeFilters, attributeFilters, monsterTypeFilters]);
+
+  // Contagens para filtros na aba Vender
+  const countByTypeSell = useMemo(() => {
+    const counts: Record<string, number> = { Monster: 0, Spell: 0, Trap: 0 };
+    sellListBase.forEach((uc: any) => {
+      const t = uc.card?.type;
+      if (t && counts[t] !== undefined) counts[t]++;
+    });
+    return counts;
+  }, [sellListBase]);
+
+  const countByAttributeSell = useMemo(() => {
+    const counts: Record<string, number> = {};
+    const attrs = ['LIGHT', 'DARK', 'FIRE', 'WATER', 'EARTH', 'WIND', 'DIVINE'];
+    attrs.forEach(a => { counts[a] = 0; });
+    sellListBase.forEach((uc: any) => {
+      const a = uc.card?.attribute;
+      if (a && counts[a] !== undefined) counts[a]++;
+    });
+    return counts;
+  }, [sellListBase]);
+
+  const countByMonsterTypeSell = useMemo(() => {
+    const counts: Record<string, number> = { Normal: 0, Effect: 0, Fusion: 0 };
+    sellListBase.forEach((uc: any) => {
+      const c = uc.card;
+      if (c?.type === 'Monster' && c.monsterType && counts[c.monsterType] !== undefined)
+        counts[c.monsterType]++;
+    });
+    return counts;
+  }, [sellListBase]);
+
+  // Contagens exibidas nos filtros (Comprar = loja, Vender = inventário à venda)
+  const countByTypeDisplay = mode === 'sell' ? countByTypeSell : countByType;
+  const countByAttributeDisplay = mode === 'sell' ? countByAttributeSell : countByAttribute;
+  const countByMonsterTypeDisplay = mode === 'sell' ? countByMonsterTypeSell : countByMonsterType;
+
   // Paginação
   const getCurrentItems = () => {
+    if (category === 'cards' && mode === 'sell') {
+      return filteredAndSortedSellList;
+    }
     if (category === 'cards') {
       return filteredAndSortedCards;
     } else if (category === 'playmats') {
@@ -400,6 +529,14 @@ export default function ShopPage() {
       prev.includes(attr)
         ? prev.filter(a => a !== attr)
         : [...prev, attr]
+    );
+  };
+
+  const toggleMonsterTypeFilter = (mt: MonsterTypeFilter) => {
+    setMonsterTypeFilters(prev =>
+      prev.includes(mt)
+        ? prev.filter(m => m !== mt)
+        : [...prev, mt]
     );
   };
 
@@ -584,7 +721,7 @@ export default function ShopPage() {
         {/* Tabs para Comprar/Vender */}
         <div className="flex gap-2 mb-6">
           <button
-            onClick={() => setMode('buy')}
+            onClick={() => { setMode('buy'); setCurrentPage(1); }}
             className={`px-6 py-3 text-sm font-bold transition-all rounded-xl border-2 ${
               mode === 'buy'
                 ? 'bg-gradient-to-r from-blue-600/80 to-blue-700/80 text-white border-blue-500/50 shadow-lg shadow-blue-500/30'
@@ -594,7 +731,7 @@ export default function ShopPage() {
             🛒 Comprar
           </button>
           <button
-            onClick={() => setMode('sell')}
+            onClick={() => { setMode('sell'); setCurrentPage(1); }}
             className={`px-6 py-3 text-sm font-bold transition-all rounded-xl border-2 ${
               mode === 'sell'
                 ? 'bg-gradient-to-r from-green-600/80 to-green-700/80 text-white border-green-500/50 shadow-lg shadow-green-500/30'
@@ -604,6 +741,282 @@ export default function ShopPage() {
             💰 Vender
           </button>
         </div>
+
+        {/* Abas de Categorias (Comprar e Vender) */}
+        <div className="mb-6">
+          <div className="flex gap-3 rounded-xl p-2">
+            <button
+              onClick={() => { setCategory('cards'); setCurrentPage(1); }}
+              className={`flex-1 px-6 py-3 text-sm font-bold transition-all rounded-lg ${
+                category === 'cards'
+                  ? 'bg-gradient-to-r from-purple-600/80 to-pink-600/80 text-white shadow-lg'
+                  : 'text-gray-300 hover:bg-white/10'
+              }`}
+            >
+              🎴 Cartas
+            </button>
+            <button
+              onClick={() => { setCategory('playmats'); setCurrentPage(1); }}
+              className={`flex-1 px-6 py-3 text-sm font-bold transition-all rounded-lg ${
+                category === 'playmats'
+                  ? 'bg-gradient-to-r from-blue-600/80 to-cyan-600/80 text-white shadow-lg'
+                  : 'text-gray-300 hover:bg-white/10'
+              }`}
+            >
+              🎨 Playmats
+            </button>
+            <button
+              onClick={() => { setCategory('sleeves'); setCurrentPage(1); }}
+              className={`flex-1 px-6 py-3 text-sm font-bold transition-all rounded-lg ${
+                category === 'sleeves'
+                  ? 'bg-gradient-to-r from-green-600/80 to-emerald-600/80 text-white shadow-lg'
+                  : 'text-gray-300 hover:bg-white/10'
+              }`}
+            >
+              🎭 Skins de cartas
+            </button>
+          </div>
+        </div>
+
+        {/* Barra de pesquisa (cartas – Comprar e Vender) */}
+        {category === 'cards' && (
+          <div className="mb-6">
+            <input
+              type="text"
+              placeholder="🔍 Pesquisar..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/30 transition-all"
+            />
+          </div>
+        )}
+
+        {/* Filtros (cartas – Comprar e Vender; contagens por modo) */}
+        {category === 'cards' && (
+          <div className="rounded-xl p-4 mb-6 relative z-30">
+            <div className="flex flex-wrap gap-4">
+              {/* Ordenar por */}
+              <div className="relative z-[100]" onClick={(e) => e.stopPropagation()}>
+                <button 
+                  onClick={() => setOpenDropdown(openDropdown === 'sort' ? null : 'sort')}
+                  className="px-4 py-2 hover:bg-white/10 border border-white/20 rounded-lg text-white font-medium flex items-center gap-2 transition-all"
+                >
+                  <span>Ordenar: {sortBy === 'name' ? 'Nome' : sortBy === 'priceAsc' ? 'Preço ↑' : 'Preço ↓'}</span>
+                  <svg className={`w-4 h-4 transition-transform ${openDropdown === 'sort' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {openDropdown === 'sort' && (
+                  <div className="absolute top-full left-0 mt-2 w-48 bg-black/80 border border-white/20 rounded-lg shadow-2xl z-[100]">
+                    <div className="py-2">
+                      <button
+                        onClick={() => {
+                          setSortBy('name');
+                          setOpenDropdown(null);
+                        }}
+                        className={`w-full text-left px-4 py-2 hover:bg-white/10 transition-colors ${
+                          sortBy === 'name' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
+                        }`}
+                      >
+                        Nome
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSortBy('priceAsc');
+                          setOpenDropdown(null);
+                        }}
+                        className={`w-full text-left px-4 py-2 hover:bg-white/10 transition-colors ${
+                          sortBy === 'priceAsc' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
+                        }`}
+                      >
+                        Preço: Menor → Maior
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSortBy('priceDesc');
+                          setOpenDropdown(null);
+                        }}
+                        className={`w-full text-left px-4 py-2 hover:bg-white/10 transition-colors ${
+                          sortBy === 'priceDesc' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
+                        }`}
+                      >
+                        Preço: Maior → Menor
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Preço */}
+              <div className="relative z-[100]" onClick={(e) => e.stopPropagation()}>
+                <button 
+                  onClick={() => setOpenDropdown(openDropdown === 'price' ? null : 'price')}
+                  className="px-4 py-2 hover:bg-white/10 border border-white/20 rounded-lg text-white font-medium flex items-center gap-2 transition-all"
+                >
+                  <span>Preço {(priceMin || priceMax) ? `(${priceMin || '0'} - ${priceMax || '∞'})` : ''}</span>
+                  <svg className={`w-4 h-4 transition-transform ${openDropdown === 'price' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {openDropdown === 'price' && (
+                  <div className="absolute top-full left-0 mt-2 w-64 bg-black/80 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl z-[100] p-4">
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs text-gray-300 mb-1">Preço Mínimo</label>
+                        <input
+                          type="number"
+                          placeholder="Min"
+                          value={priceMin}
+                          onChange={(e) => setPriceMin(e.target.value)}
+                          className="w-full px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded text-white text-sm focus:outline-none focus:border-purple-500/50"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-300 mb-1">Preço Máximo</label>
+                        <input
+                          type="number"
+                          placeholder="Max"
+                          value={priceMax}
+                          onChange={(e) => setPriceMax(e.target.value)}
+                          className="w-full px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded text-white text-sm focus:outline-none focus:border-purple-500/50"
+                        />
+                      </div>
+                      {(priceMin || priceMax) && (
+                        <button
+                          onClick={() => {
+                            setPriceMin('');
+                            setPriceMax('');
+                          }}
+                          className="w-full px-3 py-1 bg-purple-600/80 hover:bg-purple-600 rounded text-sm font-medium transition-colors backdrop-blur-sm"
+                        >
+                          Limpar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Tipo */}
+              <div className="relative z-[100]" onClick={(e) => e.stopPropagation()}>
+                <button 
+                  onClick={() => setOpenDropdown(openDropdown === 'type' ? null : 'type')}
+                  className="px-4 py-2 hover:bg-white/10 border border-white/20 rounded-lg text-white font-medium flex items-center gap-2 transition-all"
+                >
+                  <span>Tipo ({typeFilters.length})</span>
+                  <svg className={`w-4 h-4 transition-transform ${openDropdown === 'type' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {openDropdown === 'type' && (
+                  <div className="absolute top-full left-0 mt-2 w-48 bg-black/80 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl z-[100] p-4">
+                    <div className="space-y-2">
+                      {(['Monster', 'Spell', 'Trap'] as CardTypeFilter[]).map(type => (
+                        <label key={type} className="flex items-center gap-2 cursor-pointer hover:bg-white/10 p-2 rounded transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={typeFilters.includes(type)}
+                            onChange={() => toggleTypeFilter(type)}
+                            className="w-4 h-4 text-purple-600 bg-white/10 border-white/20 rounded focus:ring-purple-500"
+                          />
+                          <span className="text-sm text-white">
+                            {type === 'Monster' ? 'Monstro' : type === 'Spell' ? 'Magia' : 'Armadilha'}
+                            <span className="text-gray-400 ml-1">({countByTypeDisplay[type] ?? 0})</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Atributo */}
+              <div className="relative z-[100]" onClick={(e) => e.stopPropagation()}>
+                <button 
+                  onClick={() => setOpenDropdown(openDropdown === 'attribute' ? null : 'attribute')}
+                  className="px-4 py-2 hover:bg-white/10 border border-white/20 rounded-lg text-white font-medium flex items-center gap-2 transition-all"
+                >
+                  <span>Atributo ({attributeFilters.length})</span>
+                  <svg className={`w-4 h-4 transition-transform ${openDropdown === 'attribute' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {openDropdown === 'attribute' && (
+                  <div className="absolute top-full left-0 mt-2 w-64 bg-black/80 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl z-[100] p-4">
+                    <div className="grid grid-cols-2 gap-2">
+                      {attributes.map(attr => (
+                        <label key={attr} className="flex items-center gap-2 cursor-pointer hover:bg-white/10 p-2 rounded transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={attributeFilters.includes(attr)}
+                            onChange={() => toggleAttributeFilter(attr)}
+                            className="w-4 h-4 text-purple-600 bg-white/10 border-white/20 rounded focus:ring-purple-500"
+                          />
+                          <span className="text-sm text-white">
+                            {attr}
+                            <span className="text-gray-400 ml-1">({countByAttributeDisplay[attr] ?? 0})</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    {attributeFilters.length > 0 && (
+                      <button
+                        onClick={() => setAttributeFilters([])}
+                        className="w-full mt-3 px-3 py-1 bg-purple-600/80 hover:bg-purple-600 rounded text-sm font-medium transition-colors backdrop-blur-sm"
+                      >
+                        Limpar
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Tipo de monstro (Normal, Effect, Fusion) */}
+              <div className="relative z-[100]" onClick={(e) => e.stopPropagation()}>
+                <button 
+                  onClick={() => setOpenDropdown(openDropdown === 'monsterType' ? null : 'monsterType')}
+                  className="px-4 py-2 hover:bg-white/10 border border-white/20 rounded-lg text-white font-medium flex items-center gap-2 transition-all"
+                >
+                  <span>Tipo de monstro ({monsterTypeFilters.length ? monsterTypeFilters.length : 'todos'})</span>
+                  <svg className={`w-4 h-4 transition-transform ${openDropdown === 'monsterType' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {openDropdown === 'monsterType' && (
+                  <div className="absolute top-full left-0 mt-2 w-52 bg-black/80 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl z-[100] p-4">
+                    <div className="space-y-2">
+                      {MONSTER_TYPES.map(mt => (
+                        <label key={mt} className="flex items-center gap-2 cursor-pointer hover:bg-white/10 p-2 rounded transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={monsterTypeFilters.includes(mt)}
+                            onChange={() => toggleMonsterTypeFilter(mt)}
+                            className="w-4 h-4 text-purple-600 bg-white/10 border-white/20 rounded focus:ring-purple-500"
+                          />
+                          <span className="text-sm text-white">
+                            {mt === 'Normal' ? 'Normal' : mt === 'Effect' ? 'Effect' : 'Fusion'}
+                            <span className="text-gray-400 ml-1">({countByMonsterTypeDisplay[mt] ?? 0})</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    {monsterTypeFilters.length > 0 && (
+                      <button
+                        onClick={() => setMonsterTypeFilters([])}
+                        className="w-full mt-3 px-3 py-1 bg-purple-600/80 hover:bg-purple-600 rounded text-sm font-medium transition-colors backdrop-blur-sm"
+                      >
+                        Limpar
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {mode === 'buy' ? (
           // MODO COMPRAR
@@ -680,241 +1093,6 @@ export default function ShopPage() {
                   </div>
                 </div>
               </motion.div>
-            )}
-
-            {/* Abas de Categorias */}
-            <div className="mb-6">
-              <div className="flex gap-3 rounded-xl p-2">
-                <button
-                  onClick={() => setCategory('cards')}
-                  className={`flex-1 px-6 py-3 text-sm font-bold transition-all rounded-lg ${
-                    category === 'cards'
-                      ? 'bg-gradient-to-r from-purple-600/80 to-pink-600/80 text-white shadow-lg'
-                      : 'text-gray-300 hover:bg-white/10'
-                  }`}
-                >
-                  🎴 Cartas
-                </button>
-                <button
-                  onClick={() => setCategory('playmats')}
-                  className={`flex-1 px-6 py-3 text-sm font-bold transition-all rounded-lg ${
-                    category === 'playmats'
-                      ? 'bg-gradient-to-r from-blue-600/80 to-cyan-600/80 text-white shadow-lg'
-                      : 'text-gray-300 hover:bg-white/10'
-                  }`}
-                >
-                  🎨 Playmats
-                </button>
-                <button
-                  onClick={() => setCategory('sleeves')}
-                  className={`flex-1 px-6 py-3 text-sm font-bold transition-all rounded-lg ${
-                    category === 'sleeves'
-                      ? 'bg-gradient-to-r from-green-600/80 to-emerald-600/80 text-white shadow-lg'
-                      : 'text-gray-300 hover:bg-white/10'
-                  }`}
-                >
-                  🎭 Skins de cartas
-                </button>
-              </div>
-            </div>
-
-            {/* Barra de pesquisa */}
-            {category === 'cards' && (
-              <div className="mb-6">
-                <input
-                  type="text"
-                  placeholder="🔍 Pesquisar..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/30 transition-all"
-                />
-              </div>
-            )}
-
-            {/* Filtros (apenas para cartas) */}
-            {category === 'cards' && (
-              <div className="rounded-xl p-4 mb-6 relative z-30">
-                <div className="flex flex-wrap gap-4">
-                  {/* Ordenar por */}
-                  <div className="relative z-[100]" onClick={(e) => e.stopPropagation()}>
-                    <button 
-                      onClick={() => setOpenDropdown(openDropdown === 'sort' ? null : 'sort')}
-                      className="px-4 py-2 hover:bg-white/10 border border-white/20 rounded-lg text-white font-medium flex items-center gap-2 transition-all"
-                    >
-                      <span>Ordenar: {sortBy === 'name' ? 'Nome' : sortBy === 'priceAsc' ? 'Preço ↑' : 'Preço ↓'}</span>
-                      <svg className={`w-4 h-4 transition-transform ${openDropdown === 'sort' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-                    {openDropdown === 'sort' && (
-                      <div className="absolute top-full left-0 mt-2 w-48 bg-black/80 border border-white/20 rounded-lg shadow-2xl z-[100]">
-                        <div className="py-2">
-                          <button
-                            onClick={() => {
-                              setSortBy('name');
-                              setOpenDropdown(null);
-                            }}
-                            className={`w-full text-left px-4 py-2 hover:bg-white/10 transition-colors ${
-                              sortBy === 'name' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
-                            }`}
-                          >
-                            Nome
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSortBy('priceAsc');
-                              setOpenDropdown(null);
-                            }}
-                            className={`w-full text-left px-4 py-2 hover:bg-white/10 transition-colors ${
-                              sortBy === 'priceAsc' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
-                            }`}
-                          >
-                            Preço: Menor → Maior
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSortBy('priceDesc');
-                              setOpenDropdown(null);
-                            }}
-                            className={`w-full text-left px-4 py-2 hover:bg-white/10 transition-colors ${
-                              sortBy === 'priceDesc' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
-                            }`}
-                          >
-                            Preço: Maior → Menor
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Preço */}
-                  <div className="relative z-[100]" onClick={(e) => e.stopPropagation()}>
-                    <button 
-                      onClick={() => setOpenDropdown(openDropdown === 'price' ? null : 'price')}
-                      className="px-4 py-2 hover:bg-white/10 border border-white/20 rounded-lg text-white font-medium flex items-center gap-2 transition-all"
-                    >
-                      <span>Preço {(priceMin || priceMax) ? `(${priceMin || '0'} - ${priceMax || '∞'})` : ''}</span>
-                      <svg className={`w-4 h-4 transition-transform ${openDropdown === 'price' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-                    {openDropdown === 'price' && (
-                      <div className="absolute top-full left-0 mt-2 w-64 bg-black/80 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl z-[100] p-4">
-                        <div className="space-y-3">
-                          <div>
-                            <label className="block text-xs text-gray-300 mb-1">Preço Mínimo</label>
-                            <input
-                              type="number"
-                              placeholder="Min"
-                              value={priceMin}
-                              onChange={(e) => setPriceMin(e.target.value)}
-                              className="w-full px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded text-white text-sm focus:outline-none focus:border-purple-500/50"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-300 mb-1">Preço Máximo</label>
-                            <input
-                              type="number"
-                              placeholder="Max"
-                              value={priceMax}
-                              onChange={(e) => setPriceMax(e.target.value)}
-                              className="w-full px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded text-white text-sm focus:outline-none focus:border-purple-500/50"
-                            />
-                          </div>
-                          {(priceMin || priceMax) && (
-                            <button
-                              onClick={() => {
-                                setPriceMin('');
-                                setPriceMax('');
-                              }}
-                              className="w-full px-3 py-1 bg-purple-600/80 hover:bg-purple-600 rounded text-sm font-medium transition-colors backdrop-blur-sm"
-                            >
-                              Limpar
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Tipo */}
-                  <div className="relative z-[100]" onClick={(e) => e.stopPropagation()}>
-                    <button 
-                      onClick={() => setOpenDropdown(openDropdown === 'type' ? null : 'type')}
-                      className="px-4 py-2 hover:bg-white/10 border border-white/20 rounded-lg text-white font-medium flex items-center gap-2 transition-all"
-                    >
-                      <span>Tipo ({typeFilters.length})</span>
-                      <svg className={`w-4 h-4 transition-transform ${openDropdown === 'type' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-                    {openDropdown === 'type' && (
-                      <div className="absolute top-full left-0 mt-2 w-48 bg-black/80 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl z-[100] p-4">
-                        <div className="space-y-2">
-                          {(['Monster', 'Spell', 'Trap'] as CardTypeFilter[]).map(type => (
-                            <label key={type} className="flex items-center gap-2 cursor-pointer hover:bg-white/10 p-2 rounded transition-colors">
-                              <input
-                                type="checkbox"
-                                checked={typeFilters.includes(type)}
-                                onChange={() => toggleTypeFilter(type)}
-                                className="w-4 h-4 text-purple-600 bg-white/10 border-white/20 rounded focus:ring-purple-500"
-                              />
-                              <span className="text-sm text-white">
-                                {type === 'Monster' ? 'Monstro' : type === 'Spell' ? 'Magia' : 'Armadilha'}
-                                <span className="text-gray-400 ml-1">({countByType[type] ?? 0})</span>
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Atributo */}
-                  <div className="relative z-[100]" onClick={(e) => e.stopPropagation()}>
-                    <button 
-                      onClick={() => setOpenDropdown(openDropdown === 'attribute' ? null : 'attribute')}
-                      className="px-4 py-2 hover:bg-white/10 border border-white/20 rounded-lg text-white font-medium flex items-center gap-2 transition-all"
-                    >
-                      <span>Atributo ({attributeFilters.length})</span>
-                      <svg className={`w-4 h-4 transition-transform ${openDropdown === 'attribute' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-                    {openDropdown === 'attribute' && (
-                      <div className="absolute top-full left-0 mt-2 w-64 bg-black/80 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl z-[100] p-4">
-                        <div className="grid grid-cols-2 gap-2">
-                          {attributes.map(attr => (
-                            <label key={attr} className="flex items-center gap-2 cursor-pointer hover:bg-white/10 p-2 rounded transition-colors">
-                              <input
-                                type="checkbox"
-                                checked={attributeFilters.includes(attr)}
-                                onChange={() => toggleAttributeFilter(attr)}
-                                className="w-4 h-4 text-purple-600 bg-white/10 border-white/20 rounded focus:ring-purple-500"
-                              />
-                              <span className="text-sm text-white">
-                                {attr}
-                                <span className="text-gray-400 ml-1">({countByAttribute[attr] ?? 0})</span>
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-                        {attributeFilters.length > 0 && (
-                          <button
-                            onClick={() => setAttributeFilters([])}
-                            className="w-full mt-3 px-3 py-1 bg-purple-600/80 hover:bg-purple-600 rounded text-sm font-medium transition-colors backdrop-blur-sm"
-                          >
-                            Limpar
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
             )}
 
             {/* Grid de Itens */}
@@ -1206,27 +1384,31 @@ export default function ShopPage() {
                     <p className="text-red-300">{error}</p>
                   </div>
                 ) : (() => {
-                  // Na aba Vender: cartas que têm pelo menos 1 cópia na maleta (fora do deck)
-                  const sellList = mode === 'sell' && category === 'cards'
-                    ? inventory.filter((uc: any) => ((uc.sellableQuantity ?? uc.quantity) > 0))
-                    : inventory;
-                  return sellList.length === 0 ? (
-                    <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
-                      <p className="text-gray-200 text-lg mb-2">
-                        {mode === 'sell' && category === 'cards'
-                          ? '📦 Nenhuma carta na maleta para vender'
-                          : '📦 Seu inventário está vazio'}
-                      </p>
-                      <p className="text-gray-400 text-sm">
-                        {mode === 'sell' && category === 'cards'
-                          ? 'Só aparecem aqui as cartas que não estão em nenhum deck.'
-                          : 'Compre cartas na loja para começar a colecionar!'}
-                      </p>
-                    </div>
-                  ) : (
+                  // Lista filtrada e paginada na venda (usa filteredAndSortedSellList e paginatedItems)
+                  const sellListEmpty = sellListBase.length === 0;
+                  const noResults = filteredAndSortedSellList.length === 0;
+                  const listToShow = noResults ? [] : paginatedItems as any[];
+                  if (sellListEmpty) {
+                    return (
+                      <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
+                        <p className="text-gray-200 text-lg mb-2">📦 Nenhuma carta na maleta para vender</p>
+                        <p className="text-gray-400 text-sm">Só aparecem aqui as cartas que não estão em nenhum deck.</p>
+                      </div>
+                    );
+                  }
+                  if (noResults) {
+                    return (
+                      <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
+                        <p className="text-gray-200 text-lg mb-2">Nenhum resultado para os filtros</p>
+                        <p className="text-gray-400 text-sm">Tente alterar pesquisa ou filtros.</p>
+                      </div>
+                    );
+                  }
+                  return (
+                  <>
                   <div className="bg-transparent p-4 mb-6">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                      {sellList.map((userCard: any, index: number) => {
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                      {listToShow.map((userCard: any, index: number) => {
                         if (!userCard?.card) return null;
                         const card = userCard.card;
                         const sellPriceCredits = Math.floor((card.priceCredits || 0) / 2);
@@ -1240,9 +1422,9 @@ export default function ShopPage() {
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: index * 0.05 }}
                             whileHover={{ scale: 1.05, zIndex: 10 }}
-                            className="flex flex-col bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-sm rounded-xl p-3 border border-white/10 hover:border-green-500/50 shadow-lg hover:shadow-2xl transition-all"
+                            className="flex flex-col bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-sm rounded-xl p-2 border border-white/10 hover:border-green-500/50 shadow-lg hover:shadow-2xl transition-all"
                           >
-                            <div className="relative w-full aspect-[2/3] mb-3 rounded-lg overflow-hidden">
+                            <div className="relative w-full aspect-[2/3] mb-2 rounded-lg overflow-hidden">
                               <CardImage
                                 card={card}
                                 className="w-full h-full object-cover rounded-lg shadow-lg hover:shadow-xl transition-all"
@@ -1259,30 +1441,30 @@ export default function ShopPage() {
                               })()}
                             </div>
                             <div className="space-y-2 flex-1">
-                              <h3 className="text-sm font-bold text-white line-clamp-2 min-h-[2.5rem]" title={card.name}>
+                              <h3 className="text-xs font-bold text-white line-clamp-2 min-h-[2rem]" title={card.name}>
                                 {card.name}
                               </h3>
                               {card.type === 'Monster' && (
                                 <div className="flex gap-1 flex-wrap">
-                                  <div className="bg-red-500/80 backdrop-blur-sm px-2 py-1 rounded-lg text-xs">
+                                  <div className="bg-red-500/80 backdrop-blur-sm px-1.5 py-0.5 rounded text-[10px]">
                                     <span className="text-white font-bold">ATK {card.atk || 0}</span>
                                   </div>
-                                  <div className="bg-blue-500/80 backdrop-blur-sm px-2 py-1 rounded-lg text-xs">
+                                  <div className="bg-blue-500/80 backdrop-blur-sm px-1.5 py-0.5 rounded text-[10px]">
                                     <span className="text-white font-bold">DEF {card.def || 0}</span>
                                   </div>
                                 </div>
                               )}
-                              <div className="flex items-center gap-2 flex-wrap">
+                              <div className="flex items-center gap-1 flex-wrap">
                                 {sellPriceCredits > 0 && (
-                                  <div className="flex items-center gap-1 bg-yellow-500/80 backdrop-blur-sm px-2 py-1 rounded-lg">
-                                    <span className="text-white text-xs">💰</span>
-                                    <span className="text-xs font-bold text-white">{sellPriceCredits}</span>
+                                  <div className="flex items-center gap-0.5 bg-yellow-500/80 backdrop-blur-sm px-2 py-1 rounded text-[10px]">
+                                    <span className="text-white">💰</span>
+                                    <span className="font-bold text-white">{sellPriceCredits}</span>
                                   </div>
                                 )}
                                 {sellPriceCash > 0 && (
-                                  <div className="flex items-center gap-1 bg-green-500/80 backdrop-blur-sm px-2 py-1 rounded-lg">
-                                    <span className="text-white text-xs">💵</span>
-                                    <span className="text-xs font-bold text-white">{sellPriceCash}</span>
+                                  <div className="flex items-center gap-0.5 bg-green-500/80 backdrop-blur-sm px-2 py-1 rounded text-[10px]">
+                                    <span className="text-white">💵</span>
+                                    <span className="font-bold text-white">{sellPriceCash}</span>
                                   </div>
                                 )}
                               </div>
@@ -1306,6 +1488,61 @@ export default function ShopPage() {
                       })}
                     </div>
                   </div>
+
+                  {/* Paginação na aba Vender (cartas) */}
+                  {(totalPages > 1 || currentItems.length > 0) && (
+                    <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
+                      {totalPages > 1 && (
+                        <>
+                          <button
+                            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                            disabled={currentPage === 1}
+                            className="px-4 py-2 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            &lt;
+                          </button>
+                          {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                            const pageNum = i + 1;
+                            return (
+                              <button
+                                key={pageNum}
+                                onClick={() => setCurrentPage(pageNum)}
+                                className={`px-4 py-2 rounded-lg backdrop-blur-sm transition-all ${
+                                  currentPage === pageNum
+                                    ? 'bg-green-600/80 text-white shadow-lg'
+                                    : 'bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20'
+                                }`}
+                              >
+                                {pageNum}
+                              </button>
+                            );
+                          })}
+                          {totalPages > 5 && (
+                            <>
+                              <span className="px-2 text-gray-300">...</span>
+                              <button
+                                onClick={() => setCurrentPage(totalPages)}
+                                className="px-4 py-2 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all"
+                              >
+                                {totalPages}
+                              </button>
+                            </>
+                          )}
+                          <button
+                            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                            disabled={currentPage === totalPages}
+                            className="px-4 py-2 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            &gt;
+                          </button>
+                        </>
+                      )}
+                      <span className="text-white text-sm">
+                        Página {currentPage} de {Math.max(totalPages, 1)} ({currentItems.length} cartas)
+                      </span>
+                    </div>
+                  )}
+                  </>
                   );
                 })()}
               </>
@@ -1322,20 +1559,20 @@ export default function ShopPage() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50 p-4"
             onClick={() => setSelectedCard(null)}
           >
             <motion.div
               initial={{ scale: 0.9 }}
               animate={{ scale: 1 }}
-              className={`bg-gradient-to-br ${
-                selectedCard.rarity === 'Common' ? 'from-gray-600 to-gray-700' :
-                selectedCard.rarity === 'Rare' ? 'from-blue-600 to-blue-700' :
-                selectedCard.rarity === 'Super Rare' ? 'from-purple-600 to-purple-700' :
-                selectedCard.rarity === 'Ultra Rare' ? 'from-yellow-600 to-yellow-700' :
-                selectedCard.rarity === 'Secret Rare' ? 'from-yellow-400 to-orange-500' :
-                'from-gray-600 to-gray-700'
-              } rounded-xl p-6 max-w-md w-full border-2 border-white/20`}
+              className={`bg-gradient-to-br backdrop-blur-xl ${
+                selectedCard.rarity === 'Common' ? 'from-gray-600/80 to-gray-700/80' :
+                selectedCard.rarity === 'Rare' ? 'from-blue-600/80 to-blue-700/80' :
+                selectedCard.rarity === 'Super Rare' ? 'from-purple-600/80 to-purple-700/80' :
+                selectedCard.rarity === 'Ultra Rare' ? 'from-yellow-600/80 to-yellow-700/80' :
+                selectedCard.rarity === 'Secret Rare' ? 'from-yellow-400/80 to-orange-500/80' :
+                'from-gray-600/80 to-gray-700/80'
+              } rounded-xl p-6 max-w-md w-full border-2 border-white/20 shadow-2xl`}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex justify-between items-start mb-4">
@@ -1420,7 +1657,7 @@ export default function ShopPage() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50 p-4"
             onClick={() => {
               setShowPurchaseConfirm(false);
               setPurchaseItem(null);
@@ -1429,7 +1666,7 @@ export default function ShopPage() {
             <motion.div
               initial={{ scale: 0.9 }}
               animate={{ scale: 1 }}
-              className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-6 max-w-md w-full border-2 border-white/20"
+              className="bg-gradient-to-br from-slate-800/70 to-slate-900/70 backdrop-blur-xl rounded-xl p-6 max-w-md w-full border-2 border-white/20 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <h2 className="text-2xl font-bold text-white mb-4">Confirmar Compra</h2>
@@ -1498,13 +1735,13 @@ export default function ShopPage() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50 p-4"
             onClick={() => setSellModal(null)}
           >
             <motion.div
               initial={{ scale: 0.9 }}
               animate={{ scale: 1 }}
-              className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-6 max-w-md w-full border-2 border-white/20"
+              className="bg-gradient-to-br from-slate-800/70 to-slate-900/70 backdrop-blur-xl rounded-xl p-6 max-w-md w-full border-2 border-white/20 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <h2 className="text-2xl font-bold text-white mb-4">Vender carta</h2>

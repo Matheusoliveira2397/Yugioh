@@ -8,7 +8,7 @@ import { getImageUrl } from '../utils/imageUrl';
 
 interface Friend {
   id: number | string;
-  username: string;
+  username?: string;
   nickname: string;
   clanTag?: string;
   profileImage: string | null;
@@ -66,7 +66,6 @@ export default function FriendsPage() {
         const friendsData = Array.isArray(response.data) ? response.data : [];
         setFriends(friendsData.map((friend: any) => ({
           id: friend.id,
-          username: friend.username,
           nickname: friend.nickname,
           clanTag: friend.clanTag,
           profileImage: friend.profileImage || null,
@@ -86,27 +85,37 @@ export default function FriendsPage() {
   }, [token]);
 
   // Buscar solicitações pendentes
-  useEffect(() => {
-    const fetchPendingRequests = async () => {
-      if (!token) return;
-      try {
-        setLoadingRequests(true);
-        const response = await axios.get(`${API_URL}/friends/pending`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setPendingRequests(response.data.received || []);
-      } catch (error) {
-        console.error('Erro ao carregar solicitações:', error);
-        setPendingRequests([]);
-      } finally {
-        setLoadingRequests(false);
-      }
-    };
+  const fetchPendingRequests = async () => {
+    if (!token) return;
+    try {
+      setLoadingRequests(true);
+      const response = await axios.get(`${API_URL}/friends/pending`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setPendingRequests(response.data.received || []);
+    } catch (error) {
+      console.error('Erro ao carregar solicitações:', error);
+      setPendingRequests([]);
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
 
+  useEffect(() => {
     if (activeTab === 'requests') {
       fetchPendingRequests();
     }
   }, [token, activeTab]);
+
+  // Atualizar lista quando chegar solicitação em tempo real
+  useEffect(() => {
+    if (!token) return;
+    const socket = getSocket();
+    if (!socket) return;
+    const onReceived = () => fetchPendingRequests();
+    socket.on('friendRequestReceived', onReceived);
+    return () => { socket.off('friendRequestReceived', onReceived); };
+  }, [token, getSocket]);
 
   const handleAcceptRequest = async (requestId: string) => {
     if (!token) return;
@@ -125,7 +134,6 @@ export default function FriendsPage() {
       const friendsData = Array.isArray(response.data) ? response.data : [];
       setFriends(friendsData.map((friend: any) => ({
         id: friend.id,
-        username: friend.username,
         nickname: friend.nickname,
         clanTag: friend.clanTag,
         profileImage: friend.profileImage || null,
@@ -531,7 +539,7 @@ export default function FriendsPage() {
                           <div className="flex items-center gap-3 mb-3">
                             <img
                               src={getImageUrl(request.user.profileImage)}
-                              alt={request.user.username}
+                              alt={request.user.nickname}
                               className="w-12 h-12 rounded-full border-2 border-yellow-500 object-cover"
                               onError={(e) => {
                                 e.currentTarget.src = '/images/default.png';
@@ -543,7 +551,7 @@ export default function FriendsPage() {
                                   {request.user.clanTag ? `|${request.user.clanTag}| ${request.user.nickname}` : request.user.nickname}
                                 </Link>
                               </p>
-                              <p className="text-sm text-gray-400 truncate">@{request.user.username}</p>
+                              <p className="text-sm text-gray-400 truncate">{request.user.nickname}</p>
                               <p className="text-xs text-gray-500">
                                 {new Date(request.createdAt).toLocaleDateString('pt-BR')}
                               </p>
@@ -595,7 +603,7 @@ export default function FriendsPage() {
                           <div className="relative">
                             <img
                               src={getImageUrl(friend.profileImage)}
-                              alt={friend.username}
+                              alt={friend.nickname}
                               className="w-12 h-12 rounded-full border-2 border-purple-500 object-cover"
                               onError={(e) => {
                                 e.currentTarget.src = '/images/default.png';
@@ -611,7 +619,7 @@ export default function FriendsPage() {
                                 {friend.clanTag ? `|${friend.clanTag}| ${friend.nickname}` : friend.nickname}
                               </Link>
                             </p>
-                            <p className="text-sm text-gray-400 truncate">@{friend.username}</p>
+                            <p className="text-sm text-gray-400 truncate">{friend.nickname}</p>
                             <div className="flex items-center gap-2 text-xs text-gray-500">
                               <span>Nível {friend.level || 1}</span>
                               <span>•</span>
@@ -650,7 +658,7 @@ export default function FriendsPage() {
                     <div className="relative">
                       <img
                         src={getImageUrl(selectedFriend.profileImage)}
-                        alt={selectedFriend.username}
+                        alt={selectedFriend.nickname}
                         className="w-12 h-12 rounded-full border-2 border-purple-500 object-cover"
                         onError={(e) => {
                           e.currentTarget.src = '/images/default.png';

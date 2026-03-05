@@ -160,21 +160,20 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
                 // Criar objeto com informações do oponente para passar ao notifyPlayers
                 const opponentInfo = opponentUser ? {
                   userId: match.opponent.userId,
-                  username: opponentUser.nickname || opponentUser.username,
+                  nickname: opponentUser.nickname || opponentUser.username,
                   clanTag: opponentUser.clanTag,
                   level: opponentUser.level || 1,
                   profileImage: opponentUser.profileImage,
                 } : {
                   userId: match.opponent.userId,
-                  username: 'Unknown',
+                  nickname: 'Unknown',
                   clanTag: null,
                   level: match.opponent.level || 1,
                   profileImage: null,
                 };
                 
-                // Adicionar informações do player1 ao match para uso no notifyPlayers
                 (match as any).player1Info = player1User ? {
-                  username: player1User.nickname || player1User.username,
+                  nickname: player1User.nickname || player1User.username,
                   clanTag: player1User.clanTag,
                   level: player1User.level || 1,
                   profileImage: player1User.profileImage,

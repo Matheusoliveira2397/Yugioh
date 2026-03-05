@@ -424,7 +424,6 @@ export class DuelsService implements OnModuleInit {
           ])
           .leftJoinAndSelect('duel.player1', 'player1', undefined, [
             'player1.id',
-            'player1.username',
             'player1.nickname',
             'player1.equippedPlaymatId',
             'player1.equippedPlaymatImage',
@@ -434,7 +433,6 @@ export class DuelsService implements OnModuleInit {
           ])
           .leftJoinAndSelect('duel.player2', 'player2', undefined, [
             'player2.id',
-            'player2.username',
             'player2.nickname',
             'player2.equippedPlaymatId',
             'player2.equippedPlaymatImage',
@@ -453,7 +451,6 @@ export class DuelsService implements OnModuleInit {
               d.*,
               jsonb_build_object(
                 'id', p1.id,
-                'username', p1.username,
                 'nickname', p1.nickname,
                 'equippedPlaymatId', p1."equippedPlaymatId",
                 'equippedPlaymatImage', p1."equippedPlaymatImage",
@@ -463,7 +460,6 @@ export class DuelsService implements OnModuleInit {
               ) as player1,
               jsonb_build_object(
                 'id', p2.id,
-                'username', p2.username,
                 'nickname', p2.nickname,
                 'equippedPlaymatId', p2."equippedPlaymatId",
                 'equippedPlaymatImage', p2."equippedPlaymatImage",
@@ -14930,6 +14926,7 @@ export class DuelsService implements OnModuleInit {
         (log as any).user = {
           id: entry.userId,
           username: entry.username ?? 'Jogador',
+          nickname: entry.username ?? 'Jogador',
           clanTag: entry.clanTag ?? null,
         };
         return log;
@@ -14967,9 +14964,9 @@ export class DuelsService implements OnModuleInit {
 
       const user = await this.usersRepository.findOne({
         where: { id: userId },
-        select: ['id', 'username', 'clanTag'],
+        select: ['id', 'nickname', 'clanTag'],
       });
-      const username = user?.username ?? 'Jogador';
+      const displayName = user?.nickname ?? 'Jogador';
       const clanTag = user?.clanTag ?? null;
 
       const validActionTypes = Object.values(DuelActionType);
@@ -14981,7 +14978,7 @@ export class DuelsService implements OnModuleInit {
       currentLogs.push({
         id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
         userId,
-        username,
+        username: displayName,
         clanTag,
         actionType: actionTypeToSave,
         message,
@@ -16041,8 +16038,29 @@ export class DuelsService implements OnModuleInit {
         throw saveError;
       }
       
-      (savedDuel as any).player1 = player1;
-      (savedDuel as any).player2 = player2;
+      // Não expor username para outros jogadores; só nickname
+      (savedDuel as any).player1 = {
+        id: player1.id,
+        nickname: player1.nickname,
+        clanTag: (player1 as any).clanTag,
+        profileImage: (player1 as any).profileImage,
+        equippedPlaymatId: (player1 as any).equippedPlaymatId,
+        equippedPlaymatImage: (player1 as any).equippedPlaymatImage,
+        equippedSkinId: (player1 as any).equippedSkinId,
+        equippedSkinImage: (player1 as any).equippedSkinImage,
+        equippedDeckName: (player1 as any).equippedDeckName,
+      };
+      (savedDuel as any).player2 = {
+        id: player2.id,
+        nickname: player2.nickname,
+        clanTag: (player2 as any).clanTag,
+        profileImage: (player2 as any).profileImage,
+        equippedPlaymatId: (player2 as any).equippedPlaymatId,
+        equippedPlaymatImage: (player2 as any).equippedPlaymatImage,
+        equippedSkinId: (player2 as any).equippedSkinId,
+        equippedSkinImage: (player2 as any).equippedSkinImage,
+        equippedDeckName: (player2 as any).equippedDeckName,
+      };
       let cachedDuel = { ...savedDuel } as any;
       
       // Usar os campos originais (não serializados) para o cache em memória
@@ -16768,13 +16786,11 @@ export class DuelsService implements OnModuleInit {
             opponent: opponent ? {
               id: opponent.id,
               nickname: opponent.nickname,
-              username: opponent.username,
               clanTag: opponent.clanTag,
               profileImage: opponent.profileImage,
             } : {
               id: h.opponentId,
               nickname: h.opponentNickname,
-              username: h.opponentUsername,
               clanTag: h.opponentClanTag,
             },
             result: h.result,
@@ -16796,7 +16812,6 @@ export class DuelsService implements OnModuleInit {
             opponent: {
               id: h.opponentId,
               nickname: h.opponentNickname,
-              username: h.opponentUsername,
               clanTag: h.opponentClanTag,
             },
             result: h.result,

@@ -518,12 +518,12 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto pl-2 sm:pl-4 pr-2 sm:pr-4 py-4 sm:py-8 -ml-2 sm:ml-0">
+    <div className="min-h-[calc(100vh-5rem)] flex items-center justify-center px-2 sm:px-4 py-4 sm:py-8">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="rounded-xl overflow-hidden flex flex-col border border-white/20"
-        style={{ height: 'calc(100vh - 8rem)' }}
+        className="w-full max-w-7xl rounded-xl overflow-hidden flex flex-col border border-white/20 shadow-2xl"
+        style={{ height: 'calc(100vh - 8rem)', maxHeight: '900px' }}
       >
           {/* Header */}
           <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 p-3 sm:p-4 shadow-lg">
@@ -627,7 +627,7 @@ export default function ChatPage() {
                     onChange={(e) => setMessageInput(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
                     placeholder="Digite sua mensagem..."
-                    className="flex-1 text-white px-4 py-3 rounded-lg border border-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 bg-gray-800 text-white placeholder-gray-400 px-4 py-3 rounded-lg border border-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     disabled={!isConnected}
                   />
                   <button

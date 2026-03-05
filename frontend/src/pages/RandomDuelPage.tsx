@@ -3,37 +3,13 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { useSocket } from '../hooks/useSocket';
 import { getImageUrl } from '../utils/imageUrl';
+import { getDivisionDisplayName, getDivisionImagePath } from '../utils/divisionDisplay';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-// Função para obter o caminho da imagem da divisão
+// Função para obter o caminho da imagem da divisão (compatível com uso local por estilos)
 const getDivisionImage = (division: string): string | null => {
-  if (!division) return null;
-  
-  // Normalizar o nome da divisão (remover espaços, converter para maiúsculas)
-  const normalizedDivision = division.trim().toUpperCase();
-  
-  // Mapear nomes das divisões para os nomes dos arquivos
-  const divisionMap: { [key: string]: string } = {
-    'BRONZE': 'Bronze',
-    'SILVER': 'Prata',
-    'GOLD': 'Ouro',
-    'PLATINUM': 'Ouro', // Se houver Platinum, usar Ouro como fallback
-    'DIAMOND': 'Diamante',
-    'DIAMANTE': 'Diamante',
-    'MASTER': 'Mestre',
-    'MESTRE': 'Mestre',
-    'LEGENDARY': 'Desafiante',
-    'DESAFIANTE': 'Desafiante',
-    'PRATA': 'Prata',
-    'OURO': 'Ouro',
-  };
-  
-  const divisionName = divisionMap[normalizedDivision];
-  if (!divisionName) return null;
-  
-  // Retornar apenas PNG
-  return `/images/Divisões/${divisionName}.png`;
+  return getDivisionImagePath(division);
 };
 
 interface LevelRange {
@@ -322,7 +298,7 @@ export default function RandomDuelPage() {
                       />
                       <img 
                         src={getImageUrl(duelFound.opponent.profileImage) + (duelFound.opponent.profileImage ? `?t=${Date.now()}` : '')}
-                        alt={duelFound.opponent?.username || 'Oponente'}
+                        alt={duelFound.opponent?.nickname || 'Oponente'}
                         className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 sm:border-4 border-red-500 shadow-lg object-cover"
                         onError={(e) => {
                           e.currentTarget.src = '/images/default.png';
@@ -339,7 +315,7 @@ export default function RandomDuelPage() {
                     <p className="text-white text-base sm:text-lg mb-1 font-semibold">Oponente:</p>
                     <p className="text-xl sm:text-2xl md:text-3xl font-bold text-red-400 drop-shadow-lg break-words">
                       {duelFound.opponent?.clanTag ? `|${duelFound.opponent.clanTag}| ` : ''}
-                      {duelFound.opponent?.nickname || duelFound.opponent?.username || 'Oponente'}
+                      {duelFound.opponent?.nickname || 'Oponente'}
                     </p>
                     {duelFound.opponent?.level && (
                       <p className="text-white/80 mt-1 text-sm sm:text-base">Nível: {duelFound.opponent.level} ⭐</p>
@@ -898,7 +874,7 @@ export default function RandomDuelPage() {
                   />
                   <img 
                     src={getImageUrl(user.profileImage) + (user.profileImage ? `?t=${Date.now()}` : '')} 
-                    alt={user.username}
+                    alt={user.nickname}
                     className="relative w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 rounded-full border-2 sm:border-4 border-purple-500 shadow-lg object-cover"
                     onError={(e) => {
                       e.currentTarget.src = '/images/default.png';
@@ -907,7 +883,7 @@ export default function RandomDuelPage() {
                 </div>
                 <div className="flex-1 text-center md:text-left min-w-0">
                   <div className="text-xl sm:text-2xl md:text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-1">
-                    {user.clanTag ? `|${user.clanTag}| ${user.nickname || user.username}` : (user.nickname || user.username)}
+                    {user.clanTag ? `|${user.clanTag}| ${user.nickname}` : user.nickname}
                   </div>
                   <div className="text-white/70 mb-2 sm:mb-3 text-sm sm:text-base">
                     Nível {user.level || 1} ⭐ Score: {user.totalScore?.toFixed(1) || 0}
@@ -961,23 +937,24 @@ export default function RandomDuelPage() {
                       <div className="flex items-center justify-center gap-1 sm:gap-2">
                         {(() => {
                           const divisionImage = getDivisionImage(user.division || 'Bronze');
-                          const div = (user.division || 'Bronze').toUpperCase();
+                          const div = (user.division || 'Bronze').trim().toUpperCase();
+                          const divNorm = div === 'PRATA' ? 'SILVER' : div === 'OURO' ? 'GOLD' : div === 'DIAMANTE' ? 'DIAMOND' : div === 'MESTRE' ? 'MASTER' : div === 'DESAFIANTE' ? 'LEGENDARY' : div === 'PLATINA' ? 'PLATINUM' : div;
                           const textColor = 
-                            div === 'BRONZE' ? 'text-orange-400' :
-                            div === 'SILVER' ? 'text-gray-300' :
-                            div === 'GOLD' ? 'text-yellow-400' :
-                            div === 'PLATINUM' ? 'text-cyan-400' :
-                            div === 'DIAMOND' ? 'text-blue-400' :
-                            div === 'MASTER' ? 'text-purple-400' :
-                            div === 'LEGENDARY' ? 'text-red-400' :
+                            divNorm === 'BRONZE' ? 'text-orange-400' :
+                            divNorm === 'SILVER' ? 'text-gray-300' :
+                            divNorm === 'GOLD' ? 'text-yellow-400' :
+                            divNorm === 'PLATINUM' ? 'text-cyan-400' :
+                            divNorm === 'DIAMOND' ? 'text-blue-400' :
+                            divNorm === 'MASTER' ? 'text-purple-400' :
+                            divNorm === 'LEGENDARY' ? 'text-red-400' :
                             'text-orange-400';
-                          
+                          const divisionLabel = getDivisionDisplayName(user.division || 'Bronze');
                           return (
                             <>
                               {divisionImage && (
                                 <img 
                                   src={divisionImage} 
-                                  alt={user.division || 'Bronze'}
+                                  alt={divisionLabel}
                                   className="w-10 h-10 sm:w-12 sm:h-12 md:w-16 md:h-16 object-contain drop-shadow-lg"
                                   onError={(e) => {
                                     e.currentTarget.style.display = 'none';
@@ -985,7 +962,7 @@ export default function RandomDuelPage() {
                                 />
                               )}
                               <span className={`text-sm sm:text-lg md:text-xl font-bold ${textColor}`}>
-                                {user.division || 'Bronze'}
+                                {divisionLabel}
                               </span>
                             </>
                           );

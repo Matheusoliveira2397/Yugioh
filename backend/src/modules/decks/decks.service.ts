@@ -145,12 +145,10 @@ export class DecksService implements OnModuleInit {
     const startTime = Date.now();
     logger.debug('💾 [saveCurrentDeck] Salvando deck atual para usuário:', userId, 'cartas:', saveDeckDto.cardIds.length);
     
-    // Validar tamanho do deck principal (mínimo 40 cartas, máximo 60 cartas)
+    // Validar tamanho do deck principal (máximo 60 cartas)
+    // Mínimo 40 cartas só é exigido ao iniciar duelo (preparePlayerDeck), para permitir salvar deck em construção
     if (saveDeckDto.cardIds.length > 60) {
       throw new BadRequestException('Deck principal não pode ter mais de 60 cartas');
-    }
-    if (saveDeckDto.cardIds.length < 40) {
-      throw new BadRequestException('Deck principal não pode ter menos de 40 cartas');
     }
 
     // Validar tamanho do Extra Deck (0-15 cartas)
@@ -197,134 +195,108 @@ export class DecksService implements OnModuleInit {
     // Usar saveDeckDto.cardIds que já foi filtrado acima, ou validCardIds se ainda estiver no escopo
     const validExtraDeckCardIds = extraDeckCardIds.filter(id => id && id.trim() !== '');
     const allCardIds = [...saveDeckDto.cardIds, ...validExtraDeckCardIds];
+    const originalDeckName = saveDeckDto.originalDeckName?.trim() || null;
     if (allCardIds.length > 0) {
-      await this.validateUserCardQuantities(userId, allCardIds, deckName);
-      // Validar limite de cópias por nome da carta (considera todas as skins)
-      await this.validateCardLimitsByName(userId, allCardIds, deckName);
+      await this.validateUserCardQuantities(userId, allCardIds, deckName, originalDeckName);
+      await this.validateCardLimitsByName(userId, allCardIds, deckName, originalDeckName);
     }
-    let deck = await this.decksRepository.findOne({
-      where: { userId, name: deckName },
-    });
 
+    let deck: Deck | null = null;
+    if (originalDeckName) {
+      deck = await this.decksRepository.findOne({
+        where: { userId, name: originalDeckName },
+      });
+      if (deck) {
+        if (deck.name !== deckName) {
+          deck.name = deckName;
+          await this.decksRepository.save(deck);
+          logger.debug('🔄 [saveCurrentDeck] Deck renomeado:', originalDeckName, '->', deckName);
+        } else {
+          logger.debug('🔄 [saveCurrentDeck] Atualizando deck existente (mesmo nome):', deck.id);
+        }
+      }
+    }
     if (!deck) {
-      // Criar novo deck
+      deck = await this.decksRepository.findOne({
+        where: { userId, name: deckName },
+      });
+    }
+    if (!deck) {
       deck = this.decksRepository.create({
         name: deckName,
         userId,
       });
       deck = await this.decksRepository.save(deck);
       logger.debug('✅ [saveCurrentDeck] Novo deck criado:', deck.id);
-    } else {
-      logger.debug('🔄 [saveCurrentDeck] Atualizando deck existente:', deck.id);
     }
 
     // Remover todas as cartas antigas do deck
     const deleteResult = await this.deckCardsRepository.delete({ deckId: deck.id });
     logger.debug('🗑️ [saveCurrentDeck] Cartas antigas removidas:', deleteResult.affected || 0);
 
-    // Adicionar novas cartas ao deck (apenas se houver cartas válidas)
+    // Adicionar novas cartas ao deck (principal e/ou extra)
     const validMainDeckCardIds = saveDeckDto.cardIds.filter(id => id && id.trim() !== '');
-    if (validMainDeckCardIds.length > 0) {
-      logger.debug('📝 [saveCurrentDeck] Criando DeckCards para', validMainDeckCardIds.length, 'cartas...');
+    const hasMain = validMainDeckCardIds.length > 0;
+    const hasExtra = extraDeckCardIds.length > 0;
+    if (hasMain || hasExtra) {
+      logger.debug('📝 [saveCurrentDeck] Criando DeckCards para', validMainDeckCardIds.length, 'cartas principal,', extraDeckCardIds.length, 'extra...');
       
-      // Converter cardIds para IDs (UUID) se necessário
-      // O cardId pode ser id (UUID) ou idCarta, precisamos converter para id (UUID)
+      // Converter cardIds para IDs (UUID) se necessário (usado pelo deck principal e como fallback do extra)
       const cardIdToUuidMap = new Map<string, string>();
       const uniqueCardIds = [...new Set(validMainDeckCardIds)];
       
-      logger.debug('🔍 [saveCurrentDeck] Convertendo', uniqueCardIds.length, 'cardIds únicos para UUIDs...');
-      
-      // Separar UUIDs e idCartas para fazer queries em batch
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      const potentialUuids: string[] = [];
-      const idCartas: string[] = [];
-      
-      for (const cardIdInput of uniqueCardIds) {
-        const trimmedCardId = cardIdInput.trim();
-        if (uuidRegex.test(trimmedCardId)) {
-          potentialUuids.push(trimmedCardId);
-        } else {
-          idCartas.push(trimmedCardId);
-        }
-      }
-      
-      // Buscar cartas por UUID em batch
-      if (potentialUuids.length > 0) {
-        logger.debug('🔍 [saveCurrentDeck] Buscando', potentialUuids.length, 'cartas por UUID...');
-        const cardsById = await this.cardsRepository.find({
-          where: { id: In(potentialUuids) },
-          select: ['id', 'name', 'idCarta']
-        });
-        logger.debug('✅ [saveCurrentDeck] Encontradas', cardsById.length, 'cartas por UUID');
-        for (const card of cardsById) {
-          cardIdToUuidMap.set(card.id, card.id);
-        }
-        // Verificar quais UUIDs não foram encontrados
-        const foundUuids = new Set(cardsById.map(c => c.id));
-        const missingUuids = potentialUuids.filter(uuid => !foundUuids.has(uuid));
-        if (missingUuids.length > 0) {
-          logger.warn('⚠️ [saveCurrentDeck] UUIDs não encontrados:', missingUuids.slice(0, 5));
-        }
-      }
-      
-      // Buscar cartas por idCarta em batch
-      if (idCartas.length > 0) {
-        logger.debug('🔍 [saveCurrentDeck] Buscando', idCartas.length, 'cartas por idCarta...');
-        const cardsByIdCarta = await this.cardsRepository.find({
-          where: { idCarta: In(idCartas) },
-          select: ['id', 'idCarta']
-        });
-        logger.debug('✅ [saveCurrentDeck] Encontradas', cardsByIdCarta.length, 'cartas por idCarta');
-        for (const card of cardsByIdCarta) {
-          cardIdToUuidMap.set(card.idCarta, card.id);
-        }
-        // Verificar quais idCartas não foram encontrados
-        const foundIdCartas = new Set(cardsByIdCarta.map(c => c.idCarta));
-        const missingIdCartas = idCartas.filter(idCarta => !foundIdCartas.has(idCarta));
-        if (missingIdCartas.length > 0) {
-          logger.warn('⚠️ [saveCurrentDeck] idCartas não encontrados:', missingIdCartas.slice(0, 5));
-        }
-      }
-      
-      // Verificar se algum cardId não foi encontrado
-      const missingCardIds: string[] = [];
-      for (const cardIdInput of uniqueCardIds) {
-        const trimmedCardId = cardIdInput.trim();
-        if (!cardIdToUuidMap.has(trimmedCardId)) {
-          logger.error(`❌ [saveCurrentDeck] Carta não encontrada para cardId: "${trimmedCardId}"`);
-          missingCardIds.push(trimmedCardId);
-        }
-      }
-      
-      if (missingCardIds.length > 0) {
-        logger.error(`❌ [saveCurrentDeck] ${missingCardIds.length} cartas não foram encontradas:`, missingCardIds);
-        throw new BadRequestException(
-          `Não foi possível encontrar ${missingCardIds.length} carta(s) no banco de dados. ` +
-          `CardIds não encontrados: ${missingCardIds.slice(0, 5).join(', ')}${missingCardIds.length > 5 ? '...' : ''}`
-        );
-      }
-      
-      logger.debug('✅ [saveCurrentDeck] Conversão concluída. Mapeamento:', cardIdToUuidMap.size, 'de', uniqueCardIds.length, 'cartas');
-      
-      // Criar DeckCards para TODAS as cartas do deck principal (incluindo duplicatas)
-      const mainDeckCardsData = validMainDeckCardIds
-        .map((cardId, index) => {
-          const trimmedCardId = cardId.trim();
-          const uuid = cardIdToUuidMap.get(trimmedCardId);
-          
-          if (!uuid) {
-            throw new BadRequestException(
-              `Erro interno: Não foi possível converter cardId "${trimmedCardId}" para UUID. ` +
-              `Por favor, tente novamente ou entre em contato com o suporte.`
-            );
+      // Deck principal: buscar UUIDs e montar lista (só quando há cartas no principal)
+      let mainDeckCardsData: { deckId: string; cardId: string; isExtraDeck: boolean }[] = [];
+      if (hasMain) {
+        logger.debug('🔍 [saveCurrentDeck] Convertendo', uniqueCardIds.length, 'cardIds únicos (principal) para UUIDs...');
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const potentialUuids: string[] = [];
+        const idCartas: string[] = [];
+        for (const cardIdInput of uniqueCardIds) {
+          const trimmedCardId = cardIdInput.trim();
+          if (uuidRegex.test(trimmedCardId)) {
+            potentialUuids.push(trimmedCardId);
+          } else {
+            idCartas.push(trimmedCardId);
           }
-          
-          return {
-            deckId: deck.id,
-            cardId: uuid,
-            isExtraDeck: false,
-          };
+        }
+        if (potentialUuids.length > 0) {
+          const cardsById = await this.cardsRepository.find({
+            where: { id: In(potentialUuids) },
+            select: ['id', 'name', 'idCarta']
+          });
+          for (const card of cardsById) {
+            cardIdToUuidMap.set(card.id, card.id);
+          }
+        }
+        if (idCartas.length > 0) {
+          const cardsByIdCarta = await this.cardsRepository.find({
+            where: { idCarta: In(idCartas) },
+            select: ['id', 'idCarta']
+          });
+          for (const card of cardsByIdCarta) {
+            cardIdToUuidMap.set(card.idCarta, card.id);
+          }
+        }
+        const missingCardIds: string[] = [];
+        for (const cardIdInput of uniqueCardIds) {
+          const trimmedCardId = cardIdInput.trim();
+          if (!cardIdToUuidMap.has(trimmedCardId)) {
+            missingCardIds.push(trimmedCardId);
+          }
+        }
+        if (missingCardIds.length > 0) {
+          throw new BadRequestException(
+            `Não foi possível encontrar ${missingCardIds.length} carta(s) no banco de dados. ` +
+            `CardIds não encontrados: ${missingCardIds.slice(0, 5).join(', ')}${missingCardIds.length > 5 ? '...' : ''}`
+          );
+        }
+        mainDeckCardsData = validMainDeckCardIds.map((cardId) => {
+          const trimmedCardId = cardId.trim();
+          const uuid = cardIdToUuidMap.get(trimmedCardId)!;
+          return { deckId: deck.id, cardId: uuid, isExtraDeck: false };
         });
+      }
 
       // Criar DeckCards para o Extra Deck
       let extraDeckCardsData: any[] = [];
@@ -614,6 +586,7 @@ export class DecksService implements OnModuleInit {
     userId: number,
     newDeckCardIds: string[],
     deckName: string,
+    excludeDeckName?: string | null,
   ): Promise<void> {
     // 1) Buscar quantas cópias o usuário possui de cada carta
     const userCards = await this.userCardsRepository.find({
@@ -633,8 +606,10 @@ export class DecksService implements OnModuleInit {
       relations: ['cards'],
     });
 
-    // Encontrar o deck atual (mesmo nome) e excluí-lo da contagem anterior
-    const otherDecksFiltered = otherDecks.filter((d) => d.name !== deckName);
+    // Excluir o deck atual (por nome novo e, se renomeando, pelo nome original)
+    const otherDecksFiltered = otherDecks.filter(
+      (d) => d.name !== deckName && (!excludeDeckName || d.name !== excludeDeckName),
+    );
 
     // 3) Somar uso atual em outros decks: cardId -> qtd em todos os outros decks
     const usedInOtherDecks = new Map<string, number>();
@@ -742,6 +717,7 @@ export class DecksService implements OnModuleInit {
     userId: number,
     newDeckCardIds: string[],
     deckName: string,
+    excludeDeckName?: string | null,
   ): Promise<void> {
     if (newDeckCardIds.length === 0) {
       return;
@@ -795,7 +771,9 @@ export class DecksService implements OnModuleInit {
       relations: ['cards', 'cards.card'],
     });
 
-    const otherDecksFiltered = otherDecks.filter((d) => d.name !== deckName);
+    const otherDecksFiltered = otherDecks.filter(
+      (d) => d.name !== deckName && (!excludeDeckName || d.name !== excludeDeckName),
+    );
 
     // 3) Contar cartas por nome em outros decks
     const countByNameInOtherDecks = new Map<string, number>();

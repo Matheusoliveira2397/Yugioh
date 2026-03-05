@@ -13,10 +13,12 @@ import { Season } from '../seasons/entities/season.entity';
 import { GroupMember } from '../groups/entities/group-member.entity';
 import { Group } from '../groups/entities/group.entity';
 import { LevelsModule } from '../levels/levels.module';
+import { Deck } from '../decks/entities/deck.entity';
+import { DeckCard } from '../decks/entities/deck-card.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Achievement, SeasonRanking, Season, GroupMember, Group]),
+    TypeOrmModule.forFeature([User, Achievement, SeasonRanking, Season, GroupMember, Group, Deck, DeckCard]),
     UploadModule,
     MailModule,
     LevelsModule,

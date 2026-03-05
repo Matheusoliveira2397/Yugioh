@@ -131,7 +131,6 @@ export default function NotificationBell() {
     }
 
     function setupListeners(socketInstance: any) {
-      // Escutar mensagens do sistema
       const handleSystemMessage = (data: SystemNotification) => {
         setSystemNotifications(prev => {
           if (prev.some(n => n.id === data.id)) return prev;
@@ -145,10 +144,16 @@ export default function NotificationBell() {
         }
       };
 
+      const handleFriendRequestReceived = () => {
+        fetchPendingRequests();
+      };
+
       socketInstance.on('systemMessage', handleSystemMessage);
+      socketInstance.on('friendRequestReceived', handleFriendRequestReceived);
 
       return () => {
         socketInstance.off('systemMessage', handleSystemMessage);
+        socketInstance.off('friendRequestReceived', handleFriendRequestReceived);
       };
     }
 
@@ -157,6 +162,7 @@ export default function NotificationBell() {
     return () => {
       if (socket) {
         socket.off('systemMessage');
+        socket.off('friendRequestReceived');
       }
     };
   }, [user, token, isConnected, connect, getSocket]);
@@ -326,7 +332,7 @@ export default function NotificationBell() {
                       <div className="flex items-start gap-3 mb-3">
                         <img
                           src={getImageUrl(request.user.profileImage)}
-                          alt={request.user.username}
+                          alt={request.user.nickname}
                           className="w-10 h-10 rounded-full border-2 border-yellow-500 object-cover"
                           onError={(e) => {
                             e.currentTarget.src = '/images/default.png';

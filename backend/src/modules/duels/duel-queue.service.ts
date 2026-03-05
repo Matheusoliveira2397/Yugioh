@@ -172,7 +172,7 @@ export class DuelQueueService implements OnModuleInit, OnModuleDestroy {
           player2Id: task.player2Id,
           opponent: {
             id: task.player2Id,
-            username: (duel as any).player2?.username || 'Unknown',
+            username: (duel as any).player2?.nickname || 'Unknown',
             clanTag: (duel as any).player2?.clanTag || null,
             level: (duel as any).player2?.level || 1,
             profileImage: (duel as any).player2?.profileImage || null,
@@ -190,7 +190,7 @@ export class DuelQueueService implements OnModuleInit, OnModuleDestroy {
           player2Id: task.player2Id,
           opponent: {
             id: task.player1Id,
-            username: (duel as any).player1?.username || 'Unknown',
+            username: (duel as any).player1?.nickname || 'Unknown',
             clanTag: (duel as any).player1?.clanTag || null,
             level: (duel as any).player1?.level || 1,
             profileImage: (duel as any).player1?.profileImage || null,
@@ -205,10 +205,10 @@ export class DuelQueueService implements OnModuleInit, OnModuleDestroy {
           // Notificar ambos os jogadores
         // Criar log de início do duelo
         try {
-          const player1 = await this.duelsService['usersRepository'].findOne({ where: { id: task.player1Id }, select: ['username', 'clanTag'] });
-          const player2 = await this.duelsService['usersRepository'].findOne({ where: { id: task.player2Id }, select: ['username', 'clanTag'] });
-          const player1Name = player1?.clanTag ? `|${player1.clanTag}| ${player1.username}` : player1?.username || 'Jogador 1';
-          const player2Name = player2?.clanTag ? `|${player2.clanTag}| ${player2.username}` : player2?.username || 'Jogador 2';
+          const player1 = await this.duelsService['usersRepository'].findOne({ where: { id: task.player1Id }, select: ['nickname', 'clanTag'] });
+          const player2 = await this.duelsService['usersRepository'].findOne({ where: { id: task.player2Id }, select: ['nickname', 'clanTag'] });
+          const player1Name = player1?.clanTag ? `|${player1.clanTag}| ${player1.nickname}` : player1?.nickname || 'Jogador 1';
+          const player2Name = player2?.clanTag ? `|${player2.clanTag}| ${player2.nickname}` : player2?.nickname || 'Jogador 2';
           
           // Salvar log para ambos os jogadores
           await this.duelsService.saveDuelLog(duelIdStr, task.player1Id, DuelActionType.DUEL_START, `Duelo iniciado: ${player1Name} vs ${player2Name}`);

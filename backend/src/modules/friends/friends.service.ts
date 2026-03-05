@@ -1,4 +1,4 @@
-import { Injectable, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Inject, forwardRef, BadRequestException, ConflictException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Friendship, FriendshipStatus } from './entities/friendship.entity';
@@ -35,7 +35,6 @@ export class FriendsService {
         friendship.user.id === userId ? friendship.friend : friendship.user;
       return {
         id: friend.id,
-        username: friend.username,
         nickname: friend.nickname,
         profileImage: friend.profileImage,
         isOnline: friend.isOnline,
@@ -63,11 +62,11 @@ export class FriendsService {
     }
 
     if (!friend) {
-      throw new Error('Usuário não encontrado');
+      throw new BadRequestException('Usuário não encontrado');
     }
 
     if (friend.id === userId) {
-      throw new Error('Você não pode adicionar a si mesmo');
+      throw new BadRequestException('Você não pode adicionar a si mesmo');
     }
 
     // Verificar se já existe amizade
@@ -81,25 +80,64 @@ export class FriendsService {
 
     if (existingFriendship) {
       if (existingFriendship.status === FriendshipStatus.ACCEPTED) {
-        throw new Error('Vocês já são amigos');
+        throw new ConflictException('Vocês já são amigos');
       } else if (existingFriendship.status === FriendshipStatus.PENDING) {
         if (existingFriendship.user.id === userId) {
-          throw new Error('Você já enviou uma solicitação para este usuário');
+          throw new ConflictException('Você já enviou uma solicitação para este usuário');
         } else {
-          throw new Error('Este usuário já enviou uma solicitação para você');
+          throw new ConflictException('Este usuário já enviou uma solicitação para você');
         }
-      } else {
-        throw new Error('Solicitação já existe');
       }
+      // REJECTED ou BLOCKED: permitir reenviar (reativar como PENDING)
+      existingFriendship.userId = userId;
+      existingFriendship.friendId = friend.id;
+      existingFriendship.user = { id: userId } as User;
+      existingFriendship.friend = friend;
+      existingFriendship.status = FriendshipStatus.PENDING;
+      const saved = await this.friendshipRepository.save(existingFriendship);
+      try {
+        const sender = await this.userRepository.findOne({ where: { id: userId } });
+        this.friendsGateway.emitFriendRequestReceived(friend.id, {
+          id: saved.id,
+          user: {
+            id: userId,
+            nickname: sender?.nickname ?? '',
+            profileImage: sender?.profileImage ?? null,
+            isOnline: sender?.isOnline ?? false,
+            level: sender?.level ?? 1,
+          },
+          createdAt: saved.createdAt,
+        });
+      } catch (e) {
+        // não falhar se websocket falhar
+      }
+      return saved;
     }
 
     const friendship = this.friendshipRepository.create({
-      userId: userId,
-      friendId: friend.id,
+      user: { id: userId } as User,
+      friend,
       status: FriendshipStatus.PENDING,
     });
 
-    return this.friendshipRepository.save(friendship);
+    const saved = await this.friendshipRepository.save(friendship);
+    try {
+      const sender = await this.userRepository.findOne({ where: { id: userId } });
+      this.friendsGateway.emitFriendRequestReceived(friend.id, {
+        id: saved.id,
+        user: {
+          id: userId,
+          nickname: sender?.nickname ?? '',
+          profileImage: sender?.profileImage ?? null,
+          isOnline: sender?.isOnline ?? false,
+          level: sender?.level ?? 1,
+        },
+        createdAt: saved.createdAt,
+      });
+    } catch (e) {
+      // não falhar se websocket falhar
+    }
+    return saved;
   }
 
   // Verificar status de amizade entre dois usuários
@@ -117,15 +155,21 @@ export class FriendsService {
       return { status: 'none', friendship: null };
     }
 
-    // Determinar se o usuário atual enviou ou recebeu a solicitação
     const isSender = friendship.userId === userId;
-    
+    const other = isSender ? friendship.friend : friendship.user;
     return {
       status: friendship.status,
       friendship: {
         id: friendship.id,
         isSender,
-        otherUser: isSender ? friendship.friend : friendship.user,
+        otherUser: other ? {
+          id: other.id,
+          nickname: other.nickname,
+          profileImage: other.profileImage,
+          isOnline: other.isOnline,
+          level: other.level ?? 1,
+          clanTag: other.clanTag ?? null,
+        } : null,
       },
     };
   }
@@ -153,7 +197,6 @@ export class FriendsService {
         id: f.id,
         user: {
           id: f.friend.id,
-          username: f.friend.username,
           nickname: f.friend.nickname,
           profileImage: f.friend.profileImage,
           isOnline: f.friend.isOnline,
@@ -165,7 +208,6 @@ export class FriendsService {
         id: f.id,
         user: {
           id: f.user.id,
-          username: f.user.username,
           nickname: f.user.nickname,
           profileImage: f.user.profileImage,
           isOnline: f.user.isOnline,
@@ -184,12 +226,12 @@ export class FriendsService {
     });
 
     if (!friendship) {
-      throw new Error('Solicitação não encontrada');
+      throw new NotFoundException('Solicitação não encontrada');
     }
 
     // Verificar se o usuário é o destinatário da solicitação
     if (friendship.friend.id !== userId) {
-      throw new Error('Você não pode aceitar esta solicitação');
+      throw new ForbiddenException('Você não pode aceitar esta solicitação');
     }
 
     friendship.status = FriendshipStatus.ACCEPTED;
@@ -204,11 +246,48 @@ export class FriendsService {
     });
 
     if (!friendship) {
-      throw new Error('Solicitação não encontrada');
+      throw new NotFoundException('Solicitação não encontrada');
     }
 
     if (friendship.friend.id !== userId) {
-      throw new Error('Você não pode rejeitar esta solicitação');
+      throw new ForbiddenException('Você não pode rejeitar esta solicitação');
+    }
+
+    friendship.status = FriendshipStatus.REJECTED;
+    return this.friendshipRepository.save(friendship);
+  }
+
+  // Cancelar solicitação enviada (apenas quem enviou pode cancelar)
+  async cancelFriendRequest(userId: number, otherUserId: number) {
+    const friendship = await this.friendshipRepository.findOne({
+      where: {
+        userId,
+        friendId: otherUserId,
+        status: FriendshipStatus.PENDING,
+      },
+      relations: ['user', 'friend'],
+    });
+
+    if (!friendship) {
+      throw new NotFoundException('Solicitação não encontrada ou já foi respondida');
+    }
+
+    friendship.status = FriendshipStatus.REJECTED;
+    return this.friendshipRepository.save(friendship);
+  }
+
+  // Remover amizade (qualquer um dos dois pode remover)
+  async removeFriend(userId: number, otherUserId: number) {
+    const friendship = await this.friendshipRepository.findOne({
+      where: [
+        { userId, friendId: otherUserId, status: FriendshipStatus.ACCEPTED },
+        { userId: otherUserId, friendId: userId, status: FriendshipStatus.ACCEPTED },
+      ],
+      relations: ['user', 'friend'],
+    });
+
+    if (!friendship) {
+      throw new NotFoundException('Amizade não encontrada ou já removida');
     }
 
     friendship.status = FriendshipStatus.REJECTED;
@@ -266,7 +345,7 @@ export class FriendsService {
     });
 
     if (!areFriends) {
-      throw new Error('Vocês não são amigos');
+      throw new BadRequestException('Vocês não são amigos');
     }
 
     const message = this.messageRepository.create({
@@ -281,10 +360,10 @@ export class FriendsService {
     // Buscar informações do remetente para enviar via WebSocket
     const sender = await this.userRepository.findOne({
       where: { id: senderId },
-      select: ['id', 'username', 'nickname', 'clanTag', 'profileImage'],
+      select: ['id', 'nickname', 'clanTag', 'profileImage'],
     });
 
-    // Formatar mensagem para o frontend
+    // Formatar mensagem para o frontend (exibir apenas nickname, não username)
     const messageData = {
       id: savedMessage.id,
       senderId: savedMessage.senderId.toString(),
@@ -292,8 +371,8 @@ export class FriendsService {
       content: savedMessage.content,
       createdAt: savedMessage.createdAt.toISOString(),
       read: savedMessage.read,
-      username: sender?.username || 'Usuário',
-      nickname: sender?.nickname || sender?.username || 'Usuário',
+      username: sender?.nickname || 'Usuário',
+      nickname: sender?.nickname || 'Usuário',
       clanTag: sender?.clanTag,
       profileImage: sender?.profileImage,
     };

@@ -613,9 +613,11 @@ export default function AdminPlayersPanel() {
                     <p className="text-gray-400 text-sm">Role</p>
                     <p className="text-white font-semibold">{selectedPlayer.role}</p>
                   </div>
-                  <div className="bg-gray-800/50 p-4 rounded-lg">
+                  <div className="bg-gray-800/50 p-4 rounded-lg min-w-0 overflow-hidden">
                     <p className="text-gray-400 text-sm">Último IP</p>
-                    <p className="text-white font-semibold font-mono">{selectedPlayer.lastIpAddress || 'N/A'}</p>
+                    <p className="text-white font-semibold font-mono break-all" title={selectedPlayer.lastIpAddress || undefined}>
+                      {selectedPlayer.lastIpAddress || 'N/A'}
+                    </p>
                   </div>
                   <div className="bg-gray-800/50 p-4 rounded-lg">
                     <p className="text-gray-400 text-sm">Último Login</p>
@@ -643,12 +645,13 @@ export default function AdminPlayersPanel() {
                 </div>
 
                 {selectedPlayer.ipHistory && selectedPlayer.ipHistory.length > 0 && (
-                  <div className="bg-gray-800/50 p-4 rounded-lg">
+                  <div className="bg-gray-800/50 p-4 rounded-lg min-w-0 overflow-hidden">
                     <p className="text-gray-400 text-sm mb-2">Histórico de IPs</p>
-                    <div className="space-y-1 max-h-40 overflow-y-auto">
+                    <div className="space-y-1 max-h-40 overflow-y-auto overflow-x-hidden">
                       {selectedPlayer.ipHistory.map((entry, idx) => (
-                        <div key={idx} className="text-sm text-gray-300 font-mono">
-                          {entry.ip} - {new Date(entry.timestamp).toLocaleString('pt-BR')}
+                        <div key={idx} className="text-sm text-gray-300 font-mono break-all min-w-0">
+                          <span className="break-all" title={entry.ip}>{entry.ip}</span>
+                          <span className="text-gray-500"> - {new Date(entry.timestamp).toLocaleString('pt-BR')}</span>
                         </div>
                       ))}
                     </div>

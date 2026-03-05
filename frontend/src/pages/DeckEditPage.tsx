@@ -53,6 +53,8 @@ export default function DeckEditPage() {
   const [saving, setSaving] = useState(false);
   const [selectedCard, setSelectedCard] = useState<UserCard | null>(null);
   const [deckName, setDeckName] = useState(initialDeckName);
+  /** Nome do deck ao carregar (para enviar no save e renomear em vez de criar outro) */
+  const [originalDeckNameForSave, setOriginalDeckNameForSave] = useState<string | null>(null);
   const [deckLoaded, setDeckLoaded] = useState(false);
   const [maletaSearch, setMaletaSearch] = useState('');
   const [maletaFilterType, setMaletaFilterType] = useState<string>('all');
@@ -65,8 +67,13 @@ export default function DeckEditPage() {
   const deckRef = useRef(deck);
   const extraDeckRef = useRef(extraDeck);
   const deckNameRef = useRef(deckName);
+  const originalDeckNameRef = useRef<string | null>(originalDeckNameForSave);
   const loadMaletaRef = useRef<(() => Promise<void>) | null>(null);
-  
+
+  useEffect(() => {
+    originalDeckNameRef.current = originalDeckNameForSave;
+  }, [originalDeckNameForSave]);
+
   // Atualizar refs quando o estado mudar
   useEffect(() => {
     deckRef.current = deck;
@@ -144,14 +151,18 @@ export default function DeckEditPage() {
           })
           .filter((cardId): cardId is string => cardId !== null && cardId !== undefined && cardId.trim() !== '');
 
-        const payload = {
+        const payload: Record<string, unknown> = {
           name: currentDeckName.trim() || 'Meu Deck',
           cardIds,
           extraDeckCardIds: extraDeckCardIds.length > 0 ? extraDeckCardIds : undefined,
         };
+        if (originalDeckNameRef.current) {
+          payload.originalDeckName = originalDeckNameRef.current;
+        }
 
         console.log('📤 [saveDeckImmediately] Enviando payload:', {
           name: payload.name,
+          originalDeckName: payload.originalDeckName,
           cardIdsCount: payload.cardIds.length,
           extraDeckCardIdsCount: payload.extraDeckCardIds?.length || 0,
           first5CardIds: payload.cardIds.slice(0, 5)
@@ -163,7 +174,8 @@ export default function DeckEditPage() {
           deckName: res.data?.name,
           cardsCount: res.data?.cards?.length || 0
         });
-        
+        setOriginalDeckNameForSave(currentDeckName.trim() || 'Meu Deck');
+
         // Recarregar a maleta após salvar para garantir sincronização com todos os decks
         // Isso garante que a maleta mostre apenas cartas que não estão em nenhum deck
         // Usar uma ref para evitar dependência circular
@@ -411,9 +423,11 @@ export default function DeckEditPage() {
         
         setDeck(loadedDeck);
         setExtraDeck(loadedExtraDeck);
+        const loadedName = res.data.name || deckNameToLoad;
         if (res.data.name) {
           setDeckName(res.data.name);
         }
+        setOriginalDeckNameForSave(loadedName || null);
       } else {
         console.warn('⚠️ [loadDeck] Resposta sem dados');
       }
@@ -437,6 +451,7 @@ export default function DeckEditPage() {
         // Novo deck: começar vazio e não carregar do backend
         setDeck(Array(60).fill(null));
         setDeckName('Novo Deck');
+        setOriginalDeckNameForSave(null);
         setDeckLoaded(true);
       } else if (allUserCards.length >= 0) {
         // Carregar deck mesmo se maleta estiver vazia (pode ter cartas no deck que não estão na maleta)
@@ -864,18 +879,22 @@ export default function DeckEditPage() {
       })
       .filter((cardId) => cardId && cardId.trim() !== '');
 
-    const payload = {
+    const payload: Record<string, unknown> = {
         name: deckName.trim() || 'Meu Deck',
         cardIds,
         extraDeckCardIds: extraDeckCardIds.length > 0 ? extraDeckCardIds : undefined,
       };
-      
+      if (originalDeckNameForSave) {
+        payload.originalDeckName = originalDeckNameForSave;
+      }
+
       console.log('📤 Enviando payload:', { ...payload, cardIds: `[${cardIds.length} cards]` });
-      
+
       const res = await api.put('/decks/current', payload);
-      
+
       console.log('✅ Resposta do servidor:', res.data);
       console.log('✅ Deck salvo com sucesso!');
+      setOriginalDeckNameForSave(deckName.trim() || 'Meu Deck');
       if (!silent) {
         alert(`✅ Deck "${deckName}" salvo com sucesso!`);
       }
@@ -939,15 +958,19 @@ export default function DeckEditPage() {
           .map(slot => slot!.cardId || slot!.card?.id || (slot!.card as any)?.idCarta)
           .filter(cardId => cardId && cardId.trim() !== '');
 
-        const payload = {
+        const payload: Record<string, unknown> = {
           name: currentDeckName.trim() || 'Meu Deck',
           cardIds,
           extraDeckCardIds: extraDeckCardIds.length > 0 ? extraDeckCardIds : undefined,
         };
+        if (originalDeckNameRef.current) {
+          payload.originalDeckName = originalDeckNameRef.current;
+        }
 
         setSaving(true);
         const res = await api.put('/decks/current', payload);
         console.log('✅ [autoSave] Deck salvo automaticamente com sucesso!', res.data);
+        setOriginalDeckNameForSave(currentDeckName.trim() || 'Meu Deck');
       } catch (error: any) {
         console.error('❌ [autoSave] Erro ao salvar deck automaticamente:', error);
         console.error('❌ [autoSave] Detalhes:', error.response?.data || error.message);
@@ -1015,12 +1038,20 @@ export default function DeckEditPage() {
                 maxLength={50}
               />
             </div>
-            <div className="flex gap-2 items-center">
+            <div className="flex gap-2 items-center flex-wrap">
               {saving && (
                 <span className="text-purple-400 text-sm flex items-center gap-2">
                   <span className="animate-spin">⏳</span> Salvando...
                 </span>
               )}
+              <button
+                onClick={() => saveDeck(false)}
+                disabled={saving}
+                className="bg-green-500/30 backdrop-blur-sm border-2 border-green-500/70 hover:bg-green-500/40 text-green-200 px-4 py-2 rounded-lg font-semibold transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                title="Salvar o deck no servidor"
+              >
+                💾 Salvar deck
+              </button>
               {getDeckCount() > 0 && (
                 <button
                   onClick={() => {
@@ -1180,17 +1211,6 @@ export default function DeckEditPage() {
                 </p>
               </div>
             </div>
-            <button
-              onClick={loadMaleta}
-              disabled={loading}
-              className="self-start sm:self-center px-4 py-2 rounded-lg font-semibold text-sm transition-all border border-amber-500/50 bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 hover:border-amber-400/60 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {loading ? (
-                <> <span className="animate-spin">⏳</span> Carregando...</>
-              ) : (
-                <>🔄 Atualizar</>
-              )}
-            </button>
           </div>
 
           {loading ? (

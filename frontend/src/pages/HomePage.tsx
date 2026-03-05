@@ -111,7 +111,7 @@ export default function HomePage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-4xl font-bold mb-2">
-              Bem-vindo, {user?.username}! 👋
+              Bem-vindo, {user?.nickname}! 👋
             </h1>
             <div className="flex gap-6 text-lg">
               <div>
@@ -225,7 +225,7 @@ export default function HomePage() {
                           {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
                         </span>
                         <div>
-                          <p className="font-bold text-lg">{player.username}</p>
+                          <p className="font-bold text-lg">{player.nickname}</p>
                           <p className="text-sm text-gray-300">
                             {player.wins || 0}V - {player.losses || 0}D
                           </p>

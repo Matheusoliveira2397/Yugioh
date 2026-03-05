@@ -129,12 +129,14 @@ export default function AdminSiteTabsPanel() {
                 tab.isActive ? 'border-green-500/50' : 'border-gray-700/50'
               }`}
             >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <span className="text-3xl">{tab.icon}</span>
-                  <div>
-                    <h3 className="text-lg font-bold text-white">{tab.label}</h3>
-                    <p className="text-xs text-gray-400">{tab.route}</p>
+              <div className="flex items-center justify-between mb-3 min-w-0">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <span className="flex-shrink-0 w-10 h-10 flex items-center justify-center text-2xl bg-gray-700/50 rounded-lg overflow-hidden min-w-[2.5rem]" title={tab.icon || undefined}>
+                    <span className="overflow-hidden text-ellipsis max-w-full block truncate">{tab.icon || '📑'}</span>
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-lg font-bold text-white truncate" title={tab.label}>{tab.label}</h3>
+                    <p className="text-xs text-gray-400 truncate" title={tab.route}>{tab.route}</p>
                   </div>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">

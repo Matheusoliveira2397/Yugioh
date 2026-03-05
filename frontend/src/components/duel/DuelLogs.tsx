@@ -14,10 +14,11 @@ interface DuelLogsProps {
 }
 
 const DuelLogs: React.FC<DuelLogsProps> = ({ logs }) => {
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const logsContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = logsContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   };
 
   useEffect(() => {
@@ -82,7 +83,7 @@ const DuelLogs: React.FC<DuelLogsProps> = ({ logs }) => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
+      <div ref={logsContainerRef} className="flex-1 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
             {logs.length === 0 ? (
               <div className="text-center py-8 text-slate-400 text-xs">
                 <p>Nenhuma ação registrada</p>
@@ -126,7 +127,6 @@ const DuelLogs: React.FC<DuelLogsProps> = ({ logs }) => {
                 })}
               </div>
             )}
-            <div ref={logsEndRef} />
       </div>
     </motion.div>
   );

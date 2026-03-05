@@ -205,21 +205,8 @@ export class ArenaService implements OnModuleInit {
     await this.arenaRepository.decrement({ id: arenaId }, 'participants', 1);
   }
 
-  // Criar arenas automaticamente a cada 6 horas
-  @Cron('0 0,6,12,18 * * *') // 00:00, 06:00, 12:00, 18:00
-  async scheduleArenas() {
-    console.log('🏟️  Agendando próximas arenas de desafios...');
-    
-    const now = new Date();
-    const nextArena = await this.getNextArena();
-
-    // Se não há próxima arena agendada, criar uma para daqui a 6 horas
-    if (!nextArena) {
-      const startTime = new Date(now.getTime() + 6 * 60 * 60 * 1000);
-      await this.createArena(startTime, 2);
-      console.log(`✅ Nova arena agendada para ${startTime.toLocaleString('pt-BR')}`);
-    }
-  }
+  // Arenas são criadas APENAS pelos Horários de Arena (arena_schedules) via ArenaScheduleService.createTodayArenas().
+  // Não criar arenas em horários fixos (0, 6, 12, 18) para evitar arena em horários aleatórios.
 
   // Limpar arenas antigas
   @Cron(CronExpression.EVERY_DAY_AT_3AM)

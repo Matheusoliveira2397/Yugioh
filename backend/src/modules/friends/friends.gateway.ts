@@ -101,5 +101,14 @@ export class FriendsGateway implements OnGatewayInit, OnGatewayConnection, OnGat
       console.log(`User ${receiverId} is not currently connected via WebSocket, system message will be delivered when they connect.`);
     }
   }
+
+  // Notificar destinatário que recebeu uma solicitação de amizade
+  emitFriendRequestReceived(receiverId: number, requestData: any) {
+    this.server.sockets.sockets.forEach((socket) => {
+      if (socket.data.userId === receiverId && socket.connected) {
+        socket.emit('friendRequestReceived', requestData);
+      }
+    });
+  }
 }
 

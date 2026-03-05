@@ -1466,15 +1466,19 @@ export class GroupsService implements OnModuleInit {
         throw new NotFoundException('Grupo não encontrado');
       }
 
-      // Contar membros ativos
       const activeMembersCount = group.members?.filter(m => m.isActive).length || 0;
-      
-      // Log para debug
       this.logger.log(`📊 [getGroup] Grupo ${groupId} - totalScore: ${group.totalScore}, seasonScore: ${group.seasonScore}, totalCash: ${group.totalCash}, membros ativos: ${activeMembersCount}`);
-      
-      // Adicionar contagem de membros ao objeto retornado
+
+      const sanitizedMembers = (group.members || []).map((m: any) => ({
+        ...m,
+        user: m.user ? { id: m.user.id, nickname: m.user.nickname, profileImage: m.user.profileImage, level: m.user.level ?? 1, clanTag: m.user.clanTag ?? null } : null,
+      }));
+      const leader = (group as any).leader;
+      const sanitizedLeader = leader ? { id: leader.id, nickname: leader.nickname, profileImage: leader.profileImage, level: leader.level ?? 1, clanTag: leader.clanTag ?? null } : null;
       return {
         ...group,
+        leader: sanitizedLeader,
+        members: sanitizedMembers,
         memberCount: activeMembersCount,
       } as any;
     } catch (error: any) {
@@ -1516,8 +1520,16 @@ export class GroupsService implements OnModuleInit {
 
         const activeMembersCount = group.members?.filter(m => m.isActive).length || 0;
         this.logger.log(`📊 [getGroup] Grupo ${groupId} (fallback) - totalScore: ${group.totalScore}, seasonScore: ${group.seasonScore}`);
+        const sanitizedMembers = (group.members || []).map((m: any) => ({
+          ...m,
+          user: m.user ? { id: m.user.id, nickname: m.user.nickname, profileImage: m.user.profileImage, level: m.user.level ?? 1, clanTag: m.user.clanTag ?? null } : null,
+        }));
+        const leader = (group as any).leader;
+        const sanitizedLeader = leader ? { id: leader.id, nickname: leader.nickname, profileImage: leader.profileImage, level: leader.level ?? 1, clanTag: leader.clanTag ?? null } : null;
         return {
           ...group,
+          leader: sanitizedLeader,
+          members: sanitizedMembers,
           memberCount: activeMembersCount,
         } as any;
       }

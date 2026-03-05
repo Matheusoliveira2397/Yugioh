@@ -135,7 +135,7 @@ export default function ActiveDuelsPage() {
                       <h3 className="text-xl font-bold mb-2">
                         vs <Link to={`/profile/${opponent.id}`} className="hover:text-purple-400 transition-colors cursor-pointer">
                           {opponent.clanTag ? `|${opponent.clanTag}| ` : ''}
-                          {opponent.nickname || opponent.username}
+                          {opponent.nickname}
                         </Link>
                       </h3>
                       <p className="text-sm text-gray-400">

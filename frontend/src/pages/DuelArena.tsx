@@ -154,11 +154,16 @@ const DuelArena: React.FC = () => {
         });
       }
     } else {
-      // Ataque direto - mostrar carta atacante x perfil do duelista alvo
-      const targetProfileImage = opponent?.profileImage 
-        ? getImageUrl(opponent.profileImage)
+      // Ataque direto - mostrar perfil do OPONENTE como alvo (quem recebe o ataque)
+      const myIdNum = user?.id != null ? (typeof user.id === 'string' ? parseInt(String(user.id), 10) : Number(user.id)) : null;
+      const p1 = duelData?.player1;
+      const p2 = duelData?.player2;
+      const p1Id = p1?.id != null ? (typeof p1.id === 'string' ? parseInt(String(p1.id), 10) : Number(p1.id)) : null;
+      const targetPlayer = (p1Id !== null && p1Id === myIdNum) ? p2 : p1;
+      const targetProfileImage = targetPlayer?.profileImage
+        ? getImageUrl(targetPlayer.profileImage)
         : '/images/default.png';
-      
+
       setAttackAnimation({
         attackerCard,
         targetCard: null,
@@ -234,6 +239,7 @@ const DuelArena: React.FC = () => {
   const [showExtraDeckModal, setShowExtraDeckModal] = useState(false);
   const [showOpponentGraveyardModal, setShowOpponentGraveyardModal] = useState(false);
   const [showOpponentExtraDeckModal, setShowOpponentExtraDeckModal] = useState(false);
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
   
   // Estado para mostrar mão do oponente virada (The Forceful Sentry ou Confiscation)
   const [showOpponentHandRevealed, setShowOpponentHandRevealed] = useState(false);
@@ -635,8 +641,8 @@ const DuelArena: React.FC = () => {
         const winnerId = data.winnerId;
         const result = data.result;
         const winnerName = winnerId === data.player1Id 
-          ? (data.player1?.nickname || data.player1?.username || 'Jogador 1')
-          : (data.player2?.nickname || data.player2?.username || 'Jogador 2');
+          ? (data.player1?.nickname || 'Jogador 1')
+          : (data.player2?.nickname || 'Jogador 2');
         
         setDuelEndedData({
           status: 'FINISHED',
@@ -3344,7 +3350,7 @@ const DuelArena: React.FC = () => {
                 }`}></div>
                 <img
                   src={getImageUrl(myPlayer?.profileImage) + (myPlayer?.profileImage ? `?t=${Date.now()}` : '')}
-                  alt={myPlayer?.nickname || myPlayer?.username}
+                  alt={myPlayer?.nickname}
                   className="relative w-32 h-32 rounded-full border-4 border-white shadow-lg object-cover mx-auto"
                   onError={(e) => {
                     e.currentTarget.src = '/images/default.png';
@@ -3352,7 +3358,7 @@ const DuelArena: React.FC = () => {
                 />
               </div>
               <h3 className="text-2xl font-bold text-white mt-4 mb-1">
-                {myPlayer?.clanTag ? `|${myPlayer.clanTag}| ` : ''}{myPlayer?.nickname || myPlayer?.username || 'Jogador'}
+                {myPlayer?.clanTag ? `|${myPlayer.clanTag}| ` : ''}{myPlayer?.nickname || 'Jogador'}
               </h3>
               <p className={`text-xl font-bold ${
                 isWinner ? 'text-yellow-400' : isDraw ? 'text-gray-400' : 'text-red-400'
@@ -3370,7 +3376,7 @@ const DuelArena: React.FC = () => {
             <div className="mb-6">
               <p className="text-lg text-gray-300 mb-2">vs</p>
               <p className="text-xl font-bold text-white">
-                {opponentPlayer?.clanTag ? `|${opponentPlayer.clanTag}| ` : ''}{opponentPlayer?.nickname || opponentPlayer?.username || 'Oponente'}
+                {opponentPlayer?.clanTag ? `|${opponentPlayer.clanTag}| ` : ''}{opponentPlayer?.nickname || 'Oponente'}
               </p>
             </div>
 
@@ -3580,24 +3586,44 @@ const DuelArena: React.FC = () => {
           transition={{ duration: 0.5, ease: "easeOut" }}
           className="flex flex-col mb-1 py-1.5 bg-black/20 border-b-2 border-white/10 shadow-2xl"
         >
-          <div className="flex gap-0">
-            {/* Espaço para o sidebar esquerdo (mesma largura do chat) */}
-            <div className="w-[320px] flex-shrink-0"></div>
-            
-            {/* Container centralizado alinhado com os campos de batalha */}
-            <div className="flex-1">
-            </div>
+          <div className="flex gap-0 w-full">
+            {/* Espaço para o sidebar esquerdo (apenas desktop) */}
+            <div className="hidden lg:block w-[320px] flex-shrink-0" aria-hidden="true"></div>
+            <div className="flex-1 min-w-0"></div>
           </div>
         </motion.div>
 
-      <div className="flex gap-0 flex-1 overflow-hidden">
-          {/* Painel Esquerdo: Chat e Logs - Modernizado */}
+      <div className="flex gap-0 flex-1 overflow-hidden relative w-full">
+          {/* Backdrop mobile: fecha o drawer ao clicar */}
+          <div
+            aria-hidden="true"
+            className={`fixed inset-0 bg-black/60 z-40 transition-opacity duration-300 lg:hidden ${mobileChatOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+            onClick={() => setMobileChatOpen(false)}
+          />
+          {/* Botão abrir Chat/Logs no mobile */}
+          <button
+            type="button"
+            onClick={() => setMobileChatOpen(true)}
+            className="fixed left-2 top-20 z-30 lg:hidden flex items-center justify-center w-10 h-10 rounded-xl bg-purple-600/90 hover:bg-purple-500 border-2 border-purple-400/70 text-white shadow-lg touch-manipulation"
+            aria-label="Abrir chat e logs"
+          >
+            <span className="text-lg">💬</span>
+          </button>
+          {/* Painel Esquerdo: Chat e Logs - drawer no mobile, fixo no desktop */}
           <motion.div 
             initial={{ x: -300, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.2 }}
-            className="w-[320px] flex-shrink-0 space-y-3 bg-transparent h-full overflow-y-auto pr-2"
+            className={`fixed lg:relative left-0 top-0 bottom-0 z-50 lg:z-auto w-[280px] max-w-[85vw] lg:w-[320px] lg:max-w-none flex-shrink-0 space-y-3 bg-gray-900/95 lg:bg-transparent backdrop-blur-md lg:backdrop-blur-none border-r border-white/10 lg:border-r-0 h-full overflow-y-auto pr-2 pt-14 lg:pt-0 transition-transform duration-300 ease-out ${mobileChatOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
           >
+            <button
+              type="button"
+              onClick={() => setMobileChatOpen(false)}
+              className="lg:hidden absolute top-2 right-2 w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-lg"
+              aria-label="Fechar chat"
+            >
+              ×
+            </button>
             <DuelChat
               messages={chatMessages}
               onSendMessage={(message) => {
@@ -3676,15 +3702,15 @@ const DuelArena: React.FC = () => {
             )}
           </motion.div>
 
-          {/* Arena Principal - Modernizado */}
+          {/* Arena Principal - full width no mobile, centralizado no desktop */}
           <motion.div 
             ref={duelFieldContainerRef}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
-            className="flex-1 space-y-1 overflow-y-auto pb-1 relative"
+            className="flex-1 min-w-0 space-y-1 overflow-x-hidden overflow-y-auto pb-1 relative"
           >
-            <div className="max-w-5xl mx-auto w-full">
+            <div className="max-w-5xl mx-auto w-full px-0.5 sm:px-2">
             {/* Linha 1: Perfis dos Duelistas e Timer - Alinhados na mesma linha do topo do playmat */}
             <div className="relative flex flex-col sm:flex-row items-start justify-between w-full px-2 sm:px-4 mb-2 gap-2 sm:gap-0">
             {/* MEU DUELISTA (Esquerda) - Modernizado */}
@@ -3708,19 +3734,19 @@ const DuelArena: React.FC = () => {
               src={
                 bottomPanelUser?.profileImage 
                   ? getImageUrl(bottomPanelUser.profileImage) 
-                  : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(bottomPanelUser?.username || bottomPanelUser?.nickname || 'P1') + '&background=3b82f6&color=fff&size=128'
+                  : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(bottomPanelUser?.nickname || 'P1') + '&background=3b82f6&color=fff&size=128'
               } 
-              alt={bottomPanelUser?.username || bottomPanelUser?.nickname || ''}
+              alt={bottomPanelUser?.nickname || ''}
               className="w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-lg sm:rounded-xl border-2 border-blue-400/70 object-cover shadow-lg shadow-blue-500/30 ring-2 ring-blue-500/20"
               onError={(e) => {
-                e.currentTarget.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(bottomPanelUser?.username || 'P1') + '&background=3b82f6&color=fff&size=128';
+                e.currentTarget.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(bottomPanelUser?.nickname || 'P1') + '&background=3b82f6&color=fff&size=128';
               }}
             />
             
             {/* Info: Clan + Nick + LP (espectador: Jogador 2 embaixo) */}
             <div className="min-w-0 flex-1">
               <div className="text-[10px] sm:text-xs font-bold text-blue-300 drop-shadow-md truncate">
-                {bottomPanelClanTag ? `|${bottomPanelClanTag}| ${bottomPanelUser?.nickname || bottomPanelUser?.username}` : (bottomPanelUser?.nickname || bottomPanelUser?.username)}
+                {bottomPanelClanTag ? `|${bottomPanelClanTag}| ${bottomPanelUser?.nickname}` : bottomPanelUser?.nickname}
               </div>
               <div className="relative">
                 <motion.div 
@@ -3778,7 +3804,7 @@ const DuelArena: React.FC = () => {
                 isMyTurn ? 'text-blue-200' : 'text-slate-400'
               }`}>
                 {isSpectator
-                  ? (currentTurn === 1 ? `Turno de ${(duelData.player1?.nickname || duelData.player1?.username) || 'Jogador 1'}` : `Turno de ${(duelData.player2?.nickname || duelData.player2?.username) || 'Jogador 2'}`)
+                  ? (currentTurn === 1 ? `Turno de ${duelData.player1?.nickname || 'Jogador 1'}` : `Turno de ${duelData.player2?.nickname || 'Jogador 2'}`)
                   : (isMyTurn ? 'Seu Turno' : 'Turno Oponente')}
               </div>
               <motion.div 
@@ -3798,17 +3824,17 @@ const DuelArena: React.FC = () => {
             </motion.div>
           </div>
 
-          {/* OPONENTE (Direita) - Modernizado - Alinhado com cartas embaixo */}
+          {/* OPONENTE (Direita) - Modernizado - compacto no mobile */}
           <div className="flex flex-col items-end flex-shrink-0 z-10">
             <motion.div 
               transition={{ duration: 0.2 }}
-              className="flex items-center gap-2 bg-black/20 px-4 py-2 rounded-xl border-2 border-red-400/30 shadow-lg transition-all"
+              className="flex items-center gap-1 sm:gap-2 bg-black/20 px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl border-2 border-red-400/30 shadow-lg transition-all"
             >
             {/* Info: Clan + Nick + LP (espectador: Jogador 1 no topo) */}
-            <div className="text-right">
-              <div className="text-xs font-bold text-red-300 drop-shadow-md">
+            <div className="text-right min-w-0">
+              <div className="text-[10px] sm:text-xs font-bold text-red-300 drop-shadow-md truncate max-w-[80px] sm:max-w-none">
                 {topPanelClanTag ? `|${topPanelClanTag}| ` : ''}
-                {topPanelUser?.nickname || topPanelUser?.username || opponent.nickname || opponent.username}
+                {topPanelUser?.nickname || opponent?.nickname}
               </div>
               <div className="relative">
                 <motion.div 
@@ -3816,7 +3842,7 @@ const DuelArena: React.FC = () => {
                   initial={{ scale: 1.2, color: "#ef4444" }}
                   animate={{ scale: 1, color: "#fca5a5" }}
                   transition={{ duration: 0.3 }}
-                  className="text-red-200 font-bold text-base tracking-wide"
+                  className="text-red-200 font-bold text-sm sm:text-base tracking-wide"
                 >
                   LP: {(isSpectator ? myLifePoints : opponentLifePoints).toLocaleString()}
                 </motion.div>
@@ -3851,22 +3877,22 @@ const DuelArena: React.FC = () => {
               src={
                 (topPanelUser?.profileImage || opponent.profileImage)
                   ? getImageUrl(topPanelUser?.profileImage || opponent.profileImage) 
-                  : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(topPanelUser?.username || topPanelUser?.nickname || opponent.username || 'P1') + '&background=ef4444&color=fff&size=128'
+                  : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(topPanelUser?.nickname || opponent?.nickname || 'P1') + '&background=ef4444&color=fff&size=128'
               } 
-              alt={topPanelUser?.username || opponent.username || ''}
-              className="w-12 h-12 rounded-lg border-2 border-red-400/70 object-cover shadow-lg shadow-red-500/30 ring-2 ring-red-500/20"
+              alt={topPanelUser?.nickname || opponent?.nickname || ''}
+              className="w-9 h-9 sm:w-12 sm:h-12 rounded-lg border-2 border-red-400/70 object-cover shadow-lg shadow-red-500/30 ring-2 ring-red-500/20"
               onError={(e) => {
-                e.currentTarget.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(topPanelUser?.username || 'P1') + '&background=ef4444&color=fff&size=128';
+                e.currentTarget.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(topPanelUser?.nickname || 'P1') + '&background=ef4444&color=fff&size=128';
               }}
             />
             
             {/* Level (espectador: Jogador 1) */}
             <motion.div 
               whileHover={{ rotate: -5 }}
-              className="flex flex-col items-center bg-transparent px-2 py-1.5 rounded-lg border-2 border-white/20 shadow-md"
+              className="flex flex-col items-center bg-transparent px-1.5 sm:px-2 py-1 sm:py-1.5 rounded-lg border-2 border-white/20 shadow-md"
             >
-              <div className="text-white/70 text-[9px] font-bold tracking-wider">LV</div>
-              <div className="text-white text-lg font-bold drop-shadow-lg">{(topPanelUser as any)?.level ?? (opponent as any)?.level ?? 1}</div>
+              <div className="text-white/70 text-[8px] sm:text-[9px] font-bold tracking-wider">LV</div>
+              <div className="text-white text-base sm:text-lg font-bold drop-shadow-lg">{(topPanelUser as any)?.level ?? (opponent as any)?.level ?? 1}</div>
             </motion.div>
           </motion.div>
 
@@ -3876,7 +3902,7 @@ const DuelArena: React.FC = () => {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.4 }}
-              className="flex justify-center gap-2 py-3 overflow-x-auto overflow-y-visible px-3 mt-8"
+              className="flex justify-center gap-1 sm:gap-2 py-2 sm:py-3 overflow-x-auto overflow-y-visible px-2 sm:px-3 mt-4 sm:mt-8"
             >
               {(showOpponentHandRevealed && cardEffectType === 'forcefulSentry' ? opponentHandRevealed : opponentHand).map((card: any, index: number) => {
                 const uniqueKey = `opp-hand-${index}-${card.idCarta || card.id || card.cardId || index}`;
@@ -3888,7 +3914,7 @@ const DuelArena: React.FC = () => {
                     initial={{ y: -100, opacity: 0, rotate: 5 }}
                     animate={{ y: 0, opacity: 1, rotate: isRevealed ? 0 : 180 }}
                     transition={{ delay: index * 0.05, type: "spring", stiffness: 200 }}
-                    className="w-[60px] h-[85px] transition-all overflow-visible flex-shrink-0 relative cursor-default"
+                    className="w-[44px] h-[62px] sm:w-[60px] sm:h-[85px] transition-all overflow-visible flex-shrink-0 relative cursor-default"
                   >
                     {isRevealed ? (
                       // Mostrar carta virada para cima
@@ -3917,19 +3943,14 @@ const DuelArena: React.FC = () => {
             <motion.div
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="w-full flex justify-center gap-2 overflow-x-auto px-4 py-3 mt-8"
+              className="w-full flex justify-center gap-1 sm:gap-2 overflow-x-auto px-2 sm:px-4 py-2 sm:py-3 mt-4 sm:mt-8"
             >
               {Array.from({ length: topHandCountSpectator }).map((_, index) => (
                 <div
                   key={`opp-hand-back-${index}`}
-                  className="flex-shrink-0 rounded-lg border-2 border-red-400/60 shadow-md"
+                  className="flex-shrink-0 rounded-lg border-2 border-red-400/60 shadow-md w-[44px] h-[64px] sm:w-[120px] sm:h-[175px] bg-cover bg-center bg-no-repeat"
                   style={{
-                    width: 120,
-                    height: Math.floor(120 * 1.458),
                     backgroundImage: `url(${skinTop})`,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center',
-                    backgroundRepeat: 'no-repeat',
                   }}
                 />
               ))}
@@ -5014,7 +5035,7 @@ const DuelArena: React.FC = () => {
               initial={{ opacity: 0, y: 50 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.4 }}
-              className="flex justify-start items-center gap-2 py-1 overflow-x-auto overflow-y-visible px-3 min-h-[200px] relative w-full mt-2"
+              className="flex justify-start items-center gap-1 sm:gap-2 py-1 overflow-x-auto overflow-y-visible px-2 sm:px-3 min-h-[140px] sm:min-h-[200px] relative w-full mt-2"
               style={{ 
                 overflowY: 'visible',
                 overflowX: 'auto',
@@ -5039,18 +5060,13 @@ const DuelArena: React.FC = () => {
                     <p className="text-lg font-bold">Nenhuma carta na mão</p>
                   </div>
                 ) : (
-                  <div className="w-full flex justify-center gap-2 overflow-x-auto px-4 py-3 items-center">
+                  <div className="w-full flex justify-center gap-1 sm:gap-2 overflow-x-auto px-2 sm:px-4 py-2 sm:py-3 items-center">
                     {Array.from({ length: bottomHandCountSpectator }).map((_, index) => (
                       <div
                         key={`my-hand-back-${index}`}
-                        className="flex-shrink-0 rounded-lg border-2 border-white/30 shadow-md"
+                        className="flex-shrink-0 rounded-lg border-2 border-white/30 shadow-md w-[44px] h-[64px] sm:w-[120px] sm:h-[175px] bg-cover bg-center bg-no-repeat"
                         style={{
-                          width: 120,
-                          height: Math.floor(120 * 1.458),
                           backgroundImage: `url(${skinBottom})`,
-                          backgroundSize: 'cover',
-                          backgroundPosition: 'center',
-                          backgroundRepeat: 'no-repeat',
                         }}
                       />
                     ))}
@@ -5101,16 +5117,14 @@ const DuelArena: React.FC = () => {
                 })()}
                 {myHand.map((card: any, index: number) => {
                   // Criar chave única combinando index com idCarta para diferenciar cópias da mesma carta
-                  // O index garante unicidade mesmo que haja múltiplas cópias da mesma carta
                   const uniqueKey = `my-hand-${index}-${card.idCarta || card.id || card.cardId || index}`;
-                  // Tamanho fixo para as cartas - permitir scroll horizontal quando houver muitas
-                  const cardWidth = 120; // Tamanho fixo
-                  const cardHeight = Math.floor(cardWidth * 1.458); // Proporção 59:86
+                  // Tamanho do drag preview (fixo para legibilidade)
+                  const dragPreviewWidth = 120;
+                  const dragPreviewHeight = Math.floor(dragPreviewWidth * 1.458);
                   
                   const cardType = card.type || card.cardType;
                   const isSpellOrTrap = cardType === 'Spell' || cardType === 'Trap';
                   const isMonster = cardType === 'Monster';
-                  // Permitir arrastar monstros e spells/traps nas fases principais ou STANDBY
                   const canDrag = isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2' || currentPhase === 'STANDBY') && (isMonster || isSpellOrTrap);
                   
                   return (
@@ -5124,28 +5138,20 @@ const DuelArena: React.FC = () => {
                       rotate: 0,
                     }}
                     transition={{ delay: index * 0.05, type: "spring", stiffness: 200 }}
-                    className={`transition-all overflow-visible flex-shrink-0 relative ${canDrag ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
-                    style={{
-                      width: `${cardWidth}px`,
-                      height: `${cardHeight}px`,
-                      minWidth: `${cardWidth}px`,
-                      maxWidth: `${cardWidth}px`,
-                      flexShrink: 0
-                    }}
+                    className={`transition-all overflow-visible flex-shrink-0 relative w-[72px] h-[105px] sm:w-[120px] sm:h-[175px] ${canDrag ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
                     title={card.name || `Carta ${index + 1}`}
                     draggable={canDrag}
                     onDragStart={(e) => {
                       if (canDrag) {
                         e.dataTransfer.effectAllowed = 'move';
                         e.dataTransfer.setData('application/json', JSON.stringify(card));
-                        // Criar imagem customizada para o drag
                         const dragImage = e.currentTarget.cloneNode(true) as HTMLElement;
                         dragImage.style.position = 'absolute';
                         dragImage.style.top = '-1000px';
-                        dragImage.style.width = `${cardWidth}px`;
-                        dragImage.style.height = `${cardHeight}px`;
+                        dragImage.style.width = `${dragPreviewWidth}px`;
+                        dragImage.style.height = `${dragPreviewHeight}px`;
                         document.body.appendChild(dragImage);
-                        e.dataTransfer.setDragImage(dragImage, cardWidth / 2, cardHeight / 2);
+                        e.dataTransfer.setDragImage(dragImage, dragPreviewWidth / 2, dragPreviewHeight / 2);
                         setTimeout(() => document.body.removeChild(dragImage), 0);
                       }
                     }}

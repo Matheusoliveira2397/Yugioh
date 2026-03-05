@@ -14,10 +14,11 @@ interface DuelChatProps {
 
 const DuelChat: React.FC<DuelChatProps> = ({ messages, onSendMessage }) => {
   const [inputMessage, setInputMessage] = useState('');
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = messagesContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   };
 
   useEffect(() => {
@@ -54,7 +55,7 @@ const DuelChat: React.FC<DuelChatProps> = ({ messages, onSendMessage }) => {
 
       <div className="flex flex-col flex-1 overflow-hidden">
             {/* Mensagens */}
-            <div className="flex-1 overflow-y-auto space-y-2 p-3 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
+            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto space-y-2 p-3 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
               {messages.length === 0 ? (
                 <div className="text-center py-8 text-slate-400 text-xs">
                   <p>Nenhuma mensagem ainda</p>
@@ -84,7 +85,6 @@ const DuelChat: React.FC<DuelChatProps> = ({ messages, onSendMessage }) => {
                   </motion.div>
                 ))
               )}
-              <div ref={messagesEndRef} />
             </div>
 
             {/* Input */}

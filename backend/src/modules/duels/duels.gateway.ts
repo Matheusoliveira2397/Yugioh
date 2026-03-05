@@ -948,7 +948,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         const formattedLogs = (savedLogs && savedLogs.length > 0)
           ? savedLogs.map((log: any) => ({
               id: log.id,
-              username: log.user?.clanTag ? `|${log.user.clanTag}| ${log.user.username}` : log.user?.username || 'Jogador',
+              username: log.user?.clanTag ? `|${log.user.clanTag}| ${log.user.nickname}` : log.user?.nickname || 'Jogador',
               actionType: log.actionType,
               message: log.message,
               createdAt: log.createdAt,
@@ -5557,64 +5557,61 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           console.log(`ℹ️ [handleDuelAction] Confiscation colocada em "set" - efeito não será processado até ser ativada`);
         }
         
-        // Se for GracefulCharity, emitir evento com a mão atualizada
-        // IMPORTANTE: Só processar se a carta ATUAL sendo ativada é GracefulCharity
-        // Verificar se a carta no campo (ou que acabou de ser ativada) é realmente GracefulCharity
+        // Se for GracefulCharity, processar efeito (comprar 3, ir para cemitério) e depois pedir descarte de 2
+        // IMPORTANTE: Garantir que o efeito rode ANTES de abrir o modal (evita "continua na mão" e "pede descartar de novo")
         if (isGracefulCharityCard && updatedDuel && finalPosition === 'face-up') {
-          // Verificar novamente se a carta atual é realmente GracefulCharity
           const isPlayer1Check = Number(updatedDuel.player1Id) === Number(userId);
           const playerFieldCheck = isPlayer1Check ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
           
-          // Verificar se GracefulCharity está no cemitério (foi processada e movida)
-          // OU se ainda está no campo (acabou de ser ativada)
-          let isReallyGracefulCharity = false;
+          let cardOnField = playerFieldCheck?.spellTrap?.[zoneIndex];
+          const stillOnField = cardOnField && (
+            (cardOnField.idCarta || cardOnField.id || cardOnField.cardId || '').toString().toLowerCase().includes('gracefulcharity') ||
+            (cardOnField.name || cardOnField.cardName || '').toLowerCase().includes('graceful charity')
+          );
           
-          // Primeiro verificar se está no campo
-          if (playerFieldCheck && playerFieldCheck.spellTrap && playerFieldCheck.spellTrap[zoneIndex]) {
-            const cardOnField = playerFieldCheck.spellTrap[zoneIndex];
-            const cardIdCarta = cardOnField.idCarta || cardOnField.id || cardOnField.cardId;
-            const cardName = cardOnField.name || cardOnField.cardName;
-            
-            if (cardIdCarta === 'GracefulCharity' || 
-                cardIdCarta === 'gracefulCharity' || 
-                (typeof cardIdCarta === 'string' && cardIdCarta.toLowerCase().includes('gracefulcharity')) ||
-                cardName === 'Graceful Charity' || 
-                cardName === 'graceful charity' || 
-                (typeof cardName === 'string' && cardName.toLowerCase().includes('graceful charity'))) {
-              isReallyGracefulCharity = true;
-            }
-          }
-          
-          // Se não está no campo, verificar se está no cemitério (foi processada)
-          if (!isReallyGracefulCharity && playerFieldCheck && playerFieldCheck.graveyard) {
-            // Verificar se a última carta adicionada ao cemitério é GracefulCharity
-            const lastCardInGraveyard = playerFieldCheck.graveyard[playerFieldCheck.graveyard.length - 1];
-            if (lastCardInGraveyard) {
-              const cardIdCarta = lastCardInGraveyard.idCarta || lastCardInGraveyard.id || lastCardInGraveyard.cardId;
-              const cardName = lastCardInGraveyard.name || lastCardInGraveyard.cardName;
-              
-              if (cardIdCarta === 'GracefulCharity' || 
-                  cardIdCarta === 'gracefulCharity' || 
-                  (typeof cardIdCarta === 'string' && cardIdCarta.toLowerCase().includes('gracefulcharity')) ||
-                  cardName === 'Graceful Charity' || 
-                  cardName === 'graceful charity' || 
-                  (typeof cardName === 'string' && cardName.toLowerCase().includes('graceful charity'))) {
-                isReallyGracefulCharity = true;
+          // Se a carta ainda está no campo, o efeito (comprar 3 + ir para cemitério) ainda não foi aplicado — executar agora
+          if (stillOnField) {
+            console.log(`✨ [handleDuelAction] GracefulCharity ainda no campo - executando efeito (comprar 3, mover para cemitério)`);
+            try {
+              await this.cardEffectsService.processCardEffect(
+                duelId.toString(),
+                updatedDuel as any,
+                isPlayer1Check,
+                cardOnField,
+                zoneIndex
+              );
+              await new Promise(resolve => setTimeout(resolve, 150));
+              updatedDuel = this.duelsService.findDuelByIdLight(duelId) || await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+              if (!updatedDuel) {
+                console.error(`❌ [handleDuelAction] Não foi possível obter duelo após processar Graceful Charity`);
+                return;
               }
+            } catch (err) {
+              console.error(`❌ [handleDuelAction] Erro ao processar efeito Graceful Charity:`, err);
+              client.emit('duelError', { message: 'Erro ao ativar Graceful Charity' });
+              return;
             }
           }
+          
+          const fieldForCheck = isPlayer1Check ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
+          const isReallyGracefulCharity = stillOnField || (fieldForCheck?.graveyard && (() => {
+            const last = fieldForCheck.graveyard[fieldForCheck.graveyard.length - 1];
+            if (!last) return false;
+            const id = (last.idCarta || last.id || last.cardId || '').toString().toLowerCase();
+            const name = (last.name || last.cardName || '').toLowerCase();
+            return id.includes('gracefulcharity') || name.includes('graceful charity');
+          })());
           
           if (isReallyGracefulCharity) {
-            console.log(`✨ [handleDuelAction] GracefulCharity confirmada - processando efeito`);
+            console.log(`✨ [handleDuelAction] GracefulCharity confirmada - abrindo modal de descarte`);
             
             const isPlayer1 = Number(updatedDuel.player1Id) === Number(userId);
             const playerField = isPlayer1 ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
             const playerHand = playerField?.hand || [];
             
-            console.log(`✨ [handleDuelAction] GracefulCharity ativada - isPlayer1: ${isPlayer1}, playerHand: ${playerHand.length} cartas`);
+            console.log(`✨ [handleDuelAction] GracefulCharity - isPlayer1: ${isPlayer1}, playerHand: ${playerHand.length} cartas`);
             
             if (playerHand.length >= 2) {
-              // Salvar estado de escolha pendente
               await this.duelsService.setPendingChoice(duelId, {
                 type: 'GRACEFUL_CHARITY',
                 userId: userId,
@@ -5623,33 +5620,23 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
                 data: { playerHand: playerHand }
               });
               
-              // Buscar duelo atualizado novamente para ter o pendingChoice
               const updatedDuelWithPendingChoice = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
               if (updatedDuelWithPendingChoice) {
                 updatedDuel = updatedDuelWithPendingChoice;
               }
               
-              console.log(`📤 [handleDuelAction] Emitindo gracefulCharityShowHand apenas para quem ativou`);
-              // Emitir apenas para o cliente que ativou a carta
+              console.log(`📤 [handleDuelAction] Emitindo gracefulCharityShowHand (mão com ${playerHand.length} cartas)`);
               client.emit('gracefulCharityShowHand', {
                 playerHand: playerHand,
                 duelId: duelId,
               });
-              console.log(`✅ [handleDuelAction] Evento gracefulCharityShowHand emitido apenas para o cliente que ativou`);
-              
-              // Aguardar um pequeno delay para garantir que o frontend processe o evento antes do duelUpdate
               await new Promise(resolve => setTimeout(resolve, 200));
             } else {
-              // Se o jogador tem menos de 2 cartas, descartar todas
-              console.log(`⚠️ [handleDuelAction] Jogador tem menos de 2 cartas (${playerHand.length}) - descartando todas`);
-              const instanceIdsToDiscard = playerHand.map((card: any) => card.instanceId).filter(Boolean);
-              if (instanceIdsToDiscard.length > 0) {
-                await this.duelsService.processGracefulCharityChoice(duelId, userId, instanceIdsToDiscard);
-              }
+              console.log(`⚠️ [handleDuelAction] Menos de 2 cartas (${playerHand.length}) - efeito concluído sem descarte`);
+              await this.duelsService.clearPendingChoice(duelId, false);
             }
           } else {
-            console.log(`⚠️ [handleDuelAction] Carta não é realmente GracefulCharity - ignorando processamento`);
-            // NOTA: isGracefulCharityCard é const, não pode ser reatribuído
+            console.log(`⚠️ [handleDuelAction] Carta não é GracefulCharity - ignorando`);
           }
         }
 
@@ -7487,8 +7474,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           const winnerId = (updatedDuel as any).winnerId;
           const result = (updatedDuel as any).result;
           const winnerName = winnerId === updatedDuel.player1Id 
-            ? ((updatedDuel as any).player1?.nickname || (updatedDuel as any).player1?.username || 'Jogador 1')
-            : ((updatedDuel as any).player2?.nickname || (updatedDuel as any).player2?.username || 'Jogador 2');
+            ? ((updatedDuel as any).player1?.nickname || 'Jogador 1')
+            : ((updatedDuel as any).player2?.nickname || 'Jogador 2');
           
           this.server.to(`duel_${duelId}`).emit('duelEnded', {
             status: DuelStatus.FINISHED,
@@ -8547,14 +8534,13 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         return;
       }
 
-      // Buscar username do usuário
+      // Usar nickname (não expor username a outros jogadores)
       const user = await this.duelsService['usersRepository'].findOne({ 
         where: { id: numericUserId },
-        select: ['id', 'username', 'clanTag']
+        select: ['id', 'nickname', 'clanTag']
       });
 
-      const username = user?.username || 'Jogador';
-      const displayName = user?.clanTag ? `|${user.clanTag}| ${username}` : username;
+      const displayName = user?.clanTag ? `|${user.clanTag}| ${user?.nickname || 'Jogador'}` : (user?.nickname || 'Jogador');
 
       // Emitir mensagem para todos na room do duelo
       const chatData = {
@@ -8581,14 +8567,13 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     message: string
   ) {
     try {
-      // Buscar username do usuário
+      // Usar nickname (não expor username a outros jogadores)
       const user = await this.duelsService['usersRepository'].findOne({ 
         where: { id: userId },
-        select: ['id', 'username', 'clanTag']
+        select: ['id', 'nickname', 'clanTag']
       });
 
-      const username = user?.username || 'Jogador';
-      const displayName = user?.clanTag ? `|${user.clanTag}| ${username}` : username;
+      const displayName = user?.clanTag ? `|${user.clanTag}| ${user?.nickname || 'Jogador'}` : (user?.nickname || 'Jogador');
 
       // Salvar log no banco de dados
       await this.duelsService.saveDuelLog(duelId, userId, actionType, message);

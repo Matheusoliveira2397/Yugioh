@@ -49,7 +49,7 @@ export class UsersController {
         await new Promise(resolve => setImmediate(resolve));
         
         // Buscar dados completos do usuário com clanTag validado
-        const fullProfile = await this.usersService.getFullProfile(req.user.id);
+        const fullProfile = await this.usersService.getFullProfile(req.user.id, { includePrivateFields: true });
         
         // Retornar apenas os campos necessários para o frontend
         return {
@@ -82,6 +82,7 @@ export class UsersController {
           equippedPlaymatImage: fullProfile.equippedPlaymatImage || null,
           equippedSkinId: fullProfile.equippedSkinId || null,
           equippedSkinImage: fullProfile.equippedSkinImage || null,
+          equippedDeckName: fullProfile.equippedDeckName || null,
           adminAllowedTabs: fullProfile.adminAllowedTabs ?? null,
         };
       })(),
@@ -113,17 +114,20 @@ export class UsersController {
         globalRank: null,
         seasonScore: 0,
         division: 'Bronze',
+        equippedDeckName: (req.user as any).equippedDeckName ?? null,
       };
     });
   }
 
   @Get(':id/profile')
-  async getFullProfile(@Param('id') id: string) {
+  async getFullProfile(@Param('id') id: string, @Request() req: any) {
     const userId = parseInt(id, 10);
     if (isNaN(userId)) {
       throw new BadRequestException('ID inválido');
     }
-    return this.usersService.getFullProfile(userId);
+    const requestedBy = req.user?.id != null ? Number(req.user.id) : undefined;
+    const includePrivateFields = requestedBy != null && requestedBy === userId;
+    return this.usersService.getFullProfile(userId, { includePrivateFields });
   }
 
   @Get(':id/achievements')
@@ -136,12 +140,18 @@ export class UsersController {
   }
 
   @Get(':id')
-  async getUser(@Param('id') id: string) {
+  async getUser(@Param('id') id: string, @Request() req: any) {
     const userId = parseInt(id, 10);
     if (isNaN(userId)) {
       throw new BadRequestException('ID inválido');
     }
-    return this.usersService.findById(userId);
+    const user = await this.usersService.findById(userId);
+    const requestedBy = req.user?.id != null ? Number(req.user.id) : undefined;
+    if (requestedBy !== userId) {
+      return this.usersService.toPublicProfile(user as any);
+    }
+    const { password, ...userWithoutPassword } = user as any;
+    return userWithoutPassword;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -215,8 +225,8 @@ export class UsersController {
       // Faz upload da nova imagem
       const imageUrl = await this.uploadService.uploadAvatar(file, userId.toString());
 
-      // Atualiza no banco de dados
-      return this.usersService.updateProfileImage(userId, imageUrl);
+      await this.usersService.updateProfileImage(userId, imageUrl);
+      return { id: userId, profileImage: imageUrl };
     } catch (error: any) {
       throw new BadRequestException(error.message || 'Erro ao fazer upload da imagem');
     }
@@ -292,6 +302,29 @@ export class UsersController {
     }
 
     return this.usersService.updateNickname(userId, body.nickname);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id/username')
+  async updateUsername(
+    @Param('id') id: string,
+    @Body() body: { username: string },
+    @Request() req: any,
+  ) {
+    const userId = parseInt(id, 10);
+    if (isNaN(userId)) {
+      throw new BadRequestException('ID inválido');
+    }
+
+    const authenticatedUserId = typeof req.user.id === 'string'
+      ? parseInt(req.user.id, 10)
+      : Number(req.user.id);
+
+    if (Number(authenticatedUserId) !== Number(userId)) {
+      throw new BadRequestException('Você só pode atualizar seu próprio nome de usuário');
+    }
+
+    return this.usersService.updateUsername(userId, body.username);
   }
 
   @UseGuards(JwtAuthGuard)

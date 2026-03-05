@@ -33,7 +33,6 @@ export default function AdminCardsPanel() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>('');
-  const [updatingFromApi, setUpdatingFromApi] = useState(false);
   
   // Estados para busca na API YGOPRODeck
   const [searchQuery, setSearchQuery] = useState('');
@@ -89,64 +88,6 @@ export default function AdminCardsPanel() {
       console.error('Erro ao carregar cartas:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Função para atualizar todas as cartas da API
-  const handleUpdateAllFromApi = async () => {
-    if (!confirm('⚠️ Isso irá atualizar TODAS as cartas do banco de dados com informações da API YGOPRODeck.\n\nIsso pode demorar vários minutos dependendo da quantidade de cartas.\n\nDeseja continuar?')) {
-      return;
-    }
-
-    setUpdatingFromApi(true);
-    setMessage({ type: 'success', text: '🔄 Iniciando atualização em massa... Isso pode demorar vários minutos.' });
-
-    try {
-      const response = await api.post('/cards/admin/update-all-from-api');
-      const result = response.data;
-
-      setMessage({
-        type: 'success',
-        text: `✅ Atualização concluída! ${result.updated} cartas atualizadas, ${result.errors} erros. Recarregando lista...`
-      });
-
-      // Recarregar cartas após atualização
-      await loadCards();
-
-      // Mostrar detalhes no console
-      console.log('📊 Resultados da atualização:', result);
-      if (result.details) {
-        const errors = result.details.filter((d: any) => d.status === 'error');
-        if (errors.length > 0) {
-          console.warn('⚠️ Cartas com erro:', errors);
-        }
-      }
-    } catch (error: any) {
-      console.error('❌ Erro ao atualizar cartas:', error);
-      console.error('❌ Detalhes do erro:', {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        message: error.message,
-      });
-      
-      let errorMessage = 'Erro desconhecido';
-      if (error.response?.status === 401) {
-        errorMessage = 'Não autorizado. Verifique se você está logado como administrador.';
-      } else if (error.response?.status === 403) {
-        errorMessage = 'Acesso negado. Você precisa de permissões de administrador.';
-      } else if (error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      setMessage({
-        type: 'error',
-        text: `❌ Erro: ${errorMessage}`
-      });
-    } finally {
-      setUpdatingFromApi(false);
     }
   };
 
@@ -1475,24 +1416,6 @@ export default function AdminCardsPanel() {
           <option value="active">Ativas ({cards.filter(c => c.isActive).length})</option>
           <option value="inactive">Inativas ({cards.filter(c => !c.isActive).length})</option>
         </select>
-        <button
-          onClick={handleUpdateAllFromApi}
-          disabled={updatingFromApi}
-          className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
-          title="Atualiza todas as cartas com informações da API (maxCopiesInDeck e descrições em português)"
-        >
-          {updatingFromApi ? (
-            <>
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-              <span>Atualizando...</span>
-            </>
-          ) : (
-            <>
-              <span>🔄</span>
-              <span>Atualizar da API</span>
-            </>
-          )}
-        </button>
       </div>
 
       {/* Listagem de Cartas */}

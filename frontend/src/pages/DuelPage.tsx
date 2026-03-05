@@ -272,7 +272,7 @@ export default function DuelPage() {
           <div className="flex justify-between items-center mb-4">
             <div>
               <h3 className="text-xl font-bold">
-                {user?.clanTag ? `|${user.clanTag}| ${user.nickname || user.username}` : (user?.nickname || user?.username)}
+                {user?.clanTag ? `|${user.clanTag}| ${user.nickname}` : user?.nickname}
               </h3>
               <p className="text-2xl text-green-400">
                 ❤️ {duelState?.player1LifePoints || 8000} LP

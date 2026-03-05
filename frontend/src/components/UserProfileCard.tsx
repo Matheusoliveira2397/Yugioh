@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import NotificationBell from './NotificationBell';
 import MessageIcon from './MessageIcon';
 import { getImageUrl } from '../utils/imageUrl';
+import { getDivisionDisplayName, getDivisionImagePath } from '../utils/divisionDisplay';
 
 interface UserProfileCardProps {
   onLinkClick?: () => void; // Para fechar o menu mobile quando um link é clicado
@@ -100,41 +101,22 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({ onLinkClick })
           </span>
           <div className="flex items-center gap-2">
             {(() => {
-              const getDivisionImage = (div: string): string | null => {
-                if (!div) return null;
-                const normalized = div.trim().toUpperCase();
-                const divisionMap: { [key: string]: string } = {
-                  'BRONZE': 'Bronze',
-                  'SILVER': 'Prata',
-                  'GOLD': 'Ouro',
-                  'PLATINUM': 'Ouro',
-                  'DIAMOND': 'Diamante',
-                  'DIAMANTE': 'Diamante',
-                  'MASTER': 'Mestre',
-                  'MESTRE': 'Mestre',
-                  'LEGENDARY': 'Desafiante',
-                  'DESAFIANTE': 'Desafiante',
-                  'PRATA': 'Prata',
-                  'OURO': 'Ouro',
-                };
-                const divisionName = divisionMap[normalized];
-                return divisionName ? `/images/Divisões/${divisionName}.png` : null;
-              };
               const division = user?.division || 'Bronze';
-              const imagePath = getDivisionImage(division);
+              const imagePath = getDivisionImagePath(division);
+              const divisionLabel = getDivisionDisplayName(division);
               return (
                 <>
                   {imagePath && (
                     <img
                       src={imagePath}
-                      alt={division}
+                      alt={divisionLabel}
                       className="w-5 h-5 object-contain"
                       onError={(e) => {
                         e.currentTarget.style.display = 'none';
                       }}
                     />
                   )}
-                  <span className="text-base font-bold text-cyan-400">{division}</span>
+                  <span className="text-base font-bold text-cyan-400">{divisionLabel}</span>
                 </>
               );
             })()}

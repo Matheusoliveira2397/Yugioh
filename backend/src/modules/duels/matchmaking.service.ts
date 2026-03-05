@@ -317,7 +317,6 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
               player2Id: player2.userId,
               opponent: {
                 id: player2.userId,
-                username: player2User?.username || 'Unknown',
                 nickname: player2User?.nickname || player2User?.username || 'Unknown',
                 clanTag: player2User?.clanTag || null,
                 level: player2User?.level || 1,
@@ -333,7 +332,6 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
               player2Id: player2.userId,
               opponent: {
                 id: player1.userId,
-                username: player1User?.username || 'Unknown',
                 nickname: player1User?.nickname || player1User?.username || 'Unknown',
                 clanTag: player1User?.clanTag || null,
                 level: player1User?.level || 1,
@@ -343,10 +341,10 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
               player2Field: player2Field, // SEMPRE do player2
             };
             
-            // Criar log de início do duelo
+            // Criar log de início do duelo (usar apenas nickname, nunca username)
             try {
-              const player1Name = player1User?.clanTag ? `|${player1User.clanTag}| ${player1User.username}` : player1User?.username || 'Jogador 1';
-              const player2Name = player2User?.clanTag ? `|${player2User.clanTag}| ${player2User.username}` : player2User?.username || 'Jogador 2';
+              const player1Name = player1User?.clanTag ? `|${player1User.clanTag}| ${player1User.nickname || player1User.username}` : (player1User?.nickname || player1User?.username || 'Jogador 1');
+              const player2Name = player2User?.clanTag ? `|${player2User.clanTag}| ${player2User.nickname || player2User.username}` : (player2User?.nickname || player2User?.username || 'Jogador 2');
               
               // Salvar log para ambos os jogadores
               await this.duelsService.saveDuelLog(duelIdStr, player1.userId, 'DUEL_START', `Duelo iniciado: ${player1Name} vs ${player2Name}`);

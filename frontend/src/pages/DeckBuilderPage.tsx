@@ -8,6 +8,7 @@ import { useAuthStore } from '../stores/authStore';
 
 interface DeckCardSummary {
   id: string;
+  isExtraDeck?: boolean;
   card?: {
     id: string;
     idCarta?: string;
@@ -85,6 +86,12 @@ export default function DeckBuilderPage() {
                 <h2 className="text-xl sm:text-2xl font-bold text-white mb-2 sm:mb-3 flex items-center gap-2">
                   <span>📚</span> Meus Decks
                 </h2>
+                {user?.equippedDeckName && (
+                  <p className="text-sm text-purple-300 mb-3 flex items-center gap-2">
+                    <span className="font-semibold text-purple-200">Deck equipado:</span>
+                    <span className="font-medium text-white">{user.equippedDeckName}</span>
+                  </p>
+                )}
               {loadingDecks ? (
                 <div className="text-gray-300 text-sm py-4">Carregando decks...</div>
               ) : decks.length === 0 ? (
@@ -95,6 +102,7 @@ export default function DeckBuilderPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                   {decks.map((deck) => {
                     const cardsCount = deck.cards?.length ?? 0;
+                    const mainDeckCount = deck.cards?.filter((c) => !(c as DeckCardSummary).isExtraDeck).length ?? 0;
                     const lastDeckCard =
                       deck.cards && deck.cards.length > 0
                         ? deck.cards[deck.cards.length - 1]
@@ -121,7 +129,7 @@ export default function DeckBuilderPage() {
                           >
                             {deck.name}
                           </h3>
-                          <span className="text-xs text-gray-300 bg-black/30 px-2 py-0.5 rounded-full">
+                          <span className="text-xs text-gray-300 bg-black/30 px-2 py-0.5 rounded-full" title={mainDeckCount > 0 ? `Principal: ${mainDeckCount} | Total: ${cardsCount}` : undefined}>
                             {cardsCount} cartas
                           </span>
                         </div>
@@ -169,7 +177,8 @@ export default function DeckBuilderPage() {
                           </button>
                           <button
                             className={`flex-1 ${isEquipped ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-600 hover:bg-blue-700'} text-white font-semibold py-2 px-3 rounded-lg transition-colors text-xs disabled:opacity-60 disabled:cursor-not-allowed`}
-                            disabled={isEquipped}
+                            disabled={isEquipped || mainDeckCount < 40}
+                            title={!isEquipped && mainDeckCount < 40 ? 'O deck principal precisa ter pelo menos 40 cartas para equipar' : undefined}
                             onClick={async () => {
                               try {
                                 await api.patch('/me/cosmetics', {

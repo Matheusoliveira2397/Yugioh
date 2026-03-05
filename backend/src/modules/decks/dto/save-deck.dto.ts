@@ -6,6 +6,11 @@ export class SaveDeckDto {
   @IsString()
   name?: string;
 
+  /** Nome do deck que está sendo editado (para renomear em vez de criar outro) */
+  @IsOptional()
+  @IsString()
+  originalDeckName?: string;
+
   @IsArray()
   @IsString({ each: true }) // Cada item do array deve ser uma string
   @IsNotEmpty({ each: true }) // Cada item não pode ser vazio

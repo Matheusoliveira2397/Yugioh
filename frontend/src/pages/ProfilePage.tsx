@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { getDivisionDisplayName, getDivisionImagePath } from '../utils/divisionDisplay';
 import { useAuthStore } from '../stores/authStore';
 import { motion } from 'framer-motion';
 import axios from 'axios';
@@ -60,6 +61,7 @@ export const ProfilePage: React.FC = () => {
   const [biography, setBiography] = useState('');
   const [showEditModal, setShowEditModal] = useState(false);
   const [editForm, setEditForm] = useState({
+    username: '',
     nickname: '',
     email: '',
     currentPassword: '',
@@ -79,6 +81,7 @@ export const ProfilePage: React.FC = () => {
   const [friends, setFriends] = useState<any[]>([]);
   const [loadingFriends, setLoadingFriends] = useState(false);
   const [showFriendsModal, setShowFriendsModal] = useState(false);
+  const [showFriendMenu, setShowFriendMenu] = useState(false);
   const [directMatchStats, setDirectMatchStats] = useState<any>(null);
   const [loadingDirectMatch, setLoadingDirectMatch] = useState(false);
   const [showLevelsModal, setShowLevelsModal] = useState(false);
@@ -108,6 +111,7 @@ export const ProfilePage: React.FC = () => {
         setProfileUser(currentUser);
         setBiography(currentUser.biography || '');
         setEditForm({
+          username: (currentUser as any).username || '',
           nickname: currentUser.nickname || '',
           email: currentUser.email || '',
           currentPassword: '',
@@ -132,6 +136,7 @@ export const ProfilePage: React.FC = () => {
         setBiography(profileResponse.data.biography || '');
         if (isOwnProfile) {
           setEditForm({
+            username: profileResponse.data.username || '',
             nickname: profileResponse.data.nickname || '',
             email: profileResponse.data.email || '',
             currentPassword: '',
@@ -289,7 +294,60 @@ export const ProfilePage: React.FC = () => {
       });
       setFriendshipStatus(friendshipResponse.data);
     } catch (error: any) {
-      setMessage('❌ ' + (error.response?.data?.message || 'Erro ao enviar solicitação'));
+      const msg = error.response?.data?.message || '';
+      const alreadyExists = error.response?.status === 409 || /já existe|já enviou|já são amigos/i.test(msg);
+      if (alreadyExists && profileUser) {
+        // Sincronizar estado: buscar status e mostrar "Solicitação enviada"
+        try {
+          const friendshipResponse = await axios.get(`${API_URL}/friends/status/${profileUser.id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          setFriendshipStatus(friendshipResponse.data);
+          setMessage('✅ Solicitação enviada.');
+        } catch (_) {
+          setMessage('❌ ' + (msg || 'Erro ao enviar solicitação'));
+        }
+      } else {
+        setMessage('❌ ' + (msg || 'Erro ao enviar solicitação'));
+      }
+    }
+  };
+
+  const handleRemoveFriend = async () => {
+    if (!token || !profileUser || !currentUserIdNum) return;
+    try {
+      await axios.delete(`${API_URL}/friends/remove/${profileUser.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setMessage('✅ Amizade removida.');
+      setShowFriendMenu(false);
+      const friendshipResponse = await axios.get(`${API_URL}/friends/status/${profileUser.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setFriendshipStatus(friendshipResponse.data);
+      const friendsRes = await axios.get(`${API_URL}/friends/user/${profileUser.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setFriends(friendsRes.data || []);
+    } catch (error: any) {
+      setMessage('❌ ' + (error.response?.data?.message || 'Erro ao remover amizade'));
+    }
+  };
+
+  const handleCancelFriendRequest = async () => {
+    if (!token || !profileUser) return;
+    try {
+      await axios.delete(`${API_URL}/friends/cancel/${profileUser.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setMessage('✅ Solicitação cancelada.');
+      setShowFriendMenu(false);
+      const friendshipResponse = await axios.get(`${API_URL}/friends/status/${profileUser.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setFriendshipStatus(friendshipResponse.data);
+    } catch (error: any) {
+      setMessage('❌ ' + (error.response?.data?.message || 'Erro ao cancelar solicitação'));
     }
   };
 
@@ -385,6 +443,7 @@ export const ProfilePage: React.FC = () => {
   const handleOpenEditModal = () => {
     if (profileUser) {
       setEditForm({
+        username: (profileUser as any).username || '',
         nickname: profileUser.nickname || '',
         email: profileUser.email || '',
         currentPassword: '',
@@ -398,6 +457,7 @@ export const ProfilePage: React.FC = () => {
   const handleCloseEditModal = () => {
     setShowEditModal(false);
     setEditForm({
+      username: '',
       nickname: '',
       email: '',
       currentPassword: '',
@@ -434,6 +494,16 @@ export const ProfilePage: React.FC = () => {
         updates.profileImage = response.data.profileImage;
         setSelectedFile(null);
         setPreviewUrl(null);
+      }
+
+      // Atualizar username (nome de usuário para login) se mudou
+      if (editForm.username && editForm.username.trim() !== ((profileUser as any).username || '').trim()) {
+        await axios.patch(
+          `${API_URL}/users/${userId}/username`,
+          { username: editForm.username.trim() },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        updates.username = editForm.username.trim();
       }
 
       // Atualizar nickname se mudou
@@ -529,17 +599,12 @@ export const ProfilePage: React.FC = () => {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setShowFriendsModal(true)}
-            className="relative p-3 hover:bg-white/10 rounded-lg transition border border-white/20 text-white"
-            title={`Ver amigos (${friends.length})`}
+            className="p-3 hover:bg-white/10 rounded-lg transition border border-white/20 text-white"
+            title="Ver amigos"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
             </svg>
-            {friends.length > 0 && (
-              <span className="absolute -top-1 -right-1 bg-purple-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
-                {friends.length > 9 ? '9+' : friends.length}
-              </span>
-            )}
           </motion.button>
 
           {isOwnProfile ? (
@@ -556,33 +621,62 @@ export const ProfilePage: React.FC = () => {
             </motion.button>
           ) : (
             friendshipStatus && (
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleSendFriendRequest}
-                disabled={friendshipStatus.status === 'ACCEPTED' || friendshipStatus.status === 'pending'}
-                className={`px-6 py-2 rounded-lg transition border font-semibold flex items-center gap-2 ${
-                  friendshipStatus.status === 'ACCEPTED'
-                    ? 'bg-green-600/20 border-green-500/50 text-green-400 cursor-not-allowed'
-                    : friendshipStatus.status === 'pending'
-                    ? 'bg-yellow-600/20 border-yellow-500/50 text-yellow-400 cursor-not-allowed'
-                    : 'bg-purple-600/20 border-purple-500/50 text-purple-400 hover:bg-purple-600/30'
-                }`}
-              >
-                {friendshipStatus.status === 'ACCEPTED' ? (
+              <div className="relative flex items-center gap-2">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setShowFriendMenu((v) => !v)}
+                  className={`flex items-center gap-2 rounded-lg transition border text-white ${
+                    friendshipStatus.status === 'accepted'
+                      ? 'px-4 py-2 border-green-500/50 bg-green-600/20'
+                      : friendshipStatus.status === 'pending'
+                      ? 'px-4 py-2 border-yellow-500/50 bg-yellow-600/20'
+                      : 'p-3 border-white/20 hover:bg-white/10'
+                  }`}
+                  title="Amizade"
+                >
+                  <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                  </svg>
+                  {friendshipStatus.status === 'accepted' && <span className="font-medium">Amigos</span>}
+                  {friendshipStatus.status === 'pending' && <span className="font-medium">Solicitação enviada</span>}
+                </motion.button>
+                {showFriendMenu && (
                   <>
-                    <span>✓</span> Amigos
-                  </>
-                ) : friendshipStatus.status === 'pending' ? (
-                  <>
-                    <span>⏳</span> Solicitação Enviada
-                  </>
-                ) : (
-                  <>
-                    <span>+</span> Enviar Solicitação de Amizade
+                    <div className="fixed inset-0 z-40" onClick={() => setShowFriendMenu(false)} aria-hidden="true" />
+                    <div className="absolute right-0 top-full mt-1 z-50 py-1 min-w-[180px] rounded-lg border border-white/20 bg-gray-800 shadow-xl">
+                      {friendshipStatus.status === 'accepted' ? (
+                        <button
+                          onClick={handleRemoveFriend}
+                          className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-red-500/20 flex items-center gap-2"
+                        >
+                          <span>✕</span> Remover amizade
+                        </button>
+                      ) : friendshipStatus.status === 'pending' ? (
+                        friendshipStatus.friendship?.isSender ? (
+                          <button
+                            onClick={handleCancelFriendRequest}
+                            className="w-full px-4 py-2 text-left text-sm text-amber-400 hover:bg-amber-500/20 flex items-center gap-2"
+                          >
+                            <span>✕</span> Cancelar solicitação
+                          </button>
+                        ) : (
+                          <div className="px-4 py-2 text-sm text-gray-500 flex items-center gap-2">
+                            <span>⏳</span> Solicitação enviada
+                          </div>
+                        )
+                      ) : (
+                        <button
+                          onClick={() => { handleSendFriendRequest(); setShowFriendMenu(false); }}
+                          className="w-full px-4 py-2 text-left text-sm text-purple-400 hover:bg-purple-500/20 flex items-center gap-2"
+                        >
+                          <span>+</span> Enviar solicitação de amizade
+                        </button>
+                      )}
+                    </div>
                   </>
                 )}
-              </motion.button>
+              </div>
             )
           )}
         </div>
@@ -599,32 +693,13 @@ export const ProfilePage: React.FC = () => {
             {/* Emblema do Ranking (Divisão) - À direita */}
             <div className="flex-shrink-0 order-1 sm:order-3">
               {(() => {
-                const getDivisionImage = (div: string): string | null => {
-                  if (!div) return null;
-                  const normalized = div.trim().toUpperCase();
-                  const divisionMap: { [key: string]: string } = {
-                    'BRONZE': 'Bronze',
-                    'SILVER': 'Prata',
-                    'GOLD': 'Ouro',
-                    'PLATINUM': 'Ouro',
-                    'DIAMOND': 'Diamante',
-                    'DIAMANTE': 'Diamante',
-                    'MASTER': 'Mestre',
-                    'MESTRE': 'Mestre',
-                    'LEGENDARY': 'Desafiante',
-                    'DESAFIANTE': 'Desafiante',
-                    'PRATA': 'Prata',
-                    'OURO': 'Ouro',
-                  };
-                  const divisionName = divisionMap[normalized];
-                  return divisionName ? `/images/Divisões/${divisionName}.png` : null;
-                };
-                const imagePath = getDivisionImage(division);
+                const imagePath = getDivisionImagePath(division);
+                const divisionLabel = getDivisionDisplayName(division);
                 return imagePath ? (
                   <motion.img
                     whileHover={{ scale: 1.1 }}
                     src={imagePath}
-                    alt={division}
+                    alt={divisionLabel}
                     className="w-20 h-20 sm:w-24 sm:h-24 md:w-32 md:h-32 object-contain drop-shadow-2xl"
                     onError={(e) => {
                       e.currentTarget.style.display = 'none';
@@ -680,7 +755,7 @@ export const ProfilePage: React.FC = () => {
               
               {/* Nick do Duelista */}
               <h1 className="text-3xl sm:text-4xl font-bold text-white mb-2">
-                {profileUser.nickname || profileUser.username}
+                {profileUser.nickname}
               </h1>
               
               {/* Clã */}
@@ -702,13 +777,13 @@ export const ProfilePage: React.FC = () => {
               {/* Outras informações básicas */}
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 sm:gap-4 text-sm text-slate-400">
                 <p>ID: #{profileUser.id}</p>
-                <span 
-                  className="text-slate-300 flex items-center gap-1 cursor-pointer hover:text-yellow-400 transition-colors"
+                <span
+                  className="text-slate-300 flex items-center gap-1 cursor-pointer hover:text-yellow-400 transition-colors rounded px-1 py-0.5 hover:bg-white/5"
                   onClick={() => {
                     setShowLevelsModal(true);
                     loadNextLevels(profileUser.level || 1);
                   }}
-                  title="Clique para ver os próximos níveis"
+                  title="Clique para ver os próximos 10 níveis e quanto score falta"
                 >
                   <span>⭐</span> Nível <span className="text-base font-bold text-white ml-1">{profileUser.level || 1}</span>
                 </span>
@@ -795,31 +870,12 @@ export const ProfilePage: React.FC = () => {
                       </span>
                       <div className="flex items-center gap-2">
                       {(() => {
-                        const getDivisionImage = (div: string): string | null => {
-                          if (!div) return null;
-                          const normalized = div.trim().toUpperCase();
-                          const divisionMap: { [key: string]: string } = {
-                            'BRONZE': 'Bronze',
-                            'SILVER': 'Prata',
-                            'GOLD': 'Ouro',
-                            'PLATINUM': 'Ouro',
-                            'DIAMOND': 'Diamante',
-                            'DIAMANTE': 'Diamante',
-                            'MASTER': 'Mestre',
-                            'MESTRE': 'Mestre',
-                            'LEGENDARY': 'Desafiante',
-                            'DESAFIANTE': 'Desafiante',
-                            'PRATA': 'Prata',
-                            'OURO': 'Ouro',
-                          };
-                          const divisionName = divisionMap[normalized];
-                          return divisionName ? `/images/Divisões/${divisionName}.png` : null;
-                        };
-                        const imagePath = getDivisionImage(division);
+                        const imagePath = getDivisionImagePath(division);
+                        const divisionLabel = getDivisionDisplayName(division);
                         return imagePath ? (
                           <img
                             src={imagePath}
-                            alt={division}
+                            alt={divisionLabel}
                             className="w-6 h-6 object-contain"
                             onError={(e) => {
                               e.currentTarget.style.display = 'none';
@@ -827,7 +883,7 @@ export const ProfilePage: React.FC = () => {
                           />
                         ) : null;
                       })()}
-                      <span className="text-lg md:text-xl font-bold text-cyan-400 drop-shadow-lg">{division}</span>
+                      <span className="text-lg md:text-xl font-bold text-cyan-400 drop-shadow-lg">{getDivisionDisplayName(division)}</span>
                     </div>
                     </div>
                   </div>
@@ -898,7 +954,7 @@ export const ProfilePage: React.FC = () => {
                   placeholder="Escreva sua biografia aqui..."
                   maxLength={500}
                   rows={6}
-                    className="w-full px-4 py-2 rounded-lg text-white border border-white/20 resize-none focus:border-white/40 focus:outline-none"
+                  className="w-full bg-gray-800 text-white placeholder-gray-400 px-4 py-2 rounded-lg border border-white/20 resize-none focus:border-white/40 focus:outline-none"
                 />
                 <div className="text-sm text-gray-400 text-right">
                   {biography.length}/500 caracteres
@@ -1177,7 +1233,7 @@ export const ProfilePage: React.FC = () => {
                           {profileUser?.profileImage ? (
                             <img
                               src={getImageUrl(profileUser.profileImage)}
-                              alt={profileUser?.nickname || profileUser?.username}
+                              alt={profileUser?.nickname}
                               className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
                               onError={(e) => {
                                 e.currentTarget.src = '/images/default.png';
@@ -1185,7 +1241,7 @@ export const ProfilePage: React.FC = () => {
                             />
                           ) : (
                             <div className="w-12 h-12 rounded-full border-2 border-purple-500/50 bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white font-bold">
-                              {profileUser?.nickname?.[0]?.toUpperCase() || profileUser?.username?.[0]?.toUpperCase() || '?'}
+                              {profileUser?.nickname?.[0]?.toUpperCase() || '?'}
                             </div>
                           )}
                           
@@ -1195,7 +1251,13 @@ export const ProfilePage: React.FC = () => {
                               <span className={won ? 'text-green-400' : 'text-red-400'}>
                                 {won ? 'Ganhou' : 'Perdeu'}
                               </span>
-                              <span className="text-white"> um {duelTypeName} contra {opponent?.clanTag ? `|${opponent.clanTag}| ` : ''}{opponent?.nickname || opponent?.username || 'Desconhecido'}</span>
+                              <span className="text-white"> um {duelTypeName} contra </span>
+                              <Link
+                                to={`/profile/${opponent?.id ?? ''}`}
+                                className="text-blue-400 hover:text-blue-300 hover:underline cursor-pointer"
+                              >
+                                {opponent?.clanTag ? `|${opponent.clanTag}| ` : ''}{opponent?.nickname || 'Desconhecido'}
+                              </Link>
                             </div>
                             <div className="text-xs text-gray-400 mt-1">
                               {duel.finishedAt 
@@ -1207,21 +1269,23 @@ export const ProfilePage: React.FC = () => {
                             </div>
                           </div>
                           
-                          {/* Foto do oponente */}
-                          {opponent?.profileImage ? (
-                            <img
-                              src={getImageUrl(opponent.profileImage)}
-                              alt={opponent?.nickname || opponent?.username}
-                              className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
-                              onError={(e) => {
-                                e.currentTarget.src = '/images/default.png';
-                              }}
-                            />
-                          ) : (
-                            <div className="w-12 h-12 rounded-full border-2 border-purple-500/50 bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white font-bold">
-                              {opponent?.nickname?.[0]?.toUpperCase() || opponent?.username?.[0]?.toUpperCase() || '?'}
-                            </div>
-                          )}
+                          {/* Foto do oponente (clicável para ir ao perfil) */}
+                          <Link to={`/profile/${opponent?.id ?? ''}`} className="flex-shrink-0 rounded-full ring-2 ring-transparent hover:ring-blue-400/50 transition-all" title="Ver perfil">
+                            {opponent?.profileImage ? (
+                              <img
+                                src={getImageUrl(opponent.profileImage)}
+                                alt={opponent?.nickname}
+                                className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
+                                onError={(e) => {
+                                  e.currentTarget.src = '/images/default.png';
+                                }}
+                              />
+                            ) : (
+                              <div className="w-12 h-12 rounded-full border-2 border-purple-500/50 bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white font-bold">
+                                {opponent?.nickname?.[0]?.toUpperCase() || '?'}
+                              </div>
+                            )}
+                          </Link>
                         </div>
                       </div>
                     );
@@ -1251,7 +1315,7 @@ export const ProfilePage: React.FC = () => {
             >
               <div className="p-6 border-b border-slate-700 flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-white">
-                  👥 {isOwnProfile ? 'Meus Amigos' : `Amigos de ${profileUser?.nickname || profileUser?.username}`} ({friends.length})
+                  👥 {isOwnProfile ? 'Meus Amigos' : `Amigos de ${profileUser?.nickname}`} ({friends.length})
                 </h2>
                 <button
                   onClick={() => setShowFriendsModal(false)}
@@ -1287,7 +1351,7 @@ export const ProfilePage: React.FC = () => {
                         <div className="flex items-center gap-3">
                           <img
                             src={getImageUrl(friend.profileImage)}
-                            alt={friend.username}
+                            alt={friend.nickname}
                             className="w-16 h-16 rounded-full border-2 border-purple-500/50 object-cover"
                             onError={(e) => {
                               e.currentTarget.src = '/images/default.png';
@@ -1297,7 +1361,7 @@ export const ProfilePage: React.FC = () => {
                             <p className="font-semibold text-white truncate">
                               {friend.clanTag ? `|${friend.clanTag}| ${friend.nickname}` : friend.nickname}
                             </p>
-                            <p className="text-sm text-gray-400 truncate">@{friend.username}</p>
+                            <p className="text-sm text-gray-400 truncate">{friend.nickname}</p>
                             <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
                               <span className={`w-2 h-2 rounded-full ${friend.isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></span>
                               <span>{friend.isOnline ? 'Online' : 'Offline'}</span>
@@ -1331,7 +1395,7 @@ export const ProfilePage: React.FC = () => {
             >
               <div className="p-6 border-b border-slate-700 flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-white">
-                  👥 {isOwnProfile ? 'Meus Amigos' : `Amigos de ${profileUser?.nickname || profileUser?.username}`} ({friends.length})
+                  👥 {isOwnProfile ? 'Meus Amigos' : `Amigos de ${profileUser?.nickname}`} ({friends.length})
                 </h2>
                 <button
                   onClick={() => setShowFriendsModal(false)}
@@ -1367,7 +1431,7 @@ export const ProfilePage: React.FC = () => {
                         <div className="flex items-center gap-3">
                           <img
                             src={getImageUrl(friend.profileImage)}
-                            alt={friend.username}
+                            alt={friend.nickname}
                             className="w-16 h-16 rounded-full border-2 border-purple-500/50 object-cover"
                             onError={(e) => {
                               e.currentTarget.src = '/images/default.png';
@@ -1377,7 +1441,7 @@ export const ProfilePage: React.FC = () => {
                             <p className="font-semibold text-white truncate">
                               {friend.clanTag ? `|${friend.clanTag}| ${friend.nickname}` : friend.nickname}
                             </p>
-                            <p className="text-sm text-gray-400 truncate">@{friend.username}</p>
+                            <p className="text-sm text-gray-400 truncate">{friend.nickname}</p>
                             <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
                               <span className={`w-2 h-2 rounded-full ${friend.isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></span>
                               <span>{friend.isOnline ? 'Online' : 'Offline'}</span>
@@ -1501,6 +1565,19 @@ export const ProfilePage: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Nome de usuário (para login) */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-300 mb-2">Nome de usuário</label>
+                  <input
+                    type="text"
+                    value={editForm.username}
+                    onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
+                    className="w-full px-4 py-2 bg-slate-700/50 rounded-lg text-white border border-slate-600/50 focus:border-slate-500 focus:outline-none"
+                    placeholder="Usado para fazer login (3 a 30 caracteres)"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">Só você vê este nome. Outros jogadores veem seu nickname.</p>
+                </div>
+
                 {/* Nickname */}
                 <div>
                   <label className="block text-sm font-semibold text-slate-300 mb-2">Nickname</label>
@@ -1589,18 +1666,25 @@ export const ProfilePage: React.FC = () => {
           </motion.div>
         )}
 
-        {/* Modal de Próximos Níveis */}
+        {/* Modal de Próximos Níveis - abre ao clicar no nível no perfil */}
         {showLevelsModal && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowLevelsModal(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="levels-modal-title"
+          >
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
               className="bg-gradient-to-br from-gray-900 to-black rounded-xl shadow-2xl border-2 border-purple-500/50 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-3xl font-bold text-white flex items-center gap-2">
+                <div className="flex items-center justify-between mb-2">
+                  <h2 id="levels-modal-title" className="text-3xl font-bold text-white flex items-center gap-2">
                     <span>⭐</span> Próximos Níveis
                   </h2>
                   <button
@@ -1610,6 +1694,7 @@ export const ProfilePage: React.FC = () => {
                     ×
                   </button>
                 </div>
+                <p className="text-gray-400 text-sm mb-6">Próximos 10 níveis: score necessário para cada nível e quanto falta para alcançar.</p>
 
                 {loadingLevels ? (
                   <div className="text-center py-8">
@@ -1626,8 +1711,8 @@ export const ProfilePage: React.FC = () => {
                       <thead>
                         <tr className="border-b border-purple-500/30">
                           <th className="text-left py-3 px-4 text-purple-400 font-bold">Nível</th>
-                          <th className="text-left py-3 px-4 text-purple-400 font-bold">Score Necessário</th>
-                          <th className="text-left py-3 px-4 text-purple-400 font-bold">Score Restante</th>
+                          <th className="text-left py-3 px-4 text-purple-400 font-bold">Score necessário</th>
+                          <th className="text-left py-3 px-4 text-purple-400 font-bold">Quanto falta</th>
                         </tr>
                       </thead>
                       <tbody>

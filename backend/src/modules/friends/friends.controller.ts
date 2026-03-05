@@ -7,6 +7,7 @@ import {
   UseGuards,
   Request,
   Put,
+  Delete,
 } from '@nestjs/common';
 import { FriendsService } from './friends.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -64,5 +65,25 @@ export class FriendsController {
   async rejectFriendRequest(@Request() req: any, @Param('id') id: string) {
     const userId = Number(req.user.id);
     return this.friendsService.rejectFriendRequest(id, userId);
+  }
+
+  @Delete('cancel/:otherUserId')
+  async cancelFriendRequest(@Request() req: any, @Param('otherUserId') otherUserId: string) {
+    const userId = Number(req.user.id);
+    const otherUserIdNum = Number(otherUserId);
+    if (isNaN(otherUserIdNum)) {
+      throw new Error('ID de usuário inválido');
+    }
+    return this.friendsService.cancelFriendRequest(userId, otherUserIdNum);
+  }
+
+  @Delete('remove/:otherUserId')
+  async removeFriend(@Request() req: any, @Param('otherUserId') otherUserId: string) {
+    const userId = Number(req.user.id);
+    const otherUserIdNum = Number(otherUserId);
+    if (isNaN(otherUserIdNum)) {
+      throw new Error('ID de usuário inválido');
+    }
+    return this.friendsService.removeFriend(userId, otherUserIdNum);
   }
 }

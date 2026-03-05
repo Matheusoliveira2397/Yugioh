@@ -9,6 +9,8 @@ import { GroupMember } from '../groups/entities/group-member.entity';
 import { Group } from '../groups/entities/group.entity';
 import { LevelsService } from '../levels/levels.service';
 import { MailService } from '../mail/mail.service';
+import { Deck } from '../decks/entities/deck.entity';
+import { DeckCard } from '../decks/entities/deck-card.entity';
 
 @Injectable()
 export class UsersService implements OnModuleInit {
@@ -23,6 +25,10 @@ export class UsersService implements OnModuleInit {
     private groupMemberRepository: Repository<GroupMember>,
     @InjectRepository(Group)
     private groupRepository: Repository<Group>,
+    @InjectRepository(Deck)
+    private decksRepository: Repository<Deck>,
+    @InjectRepository(DeckCard)
+    private deckCardsRepository: Repository<DeckCard>,
     private levelsService: LevelsService,
     private mailService: MailService,
   ) {}
@@ -194,6 +200,31 @@ export class UsersService implements OnModuleInit {
       }
       throw error;
     }
+  }
+
+  /** Retorna apenas campos seguros para exibir perfil de outro usuário (sem username, email, password, IP, etc.) */
+  toPublicProfile(user: any): Record<string, unknown> {
+    if (!user) return {};
+    return {
+      id: user.id,
+      nickname: user.nickname,
+      clanTag: user.clanTag ?? null,
+      profileImage: this.normalizeProfileImage(user.profileImage),
+      level: user.level ?? 1,
+      winsGeral: user.winsGeral ?? 0,
+      lossesGeral: user.lossesGeral ?? 0,
+      winsSeason: user.winsSeason ?? 0,
+      lossesSeason: user.lossesSeason ?? 0,
+      totalScore: user.totalScore != null ? Number(user.totalScore) : 0,
+      playerClass: user.playerClass ?? null,
+      division: user.division ?? null,
+      biography: user.biography ?? null,
+      isOnline: user.isOnline ?? false,
+      equippedPlaymatId: user.equippedPlaymatId ?? null,
+      equippedPlaymatImage: user.equippedPlaymatImage ?? null,
+      equippedSkinId: user.equippedSkinId ?? null,
+      equippedSkinImage: user.equippedSkinImage ?? null,
+    };
   }
 
   async findByUsername(username: string): Promise<User | null> {
@@ -376,7 +407,7 @@ export class UsersService implements OnModuleInit {
 
   async findAll(): Promise<User[]> {
     return this.usersRepository.find({
-      select: ['id', 'username', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason', 'totalScore', 'level'],
+      select: ['id', 'nickname', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason', 'totalScore', 'level'],
       order: { totalScore: 'DESC', level: 'DESC' },
     });
   }
@@ -1644,7 +1675,8 @@ export class UsersService implements OnModuleInit {
   }
 
   // Obter perfil completo do usuário com rankings
-  async getFullProfile(userId: number): Promise<any> {
+  // includePrivateFields: quando false (perfil de outro usuário), username/email não são retornados
+  async getFullProfile(userId: number, options?: { includePrivateFields?: boolean }): Promise<any> {
     // Buscar usuário com division explicitamente
     const user = await this.usersRepository.findOne({ 
       where: { id: userId },
@@ -1875,30 +1907,31 @@ export class UsersService implements OnModuleInit {
       }
     }
     
-    // Normalizar divisão para garantir formato correto (se existir)
+    // Normalizar divisão para sempre retornar em inglês (evitar mistura PT/EN na interface)
     if (division) {
-      const divUpper = division.toUpperCase();
+      const divUpper = (division as string).trim().toUpperCase();
       if (divUpper === 'BRONZE') division = 'Bronze';
-      else if (divUpper === 'SILVER') division = 'Silver';
-      else if (divUpper === 'GOLD') division = 'Gold';
-      else if (divUpper === 'PLATINUM') division = 'Platinum';
-      else if (divUpper === 'DIAMOND') division = 'Diamond';
-      else if (divUpper === 'MASTER') division = 'Master';
-      else if (divUpper === 'LEGENDARY') division = 'Legendary';
+      else if (divUpper === 'SILVER' || divUpper === 'PRATA') division = 'Silver';
+      else if (divUpper === 'GOLD' || divUpper === 'OURO') division = 'Gold';
+      else if (divUpper === 'PLATINUM' || divUpper === 'PLATINA') division = 'Platinum';
+      else if (divUpper === 'DIAMOND' || divUpper === 'DIAMANTE') division = 'Diamond';
+      else if (divUpper === 'MASTER' || divUpper === 'MESTRE') division = 'Master';
+      else if (divUpper === 'LEGENDARY' || divUpper === 'DESAFIANTE') division = 'Legendary';
+      else division = 'Bronze'; // fallback
     }
     
     console.log(`✅ [getFullProfile] Division final para user ${userId}:`, division);
 
-    return {
+    const includePrivate = options?.includePrivateFields === true;
+    const result: any = {
       ...user,
-      level: userLevel, // Garantir que o nível atualizado seja retornado
+      level: userLevel,
       profileImage: this.normalizeProfileImage(user.profileImage),
       displayNick,
       playerClass,
-      lastIpAddress: user.lastIpAddress || null,
-      isOnline: user.isOnline || false,
+      isOnline: user.isOnline ?? false,
       group: userGroup,
-      division: division || null, // Divisão no nível raiz para fácil acesso (da tabela users) - sempre dinâmica
+      division: division || null,
       seasonRanking: seasonRanking ? {
         seasonScore: seasonRanking.seasonScore,
         wins: seasonRanking.wins,
@@ -1912,8 +1945,22 @@ export class UsersService implements OnModuleInit {
       },
       seasonRank: seasonRank,
       generalRank: generalRank,
-      globalRank: generalRank, // Alias para compatibilidade
+      globalRank: generalRank,
     };
+    if (includePrivate) {
+      result.lastIpAddress = user.lastIpAddress || null;
+    }
+    delete result.password;
+    if (!includePrivate) {
+      delete result.username;
+      delete result.email;
+      delete result.lastIpAddress;
+      delete result.banReason;
+      delete result.isBanned;
+      delete result.isEmailVerified;
+      delete result.lastLogin;
+    }
+    return result;
   }
 
   // Atualizar biografia
@@ -1950,6 +1997,26 @@ export class UsersService implements OnModuleInit {
     }
     
     await this.usersRepository.update(userId, { nickname: nickname.trim() });
+    return this.findById(userId);
+  }
+
+  // Atualizar username (nome de usuário para login)
+  async updateUsername(userId: number, username: string): Promise<User> {
+    const trimmed = (username || '').trim();
+    if (trimmed.length === 0) {
+      throw new BadRequestException('Nome de usuário não pode estar vazio.');
+    }
+    if (trimmed.length < 3) {
+      throw new BadRequestException('Nome de usuário deve ter pelo menos 3 caracteres.');
+    }
+    if (trimmed.length > 30) {
+      throw new BadRequestException('Nome de usuário muito longo. Máximo 30 caracteres.');
+    }
+    const existingUser = await this.findByUsername(trimmed);
+    if (existingUser && existingUser.id !== userId) {
+      throw new BadRequestException('Este nome de usuário já está em uso.');
+    }
+    await this.usersRepository.update(userId, { username: trimmed });
     return this.findById(userId);
   }
 
@@ -2099,6 +2166,25 @@ export class UsersService implements OnModuleInit {
     }
 
     if (cosmetics.equippedDeckName !== undefined) {
+      const deckName = cosmetics.equippedDeckName?.trim() || null;
+      if (deckName) {
+        const deck = await this.decksRepository.findOne({
+          where: { userId, name: deckName },
+        });
+        if (!deck) {
+          throw new BadRequestException('Deck não encontrado.');
+        }
+        const mainDeckCount = await this.deckCardsRepository.count({
+          where: { deckId: deck.id, isExtraDeck: false },
+        });
+        if (mainDeckCount < 40) {
+          throw new BadRequestException(
+            'Não é possível equipar um deck com menos de 40 cartas no deck principal. Adicione pelo menos ' +
+              (40 - mainDeckCount) +
+              ' carta(s) ao deck principal.',
+          );
+        }
+      }
       console.log(`🔍 [updateCosmetics] Atualizando equippedDeckName para: "${cosmetics.equippedDeckName}"`);
       updates.equippedDeckName = cosmetics.equippedDeckName;
     }

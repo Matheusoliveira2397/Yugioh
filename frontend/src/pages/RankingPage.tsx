@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import axios from 'axios';
 import { getImageUrl } from '../utils/imageUrl';
+import { getDivisionDisplayName, getDivisionImagePath } from '../utils/divisionDisplay';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -353,35 +354,7 @@ export default function RankingPage() {
     return colors[division?.toUpperCase()] || 'text-orange-600';
   };
 
-  // Função para obter o caminho da imagem da divisão
-  const getDivisionImage = (division: string): string | null => {
-    if (!division) return null;
-    
-    // Normalizar o nome da divisão (remover espaços, converter para maiúsculas)
-    const normalizedDivision = division.trim().toUpperCase();
-    
-    // Mapear nomes das divisões para os nomes dos arquivos
-    const divisionMap: { [key: string]: string } = {
-      'BRONZE': 'Bronze',
-      'SILVER': 'Prata',
-      'GOLD': 'Ouro',
-      'PLATINUM': 'Ouro', // Se houver Platinum, usar Ouro como fallback
-      'DIAMOND': 'Diamante',
-      'DIAMANTE': 'Diamante',
-      'MASTER': 'Mestre',
-      'MESTRE': 'Mestre',
-      'LEGENDARY': 'Desafiante',
-      'DESAFIANTE': 'Desafiante',
-      'PRATA': 'Prata',
-      'OURO': 'Ouro',
-    };
-    
-    const divisionName = divisionMap[normalizedDivision];
-    if (!divisionName) return null;
-    
-    // Retornar apenas PNG (JPG não existe)
-    return `/images/Divisões/${divisionName}.png`;
-  };
+  const getDivisionImage = (division: string): string | null => getDivisionImagePath(division);
 
   const getRankColor = (rank: number) => {
     if (rank === 1) return 'text-yellow-400';
@@ -672,10 +645,11 @@ export default function RankingPage() {
                           <div className="flex items-center justify-center gap-2">
                             {(() => {
                               const divisionImage = getDivisionImage(player.division);
+                              const divisionLabel = getDivisionDisplayName(player.division || 'Bronze');
                               return divisionImage ? (
                                 <img 
                                   src={divisionImage}
-                                  alt={player.division || 'Bronze'}
+                                  alt={divisionLabel}
                                   className="w-6 h-6 lg:w-8 lg:h-8 object-contain"
                                   onError={(e) => {
                                     e.currentTarget.style.display = 'none';
@@ -684,7 +658,7 @@ export default function RankingPage() {
                               ) : null;
                             })()}
                             <span className={`font-bold text-sm lg:text-lg ${getDivisionColor(player.division)}`}>
-                              {player.division || 'Bronze'}
+                              {getDivisionDisplayName(player.division || 'Bronze')}
                             </span>
                           </div>
                         </td>
@@ -801,10 +775,11 @@ export default function RankingPage() {
                         <span className={`font-bold ${getDivisionColor(player.division)} flex items-center gap-1`}>
                           {(() => {
                             const divisionImage = getDivisionImage(player.division);
+                            const divisionLabel = getDivisionDisplayName(player.division || 'Bronze');
                             return divisionImage ? (
                               <img 
                                 src={divisionImage}
-                                alt={player.division || 'Bronze'}
+                                alt={divisionLabel}
                                 className="w-5 h-5 object-contain"
                                 onError={(e) => {
                                   e.currentTarget.style.display = 'none';
@@ -812,7 +787,7 @@ export default function RankingPage() {
                               />
                             ) : null;
                           })()}
-                          {player.division || 'Bronze'}
+                          {getDivisionDisplayName(player.division || 'Bronze')}
                         </span>
                       </div>
                       {activeTab === 'season' && (

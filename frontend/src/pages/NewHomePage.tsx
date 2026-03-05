@@ -63,7 +63,8 @@ export default function HomePage() {
   // Estados
   const [topPlayers, setTopPlayers] = useState<RankingPlayer[]>([]);
   const [topSeasonPlayers, setTopSeasonPlayers] = useState<RankingPlayer[]>([]);
-  const [topClans, setTopClans] = useState<Clan[]>([]);
+  const [topClansGeneral, setTopClansGeneral] = useState<Clan[]>([]);
+  const [topClansSeason, setTopClansSeason] = useState<Clan[]>([]);
   const [news, setNews] = useState<News[]>([]);
   const [shopCards, setShopCards] = useState<Card[]>([]);
   const [viewedNewsIds, setViewedNewsIds] = useState<string[]>([]);
@@ -195,7 +196,7 @@ export default function HomePage() {
       }
 
       // Buscar todas as informações em paralelo (endpoints públicos) - timeout aumentado para evitar problemas com WebSocket
-      const [playersRes, seasonPlayersRes, clansRes, newsRes, cardsRes, nextArenaRes] = await Promise.all([
+      const [playersRes, seasonPlayersRes, clansGeneralRes, clansSeasonRes, newsRes, cardsRes, nextArenaRes] = await Promise.all([
         Promise.race([
           axios.get(`${API_URL}/users/ranking/general`, { headers, timeout: 20000 }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 20000))
@@ -211,10 +212,17 @@ export default function HomePage() {
           return { data: [] };
         }),
         Promise.race([
-          axios.get(`${API_URL}/groups/ranking/top5`, { headers, timeout: 20000 }),
+          axios.get(`${API_URL}/groups/ranking/general`, { headers, timeout: 20000 }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 20000))
         ]).catch(err => {
-          logger.warn('Erro ao buscar top clãs:', err.message);
+          logger.warn('Erro ao buscar top clãs geral:', err.message);
+          return { data: [] };
+        }),
+        Promise.race([
+          axios.get(`${API_URL}/groups/ranking/season`, { headers, timeout: 20000 }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 20000))
+        ]).catch(err => {
+          logger.warn('Erro ao buscar top clãs season:', err.message);
           return { data: [] };
         }),
         Promise.race([
@@ -265,11 +273,15 @@ export default function HomePage() {
         setTopSeasonPlayers([]);
       }
       
-      if (clansRes.data && Array.isArray(clansRes.data)) {
-        setTopClans(clansRes.data);
+      if (clansGeneralRes.data && Array.isArray(clansGeneralRes.data)) {
+        setTopClansGeneral(clansGeneralRes.data.slice(0, 5));
       } else {
-        logger.warn('Top clãs não é um array');
-        setTopClans([]);
+        setTopClansGeneral([]);
+      }
+      if (clansSeasonRes.data && Array.isArray(clansSeasonRes.data)) {
+        setTopClansSeason(clansSeasonRes.data.slice(0, 5));
+      } else {
+        setTopClansSeason([]);
       }
       
       if (newsRes.data && Array.isArray(newsRes.data)) {
@@ -346,176 +358,146 @@ export default function HomePage() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               onClick={() => navigate('/arena')}
-              className="rounded-lg p-3 sm:p-4 border border-amber-500/40 bg-gradient-to-r from-amber-900/30 to-orange-900/30 hover:border-amber-400/60 transition-all cursor-pointer"
+              className="rounded-lg p-2 sm:p-2.5 border border-amber-500/40 bg-gradient-to-r from-amber-900/30 to-orange-900/30 hover:border-amber-400/60 transition-all cursor-pointer"
             >
-              <h2 className="text-xs sm:text-sm font-bold mb-2 flex items-center gap-1.5 text-amber-200 drop-shadow-lg">
+              <h2 className="text-[10px] sm:text-xs font-bold mb-0.5 flex items-center gap-1 text-amber-200 drop-shadow-lg">
                 ⏰ Próxima Arena
               </h2>
-              <p className="text-white font-semibold text-sm mb-1 truncate">{nextArena.name}</p>
-              <div className="text-xl sm:text-2xl font-bold text-amber-300 tabular-nums mb-2">
+              <p className="text-white font-medium text-[10px] sm:text-xs truncate mb-0.5">{nextArena.name}</p>
+              <div className="text-base sm:text-lg font-bold text-amber-300 tabular-nums mb-0.5">
                 {timeUntilNextArena > 0 ? formatTimeRemaining(timeUntilNextArena) : '0:00:00'}
               </div>
-              <p className="text-white/70 text-[10px] sm:text-xs mb-2">
+              <p className="text-white/70 text-[9px] sm:text-[10px] mb-0.5">
                 Início: {new Date(nextArena.startTime).toLocaleString('pt-BR')}
               </p>
-              <span className="text-amber-400 text-xs font-semibold hover:text-amber-300">Ir para Arena →</span>
+              <span className="text-amber-400 text-[10px] font-semibold hover:text-amber-300">Ir para Arena →</span>
             </motion.div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5">
-            {/* Top 5 Season */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="rounded-lg p-2 sm:p-3 md:p-4 border border-blue-700/30 hover:border-blue-600/50 transition-all duration-300"
-            >
-              <h2 className="text-xs sm:text-sm font-bold mb-1.5 sm:mb-2 flex items-center gap-1 text-white drop-shadow-lg">
-                🏆 Top 5 Season
-              </h2>
-              <div className="space-y-1 sm:space-y-1.5">
-                {topSeasonPlayers.map((player) => (
-                  <motion.div
-                    key={player.id}
-                    whileHover={{ scale: 1.02, x: 4 }}
-                    className={`flex items-center gap-1.5 sm:gap-2 p-1 sm:p-1.5 md:p-2 rounded-md transition-all duration-200 ${
-                      player.rank === 1 ? 'bg-transparent border border-blue-600/30 shadow-lg' :
-                      player.rank === 2 ? 'bg-transparent border border-blue-700/20 shadow-md' :
-                      player.rank === 3 ? 'bg-transparent border border-blue-700/20 shadow-md' :
-                      'bg-transparent border border-blue-800/20 hover:border-blue-700/30'
-                    }`}
-                  >
-                    <div className="text-xs sm:text-sm font-bold w-5 sm:w-6 flex-shrink-0">
-                      {player.rank === 1 ? '🥇' : player.rank === 2 ? '🥈' : player.rank === 3 ? '🥉' : `${player.rank}º`}
-                    </div>
-                    <img
-                      src={getImageUrl(player.profileImage)}
-                      alt={player.nickname}
-                      className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full flex-shrink-0 object-cover"
-                      onError={(e) => {
-                        e.currentTarget.src = '/images/default.png';
-                      }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-[10px] sm:text-xs md:text-sm truncate text-white">{player.clanTag ? `|${player.clanTag}|` : ''} {player.nickname?.substring(0, 10)}</div>
-                      <div className="text-[9px] sm:text-[10px] md:text-xs text-white/80">Score: {player.score || 0}</div>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-              <button
-                onClick={() => navigate('/ranking')}
-                className="mt-1.5 sm:mt-2 w-full bg-transparent border border-blue-600/50 hover:border-blue-500 text-white font-semibold py-1.5 text-xs rounded-md transition-all"
-              >
-                Ver Mais
-              </button>
-            </motion.div>
-
-            {/* Top 5 Geral */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.05 }}
-              className="rounded-lg p-2 sm:p-3 md:p-4 border border-red-700/30 hover:border-red-600/50 transition-all duration-300"
-            >
-              <h2 className="text-xs sm:text-sm font-bold mb-1.5 sm:mb-2 flex items-center gap-1 text-white drop-shadow-lg">
-                ⭐ Top 5 Geral
-              </h2>
-              <div className="space-y-1 sm:space-y-1.5">
-                {topPlayers.map((player) => (
-                  <div
-                    key={player.id}
-                    className={`flex items-center gap-1.5 sm:gap-2 p-1 sm:p-1.5 md:p-2 rounded-md ${
-                      player.rank === 1 ? 'bg-transparent border border-red-600/30' :
-                      player.rank === 2 ? 'bg-transparent border border-red-700/20' :
-                      player.rank === 3 ? 'bg-transparent border border-red-700/20' :
-                      'bg-transparent border border-red-800/20'
-                    }`}
-                  >
-                    <div className="text-xs sm:text-sm font-bold w-5 sm:w-6 flex-shrink-0">
-                      {player.rank === 1 ? '🥇' : player.rank === 2 ? '🥈' : player.rank === 3 ? '🥉' : `${player.rank}º`}
-                    </div>
-                    <img
-                      src={getImageUrl(player.profileImage)}
-                      alt={player.nickname}
-                      className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full flex-shrink-0 object-cover"
-                      onError={(e) => {
-                        e.currentTarget.src = '/images/default.png';
-                      }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-[10px] sm:text-xs md:text-sm truncate text-white">{player.clanTag ? `|${player.clanTag}|` : ''} {player.nickname?.substring(0, 10)}</div>
-                      <div className="text-[9px] sm:text-[10px] md:text-xs text-white/80">Score: {player.score || 0}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <button
-                onClick={() => navigate('/ranking')}
-                className="mt-1.5 sm:mt-2 w-full bg-transparent border border-red-600/50 hover:border-red-500 text-white font-semibold py-1.5 text-xs rounded-md transition-all"
-              >
-                Ver Mais
-              </button>
-            </motion.div>
-          </div>
-
-          {/* Top 5 Clãs */}
+          {/* Card único: Top 5 Duelistas (Geral + Season lado a lado, igual ao login) */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="rounded-lg p-2 sm:p-3 md:p-4 border border-blue-700/30 hover:border-red-600/50 transition-all duration-300"
+            className="rounded-lg p-2 sm:p-3 md:p-4 border border-white/20 bg-black/20 backdrop-blur-sm overflow-hidden"
           >
-            <h2 className="text-xs sm:text-sm font-bold mb-1.5 sm:mb-2 flex items-center gap-1 text-white drop-shadow-lg">
-              ⚔️ Top 5 Clãs
-            </h2>
-            <div className="space-y-1 sm:space-y-1.5">
-              {topClans.map((clan) => {
-                const canJoin = !user?.group && !user?.clanTag;
-                return (
-                  <motion.div
-                    key={clan.id}
-                    onClick={() => navigate(`/groups/${clan.id}`)}
-                    whileHover={{ scale: 1.02, x: 4 }}
-                    className={`flex items-center gap-1.5 sm:gap-2 p-1 sm:p-1.5 md:p-2 rounded-md cursor-pointer transition-all duration-200 ${
-                      clan.rank === 1 ? 'bg-transparent border border-blue-600/30 shadow-lg' :
-                      clan.rank === 2 ? 'bg-transparent border border-blue-700/20 shadow-md' :
-                      clan.rank === 3 ? 'bg-transparent border border-red-700/20 shadow-md' :
-                      'bg-transparent border border-blue-800/20 hover:border-red-800/30'
-                    }`}
-                  >
-                    <div className="text-xs sm:text-sm font-bold w-5 sm:w-6 flex-shrink-0">
-                      {clan.rank === 1 ? '🥇' : clan.rank === 2 ? '🥈' : clan.rank === 3 ? '🥉' : `${clan.rank}º`}
-                    </div>
-                    <img
-                      src={getImageUrl(clan.logo)}
-                      alt={clan.name}
-                      className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded object-cover flex-shrink-0 border border-blue-600/50"
-                      onError={(e) => {
-                        e.currentTarget.src = '/images/default.png';
-                      }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-[10px] sm:text-xs md:text-sm truncate text-white">[{clan.tag}] {clan.name}</div>
-                      <div className="text-[9px] sm:text-[10px] md:text-xs text-white/80">{clan.totalScore || 0} · {clan.memberCount || 0} memb.</div>
-                    </div>
-                    {canJoin && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleJoinGroup(clan.id);
-                        }}
-                        className="px-1.5 sm:px-2 py-1 bg-transparent border border-blue-600/50 hover:border-red-600/50 text-white rounded text-[10px] sm:text-xs font-semibold whitespace-nowrap"
+            <div className="px-2 sm:px-3 py-2 border-b border-white/10 bg-gradient-to-r from-amber-500/20 to-transparent mb-2 sm:mb-3">
+              <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1">
+                <span className="text-base sm:text-lg">🏆</span> Top 5 Duelistas
+              </h2>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 min-h-[140px]">
+              {/* Coluna Geral */}
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-amber-400/90 font-semibold mb-1.5 sm:mb-2">Geral</p>
+                {topPlayers.length === 0 ? (
+                  <p className="text-white/40 text-xs">Carregando...</p>
+                ) : (
+                  <ul className="space-y-1 sm:space-y-1.5">
+                    {topPlayers.map((p, i) => (
+                      <li key={p.id} className="flex items-center gap-1.5 sm:gap-2">
+                        <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
+                        <img src={getImageUrl(p.profileImage)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                        <div className="min-w-0 flex-1">
+                          <span className="text-white text-[10px] sm:text-xs font-medium truncate block">{p.clanTag ? `|${p.clanTag}| ` : ''}{p.nickname || '—'}</span>
+                          <span className="text-amber-300/90 text-[9px] sm:text-[10px]">{p.score ?? 0} pts</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              {/* Coluna Season */}
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-purple-400/90 font-semibold mb-1.5 sm:mb-2">Season</p>
+                {topSeasonPlayers.length === 0 ? (
+                  <p className="text-white/40 text-xs">Carregando...</p>
+                ) : (
+                  <ul className="space-y-1 sm:space-y-1.5">
+                    {topSeasonPlayers.map((p, i) => (
+                      <li key={p.id} className="flex items-center gap-1.5 sm:gap-2">
+                        <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
+                        <img src={getImageUrl(p.profileImage)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                        <div className="min-w-0 flex-1">
+                          <span className="text-white text-[10px] sm:text-xs font-medium truncate block">{p.clanTag ? `|${p.clanTag}| ` : ''}{p.nickname || '—'}</span>
+                          <span className="text-purple-300/90 text-[9px] sm:text-[10px]">{p.score ?? 0} pts</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => navigate('/ranking')}
+              className="mt-2 sm:mt-3 w-full bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold py-1.5 text-xs rounded-md transition-all"
+            >
+              Ver ranking completo
+            </button>
+          </motion.div>
+
+          {/* Card único: Top 5 Clãs (Geral + Season lado a lado, igual ao login) */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+            className="rounded-lg p-2 sm:p-3 md:p-4 border border-white/20 bg-black/20 backdrop-blur-sm overflow-hidden"
+          >
+            <div className="px-2 sm:px-3 py-2 border-b border-white/10 bg-gradient-to-r from-rose-500/20 to-transparent mb-2 sm:mb-3">
+              <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1">
+                <span className="text-base sm:text-lg">⚔️</span> Top 5 Clãs
+              </h2>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 min-h-[140px]">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-amber-400/90 font-semibold mb-1.5 sm:mb-2">Geral</p>
+                {topClansGeneral.length === 0 ? (
+                  <p className="text-white/40 text-xs">Carregando...</p>
+                ) : (
+                  <ul className="space-y-1 sm:space-y-1.5">
+                    {topClansGeneral.map((c, i) => (
+                      <li
+                        key={c.id}
+                        onClick={() => navigate(`/groups/${c.id}`)}
+                        className="flex items-center gap-1.5 sm:gap-2 cursor-pointer rounded-md p-1 hover:bg-white/5 transition-colors"
                       >
-                        Entrar
-                      </button>
-                    )}
-                  </motion.div>
-                );
-              })}
+                        <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
+                        <img src={getImageUrl(c.logo)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                        <div className="min-w-0 flex-1">
+                          <span className="text-white text-[10px] sm:text-xs font-medium truncate block">[{c.tag}] {c.name || '—'}</span>
+                          <span className="text-amber-300/90 text-[9px] sm:text-[10px]">{c.totalScore ?? 0} pts</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-purple-400/90 font-semibold mb-1.5 sm:mb-2">Season</p>
+                {topClansSeason.length === 0 ? (
+                  <p className="text-white/40 text-xs">Carregando...</p>
+                ) : (
+                  <ul className="space-y-1 sm:space-y-1.5">
+                    {topClansSeason.map((c, i) => (
+                      <li
+                        key={c.id}
+                        onClick={() => navigate(`/groups/${c.id}`)}
+                        className="flex items-center gap-1.5 sm:gap-2 cursor-pointer rounded-md p-1 hover:bg-white/5 transition-colors"
+                      >
+                        <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
+                        <img src={getImageUrl(c.logo)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                        <div className="min-w-0 flex-1">
+                          <span className="text-white text-[10px] sm:text-xs font-medium truncate block">[{c.tag}] {c.name || '—'}</span>
+                          <span className="text-purple-300/90 text-[9px] sm:text-[10px]">{c.totalScore ?? 0} pts</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
             <button
               onClick={() => navigate('/groups')}
-              className="mt-1.5 sm:mt-2 w-full bg-transparent border border-blue-700/50 hover:border-red-600/50 text-white font-semibold py-1.5 text-xs rounded-md transition-all"
+              className="mt-2 sm:mt-3 w-full bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold py-1.5 text-xs rounded-md transition-all"
             >
               Ver Todos os Clãs
             </button>
