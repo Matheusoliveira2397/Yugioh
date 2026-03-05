@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../api/axios';
 import { useAuthStore } from '../stores/authStore';
 import { useNavigate } from 'react-router-dom';
+
+const TEN_MINUTES_MS = 10 * 60 * 1000;
 
 interface UpcomingArena {
   id: string;
@@ -16,9 +18,12 @@ export default function ArenaCountdownBanner() {
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [topOffset, setTopOffset] = useState<number>(0);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [scheduleRefresh, setScheduleRefresh] = useState(0);
   const { user } = useAuthStore();
   const navigate = useNavigate();
 
+  // Busca a próxima arena e agenda o popup pelo horário (quando faltar 10 min), sem polling
   useEffect(() => {
     if (!user) {
       setUpcomingArena(null);
@@ -26,45 +31,65 @@ export default function ArenaCountdownBanner() {
       return;
     }
 
-    const checkUpcomingArena = async () => {
+    const fetchNextAndSchedule = async () => {
       try {
-        const response = await api.get('/arena/upcoming');
-        if (response.data && response.data.arena && response.data.timeUntilStart != null) {
-          const timeUntil = Number(response.data.timeUntilStart);
-          // Mostrar o banner quando faltar 10 minutos ou menos para a arena
-          const tenMinutesMs = 10 * 60 * 1000;
-          if (timeUntil > 0 && timeUntil <= tenMinutesMs) {
-            setUpcomingArena(response.data.arena);
-            setTimeRemaining(timeUntil);
-          } else {
-            setUpcomingArena(null);
-          }
-        } else {
-          // Só esconde se a API não retornar arena (ex.: já passou dos 10 min no servidor)
+        const response = await api.get<{
+          arena: UpcomingArena | null;
+          timeUntilStart?: number;
+          startsAt?: string;
+        }>('/arena/next');
+        const arena = response.data?.arena;
+        const timeUntilStart = response.data?.timeUntilStart ?? null;
+        const startsAt = response.data?.startsAt;
+
+        if (!arena || timeUntilStart == null) {
           setUpcomingArena(null);
+          return;
         }
+
+        const timeUntil = Number(timeUntilStart);
+
+        if (timeUntil <= 0) {
+          setUpcomingArena(null);
+          return;
+        }
+
+        // Já estamos na janela de 10 minutos: mostrar banner agora
+        if (timeUntil <= TEN_MINUTES_MS) {
+          setUpcomingArena(arena);
+          setTimeRemaining(timeUntil);
+          return;
+        }
+
+        // Faltam mais de 10 min: agendar um único timeout para quando faltar exatamente 10 min
+        const msUntilShowBanner = timeUntil - TEN_MINUTES_MS;
+        timeoutRef.current = setTimeout(() => {
+          timeoutRef.current = null;
+          setUpcomingArena(arena);
+          const start = startsAt ? new Date(startsAt).getTime() : Date.now() + TEN_MINUTES_MS;
+          setTimeRemaining(Math.max(0, start - Date.now()));
+        }, msUntilShowBanner);
       } catch (error: any) {
-        if (error?.response?.status === 404 || !error?.response?.data) {
-          setUpcomingArena(null);
-        } else {
-          console.error('Erro ao verificar arena próxima:', error);
-          setUpcomingArena(null);
+        if (error?.response?.status !== 404) {
+          console.error('Erro ao buscar próxima arena:', error);
         }
+        setUpcomingArena(null);
       } finally {
         setLoading(false);
       }
     };
 
-    // Verificar imediatamente
-    checkUpcomingArena();
+    fetchNextAndSchedule();
 
-    // Verificar a cada 3 segundos para não perder a janela de "faltam 10 minutos"
-    const interval = setInterval(checkUpcomingArena, 3000);
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, [user, scheduleRefresh]);
 
-    return () => clearInterval(interval);
-  }, [user]);
-
-  // Atualizar contagem regressiva
+  // Atualizar contagem regressiva; quando chegar a 0, re-agendar para a próxima arena
   useEffect(() => {
     if (!upcomingArena || timeRemaining <= 0) return;
 
@@ -73,6 +98,7 @@ export default function ArenaCountdownBanner() {
         const newTime = prev - 1000;
         if (newTime <= 0) {
           setUpcomingArena(null);
+          setScheduleRefresh((r) => r + 1); // re-buscar e agendar próxima arena (ex.: amanhã)
           return 0;
         }
         return newTime;

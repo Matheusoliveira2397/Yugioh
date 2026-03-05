@@ -597,6 +597,54 @@ export class DuelsService implements OnModuleInit {
           }
         }
         
+        // Em produção (ou quando JOIN não retorna relações): garantir player1/player2 com cosméticos para o frontend exibir skin/playmat do oponente
+        const p1 = (duel as any).player1;
+        const p2 = (duel as any).player2;
+        const missingPlayers = !p1 || !p2;
+        const missingCosmeticKeys = (p1 && !('equippedSkinImage' in p1)) || (p2 && !('equippedSkinImage' in p2));
+        if ((missingPlayers || missingCosmeticKeys) && duel.player1Id && duel.player2Id) {
+          try {
+            const [u1, u2] = await Promise.all([
+              this.usersRepository.findOne({
+                where: { id: Number(duel.player1Id) },
+                select: ['id', 'nickname', 'clanTag', 'profileImage', 'equippedPlaymatId', 'equippedPlaymatImage', 'equippedSkinId', 'equippedSkinImage', 'equippedDeckName'],
+              }),
+              this.usersRepository.findOne({
+                where: { id: Number(duel.player2Id) },
+                select: ['id', 'nickname', 'clanTag', 'profileImage', 'equippedPlaymatId', 'equippedPlaymatImage', 'equippedSkinId', 'equippedSkinImage', 'equippedDeckName'],
+              }),
+            ]);
+            if (u1) {
+              (duel as any).player1 = {
+                id: u1.id,
+                nickname: (u1 as any).nickname,
+                clanTag: (u1 as any).clanTag,
+                profileImage: (u1 as any).profileImage,
+                equippedPlaymatId: (u1 as any).equippedPlaymatId,
+                equippedPlaymatImage: (u1 as any).equippedPlaymatImage,
+                equippedSkinId: (u1 as any).equippedSkinId,
+                equippedSkinImage: (u1 as any).equippedSkinImage,
+                equippedDeckName: (u1 as any).equippedDeckName,
+              };
+            }
+            if (u2) {
+              (duel as any).player2 = {
+                id: u2.id,
+                nickname: (u2 as any).nickname,
+                clanTag: (u2 as any).clanTag,
+                profileImage: (u2 as any).profileImage,
+                equippedPlaymatId: (u2 as any).equippedPlaymatId,
+                equippedPlaymatImage: (u2 as any).equippedPlaymatImage,
+                equippedSkinId: (u2 as any).equippedSkinId,
+                equippedSkinImage: (u2 as any).equippedSkinImage,
+                equippedDeckName: (u2 as any).equippedDeckName,
+              };
+            }
+          } catch (e) {
+            logger.warn(`⚠️ [findDuelByIdFromDatabase] Erro ao carregar cosméticos dos jogadores:`, e);
+          }
+        }
+        
         // Log detalhado dos campos (apenas em debug)
         logger.debug(`📦 [findDuelByIdFromDatabase] player1Field do banco:`, {
           exists: !!duel.player1Field,
@@ -6721,14 +6769,15 @@ export class DuelsService implements OnModuleInit {
     // Remover o monstro do campo do oponente
     opponentField.monsters[chosenMonsterZoneIndex] = null;
     
-    // No campo do controlador o monstro fica sempre face-up (ataque ou defesa)
-    const wasSet = (chosenMonster.position || 'attack') === 'set';
-    const faceUpPosition = wasSet ? 'defense' : (chosenMonster.position || 'attack');
+    // Preservar a posição do monstro: se estava face-down (set), permanece face-down no nosso campo
+    // (o jogador pode virar quando quiser). Se estava face-up, mantém attack/defense.
+    const originalPosition = chosenMonster.position || 'attack';
+    const newPosition = originalPosition; // 'set' permanece 'set'; 'attack'/'defense' permanecem
     
-    // Adicionar o monstro ao campo do jogador com informações de controle (face-up até fim do turno ou ser destruído)
+    // Adicionar o monstro ao campo do jogador com informações de controle (até fim do turno ou ser destruído)
     const controlledMonster = {
       ...chosenMonster,
-      position: faceUpPosition,
+      position: newPosition,
       controlledBy: isPlayer1 ? 1 : 2, // Quem está controlando
       originalOwner: isPlayer1 ? 2 : 1, // Dono original
       originalZoneIndex: chosenMonsterZoneIndex, // Zona original no campo do oponente
@@ -6740,7 +6789,7 @@ export class DuelsService implements OnModuleInit {
     
     playerField.monsters[emptyZoneIndex] = controlledMonster;
     
-    logger.info(`✅ [processChangeOfHeartChoice] Monstro ${chosenMonster.name || chosenMonster.cardName} agora está sob controle do jogador ${isPlayer1 ? 1 : 2} (face-up ${faceUpPosition})`);
+    logger.info(`✅ [processChangeOfHeartChoice] Monstro ${chosenMonster.name || chosenMonster.cardName} agora está sob controle do jogador ${isPlayer1 ? 1 : 2} (posição: ${newPosition})`);
     logger.info(`🔍 [processChangeOfHeartChoice] Detalhes do controle:`);
     logger.info(`   - controlledBy: ${controlledMonster.controlledBy}`);
     logger.info(`   - originalOwner: ${controlledMonster.originalOwner}`);
