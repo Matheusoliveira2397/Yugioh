@@ -4,6 +4,7 @@ import { Repository, In } from 'typeorm';
 import { Deck } from './entities/deck.entity';
 import { DeckCard } from './entities/deck-card.entity';
 import { CreateDeckDto } from './dto/create-deck.dto';
+import { SaveDeckDto } from './dto/save-deck.dto';
 import { Card } from '../cards/entities/card.entity';
 import { UserCard } from '../shop/entities/user-card.entity';
 import { User } from '../users/entities/user.entity';
@@ -141,7 +142,7 @@ export class DecksService implements OnModuleInit {
   }
 
   // ==================== SALVAR DECK ATUAL (DECK PRINCIPAL + EXTRA DECK) ====================
-  async saveCurrentDeck(userId: number, saveDeckDto: { cardIds: string[]; extraDeckCardIds?: string[]; name?: string }): Promise<Deck> {
+  async saveCurrentDeck(userId: number, saveDeckDto: SaveDeckDto): Promise<Deck> {
     const startTime = Date.now();
     logger.debug('💾 [saveCurrentDeck] Salvando deck atual para usuário:', userId, 'cartas:', saveDeckDto.cardIds.length);
     
