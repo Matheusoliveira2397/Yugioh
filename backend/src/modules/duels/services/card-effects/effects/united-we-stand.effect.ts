@@ -78,10 +78,11 @@ export class UnitedWeStandEffect extends BaseCardEffect {
         chosenMonster.equippedCardId = cardId;
         chosenMonster.equippedSpellTrapZoneIndex = zoneIndex;
         
-        // Recalcular bônus total do equipamento
+        // Recalcular bônus total do equipamento (+800 ATK e +800 DEF por monstro face-up)
         chosenMonster.equipmentBonusAtk = (this.duelsService as any).calculateTotalEquipmentBonus(chosenMonster, playerField);
+        chosenMonster.equipmentBonusDef = (this.duelsService as any).calculateTotalEquipmentBonusDef(chosenMonster, playerField);
         
-        this.logInfo(`United We Stand equipada ao monstro na zona ${selectedMonsterZoneIndex}, bonus ATK: +${chosenMonster.equipmentBonusAtk}`);
+        this.logInfo(`United We Stand equipada ao monstro na zona ${selectedMonsterZoneIndex}, bonus ATK: +${chosenMonster.equipmentBonusAtk}, DEF: +${chosenMonster.equipmentBonusDef || 0}`);
         
         // Atualizar no banco e cache para garantir que o estado está salvo
         await this.updateDuel(context, {});

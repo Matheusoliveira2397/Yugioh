@@ -9,7 +9,7 @@ import DuelLogs from '../components/duel/DuelLogs';
 import DuelField from '../components/duel/DuelField';
 import CardImage from '../components/CardImage';
 import { getCardImage } from '../utils/cardImage';
-import { getImageUrl } from '../utils/imageUrl';
+import { getImageUrl, getCosmeticImageUrl } from '../utils/imageUrl';
 import TributeSelectionModal from '../components/duel/TributeSelectionModal';
 
 interface DuelData {
@@ -539,8 +539,6 @@ const DuelArena: React.FC = () => {
     isSelectingSnowmanEaterTarget ||
     isSelectingChaosSorcererTarget
   );
-
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
   // Modo espectador: usuário não é jogador do duelo (ex.: admin assistindo)
   const userIdForSpectator = user?.id != null ? (typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id)) : null;
@@ -3487,52 +3485,21 @@ const DuelArena: React.FC = () => {
   const topPanelClanTag = isSpectator ? (player1DuelRef as any)?.clanTag || '' : opponentClanTag;
   const bottomPanelClanTag = isSpectator ? (player2DuelRef as any)?.clanTag || '' : myClanTag;
 
-  const myPlaymatImageUrl =
-    myUserInDuel?.equippedPlaymatImage
-      ? (myUserInDuel.equippedPlaymatImage.startsWith('http')
-          ? myUserInDuel.equippedPlaymatImage
-          : `${API_URL}${myUserInDuel.equippedPlaymatImage}`)
-      : undefined;
+  // URLs de playmat e skin: usar helper que em produção usa VITE_API_URL para paths relativos
+  const myPlaymatImageUrl = getCosmeticImageUrl(myUserInDuel?.equippedPlaymatImage);
+  const opponentPlaymatImageUrl = getCosmeticImageUrl(opponentInDuel?.equippedPlaymatImage);
+  const defaultCardBack = '/images/fundoCarta.webp';
+  const mySkinImageUrl = getCosmeticImageUrl(myUserInDuel?.equippedSkinImage) ?? defaultCardBack;
+  const opponentSkinImageUrl = getCosmeticImageUrl(opponentInDuel?.equippedSkinImage) ?? defaultCardBack;
 
-  const opponentPlaymatImageUrl =
-    opponentInDuel?.equippedPlaymatImage
-      ? (opponentInDuel.equippedPlaymatImage.startsWith('http')
-          ? opponentInDuel.equippedPlaymatImage
-          : `${API_URL}${opponentInDuel.equippedPlaymatImage}`)
-      : undefined;
-
-  const mySkinImageUrl =
-    myUserInDuel?.equippedSkinImage
-      ? (myUserInDuel.equippedSkinImage.startsWith('http')
-          ? myUserInDuel.equippedSkinImage
-          : `${API_URL}${myUserInDuel.equippedSkinImage}`)
-      : '/images/fundoCarta.webp';
-
-  const opponentSkinImageUrl =
-    opponentInDuel?.equippedSkinImage
-      ? (opponentInDuel.equippedSkinImage.startsWith('http')
-          ? opponentInDuel.equippedSkinImage
-          : `${API_URL}${opponentInDuel.equippedSkinImage}`)
-      : '/images/fundoCarta.webp';
-
-  // No modo espectador: skins fixas por posição (Jogador 1 = baixo, Jogador 2 = cima) para não trocar
   const player1Duel = (duelData as any).player1;
   const player2Duel = (duelData as any).player2;
-  const skinPlayer1 = player1Duel?.equippedSkinImage
-    ? (player1Duel.equippedSkinImage.startsWith('http') ? player1Duel.equippedSkinImage : `${API_URL}${player1Duel.equippedSkinImage}`)
-    : '/images/fundoCarta.webp';
-  const skinPlayer2 = player2Duel?.equippedSkinImage
-    ? (player2Duel.equippedSkinImage.startsWith('http') ? player2Duel.equippedSkinImage : `${API_URL}${player2Duel.equippedSkinImage}`)
-    : '/images/fundoCarta.webp';
-  // Modo espectador: no layout, campo de CIMA = Player 1, campo de BAIXO = Player 2 (cada um com sua própria skin/playmat)
+  const skinPlayer1 = getCosmeticImageUrl(player1Duel?.equippedSkinImage) ?? defaultCardBack;
+  const skinPlayer2 = getCosmeticImageUrl(player2Duel?.equippedSkinImage) ?? defaultCardBack;
   const skinTop = isSpectator ? skinPlayer1 : opponentSkinImageUrl;
   const skinBottom = isSpectator ? skinPlayer2 : mySkinImageUrl;
-  const playmatTop = isSpectator
-    ? (player1Duel?.equippedPlaymatImage ? (player1Duel.equippedPlaymatImage.startsWith('http') ? player1Duel.equippedPlaymatImage : `${API_URL}${player1Duel.equippedPlaymatImage}`) : undefined)
-    : opponentPlaymatImageUrl;
-  const playmatBottom = isSpectator
-    ? (player2Duel?.equippedPlaymatImage ? (player2Duel.equippedPlaymatImage.startsWith('http') ? player2Duel.equippedPlaymatImage : `${API_URL}${player2Duel.equippedPlaymatImage}`) : undefined)
-    : myPlaymatImageUrl;
+  const playmatTop = isSpectator ? getCosmeticImageUrl(player1Duel?.equippedPlaymatImage) : opponentPlaymatImageUrl;
+  const playmatBottom = isSpectator ? getCosmeticImageUrl(player2Duel?.equippedPlaymatImage) : myPlaymatImageUrl;
 
   // Espectador: topo = Jogador 1, baixo = Jogador 2 — dados de campo e mão por posição
   const topFieldMonsters = isSpectator ? myMonsters : opponentMonsters;

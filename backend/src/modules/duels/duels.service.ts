@@ -4992,10 +4992,11 @@ export class DuelsService implements OnModuleInit {
             chosenMonster.equippedCardId = cardId;
             chosenMonster.equippedSpellTrapZoneIndex = zoneIndex;
             
-            // Recalcular bônus total do equipamento
+            // Recalcular bônus total do equipamento (United We Stand: +800 ATK e +800 DEF por monstro face-up)
             chosenMonster.equipmentBonusAtk = this.calculateTotalEquipmentBonus(chosenMonster, playerField);
+            chosenMonster.equipmentBonusDef = this.calculateTotalEquipmentBonusDef(chosenMonster, playerField);
             
-            logger.info(`✅ [processCardEffect] UnitedWeStand equipada ao monstro na zona ${selectedMonsterZoneIndex}, bonus ATK: +${chosenMonster.equipmentBonusAtk}`);
+            logger.info(`✅ [processCardEffect] UnitedWeStand equipada ao monstro na zona ${selectedMonsterZoneIndex}, bonus ATK: +${chosenMonster.equipmentBonusAtk}, DEF: +${chosenMonster.equipmentBonusDef || 0}`);
             
             // Atualizar no banco e cache para garantir que o estado está salvo
             await this.updateDuelInDatabase(duelId, {
@@ -7431,11 +7432,12 @@ export class DuelsService implements OnModuleInit {
     chosenMonster.equippedCardId = unitedWeStandCardId;
     chosenMonster.equippedSpellTrapZoneIndex = spellTrapZoneIndex;
     
-    // Recalcular bônus total do equipamento
+    // Recalcular bônus total do equipamento (United We Stand: +800 ATK e +800 DEF por monstro face-up)
     // IMPORTANTE: Recalcular após adicionar o novo equipamento para garantir que todos os equipamentos sejam considerados
     const oldBonus = chosenMonster.equipmentBonusAtk || 0;
     chosenMonster.equipmentBonusAtk = this.calculateTotalEquipmentBonus(chosenMonster, playerField);
-    logger.info(`🔄 [processUnitedWeStandChoice] Bônus recalculado: ${oldBonus} -> ${chosenMonster.equipmentBonusAtk} (diferença: +${chosenMonster.equipmentBonusAtk - oldBonus})`);
+    chosenMonster.equipmentBonusDef = this.calculateTotalEquipmentBonusDef(chosenMonster, playerField);
+    logger.info(`🔄 [processUnitedWeStandChoice] Bônus recalculado: ${oldBonus} -> ${chosenMonster.equipmentBonusAtk} ATK, DEF: +${chosenMonster.equipmentBonusDef || 0}`);
     logger.info(`📊 [processUnitedWeStandChoice] Equipamentos no monstro: ${chosenMonster.equippedCards?.length || 0} (${chosenMonster.equippedCards?.join(', ') || 'nenhum'})`);
 
     // IMPORTANTE: Garantir que o array de equipamentos está correto antes de salvar
@@ -7873,20 +7875,21 @@ export class DuelsService implements OnModuleInit {
     monster.equippedSpellTrapZoneIndex = spellTrapZoneIndex;
     spellCard.equippedToMonsterZoneIndex = monsterZoneIndex;
     
-    // Recalcular bônus total do equipamento ANTES de processar efeito
+    // Recalcular bônus total do equipamento ANTES de processar efeito (ATK e DEF)
     monster.equipmentBonusAtk = this.calculateTotalEquipmentBonus(monster, playerField);
-    logger.info(`🔍 [equipSpellFromHand] ANTES processCardEffect - ATK base: ${monster.atk || 0}, ATK bonus: ${monster.equipmentBonusAtk}, ATK total: ${(monster.atk || 0) + (monster.equipmentBonusAtk || 0)}, equips: ${monster.equippedCards?.length || 0}`);
+    monster.equipmentBonusDef = this.calculateTotalEquipmentBonusDef(monster, playerField);
+    logger.info(`🔍 [equipSpellFromHand] ANTES processCardEffect - ATK base: ${monster.atk || 0}, ATK bonus: ${monster.equipmentBonusAtk}, DEF bonus: ${monster.equipmentBonusDef || 0}, equips: ${monster.equippedCards?.length || 0}`);
     
     // Processar efeito da spell equip (calcula bonus de ATK, etc)
     // O processCardEffect será chamado com o monstro já selecionado
     await this.processCardEffect(duelIdStr, duel, isPlayer1, spellCard, spellTrapZoneIndex, monsterZoneIndex);
     
-    // Recalcular TODOS os monstros com equipamentos após adicionar um novo equipamento
-    // Isso garante que todos os equipamentos sejam considerados corretamente
+    // Recalcular TODOS os monstros com equipamentos após adicionar um novo equipamento (ATK e DEF)
     playerField.monsters.forEach((m: any, idx: number) => {
       if (m && m.equippedCards && Array.isArray(m.equippedCards) && m.equippedCards.length > 0) {
         const oldBonus = m.equipmentBonusAtk || 0;
         m.equipmentBonusAtk = this.calculateTotalEquipmentBonus(m, playerField);
+        m.equipmentBonusDef = this.calculateTotalEquipmentBonusDef(m, playerField);
         if (oldBonus !== m.equipmentBonusAtk) {
           logger.info(`🔄 [equipSpellFromHand] Recalculado monstro ${idx} (${m.name || m.cardName}) - ATK bonus: ${oldBonus} -> ${m.equipmentBonusAtk}`);
         }
@@ -7895,7 +7898,8 @@ export class DuelsService implements OnModuleInit {
     
     // Recalcular novamente o monstro específico após processar efeito (pode ter mudado o campo)
     monster.equipmentBonusAtk = this.calculateTotalEquipmentBonus(monster, playerField);
-    logger.info(`🔍 [equipSpellFromHand] APÓS processCardEffect - ATK base: ${monster.atk || 0}, ATK bonus: ${monster.equipmentBonusAtk}, ATK total: ${(monster.atk || 0) + (monster.equipmentBonusAtk || 0)}, equips: ${monster.equippedCards?.length || 0}`);
+    monster.equipmentBonusDef = this.calculateTotalEquipmentBonusDef(monster, playerField);
+    logger.info(`🔍 [equipSpellFromHand] APÓS processCardEffect - ATK base: ${monster.atk || 0}, ATK bonus: ${monster.equipmentBonusAtk}, DEF bonus: ${monster.equipmentBonusDef || 0}, equips: ${monster.equippedCards?.length || 0}`);
 
     // Atualizar no banco
     await this.updateDuelInDatabase(duelId, {
@@ -8015,20 +8019,21 @@ export class DuelsService implements OnModuleInit {
     monster.equippedSpellTrapZoneIndex = spellTrapZoneIndex;
     spellCard.equippedToMonsterZoneIndex = monsterZoneIndex;
     
-    // Recalcular bônus total do equipamento ANTES de processar efeito
+    // Recalcular bônus total do equipamento ANTES de processar efeito (ATK e DEF)
     monster.equipmentBonusAtk = this.calculateTotalEquipmentBonus(monster, playerField);
-    logger.info(`🔍 [equipSpellFromField] ANTES processCardEffect - ATK base: ${monster.atk || 0}, ATK bonus: ${monster.equipmentBonusAtk}, ATK total: ${(monster.atk || 0) + (monster.equipmentBonusAtk || 0)}, equips: ${monster.equippedCards?.length || 0}`);
+    monster.equipmentBonusDef = this.calculateTotalEquipmentBonusDef(monster, playerField);
+    logger.info(`🔍 [equipSpellFromField] ANTES processCardEffect - ATK base: ${monster.atk || 0}, ATK bonus: ${monster.equipmentBonusAtk}, DEF bonus: ${monster.equipmentBonusDef || 0}, equips: ${monster.equippedCards?.length || 0}`);
     
     // Processar efeito da spell equip (calcula bonus de ATK, etc)
     // O processCardEffect será chamado com o monstro já selecionado
     await this.processCardEffect(duelIdStr, duel, isPlayer1, spellCard, spellTrapZoneIndex, monsterZoneIndex);
     
-    // Recalcular TODOS os monstros com equipamentos após adicionar um novo equipamento
-    // Isso garante que todos os equipamentos sejam considerados corretamente
+    // Recalcular TODOS os monstros com equipamentos após adicionar um novo equipamento (ATK e DEF)
     playerField.monsters.forEach((m: any, idx: number) => {
       if (m && m.equippedCards && Array.isArray(m.equippedCards) && m.equippedCards.length > 0) {
         const oldBonus = m.equipmentBonusAtk || 0;
         m.equipmentBonusAtk = this.calculateTotalEquipmentBonus(m, playerField);
+        m.equipmentBonusDef = this.calculateTotalEquipmentBonusDef(m, playerField);
         if (oldBonus !== m.equipmentBonusAtk) {
           logger.info(`🔄 [equipSpellFromField] Recalculado monstro ${idx} (${m.name || m.cardName}) - ATK bonus: ${oldBonus} -> ${m.equipmentBonusAtk}`);
         }
@@ -8037,7 +8042,8 @@ export class DuelsService implements OnModuleInit {
     
     // Recalcular novamente o monstro específico após processar efeito (pode ter mudado o campo)
     monster.equipmentBonusAtk = this.calculateTotalEquipmentBonus(monster, playerField);
-    logger.info(`🔍 [equipSpellFromField] APÓS processCardEffect - ATK base: ${monster.atk || 0}, ATK bonus: ${monster.equipmentBonusAtk}, ATK total: ${(monster.atk || 0) + (monster.equipmentBonusAtk || 0)}, equips: ${monster.equippedCards?.length || 0}`);
+    monster.equipmentBonusDef = this.calculateTotalEquipmentBonusDef(monster, playerField);
+    logger.info(`🔍 [equipSpellFromField] APÓS processCardEffect - ATK base: ${monster.atk || 0}, ATK bonus: ${monster.equipmentBonusAtk}, DEF bonus: ${monster.equipmentBonusDef || 0}, equips: ${monster.equippedCards?.length || 0}`);
 
     // Atualizar no banco
     await this.updateDuelInDatabase(duelId, {
@@ -9067,7 +9073,9 @@ export class DuelsService implements OnModuleInit {
   }
 
   /**
-   * Calcula o bônus de DEF total dos equipamentos (apenas Mage Power dá +500 DEF por Spell/Trap)
+   * Calcula o bônus de DEF total dos equipamentos.
+   * United We Stand: +800 DEF por cada monstro face-up no campo.
+   * Mage Power: +500 DEF por cada Magia/Armadilha no campo.
    */
   private calculateTotalEquipmentBonusDef(monster: any, playerField: any): number {
     if (!monster) return 0;
@@ -9092,7 +9100,14 @@ export class DuelsService implements OnModuleInit {
       }
       const cardNameLower = (cardInZone?.name || cardInZone?.cardName || '').toString().toLowerCase();
       const idCartaLower = (cardInZone?.idCarta || cardInZone?.cardId || '').toString().toLowerCase();
+      const isUnitedWeStand = cardId.includes('unitedwestand') || cardNameLower.includes('united we stand') || cardNameLower.includes('unitedwestand') || idCartaLower.includes('unitedwestand');
       const isMagePower = cardId.includes('magepower') || cardNameLower.includes('mage power') || cardNameLower.includes('magepower') || idCartaLower.includes('magepower');
+      if (isUnitedWeStand) {
+        const faceUpMonsters = playerField?.monsters?.filter((m: any) =>
+          m !== null && m !== undefined && (m.position === 'attack' || m.position === 'defense')
+        ) || [];
+        totalDefBonus += faceUpMonsters.length * 800;
+      }
       if (isMagePower) {
         if (!playerField?.spellTrap || !Array.isArray(playerField.spellTrap)) {
           playerField.spellTrap = [null, null, null, null, null];

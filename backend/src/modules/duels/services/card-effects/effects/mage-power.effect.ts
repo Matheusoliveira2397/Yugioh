@@ -76,10 +76,11 @@ export class MagePowerEffect extends BaseCardEffect {
         chosenMonster.equippedCardId = cardId;
         chosenMonster.equippedSpellTrapZoneIndex = zoneIndex;
         
-        // Recalcular bônus total do equipamento
+        // Recalcular bônus total do equipamento (+500 ATK e +500 DEF por Spell/Trap)
         chosenMonster.equipmentBonusAtk = (this.duelsService as any).calculateTotalEquipmentBonus(chosenMonster, playerField);
+        chosenMonster.equipmentBonusDef = (this.duelsService as any).calculateTotalEquipmentBonusDef(chosenMonster, playerField);
         
-        this.logInfo(`Mage Power equipada ao monstro na zona ${selectedMonsterZoneIndex}, bonus ATK: +${chosenMonster.equipmentBonusAtk}`);
+        this.logInfo(`Mage Power equipada ao monstro na zona ${selectedMonsterZoneIndex}, bonus ATK: +${chosenMonster.equipmentBonusAtk}, DEF: +${chosenMonster.equipmentBonusDef || 0}`);
         
         // Atualizar no banco e cache para garantir que o estado está salvo
         await this.updateDuel(context, {});

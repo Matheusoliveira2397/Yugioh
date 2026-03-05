@@ -103,10 +103,24 @@ const DuelField: React.FC<DuelFieldProps> = ({
   const defaultFieldImage = isOpponent 
     ? '/images/CampoDeDuelo01.jpg' 
     : '/images/CampoDeDuelo02.jpg';
-  const fieldImage = playmatImage || defaultFieldImage;
+  const defaultCardBack = '/images/fundoCarta.webp';
 
-  const fallbackCard = cardBackImage || '/images/fundoCarta.webp';
-  
+  // Em produção a imagem do playmat/skin pode 404 (arquivo não persistido); fallback quando falhar
+  const [cardBackLoadError, setCardBackLoadError] = useState(false);
+  const fallbackCard = (cardBackImage && !cardBackLoadError) ? cardBackImage : defaultCardBack;
+
+  React.useEffect(() => {
+    setCardBackLoadError(false);
+  }, [cardBackImage]);
+
+  // Pré-carregar skin do verso; se 404 (ex.: produção sem arquivo), usar padrão
+  React.useEffect(() => {
+    if (!cardBackImage) return;
+    const img = new Image();
+    img.onerror = () => setCardBackLoadError(true);
+    img.src = cardBackImage;
+  }, [cardBackImage]);
+
   // Verificar se pode fazer ataque direto (nenhum monstro no campo do oponente)
   const canDirectAttack = isOpponent && monsters.every((m: any) => m === null || m === undefined);
   
@@ -209,23 +223,28 @@ const DuelField: React.FC<DuelFieldProps> = ({
       )}
       {/* Wrapper que rotaciona TODO o campo do oponente (playmat + zonas) */}
       <div className={`relative w-full h-full ${isOpponent ? 'transform rotate-180' : ''}`}>
-        {/* Imagem de Fundo do Campo - Playmat preenchendo todo o campo */}
+        {/* Camada 1: fundo padrão (sempre visível; fica visível se o playmat customizado falhar) */}
         <div 
           className="absolute inset-0"
           style={{
-            backgroundImage: `url(${fieldImage})`,
-            // '100% 100%' para ajustar a imagem ao tamanho exato do playmat
+            backgroundImage: `url(${defaultFieldImage})`,
             backgroundSize: '100% 100%',
             backgroundPosition: 'center center',
             backgroundRepeat: 'no-repeat',
-            backgroundAttachment: 'local',
-            opacity: 1,
-            filter: 'brightness(1) saturate(1)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
           }}
         />
+        {/* Camada 2: playmat do jogador (em produção pode 404; onError deixa o padrão aparecer) */}
+        {playmatImage && (
+          <img
+            src={playmatImage}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+            style={{ objectFit: 'cover' }}
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
+        )}
 
         {/* Zonas do Campo (por cima da imagem) - Modernizado */}
         <div className="relative px-6 pt-3 pb-0" style={{ overflow: 'visible' }}>
@@ -1299,26 +1318,33 @@ const DuelField: React.FC<DuelFieldProps> = ({
                               }}
                               fallback={fallbackCard}
                             />
-                            {/* DEF em defesa face-up (total = base + equipamentos + efeitos) */}
-                            {(() => {
-                              const baseDef = Number(monster.def) || 0;
-                              const equipmentBonusDef = Number(monster.equipmentBonusDef) || 0;
-                              const spellCounterBonusDef = Number(monster.spellCounterBonusDef) || 0;
-                              const totalDef = baseDef + equipmentBonusDef + spellCounterBonusDef;
-                              return (
-                                <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 z-20">
-                                  <div className="px-2 py-1 rounded-lg shadow-lg border-2 bg-black/80 border-blue-500/70">
-                                    <div className="flex items-center gap-1">
-                                      <span className="text-white text-xs font-bold">DEF</span>
-                                      <span className="text-sm font-bold text-white">
-                                        {totalDef.toLocaleString()}
-                                      </span>
-                                    </div>
+                          </div>
+                          {/* DEF na parte lateral de baixo da carta em defesa; counter-rotate para texto legível */}
+                          {(() => {
+                            const baseDef = Number(monster.def) || 0;
+                            const equipmentBonusDef = Number(monster.equipmentBonusDef) || 0;
+                            const spellCounterBonusDef = Number(monster.spellCounterBonusDef) || 0;
+                            const totalDef = baseDef + equipmentBonusDef + spellCounterBonusDef;
+                            return (
+                              <div
+                                className="absolute z-20"
+                                style={{
+                                  bottom: 2,
+                                  left: '50%',
+                                  transform: 'translateX(-50%) rotate(-90deg)',
+                                }}
+                              >
+                                <div className="px-2 py-1 rounded-lg shadow-lg border-2 bg-black/80 border-blue-500/70 whitespace-nowrap">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-white text-xs font-bold">DEF</span>
+                                    <span className="text-sm font-bold text-white">
+                                      {totalDef.toLocaleString()}
+                                    </span>
                                   </div>
                                 </div>
-                              );
-                            })()}
-                          </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                     ))()
                   )}
