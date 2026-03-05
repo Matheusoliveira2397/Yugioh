@@ -22,7 +22,6 @@ export default function RegisterPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [verificationLink, setVerificationLink] = useState<string | null>(null);
   const [emailSent, setEmailSent] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState<string>('');
 
@@ -204,7 +203,6 @@ export default function RegisterPage() {
       });
 
       setEmailSent(response.data.emailSent || false);
-      setVerificationLink(response.data.verificationLink || null);
       setRegisteredEmail(response.data.email || email.trim().toLowerCase());
       setSuccess(true);
       
@@ -269,27 +267,14 @@ export default function RegisterPage() {
                 <div className="bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-4 mb-6">
                   <p className="text-yellow-200 mb-2">
                     ⚠️ <strong>Email não foi enviado automaticamente</strong>
-            </p>
-                  <p className="text-gray-300 text-sm mb-3">
-                    Use o link abaixo para verificar sua conta:
                   </p>
-                  {verificationLink && (
-                    <div className="bg-gray-900 rounded p-3 mb-3">
-                      <p className="text-xs text-gray-400 mb-2">Link de verificação:</p>
-                      <a 
-                        href={verificationLink} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-blue-400 hover:text-blue-300 break-all text-sm underline"
-                      >
-                        {verificationLink}
-                      </a>
-                    </div>
-                  )}
+                  <p className="text-gray-300 text-sm">
+                    Verifique a pasta de spam no email <strong>{registeredEmail}</strong>. Se não receber, você pode solicitar um novo email de verificação na página de login.
+                  </p>
                 </div>
                 <p className="text-yellow-300 mb-6 text-center text-sm">
                   ⚠️ <strong>Importante:</strong> Você só poderá fazer login após verificar seu email!
-            </p>
+                </p>
               </>
             )}
             

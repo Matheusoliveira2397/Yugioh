@@ -319,12 +319,11 @@ export class AuthService {
     }
 
     return {
-      message: emailSent 
+      message: emailSent
         ? 'Registro realizado com sucesso! Verifique seu email para confirmar sua conta.'
-        : 'Registro realizado com sucesso! Verifique seu email para confirmar sua conta. Se não recebeu o email, verifique a pasta de spam ou use o link abaixo.',
+        : 'Registro realizado com sucesso! Verifique seu email para confirmar sua conta. Se não recebeu o email, verifique a pasta de spam.',
       email: user.email,
       emailSent: emailSent,
-      verificationLink: emailSent ? undefined : `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email/${verificationToken}`,
     };
   }
 
