@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { getCardImage } from '../../utils/cardImage';
+import { getDefaultSkinCardImageUrl } from '../../utils/imageUrl';
 import CardImage from '../CardImage';
 
 interface DuelFieldProps {
@@ -103,11 +104,12 @@ const DuelField: React.FC<DuelFieldProps> = ({
   const defaultFieldImage = isOpponent 
     ? '/images/CampoDeDuelo01.jpg' 
     : '/images/CampoDeDuelo02.jpg';
-  const defaultCardBack = '/images/fundoCarta.webp';
+  // SkinDefault (sleeve padrão) quando a skin equipada não carregar
+  const defaultSkinCardUrl = getDefaultSkinCardImageUrl();
 
-  // Em produção a imagem do playmat/skin pode 404 (arquivo não persistido); fallback quando falhar
+  // Em produção a imagem do playmat/skin pode 404 (arquivo não persistido); fallback para SkinDefault
   const [cardBackLoadError, setCardBackLoadError] = useState(false);
-  const fallbackCard = (cardBackImage && !cardBackLoadError) ? cardBackImage : defaultCardBack;
+  const fallbackCard = (cardBackImage && !cardBackLoadError) ? cardBackImage : defaultSkinCardUrl;
 
   React.useEffect(() => {
     setCardBackLoadError(false);
@@ -1410,7 +1412,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                 <CardImage
                   card={extraDeck[0]}
                   className="w-full h-full"
-                  fallback={cardBackImage || '/images/fundoCarta.webp'}
+                  fallback={fallbackCard}
                 />
               </div>
               {/* Contador de cartas */}

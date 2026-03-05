@@ -30,3 +30,14 @@ export function getCosmeticImageUrl(url: string | null | undefined): string | un
   const base = getApiBaseUrl();
   return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
 }
+
+/** Path da imagem da skin padrão (sleeve "Default" / SkinDefault) nas skins de carta. Usado quando a skin equipada não carrega. */
+export const DEFAULT_SKIN_CARD_IMAGE_PATH = '/uploads/cards/card_default_1764393525708.webp';
+
+/**
+ * URL da imagem SkinDefault (skin de carta padrão). Use como fallback quando a skin equipada falhar ao carregar.
+ */
+export function getDefaultSkinCardImageUrl(): string {
+  const url = getCosmeticImageUrl(DEFAULT_SKIN_CARD_IMAGE_PATH);
+  return url ?? '/images/fundoCarta.webp';
+}

@@ -9,7 +9,7 @@ import DuelLogs from '../components/duel/DuelLogs';
 import DuelField from '../components/duel/DuelField';
 import CardImage from '../components/CardImage';
 import { getCardImage } from '../utils/cardImage';
-import { getImageUrl, getCosmeticImageUrl } from '../utils/imageUrl';
+import { getImageUrl, getCosmeticImageUrl, getDefaultSkinCardImageUrl } from '../utils/imageUrl';
 import TributeSelectionModal from '../components/duel/TributeSelectionModal';
 
 interface DuelData {
@@ -3497,14 +3497,15 @@ const DuelArena: React.FC = () => {
   // URLs de playmat e skin: usar helper que em produção usa VITE_API_URL para paths relativos
   const myPlaymatImageUrl = getCosmeticImageUrl(myUserInDuel?.equippedPlaymatImage);
   const opponentPlaymatImageUrl = getCosmeticImageUrl(opponentInDuel?.equippedPlaymatImage);
-  const defaultCardBack = '/images/fundoCarta.webp';
-  const mySkinImageUrl = getCosmeticImageUrl(myUserInDuel?.equippedSkinImage) ?? defaultCardBack;
-  const opponentSkinImageUrl = getCosmeticImageUrl(opponentInDuel?.equippedSkinImage) ?? defaultCardBack;
+  // SkinDefault (sleeve padrão) quando não há skin equipada ou quando a imagem não carregar
+  const defaultSkinCardUrl = getDefaultSkinCardImageUrl();
+  const mySkinImageUrl = getCosmeticImageUrl(myUserInDuel?.equippedSkinImage) ?? defaultSkinCardUrl;
+  const opponentSkinImageUrl = getCosmeticImageUrl(opponentInDuel?.equippedSkinImage) ?? defaultSkinCardUrl;
 
   const player1Duel = (duelData as any).player1;
   const player2Duel = (duelData as any).player2;
-  const skinPlayer1 = getCosmeticImageUrl(player1Duel?.equippedSkinImage) ?? defaultCardBack;
-  const skinPlayer2 = getCosmeticImageUrl(player2Duel?.equippedSkinImage) ?? defaultCardBack;
+  const skinPlayer1 = getCosmeticImageUrl(player1Duel?.equippedSkinImage) ?? defaultSkinCardUrl;
+  const skinPlayer2 = getCosmeticImageUrl(player2Duel?.equippedSkinImage) ?? defaultSkinCardUrl;
   const skinTop = isSpectator ? skinPlayer1 : opponentSkinImageUrl;
   const skinBottom = isSpectator ? skinPlayer2 : mySkinImageUrl;
   const playmatTop = isSpectator ? getCosmeticImageUrl(player1Duel?.equippedPlaymatImage) : opponentPlaymatImageUrl;
