@@ -69,112 +69,64 @@ export class MailService {
 
     try {
       const info = await this.transporter.sendMail({
-        from: `"Yu-Gi-Oh Game" <${this.emailUser}>`,
+        from: `"YuGiOh RPG: Champions Of Duels" <${this.emailUser}>`,
         to: toAddress,
-        subject: '🎴 Confirme seu cadastro no Yu-Gi-Oh Game',
+        subject: '🎴 Confirme seu cadastro no YuGiOh RPG: Champions Of Duels',
         html: `
           <!DOCTYPE html>
-          <html>
+          <html lang="pt-BR">
           <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
-              body {
-                font-family: Arial, sans-serif;
-                background-color: #1a1a2e;
-                color: #ffffff;
-                margin: 0;
-                padding: 0;
-              }
-              .container {
-                max-width: 600px;
-                margin: 0 auto;
-                padding: 20px;
-                background: linear-gradient(135deg, #16213e 0%, #0f3460 100%);
-                border-radius: 10px;
-              }
-              .header {
-                text-align: center;
-                padding: 20px;
-                background: rgba(139, 92, 246, 0.1);
-                border-radius: 10px;
-                margin-bottom: 30px;
-              }
-              h1 {
-                color: #fbbf24;
-                margin: 0;
-                font-size: 28px;
-              }
-              .content {
-                padding: 20px;
-                background: rgba(255, 255, 255, 0.05);
-                border-radius: 8px;
-                margin-bottom: 20px;
-              }
-              .button {
-                display: inline-block;
-                padding: 15px 30px;
-                background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
-                color: white;
-                text-decoration: none;
-                border-radius: 8px;
-                font-weight: bold;
-                text-align: center;
-                margin: 20px 0;
-              }
-              .button:hover {
-                background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
-              }
-              .footer {
-                text-align: center;
-                color: #94a3b8;
-                font-size: 12px;
-                margin-top: 30px;
-              }
-              .warning {
-                padding: 15px;
-                background: rgba(239, 68, 68, 0.1);
-                border-left: 4px solid #ef4444;
-                margin-top: 20px;
-                border-radius: 4px;
-              }
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f0f1a; color: #e2e8f0; margin: 0; padding: 24px; -webkit-font-smoothing: antialiased; }
+              .wrapper { max-width: 520px; margin: 0 auto; }
+              .card { background: #1a1a2e; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+              .brand { background: linear-gradient(135deg, #2d1b4e 0%, #1e3a5f 100%); padding: 28px 24px; text-align: center; border-bottom: 2px solid rgba(251, 191, 36, 0.3); }
+              .brand h1 { color: #fbbf24; margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+              .brand p { color: #94a3b8; margin: 8px 0 0 0; font-size: 13px; }
+              .body { padding: 28px 24px; }
+              .body p { margin: 0 0 16px 0; line-height: 1.6; font-size: 15px; color: #cbd5e1; }
+              .body .hi { font-size: 17px; margin-bottom: 20px; }
+              .body .hi strong { color: #fbbf24; }
+              .cta-wrap { text-align: center; margin: 28px 0; }
+              .cta { display: inline-block; padding: 16px 36px; background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: #fff !important; text-decoration: none; border-radius: 10px; font-weight: 700; font-size: 16px; }
+              .link-fallback { margin-top: 20px; padding: 14px; background: rgba(96, 165, 250, 0.12); border-radius: 8px; border-left: 4px solid #60a5fa; word-break: break-all; font-size: 12px; color: #93c5fd; }
+              .warning { padding: 18px; background: rgba(239, 68, 68, 0.12); border-left: 4px solid #ef4444; border-radius: 0 8px 8px 0; margin-top: 24px; }
+              .warning strong { color: #fca5a5; }
+              .warning ul { margin: 8px 0 0 0; padding-left: 20px; color: #fecaca; font-size: 13px; line-height: 1.7; }
+              .footer { text-align: center; padding: 24px 24px 28px; color: #64748b; font-size: 12px; }
+              .footer p { margin: 4px 0; }
             </style>
           </head>
           <body>
-            <div class="container">
-              <div class="header">
-                <h1>🎴 Yu-Gi-Oh Game</h1>
-              </div>
-              
-              <div class="content">
-                <p>Olá, <strong style="color: #fbbf24;">${nickname}</strong>!</p>
-                
-                <p>Bem-vindo ao Yu-Gi-Oh Game! 🎉</p>
-                
-                <p>Para ativar sua conta e começar a duelar, clique no botão abaixo:</p>
-                
-                <div style="text-align: center;">
-                  <a href="${verificationUrl}" class="button">
-                    ✅ Confirmar Email
-                  </a>
+            <div class="wrapper">
+              <div class="card">
+                <div class="brand">
+                  <h1>🎴 YuGiOh RPG: Champions Of Duels</h1>
+                  <p>Confirme seu cadastro</p>
                 </div>
-                
-                <p>Ou copie e cole este link no seu navegador:</p>
-                <p style="word-break: break-all; color: #60a5fa; background: rgba(96, 165, 250, 0.1); padding: 10px; border-radius: 4px;">
-                  ${verificationUrl}
-                </p>
-              </div>
-              
-              <div class="warning">
-                <strong>⚠️ Importante:</strong>
-                <ul style="margin: 10px 0 0 0; padding-left: 20px;">
-                  <li>Este link expira em 24 horas</li>
-                  <li>Se você não criou esta conta, ignore este email</li>
-                  <li>Nunca compartilhe este link com outras pessoas</li>
-                </ul>
-              </div>
-              
-              <div class="footer">
-                <p>Este é um email automático, não responda.</p>
-                <p>© 2025 Yu-Gi-Oh Game. Todos os direitos reservados.</p>
+                <div class="body">
+                  <p class="hi">Olá, <strong>${nickname}</strong>!</p>
+                  <p>Bem-vindo ao YuGiOh RPG: Champions Of Duels! Para ativar sua conta e começar a duelar, confirme seu email clicando no botão abaixo.</p>
+                  <div class="cta-wrap">
+                    <a href="${verificationUrl}" class="cta">Confirmar email</a>
+                  </div>
+                  <p style="margin-bottom: 8px; font-size: 13px; color: #94a3b8;">Se o botão não funcionar, copie e cole este link no navegador:</p>
+                  <div class="link-fallback">${verificationUrl}</div>
+                  <div class="warning">
+                    <strong>Importante</strong>
+                    <ul>
+                      <li>Este link expira em 24 horas.</li>
+                      <li>Se você não criou esta conta, ignore este email.</li>
+                      <li>Nunca compartilhe este link com outras pessoas.</li>
+                    </ul>
+                  </div>
+                </div>
+                <div class="footer">
+                  <p>Este é um email automático. Não responda.</p>
+                  <p>© 2025 YuGiOh RPG: Champions Of Duels</p>
+                </div>
               </div>
             </div>
           </body>
@@ -235,9 +187,9 @@ export class MailService {
 
     try {
       await this.transporter.sendMail({
-        from: `"Yu-Gi-Oh Game" <${this.emailUser}>`,
+        from: `"YuGiOh RPG: Champions Of Duels" <${this.emailUser}>`,
         to: email.trim().toLowerCase(),
-        subject: '🎉 Bem-vindo ao Yu-Gi-Oh Game!',
+        subject: '🎉 Bem-vindo ao YuGiOh RPG: Champions Of Duels!',
         html: `
           <!DOCTYPE html>
           <html>
@@ -285,7 +237,7 @@ export class MailService {
           <body>
             <div class="container">
               <div class="header">
-                <h1>🎴 Yu-Gi-Oh Game</h1>
+                <h1>🎴 YuGiOh RPG: Champions Of Duels</h1>
               </div>
               
               <h2 style="text-align: center; color: #fbbf24;">Bem-vindo, ${nickname}! 🎉</h2>
@@ -311,7 +263,7 @@ export class MailService {
               
               <div style="text-align: center; margin-top: 30px; color: #94a3b8; font-size: 12px;">
                 <p>Bons duelos e boa sorte!</p>
-                <p>© 2025 Yu-Gi-Oh Game</p>
+                <p>© 2025 YuGiOh RPG: Champions Of Duels</p>
               </div>
             </div>
           </body>
@@ -334,9 +286,9 @@ export class MailService {
     }
     try {
       await this.transporter.sendMail({
-        from: `"Yu-Gi-Oh Game" <${this.emailUser}>`,
+        from: `"YuGiOh RPG: Champions Of Duels" <${this.emailUser}>`,
         to: email.trim().toLowerCase(),
-        subject: '🔐 Redefinir senha - Yugioh RPG',
+        subject: '🔐 Redefinir senha - YuGiOh RPG: Champions Of Duels',
         html: `
           <!DOCTYPE html>
           <html>
@@ -353,14 +305,14 @@ export class MailService {
           </head>
           <body>
             <div class="container">
-              <div class="header"><h1>🎴 Yugioh RPG</h1></div>
+              <div class="header"><h1>🎴 YuGiOh RPG: Champions Of Duels</h1></div>
               <p>Olá, <strong>${nickname}</strong>!</p>
               <p>Recebemos uma solicitação para redefinir a senha da sua conta.</p>
               <p>Clique no botão abaixo para criar uma nova senha:</p>
               <p style="text-align: center;"><a href="${resetUrl}" class="button">Redefinir senha</a></p>
               <p style="word-break: break-all; color: #60a5fa; font-size: 12px;">Ou copie o link: ${resetUrl}</p>
               <div class="warning"><strong>⚠️</strong> Este link expira em 1 hora. Se você não pediu a redefinição, ignore este email.</div>
-              <div class="footer"><p>© Yugioh RPG: Champions Of Duels</p></div>
+              <div class="footer"><p>© YuGiOh RPG: Champions Of Duels</p></div>
             </div>
           </body>
           </html>
@@ -387,35 +339,69 @@ export class MailService {
     }
     try {
       await this.transporter.sendMail({
-        from: `"Yu-Gi-Oh Game" <${this.emailUser}>`,
+        from: `"YuGiOh RPG: Champions Of Duels" <${this.emailUser}>`,
         to: currentEmail.trim().toLowerCase(),
-        subject: '✉️ Confirmar troca de email - Yugioh RPG',
+        subject: '✉️ Confirmar troca de email - YuGiOh RPG: Champions Of Duels',
         html: `
           <!DOCTYPE html>
-          <html>
+          <html lang="pt-BR">
           <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
-              body { font-family: Arial, sans-serif; background-color: #1a1a2e; color: #fff; margin: 0; padding: 0; }
-              .container { max-width: 600px; margin: 0 auto; padding: 20px; background: linear-gradient(135deg, #16213e 0%, #0f3460 100%); border-radius: 10px; }
-              .header { text-align: center; padding: 20px; background: rgba(139, 92, 246, 0.1); border-radius: 10px; margin-bottom: 20px; }
-              h1 { color: #fbbf24; margin: 0; font-size: 24px; }
-              .button { display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 16px 0; }
-              .footer { text-align: center; color: #94a3b8; font-size: 12px; margin-top: 24px; }
-              .warning { padding: 12px; background: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; margin-top: 16px; border-radius: 4px; }
-              .highlight { background: rgba(251, 191, 36, 0.15); padding: 8px 12px; border-radius: 6px; margin: 8px 0; }
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f0f1a; color: #e2e8f0; margin: 0; padding: 24px; -webkit-font-smoothing: antialiased; }
+              .wrapper { max-width: 520px; margin: 0 auto; }
+              .card { background: #1a1a2e; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+              .brand { background: linear-gradient(135deg, #2d1b4e 0%, #1e3a5f 100%); padding: 28px 24px; text-align: center; border-bottom: 2px solid rgba(251, 191, 36, 0.3); }
+              .brand h1 { color: #fbbf24; margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+              .brand p { color: #94a3b8; margin: 8px 0 0 0; font-size: 13px; }
+              .body { padding: 28px 24px; }
+              .body p { margin: 0 0 16px 0; line-height: 1.6; font-size: 15px; color: #cbd5e1; }
+              .body .hi { font-size: 17px; margin-bottom: 20px; }
+              .body .hi strong { color: #fbbf24; }
+              .email-box { background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 10px; padding: 16px 18px; margin: 20px 0; }
+              .email-box .label { font-size: 12px; color: #94a3b8; margin-bottom: 4px; }
+              .email-box .value { font-size: 16px; font-weight: 600; color: #fbbf24; word-break: break-all; }
+              .cta-wrap { text-align: center; margin: 28px 0; }
+              .cta { display: inline-block; padding: 16px 36px; background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: #fff !important; text-decoration: none; border-radius: 10px; font-weight: 700; font-size: 16px; }
+              .link-fallback { margin-top: 20px; padding: 14px; background: rgba(96, 165, 250, 0.12); border-radius: 8px; border-left: 4px solid #60a5fa; word-break: break-all; font-size: 12px; color: #93c5fd; }
+              .warning { padding: 18px; background: rgba(239, 68, 68, 0.12); border-left: 4px solid #ef4444; border-radius: 0 8px 8px 0; margin-top: 24px; }
+              .warning strong { color: #fca5a5; }
+              .warning p { margin: 8px 0 0 0; color: #fecaca; font-size: 13px; line-height: 1.6; }
+              .footer { text-align: center; padding: 24px 24px 28px; color: #64748b; font-size: 12px; }
+              .footer p { margin: 4px 0; }
             </style>
           </head>
           <body>
-            <div class="container">
-              <div class="header"><h1>🎴 Yugioh RPG</h1></div>
-              <p>Olá, <strong>${nickname}</strong>!</p>
-              <p>Foi solicitada a alteração do email da sua conta para:</p>
-              <div class="highlight"><strong>${newEmail}</strong></div>
-              <p>Para confirmar a troca, clique no botão abaixo. O link será enviado para este email (${currentEmail}).</p>
-              <p style="text-align: center;"><a href="${confirmUrl}" class="button">Confirmar troca de email</a></p>
-              <p style="word-break: break-all; color: #60a5fa; font-size: 12px;">Ou copie o link: ${confirmUrl}</p>
-              <div class="warning"><strong>⚠️</strong> Este link expira em 1 hora. Se você não pediu a troca, ignore este email e sua conta permanecerá com o email atual.</div>
-              <div class="footer"><p>© Yugioh RPG: Champions Of Duels</p></div>
+            <div class="wrapper">
+              <div class="card">
+                <div class="brand">
+                  <h1>🎴 YuGiOh RPG: Champions Of Duels</h1>
+                  <p>Confirmar alteração de email</p>
+                </div>
+                <div class="body">
+                  <p class="hi">Olá, <strong>${nickname}</strong>!</p>
+                  <p>Foi solicitada a alteração do email da sua conta. O novo email será:</p>
+                  <div class="email-box">
+                    <div class="label">Novo email</div>
+                    <div class="value">${newEmail}</div>
+                  </div>
+                  <p>Para confirmar a troca, clique no botão abaixo. Este link foi enviado para seu email atual (<strong style="color: #94a3b8;">${currentEmail}</strong>) por segurança.</p>
+                  <div class="cta-wrap">
+                    <a href="${confirmUrl}" class="cta">Confirmar troca de email</a>
+                  </div>
+                  <p style="margin-bottom: 8px; font-size: 13px; color: #94a3b8;">Se o botão não funcionar, copie e cole este link no navegador:</p>
+                  <div class="link-fallback">${confirmUrl}</div>
+                  <div class="warning">
+                    <strong>Importante</strong>
+                    <p>Este link expira em 1 hora. Se você não solicitou a troca, ignore este email e sua conta permanecerá com o email atual.</p>
+                  </div>
+                </div>
+                <div class="footer">
+                  <p>Este é um email automático. Não responda.</p>
+                  <p>© 2025 YuGiOh RPG: Champions Of Duels</p>
+                </div>
+              </div>
             </div>
           </body>
           </html>

@@ -52,12 +52,17 @@ export class InitialDecksService {
 
   async getRandomActiveDeck(allowedDeckIds?: string[]): Promise<InitialDeck | null> {
     let activeDecks = await this.findActiveDecks();
-    
+
+    // Normalizar IDs para string para evitar falha de comparação (ex.: JSONB retornar número)
+    const allowedSet = allowedDeckIds && allowedDeckIds.length > 0
+      ? new Set(allowedDeckIds.map((id) => String(id)))
+      : null;
+
     // Se houver lista de IDs permitidos, filtrar apenas esses decks
-    if (allowedDeckIds && allowedDeckIds.length > 0) {
-      activeDecks = activeDecks.filter(deck => allowedDeckIds.includes(deck.id));
+    if (allowedSet) {
+      activeDecks = activeDecks.filter((deck) => allowedSet.has(String(deck.id)));
     }
-    
+
     if (activeDecks.length === 0) {
       return null;
     }

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import api from '../api/axios';
+import { useCosmeticsStore } from './cosmeticsStore';
 
 interface User {
   id: number | string; // Aceita number (novo) ou string (antigo para compatibilidade)
@@ -25,6 +26,8 @@ interface User {
   globalRank?: number;
   division?: string;
   adminAllowedTabs?: string[] | null;
+  /** Nome do deck atualmente equipado para duelos */
+  equippedDeckName?: string | null;
   group?: {
     id: string;
     name: string;
@@ -66,6 +69,7 @@ export const useAuthStore = create<AuthState>()(
             token: access_token,
             isAuthenticated: true,
           });
+          useCosmeticsStore.getState().resetCosmetics();
         } catch (error) {
           console.error('Login error:', error);
           throw error;
@@ -86,6 +90,7 @@ export const useAuthStore = create<AuthState>()(
             token: access_token,
             isAuthenticated: true,
           });
+          useCosmeticsStore.getState().resetCosmetics();
         } catch (error) {
           console.error('Login Master error:', error);
           throw error;
@@ -135,6 +140,7 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: () => {
+        useCosmeticsStore.getState().resetCosmetics();
         set({
           user: null,
           token: null,

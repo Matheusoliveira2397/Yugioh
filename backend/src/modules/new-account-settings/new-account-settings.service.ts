@@ -120,7 +120,25 @@ export class NewAccountSettingsService implements OnModuleInit {
       settings = await this.newAccountSettingsRepository.save(settings);
     }
 
-    return settings;
+    // Normalizar para garantir que frontend e registro usem os valores corretos
+    // (evita problemas de tipo ou colunas antigas sem defaultPlaymatId/defaultSkinId)
+    const raw = settings as any;
+    const defaultPlaymatId = raw.defaultPlaymatId != null && String(raw.defaultPlaymatId).trim() !== ''
+      ? String(raw.defaultPlaymatId).trim()
+      : null;
+    const defaultSkinId = raw.defaultSkinId != null && String(raw.defaultSkinId).trim() !== ''
+      ? String(raw.defaultSkinId).trim()
+      : null;
+    const availableInitialDeckIds = Array.isArray(raw.availableInitialDeckIds)
+      ? raw.availableInitialDeckIds.map((id: any) => String(id))
+      : [];
+
+    return {
+      ...settings,
+      defaultPlaymatId,
+      defaultSkinId,
+      availableInitialDeckIds,
+    } as NewAccountSettings;
   }
 
   async updateSettings(data: {

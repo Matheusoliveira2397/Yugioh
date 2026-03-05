@@ -229,28 +229,31 @@ export class AuthService {
       equippedSkinImage: null,
     });
 
-    // Aplicar playmat e skin padrão se configurados
+    // Aplicar playmat e skin padrão conforme "Contas Novas" no admin
     const cosmeticsUpdate: { equippedPlaymatId?: string; equippedPlaymatImage?: string; equippedSkinId?: string; equippedSkinImage?: string } = {};
-    if (newAccountSettings.defaultPlaymatId) {
+    const playmatId = newAccountSettings.defaultPlaymatId?.trim() || null;
+    const skinId = newAccountSettings.defaultSkinId?.trim() || null;
+
+    if (playmatId) {
       try {
-        const playmat = await this.cosmeticsService.findOnePlaymat(newAccountSettings.defaultPlaymatId);
+        const playmat = await this.cosmeticsService.findOnePlaymat(playmatId);
         if (playmat?.image) {
           cosmeticsUpdate.equippedPlaymatId = playmat.id;
           cosmeticsUpdate.equippedPlaymatImage = playmat.image;
         }
-      } catch (_) {
-        // Playmat não encontrado ou inativo, ignorar
+      } catch (err: any) {
+        console.warn(`⚠️ [AuthService] Playmat padrão não aplicado (ID ${playmatId}):`, err?.message || err);
       }
     }
-    if (newAccountSettings.defaultSkinId) {
+    if (skinId) {
       try {
-        const sleeve = await this.cosmeticsService.findOneSleeve(newAccountSettings.defaultSkinId);
+        const sleeve = await this.cosmeticsService.findOneSleeve(skinId);
         if (sleeve?.image) {
           cosmeticsUpdate.equippedSkinId = sleeve.id;
           cosmeticsUpdate.equippedSkinImage = sleeve.image;
         }
-      } catch (_) {
-        // Skin não encontrada ou inativa, ignorar
+      } catch (err: any) {
+        console.warn(`⚠️ [AuthService] Skin padrão não aplicada (ID ${skinId}):`, err?.message || err);
       }
     }
     if (Object.keys(cosmeticsUpdate).length > 0) {

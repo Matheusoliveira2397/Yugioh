@@ -15,8 +15,8 @@ export default function InventoryPage() {
     unequipPlaymat,
     equipSkin,
     unequipSkin,
-    addPlaymat,
-    addSkin,
+    setOwnedPlaymats,
+    setOwnedSkins,
   } = useCosmeticsStore();
   const [loading, setLoading] = useState(true);
 
@@ -32,26 +32,23 @@ export default function InventoryPage() {
         const inventoryResponse = await api.get('/shop/inventory');
         const inventoryData = inventoryResponse.data;
         
-        // Se a resposta tem playmats e skins separados
-        if (inventoryData.playmats && Array.isArray(inventoryData.playmats)) {
-          inventoryData.playmats.forEach((playmat: any) => {
-            addPlaymat({
-              id: playmat.id,
-              name: playmat.name || `Playmat ${playmat.id}`,
-              image: playmat.image
-            });
-          });
-        }
-        
-        if (inventoryData.skins && Array.isArray(inventoryData.skins)) {
-          inventoryData.skins.forEach((skin: any) => {
-            addSkin({
-              id: skin.id,
-              name: skin.name || `Skin ${skin.id}`,
-              image: skin.image
-            });
-          });
-        }
+        // Usar apenas o que a API retorna (evita mostrar playmats/skins de outro usuário ou estado antigo)
+        const playmats = Array.isArray(inventoryData.playmats)
+          ? inventoryData.playmats.map((p: any) => ({
+              id: p.id,
+              name: p.name || `Playmat ${p.id}`,
+              image: p.image || '',
+            }))
+          : [];
+        const skins = Array.isArray(inventoryData.skins)
+          ? inventoryData.skins.map((s: any) => ({
+              id: s.id,
+              name: s.name || `Skin ${s.id}`,
+              image: s.image || '',
+            }))
+          : [];
+        setOwnedPlaymats(playmats);
+        setOwnedSkins(skins);
         
         // Buscar dados do usuário para sincronizar playmats e skins equipados
         try {
@@ -76,7 +73,7 @@ export default function InventoryPage() {
     };
 
     fetchInventory();
-  }, [addPlaymat, addSkin, equipPlaymat, equipSkin]);
+  }, [setOwnedPlaymats, setOwnedSkins, equipPlaymat, equipSkin]);
 
   const handleTogglePlaymat = async (playmatId: string, imageSrc: string, isEquipped: boolean) => {
     if (isEquipped) {

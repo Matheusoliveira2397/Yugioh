@@ -20,6 +20,12 @@ interface CosmeticsState {
   equippedSkinId: string | null;
   addPlaymat: (playmat: OwnedPlaymat) => void;
   addSkin: (skin: OwnedSkin) => void;
+  /** Substitui a lista de playmats possuídos (ex.: pelo retorno da API). Usar para evitar mostrar itens de outro usuário. */
+  setOwnedPlaymats: (playmats: OwnedPlaymat[]) => void;
+  /** Substitui a lista de skins possuídas (ex.: pelo retorno da API). */
+  setOwnedSkins: (skins: OwnedSkin[]) => void;
+  /** Limpa cosméticos (ao sair da conta). */
+  resetCosmetics: () => void;
   equipPlaymat: (id: string) => void;
   unequipPlaymat: () => void;
   equipSkin: (id: string) => void;
@@ -44,6 +50,23 @@ export const useCosmeticsStore = create<CosmeticsState>()(
         const { ownedSkins } = get();
         if (ownedSkins.some((s) => s.id === skin.id)) return;
         set({ ownedSkins: [...ownedSkins, skin] });
+      },
+
+      setOwnedPlaymats: (playmats: OwnedPlaymat[]) => {
+        set({ ownedPlaymats: playmats ?? [] });
+      },
+
+      setOwnedSkins: (skins: OwnedSkin[]) => {
+        set({ ownedSkins: skins ?? [] });
+      },
+
+      resetCosmetics: () => {
+        set({
+          ownedPlaymats: [],
+          ownedSkins: [],
+          equippedPlaymatId: null,
+          equippedSkinId: null,
+        });
       },
 
       equipPlaymat: (id: string) => {

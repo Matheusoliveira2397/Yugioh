@@ -7,7 +7,7 @@ if (-not (Test-Path (Join-Path $projectRoot "backend"))) { $projectRoot = Get-Lo
 Set-Location $projectRoot
 
 $dumpFile = "dump-supabase.sql"
-# Session pooler (IPv4) - host aws-1-sa-east-1 do dashboard
+# Use Session pooler OU Direct connection (db.xxx.supabase.co:5432). Direct evita erro "backslash restricted".
 $connectionUri = "postgresql://postgres.mantttrvvhevfjxojstn:YugiohCOD262002@aws-1-sa-east-1.pooler.supabase.com:5432/postgres"
 
 if (-not (Test-Path $dumpFile)) {
@@ -15,7 +15,13 @@ if (-not (Test-Path $dumpFile)) {
     exit 1
 }
 
-Write-Host "Enviando dump para o Supabase..." -ForegroundColor Cyan
+Write-Host "Criando extensao uuid-ossp no schema public (Supabase)..." -ForegroundColor Cyan
+docker run --rm postgres:16-alpine psql $connectionUri -c "CREATE EXTENSION IF NOT EXISTS ""uuid-ossp"" WITH SCHEMA public;"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Aviso: nao foi possivel criar uuid-ossp (pode ja existir). Continuando..." -ForegroundColor Yellow
+}
+
+Write-Host "Enviando dump para o Supabase (conexao direta)..." -ForegroundColor Cyan
 docker run --rm -v "${projectRoot}\${dumpFile}:/dump.sql" postgres:16-alpine psql $connectionUri -f /dump.sql
 
 if ($LASTEXITCODE -eq 0) {
