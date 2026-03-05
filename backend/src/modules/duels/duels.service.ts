@@ -597,12 +597,8 @@ export class DuelsService implements OnModuleInit {
           }
         }
         
-        // Em produção (ou quando JOIN não retorna relações): garantir player1/player2 com cosméticos para o frontend exibir skin/playmat do oponente
-        const p1 = (duel as any).player1;
-        const p2 = (duel as any).player2;
-        const missingPlayers = !p1 || !p2;
-        const missingCosmeticKeys = (p1 && !('equippedSkinImage' in p1)) || (p2 && !('equippedSkinImage' in p2));
-        if ((missingPlayers || missingCosmeticKeys) && duel.player1Id && duel.player2Id) {
+        // Sempre garantir player1/player2 com cosméticos (skin/playmat) para o frontend exibir do oponente
+        if (duel.player1Id && duel.player2Id) {
           try {
             const [u1, u2] = await Promise.all([
               this.usersRepository.findOne({

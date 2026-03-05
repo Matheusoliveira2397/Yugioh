@@ -663,8 +663,16 @@ const DuelArena: React.FC = () => {
         return;
       }
       
-      setDuelData(data);
-      duelDataRef.current = data;
+      // Preservar player1/player2 (cosméticos/skin do oponente) se o payload não trouxer, para não perder a skin
+      setDuelData((prev) => {
+        const merged = {
+          ...data,
+          player1: data.player1 ?? prev?.player1,
+          player2: data.player2 ?? prev?.player2,
+        };
+        duelDataRef.current = merged;
+        return merged;
+      });
       
       // Configurar life points, turno, fase e campos
       // Garantir que a comparação funcione corretamente convertendo ambos para número
@@ -2651,12 +2659,13 @@ const DuelArena: React.FC = () => {
         turnStartedAtRef.current = startTime;
       }
 
+      // Preservar player1/player2 (skin do oponente) se o update não trouxer, para não perder a skin
       const newDuelData = {
         id: duelUpdate.id,
         player1Id: duelUpdate.player1Id,
         player2Id: duelUpdate.player2Id,
-        player1: duelUpdate.player1,
-        player2: duelUpdate.player2,
+        player1: duelUpdate.player1 ?? duelData?.player1,
+        player2: duelUpdate.player2 ?? duelData?.player2,
         player1LifePoints: duelUpdate.player1LifePoints,
         player2LifePoints: duelUpdate.player2LifePoints,
         currentTurn: duelUpdate.currentTurn,
