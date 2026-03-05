@@ -2094,6 +2094,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         const isAllowedChoiceAction = actionType === 'CONFISCATION_CHOICE' ||
                                          actionType === 'GRACEFUL_CHARITY_CHOICE' ||
                                       actionType === 'FORCEFUL_SENTRY_CHOICE' ||
+                                      actionType === 'UNITED_WE_STAND_CHOICE' ||
+                                      actionType === 'MAGE_POWER_CHOICE' ||
                                       actionType === 'MYSTICAL_SPACE_TYPHOON_CHOICE' ||
                                       actionType === 'SOUL_TAKER_CHOICE' ||
                                       actionType === 'LIGHTNING_STORM_CHOICE' ||

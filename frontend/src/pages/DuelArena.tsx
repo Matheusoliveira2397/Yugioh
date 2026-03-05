@@ -944,6 +944,18 @@ const DuelArena: React.FC = () => {
             setOpponentHandRevealed(pendingChoice.data.opponentHand);
             setShowOpponentHandRevealed(true);
             setCardEffectType('forcefulSentry');
+          } else if (pendingChoice.type === 'UNITED_WE_STAND') {
+            const monsters = pendingChoice.data?.availableMonsters ?? [];
+            console.log(`✅ [handleDuelUpdate] Abrindo modal United We Stand com ${monsters.length} monstros`);
+            setUnitedWeStandData({ availableMonsters: monsters });
+            setShowUnitedWeStandModal(true);
+            setSelectedUnitedWeStandMonster(null);
+          } else if (pendingChoice.type === 'MAGE_POWER') {
+            const monsters = pendingChoice.data?.availableMonsters ?? [];
+            console.log(`✅ [handleDuelUpdate] Abrindo modal Mage Power com ${monsters.length} monstros`);
+            setMagePowerData({ availableMonsters: monsters });
+            setShowMagePowerModal(true);
+            setSelectedMagePowerMonster(null);
           } else {
             console.warn(`⚠️ [handleDuelUpdate] Tipo de escolha pendente desconhecido ou dados faltando:`, pendingChoice);
           }
@@ -994,6 +1006,20 @@ const DuelArena: React.FC = () => {
             setOpponentHandRevealed(pendingChoice.data.opponentHand);
             setShowOpponentHandRevealed(true);
             setCardEffectType('forcefulSentry');
+            setCurrentPendingChoice(pendingChoice);
+          } else if (pendingChoice.type === 'UNITED_WE_STAND') {
+            const monsters = pendingChoice.data?.availableMonsters ?? [];
+            console.log(`✅ [handleDuelError] Abrindo modal United We Stand com ${monsters.length} monstros`);
+            setUnitedWeStandData({ availableMonsters: monsters });
+            setShowUnitedWeStandModal(true);
+            setSelectedUnitedWeStandMonster(null);
+            setCurrentPendingChoice(pendingChoice);
+          } else if (pendingChoice.type === 'MAGE_POWER') {
+            const monsters = pendingChoice.data?.availableMonsters ?? [];
+            console.log(`✅ [handleDuelError] Abrindo modal Mage Power com ${monsters.length} monstros`);
+            setMagePowerData({ availableMonsters: monsters });
+            setShowMagePowerModal(true);
+            setSelectedMagePowerMonster(null);
             setCurrentPendingChoice(pendingChoice);
           }
           
