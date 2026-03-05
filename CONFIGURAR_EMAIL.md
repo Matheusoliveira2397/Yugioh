@@ -241,7 +241,27 @@ EMAIL_PASSWORD=abcd efgh ijkl mnop
 FRONTEND_URL=http://localhost:5173
 ```
 
-## 🚀 Para Produção
+## 🚀 App online (produção) – email não envia?
+
+**Se o cadastro funciona localmente mas online o email não é enviado**, o motivo quase sempre é: **as variáveis de ambiente não estão configuradas no servidor**.
+
+No painel da sua hospedagem (Railway, Render, VPS, Heroku, etc.):
+
+1. Vá em **Variáveis de ambiente** / **Environment Variables**.
+2. Adicione (ou edite):
+   - `EMAIL_USER` = seu email (ex: `meujogo@gmail.com`)
+   - `EMAIL_PASSWORD` = **Senha de app** do Gmail (não a senha normal da conta)
+   - `FRONTEND_URL` = **URL real do seu site** (ex: `https://yugiohrpg.com`), **não** use `localhost`
+
+3. Salve e **reinicie/refaça o deploy** do backend para carregar as variáveis.
+
+Sem essas três variáveis no servidor, o backend não consegue enviar email e o usuário vê "Email não foi enviado automaticamente".
+
+**Dica:** Alguns provedores bloqueiam a porta 587 (SMTP). Se mesmo com as variáveis corretas o email não sair, confira os logs do backend no painel da hospedagem ou use um serviço como SendGrid (veja abaixo).
+
+---
+
+## 🚀 Para Produção (opcional: usar serviço de email)
 
 Em produção, use variáveis de ambiente do servidor ou um serviço de email profissional:
 

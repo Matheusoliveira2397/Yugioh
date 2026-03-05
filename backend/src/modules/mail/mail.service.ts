@@ -18,13 +18,21 @@ export class MailService {
     console.log(`   EMAIL_PASSWORD: ${emailPassword ? 'DEFINIDO (' + emailPassword.length + ' caracteres)' : 'NÃO DEFINIDO'}`);
     console.log(`   FRONTEND_URL: ${this.frontendUrl || 'NÃO DEFINIDO'}`);
 
+    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
     if (!this.emailUser || this.emailUser === 'seu-email@gmail.com') {
       console.log('⚠️ [MailService] Email não configurado - links aparecerão no console');
-      console.log('💡 [MailService] Dica: Defina EMAIL_USER e EMAIL_PASSWORD no arquivo backend/.env');
+      if (isProduction) {
+        console.error('❌ [MailService] PRODUÇÃO: Defina EMAIL_USER e EMAIL_PASSWORD nas variáveis de ambiente do servidor para enviar emails.');
+      } else {
+        console.log('💡 [MailService] Dica: Defina EMAIL_USER e EMAIL_PASSWORD no arquivo backend/.env');
+      }
       return;
     }
     if (!emailPassword) {
       console.error('❌ [MailService] EMAIL_PASSWORD não está configurado!');
+      if (isProduction) {
+        console.error('❌ [MailService] PRODUÇÃO: Adicione EMAIL_PASSWORD (Senha de app do Gmail) nas variáveis de ambiente do servidor.');
+      }
       return;
     }
 

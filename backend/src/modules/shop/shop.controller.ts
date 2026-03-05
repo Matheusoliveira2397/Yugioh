@@ -3,6 +3,7 @@ import { ShopService } from './shop.service';
 import { ShopItemCurrency } from './entities/shop-item.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PurchaseCardDto } from './dto/purchase-card.dto';
+import { PurchaseSleeveDto, PurchasePlaymatDto } from './dto/purchase-cosmetic.dto';
 import { AdminGuard } from '../auth/guards/admin.guard';
 
 @Controller('shop')
@@ -51,6 +52,22 @@ export class ShopController {
       console.error('❌ Purchase error:', error);
       throw error;
     }
+  }
+
+  @Post('purchase-sleeve')
+  @UseGuards(JwtAuthGuard)
+  async purchaseSleeve(@Request() req: any, @Body() dto: PurchaseSleeveDto) {
+    this.logRequest('POST', '/purchase-sleeve');
+    const userId = req.user.id;
+    return this.shopService.purchaseSleeve(userId, dto.sleeveId, dto.paymentMethod);
+  }
+
+  @Post('purchase-playmat')
+  @UseGuards(JwtAuthGuard)
+  async purchasePlaymat(@Request() req: any, @Body() dto: PurchasePlaymatDto) {
+    this.logRequest('POST', '/purchase-playmat');
+    const userId = req.user.id;
+    return this.shopService.purchasePlaymat(userId, dto.playmatId, dto.paymentMethod);
   }
 
   @Get()

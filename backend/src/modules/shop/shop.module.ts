@@ -8,11 +8,13 @@ import { User } from '../users/entities/user.entity';
 import { Card } from '../cards/entities/card.entity';
 import { DeckCard } from '../decks/entities/deck-card.entity';
 import { EconomyModule } from '../economy/economy.module';
+import { CosmeticsModule } from '../cosmetics/cosmetics.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ShopItem, UserCard, User, Card, DeckCard]),
     EconomyModule,
+    CosmeticsModule,
   ],
   controllers: [ShopController],
   providers: [ShopService],

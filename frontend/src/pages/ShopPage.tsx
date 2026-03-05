@@ -478,25 +478,59 @@ export default function ShopPage() {
           } foram descontados.`
         );
       } else if (category === 'playmats') {
+        const hasBalance =
+          paymentMethod === 'credits'
+            ? (user.credits || 0) >= price
+            : (user.cash || 0) >= price;
+        if (!hasBalance) {
+          const current = paymentMethod === 'credits' ? user.credits || 0 : user.cash || 0;
+          alert(`${paymentMethod === 'credits' ? 'Créditos' : 'Cash'} insuficientes! Você tem ${current} mas precisa de ${price}`);
+          setPurchaseItem(null);
+          return;
+        }
+        const response = await api.post('/shop/purchase-playmat', {
+          playmatId: (item as Playmat).id,
+          paymentMethod,
+        });
+        const updatedUser = {
+          ...user,
+          credits: response.data.remainingBalance.credits,
+          cash: response.data.remainingBalance.cash,
+        };
+        useAuthStore.getState().setUser(updatedUser);
         addPlaymat({
           id: (item as Playmat).id,
           name: item.name,
           image: (item as Playmat).image,
         });
-
-        alert(
-          '✅ Playmat adquirido e adicionado ao seu inventário de cosméticos!'
-        );
+        alert('✅ Playmat adquirido e adicionado ao seu inventário de cosméticos!');
       } else if (category === 'sleeves') {
+        const hasBalance =
+          paymentMethod === 'credits'
+            ? (user.credits || 0) >= price
+            : (user.cash || 0) >= price;
+        if (!hasBalance) {
+          const current = paymentMethod === 'credits' ? user.credits || 0 : user.cash || 0;
+          alert(`${paymentMethod === 'credits' ? 'Créditos' : 'Cash'} insuficientes! Você tem ${current} mas precisa de ${price}`);
+          setPurchaseItem(null);
+          return;
+        }
+        const response = await api.post('/shop/purchase-sleeve', {
+          sleeveId: (item as Sleeve).id,
+          paymentMethod,
+        });
+        const updatedUser = {
+          ...user,
+          credits: response.data.remainingBalance.credits,
+          cash: response.data.remainingBalance.cash,
+        };
+        useAuthStore.getState().setUser(updatedUser);
         addSkin({
           id: (item as Sleeve).id,
           name: item.name,
           image: (item as Sleeve).image,
         });
-
-        alert(
-          '✅ Skin de carta adquirida e adicionada ao seu inventário de cosméticos!'
-        );
+        alert('✅ Skin de carta adquirida e adicionada ao seu inventário de cosméticos!');
       }
       
       setPurchaseItem(null);

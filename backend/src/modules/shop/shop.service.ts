@@ -9,6 +9,7 @@ import { DeckCard } from '../decks/entities/deck-card.entity';
 import { PurchaseCardDto, PaymentMethod } from './dto/purchase-card.dto';
 import { EconomyService } from '../economy/economy.service';
 import { CurrencyType, TransactionType } from '../economy/entities/transaction.entity';
+import { CosmeticsService } from '../cosmetics/cosmetics.service';
 
 // Mantém apenas UMA definição da classe ShopService
 export class ShopService {
@@ -25,6 +26,7 @@ export class ShopService {
     private deckCardRepository: Repository<DeckCard>,
     @Inject(EconomyService)
     private economyService: EconomyService,
+    private cosmeticsService: CosmeticsService,
   ) {}
 
   // Adicionar carta automaticamente na loja quando for cadastrada
@@ -372,31 +374,34 @@ export class ShopService {
         return { ...uc, quantityInDecks, sellableQuantity };
       });
 
-      // Buscar usuário para obter playmats e skins comprados
+      // Buscar usuário para obter playmats e skins comprados (ownedSleeveIds, ownedPlaymatIds)
       const user = await this.userRepository.findOne({
         where: { id: userId },
-        select: ['equippedPlaymatId', 'equippedPlaymatImage', 'equippedSkinId', 'equippedSkinImage']
+        select: ['equippedPlaymatId', 'equippedPlaymatImage', 'equippedSkinId', 'equippedSkinImage', 'ownedSleeveIds', 'ownedPlaymatIds']
       });
 
       const playmats: any[] = [];
       const skins: any[] = [];
 
-      // Se o usuário tem playmat equipado, adicionar à lista de playmats possuídos
-      if (user?.equippedPlaymatId && user?.equippedPlaymatImage) {
-        playmats.push({
-          id: user.equippedPlaymatId,
-          name: `Playmat ${user.equippedPlaymatId}`,
-          image: user.equippedPlaymatImage
-        });
+      const ownedSleeveIds = Array.isArray(user?.ownedSleeveIds) ? user.ownedSleeveIds : [];
+      const ownedPlaymatIds = Array.isArray(user?.ownedPlaymatIds) ? user.ownedPlaymatIds : [];
+
+      for (const id of ownedPlaymatIds) {
+        try {
+          const pm = await this.cosmeticsService.findOnePlaymat(id);
+          playmats.push({ id: pm.id, name: pm.name, image: pm.image });
+        } catch {
+          // Playmat pode ter sido removido do catálogo
+        }
       }
 
-      // Se o usuário tem skin equipada, adicionar à lista de skins possuídas
-      if (user?.equippedSkinId && user?.equippedSkinImage) {
-        skins.push({
-          id: user.equippedSkinId,
-          name: `Skin ${user.equippedSkinId}`,
-          image: user.equippedSkinImage
-        });
+      for (const id of ownedSleeveIds) {
+        try {
+          const sl = await this.cosmeticsService.findOneSleeve(id);
+          skins.push({ id: sl.id, name: sl.name, image: sl.image });
+        } catch {
+          // Sleeve pode ter sido removido do catálogo
+        }
       }
 
       return { cards: cardsWithSellable, playmats, skins };
@@ -404,6 +409,90 @@ export class ShopService {
       console.error('❌ [getUserInventory] Erro ao buscar inventário:', error);
       return { cards: [], playmats: [], skins: [] };
     }
+  }
+
+  // ==================== COMPRAR SKIN DE CARTA (SLEEVE) ====================
+  async purchaseSleeve(
+    userId: number,
+    sleeveId: string,
+    paymentMethod: string
+  ): Promise<{ success: boolean; message: string; remainingBalance: { credits: number; cash: number } }> {
+    const sleeve = await this.cosmeticsService.findOneSleeve(sleeveId);
+    if (!sleeve.isForSale || !sleeve.isActive) {
+      throw new BadRequestException('Esta skin de carta não está disponível para compra');
+    }
+
+    const price = paymentMethod === 'credits' ? (sleeve.priceCredits ?? 0) : (sleeve.priceCash ?? 0);
+    if (price <= 0) {
+      throw new BadRequestException(`Esta skin não tem preço definido para ${this.getCurrencyName(paymentMethod)}`);
+    }
+
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+
+    const balance = paymentMethod === 'credits' ? (user.credits || 0) : (user.cash || 0);
+    if (balance < price) {
+      throw new BadRequestException(
+        `Saldo insuficiente! Precisa de ${price} ${this.getCurrencyName(paymentMethod)}. Você tem ${balance}.`
+      );
+    }
+
+    const ownedIds = Array.isArray(user.ownedSleeveIds) ? user.ownedSleeveIds : [];
+    if (ownedIds.includes(sleeveId)) {
+      throw new BadRequestException('Você já possui esta skin de carta');
+    }
+
+    this.deductBalance(user, price, paymentMethod);
+    user.ownedSleeveIds = [...ownedIds, sleeveId];
+    await this.userRepository.save(user);
+
+    return {
+      success: true,
+      message: `Skin "${sleeve.name}" comprada com sucesso!`,
+      remainingBalance: { credits: user.credits ?? 0, cash: user.cash ?? 0 },
+    };
+  }
+
+  // ==================== COMPRAR PLAYMAT ====================
+  async purchasePlaymat(
+    userId: number,
+    playmatId: string,
+    paymentMethod: string
+  ): Promise<{ success: boolean; message: string; remainingBalance: { credits: number; cash: number } }> {
+    const playmat = await this.cosmeticsService.findOnePlaymat(playmatId);
+    if (!playmat.isForSale || !playmat.isActive) {
+      throw new BadRequestException('Este playmat não está disponível para compra');
+    }
+
+    const price = paymentMethod === 'credits' ? (playmat.priceCredits ?? 0) : (playmat.priceCash ?? 0);
+    if (price <= 0) {
+      throw new BadRequestException(`Este playmat não tem preço definido para ${this.getCurrencyName(paymentMethod)}`);
+    }
+
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+
+    const balance = paymentMethod === 'credits' ? (user.credits || 0) : (user.cash || 0);
+    if (balance < price) {
+      throw new BadRequestException(
+        `Saldo insuficiente! Precisa de ${price} ${this.getCurrencyName(paymentMethod)}. Você tem ${balance}.`
+      );
+    }
+
+    const ownedIds = Array.isArray(user.ownedPlaymatIds) ? user.ownedPlaymatIds : [];
+    if (ownedIds.includes(playmatId)) {
+      throw new BadRequestException('Você já possui este playmat');
+    }
+
+    this.deductBalance(user, price, paymentMethod);
+    user.ownedPlaymatIds = [...ownedIds, playmatId];
+    await this.userRepository.save(user);
+
+    return {
+      success: true,
+      message: `Playmat "${playmat.name}" comprado com sucesso!`,
+      remainingBalance: { credits: user.credits ?? 0, cash: user.cash ?? 0 },
+    };
   }
 
   // ==================== VERIFICAR SE USUÁRIO TEM CARTA ====================

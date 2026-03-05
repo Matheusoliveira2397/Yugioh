@@ -130,6 +130,14 @@ export class User {
   @OneToMany(() => Deck, (deck) => deck.user)
   decks: Deck[];
 
+  /** IDs das skins de carta (sleeves) que o usuário comprou */
+  @Column({ type: 'simple-json', nullable: true, default: [] })
+  ownedSleeveIds: string[];
+
+  /** IDs dos playmats que o usuário comprou */
+  @Column({ type: 'simple-json', nullable: true, default: [] })
+  ownedPlaymatIds: string[];
+
   // Cosméticos equipados (playmat de campo e skin de carta)
   @Column({ type: 'varchar', length: 100, nullable: true })
   equippedPlaymatId: string | null;
