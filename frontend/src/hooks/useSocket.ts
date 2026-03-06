@@ -270,6 +270,7 @@ export const useSocket = () => {
   const [duelLogs, setDuelLogs] = useState<DuelLog[]>([]);
   const [currentTurn, setCurrentTurn] = useState<number | null>(null);
   const [duelUpdate, setDuelUpdate] = useState<any>(null);
+  const [duelError, setDuelError] = useState<string | null>(null);
   
   const socketRef = useRef<Socket | null>(null);
   const listenersRef = useRef<Map<string, (...args: any[]) => void>>(new Map());
@@ -523,9 +524,12 @@ export const useSocket = () => {
       socket.on('duelUpdate', duelUpdateListener);
       listenersRef.current.set('duelUpdate', duelUpdateListener);
       
-      // Listener para erros
-      const duelErrorListener = (data: { message: string }) => {
-        console.error(`[${tabId}] ❌ Erro no duelo:`, data.message);
+      // Listener para erros (para busca de duelo: para a busca e mostra a mensagem)
+      const duelErrorListener = (data: { message?: string }) => {
+        const msg = data?.message || 'Erro no duelo';
+        console.error(`[${tabId}] ❌ Erro no duelo:`, msg);
+        setIsSearching(false);
+        setDuelError(msg);
       };
       socket.on('duelError', duelErrorListener);
       listenersRef.current.set('duelError', duelErrorListener);
@@ -562,6 +566,7 @@ export const useSocket = () => {
       console.error('ID de usuário inválido:', userId);
       return;
     }
+    setDuelError(null);
     socketRef.current?.emit('searchDuel', { userId: userIdNum });
   };
 
@@ -637,11 +642,15 @@ export const useSocket = () => {
     socketRef.current?.emit('endTurn', { duelId, userId: userIdNum.toString() });
   };
 
+  const clearDuelError = () => setDuelError(null);
+
   return {
     isConnected,
     isSearching,
     duelFound,
+    duelError,
     clearDuelFound,
+    clearDuelError,
     chatMessages,
     duelLogs,
     currentTurn,

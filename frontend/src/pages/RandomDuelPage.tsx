@@ -25,7 +25,7 @@ interface LevelRange {
 
 export default function RandomDuelPage() {
   const { user } = useAuthStore();
-  const { isConnected, isSearching, duelFound, clearDuelFound, searchDuel, cancelSearch, getSocket } = useSocket();
+  const { isConnected, isSearching, duelFound, duelError, clearDuelFound, clearDuelError, searchDuel, cancelSearch, getSocket } = useSocket();
   const [isCreatingDuel, setIsCreatingDuel] = useState(false);
   const [levelRange, setLevelRange] = useState<LevelRange | null>(null);
   const [searchElapsedSeconds, setSearchElapsedSeconds] = useState(0);
@@ -210,6 +210,32 @@ export default function RandomDuelPage() {
   return (
     <div className="min-h-screen flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
       <div className="max-w-4xl w-full text-center py-2 sm:py-4">
+        {/* Erro da busca (ex.: "já tem duelo ativo", timeout, deck não equipado) */}
+        {duelError && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 p-4 rounded-xl bg-red-900/40 border border-red-500/50 text-red-200 flex flex-col sm:flex-row items-center justify-between gap-3"
+          >
+            <span className="flex-1 text-left">{duelError}</span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { clearDuelError(); if (user?.id) searchDuel(user.id); }}
+                className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium"
+              >
+                Tentar novamente
+              </button>
+              <button
+                type="button"
+                onClick={clearDuelError}
+                className="px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-sm"
+              >
+                Fechar
+              </button>
+            </div>
+          </motion.div>
+        )}
         <AnimatePresence mode="wait">
         {duelFound ? (
           /* Card "Partida encontrada" integrado à página (mesma área do Random Duel) */
