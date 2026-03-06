@@ -11,9 +11,10 @@ interface DuelLog {
 
 interface DuelLogsProps {
   logs: DuelLog[];
+  hideHeader?: boolean;
 }
 
-const DuelLogs: React.FC<DuelLogsProps> = ({ logs }) => {
+const DuelLogs: React.FC<DuelLogsProps> = ({ logs, hideHeader }) => {
   const logsContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -70,18 +71,19 @@ const DuelLogs: React.FC<DuelLogsProps> = ({ logs }) => {
       className="bg-gradient-to-br from-slate-800/20 to-slate-900/20 backdrop-blur-md rounded-xl border border-slate-700/30 shadow-2xl overflow-hidden flex flex-col"
       style={{ height: '400px' }}
     >
-      {/* Header */}
-      <div className="bg-gradient-to-r from-slate-700/20 to-slate-800/20 px-4 py-3 border-b border-slate-700/30 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">📋</span>
-          <h3 className="text-sm font-bold text-white tracking-wide">Log de Ações</h3>
-          {logs.length > 0 && (
-            <span className="bg-purple-500/10 text-purple-300 text-[10px] px-2 py-0.5 rounded-full font-semibold">
-              {logs.length}
-            </span>
-          )}
+      {!hideHeader && (
+        <div className="bg-gradient-to-r from-slate-700/20 to-slate-800/20 px-4 py-3 border-b border-slate-700/30 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">📋</span>
+            <h3 className="text-sm font-bold text-white tracking-wide">Log de Ações</h3>
+            {logs.length > 0 && (
+              <span className="bg-purple-500/10 text-purple-300 text-[10px] px-2 py-0.5 rounded-full font-semibold">
+                {logs.length}
+              </span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <div ref={logsContainerRef} className="flex-1 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
             {logs.length === 0 ? (

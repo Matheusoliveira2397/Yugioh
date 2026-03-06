@@ -10,9 +10,10 @@ interface ChatMessage {
 interface DuelChatProps {
   messages: ChatMessage[];
   onSendMessage: (message: string) => void;
+  hideHeader?: boolean;
 }
 
-const DuelChat: React.FC<DuelChatProps> = ({ messages, onSendMessage }) => {
+const DuelChat: React.FC<DuelChatProps> = ({ messages, onSendMessage, hideHeader }) => {
   const [inputMessage, setInputMessage] = useState('');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
@@ -40,18 +41,19 @@ const DuelChat: React.FC<DuelChatProps> = ({ messages, onSendMessage }) => {
       className="bg-transparent backdrop-blur-sm rounded-xl border border-slate-700/30 shadow-lg overflow-hidden flex flex-col"
       style={{ height: '400px' }}
     >
-      {/* Header */}
-      <div className="bg-slate-900/20 backdrop-blur-sm px-4 py-3 border-b border-slate-700/30 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">💬</span>
-          <h3 className="text-sm font-bold text-white tracking-wide">Chat do Duelo</h3>
-          {messages.length > 0 && (
-            <span className="bg-blue-500/20 text-blue-300 text-[10px] px-2 py-0.5 rounded-full font-semibold">
-              {messages.length}
-            </span>
-          )}
+      {!hideHeader && (
+        <div className="bg-slate-900/20 backdrop-blur-sm px-4 py-3 border-b border-slate-700/30 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">💬</span>
+            <h3 className="text-sm font-bold text-white tracking-wide">Chat do Duelo</h3>
+            {messages.length > 0 && (
+              <span className="bg-blue-500/20 text-blue-300 text-[10px] px-2 py-0.5 rounded-full font-semibold">
+                {messages.length}
+              </span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="flex flex-col flex-1 overflow-hidden">
             {/* Mensagens */}

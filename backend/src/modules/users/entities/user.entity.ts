@@ -60,12 +60,9 @@ export class User {
   @Column({ type: 'int', default: 0 })
   cash: number; // Cash (premium pago)
 
-  // Sistema de Níveis
+  // Sistema de Níveis (baseado em totalScore via LevelsService)
   @Column({ type: 'int', default: 1 })
   level: number;
-
-  @Column({ type: 'int', default: 0 })
-  experience: number;
 
   // Sistema de Score
   @Column({ type: 'decimal', precision: 10, scale: 1, default: 0, name: 'total_score' })

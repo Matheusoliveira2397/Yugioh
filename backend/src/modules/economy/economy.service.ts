@@ -110,58 +110,17 @@ export class EconomyService {
     return this.transactionRepository.save(transaction);
   }
 
-  // Recompensar usuário por vitória
+  // Recompensar usuário por vitória (apenas créditos; nível é calculado por score no LevelsService)
   async rewardVictory(userId: number, scoreGained: number): Promise<void> {
     const coinsReward = Math.floor(scoreGained * 10);
-    const experienceReward = scoreGained * 5;
-
     await this.addCurrency(
       userId,
       CurrencyType.CREDITS,
       coinsReward,
       TransactionType.REWARD,
       `Recompensa de vitória (+${scoreGained} score)`,
-      { scoreGained, experienceReward }
+      { scoreGained }
     );
-
-    // Adiciona XP
-    await this.addExperience(userId, experienceReward);
-  }
-
-  // Sistema de XP e Level
-  async addExperience(userId: number, xp: number): Promise<void> {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) return;
-
-    let newXP = user.experience + xp;
-    let newLevel = user.level;
-    const xpForNextLevel = this.getXPForLevel(newLevel);
-
-    // Level up
-    while (newXP >= xpForNextLevel) {
-      newXP -= xpForNextLevel;
-      newLevel++;
-      
-      // Recompensa por level up
-      await this.addCurrency(
-        userId,
-        CurrencyType.CREDITS,
-        newLevel * 100,
-        TransactionType.REWARD,
-        `Level Up! Nível ${newLevel}`,
-        { level: newLevel }
-      );
-    }
-
-    await this.userRepository.update(userId, {
-      experience: newXP,
-      level: newLevel
-    });
-  }
-
-  // Calcular XP necessário para próximo nível
-  private getXPForLevel(level: number): number {
-    return Math.floor(100 * Math.pow(1.5, level - 1));
   }
 
   // Buscar histórico de transações
@@ -178,8 +137,6 @@ export class EconomyService {
     credits: number;
     cash: number;
     level: number;
-    experience: number;
-    xpForNextLevel: number;
   }> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
@@ -189,9 +146,7 @@ export class EconomyService {
     return {
       credits: user.credits,
       cash: user.cash,
-      level: user.level,
-      experience: user.experience,
-      xpForNextLevel: this.getXPForLevel(user.level)
+      level: user.level
     };
   }
 

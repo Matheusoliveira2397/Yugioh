@@ -279,7 +279,7 @@ export default function UserManagement() {
               <p><strong>Score:</strong> {selectedUser.totalScore?.toFixed(1) || 0}</p>
               <p><strong>Vitórias/Derrotas (Geral):</strong> {selectedUser.winsGeral || 0}/{selectedUser.lossesGeral || 0}</p>
               <p><strong>Vitórias/Derrotas (Season):</strong> {selectedUser.winsSeason || 0}/{selectedUser.lossesSeason || 0}</p>
-              <p><strong>Último IP:</strong> <span className="text-blue-400">{selectedUser.lastIpAddress || 'N/A'}</span></p>
+              <p><strong>Último IP:</strong> <span className="text-blue-400 font-mono">{selectedUser.lastIpAddress || 'N/A'}</span></p>
               <p><strong>Status:</strong> {selectedUser.isOnline ? '🟢 Online' : '⚫ Offline'}</p>
               {selectedUser.isBanned && (
                 <p className="text-red-400">
@@ -351,8 +351,16 @@ export default function UserManagement() {
                       {user.email} • Nível: {user.level || 1} • Score: {user.totalScore?.toFixed(1) || 0} • {user.winsGeral || 0}V/{user.lossesGeral || 0}D
                     </p>
                     {user.lastIpAddress && (
-                      <p className="text-sm text-blue-400 font-mono">
-                        IP: {user.lastIpAddress}
+                      <p className="text-sm font-mono">
+                        IP:{' '}
+                        <button
+                          type="button"
+                          onClick={() => fetchUserDetails(user.id)}
+                          className="text-blue-400 hover:text-blue-300 underline cursor-pointer"
+                          title="Clique para ver histórico de IPs desta conta"
+                        >
+                          {user.lastIpAddress}
+                        </button>
                       </p>
                     )}
                   </div>

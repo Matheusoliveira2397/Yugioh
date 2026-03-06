@@ -15,7 +15,6 @@ interface User {
   profileImage: string;
   role?: 'PLAYER' | 'ADMIN' | 'MASTER';
   level?: number;
-  experience?: number;
   clanTag?: string;
   credits?: number;
   cash?: number;

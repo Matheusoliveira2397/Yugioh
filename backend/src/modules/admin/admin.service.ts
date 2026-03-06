@@ -360,7 +360,6 @@ export class AdminService implements OnModuleInit {
       adminAllowedTabs: allowedTabs.length > 0 ? allowedTabs : null,
       isEmailVerified: true,
       level: 1,
-      experience: 0,
       totalScore: 0,
       winsGeral: 0,
       lossesGeral: 0,
@@ -378,20 +377,21 @@ export class AdminService implements OnModuleInit {
     return { id: saved.id, username: saved.username, nickname: saved.nickname };
   }
 
-  // Gestão de Usuários
+  // Gestão de Usuários (ordenado pelos últimos que ficaram online)
   async getAllUsers(page: number = 1, limit: number = 50) {
     const skip = (page - 1) * limit;
-    
-    const [users, total] = await this.usersRepository.findAndCount({
-      skip,
-      take: limit,
-      order: { createdAt: 'DESC' },
-      select: [
-        'id', 'username', 'nickname', 'email', 'role', 'rating', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason',
-        'credits', 'cash', 'profileImage', 'isOnline', 'lastIpAddress', 
-        'isBanned', 'banReason', 'createdAt', 'lastLogin', 'level', 'experience', 'clanTag'
-      ],
-    });
+    const selectFields = [
+      'id', 'username', 'nickname', 'email', 'role', 'rating', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason',
+      'credits', 'cash', 'profileImage', 'isOnline', 'lastIpAddress',
+      'isBanned', 'banReason', 'createdAt', 'lastLogin', 'level', 'clanTag', 'totalScore',
+    ];
+    const qb = this.usersRepository
+      .createQueryBuilder('user')
+      .select(selectFields.map((f) => `user.${f}`))
+      .orderBy('user.lastLogin', 'DESC', 'NULLS LAST')
+      .skip(skip)
+      .take(limit);
+    const [users, total] = await qb.getManyAndCount();
 
     return {
       users,
@@ -1606,7 +1606,6 @@ export class AdminService implements OnModuleInit {
         userSet.lossesGeral = 0;
         userSet.rating = 1000;
         userSet.level = 1;
-        userSet.experience = 0;
         userSet.division = lowestDivision;
       }
       if (options.resetCartas || options.resetCreditsCash) {
