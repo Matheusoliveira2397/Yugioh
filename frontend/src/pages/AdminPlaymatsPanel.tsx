@@ -73,18 +73,18 @@ export default function AdminPlaymatsPanel() {
       // Se houver uma nova imagem selecionada, fazer upload primeiro
       if (selectedImageFile) {
         try {
-          const imageFormData = new FormData();
-          imageFormData.append('cardImage', selectedImageFile);
-          imageFormData.append('cardName', formData.name || 'playmat');
+          const formDataUpload = new FormData();
+          formDataUpload.append('image', selectedImageFile);
+          formDataUpload.append('name', formData.name || 'playmat');
 
-          const uploadResponse = await api.post('/cards/upload-image', imageFormData, {
+          const uploadResponse = await api.post('/cosmetics/admin/upload-playmat', formDataUpload, {
             headers: {
               'Content-Type': 'multipart/form-data',
             },
-            timeout: 30000, // 30 segundos para upload de imagem
+            timeout: 30000,
           });
           
-          imagePath = uploadResponse.data.imagePath;
+          imagePath = uploadResponse.data.imageUrl;
         } catch (uploadError: any) {
           setMessage({ 
             type: 'error', 

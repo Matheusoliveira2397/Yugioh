@@ -1,5 +1,8 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { CosmeticsService } from './cosmetics.service';
+import { UploadService } from '../upload/upload.service';
 import { CreatePlaymatDto } from './dto/create-playmat.dto';
 import { CreateSleeveDto } from './dto/create-sleeve.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -7,7 +10,10 @@ import { AdminGuard } from '../auth/guards/admin.guard';
 
 @Controller('cosmetics')
 export class CosmeticsController {
-  constructor(private readonly cosmeticsService: CosmeticsService) {
+  constructor(
+    private readonly cosmeticsService: CosmeticsService,
+    private readonly uploadService: UploadService,
+  ) {
     console.log('🎨 CosmeticsController initialized');
   }
 
@@ -15,6 +21,29 @@ export class CosmeticsController {
   @Get('test')
   test() {
     return { message: 'Cosmetics module is working!', timestamp: new Date() };
+  }
+
+  // ==================== UPLOAD DE IMAGENS (Supabase ou local - persiste em produção) ====================
+  @Post('admin/upload-playmat')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseInterceptors(FileInterceptor('image', { storage: memoryStorage() }))
+  async uploadPlaymatImage(@UploadedFile() file: any, @Body('name') name?: string) {
+    if (!file?.buffer) {
+      throw new BadRequestException('Envie um arquivo de imagem (campo "image")');
+    }
+    const imageUrl = await this.uploadService.uploadCosmeticImage(file, 'playmat', name || 'playmat');
+    return { imageUrl };
+  }
+
+  @Post('admin/upload-sleeve')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseInterceptors(FileInterceptor('image', { storage: memoryStorage() }))
+  async uploadSleeveImage(@UploadedFile() file: any, @Body('name') name?: string) {
+    if (!file?.buffer) {
+      throw new BadRequestException('Envie um arquivo de imagem (campo "image")');
+    }
+    const imageUrl = await this.uploadService.uploadCosmeticImage(file, 'sleeve', name || 'sleeve');
+    return { imageUrl };
   }
 
   // ==================== PLAYMATS - ADMIN (DEVEM VIR ANTES DAS ROTAS PÚBLICAS) ====================

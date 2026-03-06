@@ -104,24 +104,41 @@ const DuelField: React.FC<DuelFieldProps> = ({
   const defaultFieldImage = isOpponent 
     ? '/images/CampoDeDuelo01.jpg' 
     : '/images/CampoDeDuelo02.jpg';
-  // SkinDefault (sleeve padrão) quando a skin equipada não carregar
+  // Fallback em níveis: 1) skin equipada, 2) SkinDefault (API), 3) fundoCarta (local, sempre existe)
+  const FUNDO_CARTA_LOCAL = '/images/fundoCarta.webp';
   const defaultSkinCardUrl = getDefaultSkinCardImageUrl();
 
-  // Em produção a imagem do playmat/skin pode 404 (arquivo não persistido); fallback para SkinDefault
   const [cardBackLoadError, setCardBackLoadError] = useState(false);
-  const fallbackCard = (cardBackImage && !cardBackLoadError) ? cardBackImage : defaultSkinCardUrl;
+  const [defaultSkinLoadError, setDefaultSkinLoadError] = useState(false);
+
+  const fallbackCard =
+    (cardBackImage && !cardBackLoadError)
+      ? cardBackImage
+      : defaultSkinLoadError
+        ? FUNDO_CARTA_LOCAL
+        : defaultSkinCardUrl;
 
   React.useEffect(() => {
     setCardBackLoadError(false);
+    setDefaultSkinLoadError(false);
   }, [cardBackImage]);
 
-  // Pré-carregar skin do verso; se 404 (ex.: produção sem arquivo), usar padrão
+  // Pré-carregar skin equipada; se falhar, usaremos SkinDefault
   React.useEffect(() => {
     if (!cardBackImage) return;
     const img = new Image();
     img.onerror = () => setCardBackLoadError(true);
     img.src = cardBackImage;
   }, [cardBackImage]);
+
+  // Se estamos usando SkinDefault e ela também falhar (ex.: API sem uploads), usar fundoCarta local
+  React.useEffect(() => {
+    if (cardBackImage && !cardBackLoadError) return;
+    if (defaultSkinCardUrl === FUNDO_CARTA_LOCAL) return;
+    const img = new Image();
+    img.onerror = () => setDefaultSkinLoadError(true);
+    img.src = defaultSkinCardUrl;
+  }, [cardBackImage, cardBackLoadError, defaultSkinCardUrl]);
 
   // Verificar se pode fazer ataque direto (nenhum monstro no campo do oponente)
   const canDirectAttack = isOpponent && monsters.every((m: any) => m === null || m === undefined);

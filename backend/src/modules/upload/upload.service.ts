@@ -421,6 +421,48 @@ export class UploadService {
     return `/uploads/groups/${fileName}`;
   }
 
+  /**
+   * Upload de imagem de playmat ou sleeve (skin de carta) para Supabase Storage.
+   * Em produção as imagens ficam persistidas; sem Supabase salva em disco (efêmero no Fly.io).
+   */
+  async uploadCosmeticImage(
+    file: any,
+    type: 'playmat' | 'sleeve',
+    name: string,
+  ): Promise<string> {
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw new Error('Formato de imagem inválido. Use PNG, JPG ou WEBP.');
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      throw new Error('Imagem muito grande. Tamanho máximo: 5MB.');
+    }
+    const fileExtension = path.extname(file.originalname);
+    const sanitizedName = name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const fileName = `${type === 'sleeve' ? 'sleeve' : 'playmat'}_${sanitizedName}_${Date.now()}${fileExtension}`;
+    const filePath = `${type === 'sleeve' ? 'sleeves' : 'playmats'}/${fileName}`;
+
+    if (this.supabaseStorage.isEnabled()) {
+      const publicUrl = await this.supabaseStorage.upload(
+        'cosmetics',
+        filePath,
+        file.buffer,
+        file.mimetype,
+      );
+      console.log(`✅ Cosmético (${type}) salvo no Supabase:`, filePath);
+      return publicUrl;
+    }
+
+    const localDir = path.join(__dirname, '..', '..', 'uploads', 'cosmetics', type === 'sleeve' ? 'sleeves' : 'playmats');
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+    const localPath = path.join(localDir, fileName);
+    fs.writeFileSync(localPath, file.buffer);
+    console.log(`✅ Cosmético (${type}) salvo (local):`, fileName);
+    return `/uploads/cosmetics/${type === 'sleeve' ? 'sleeves' : 'playmats'}/${fileName}`;
+  }
+
   async uploadAchievementImage(file: any, achievementTitle: string): Promise<string> {
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
     if (!allowedMimeTypes.includes(file.mimetype)) {

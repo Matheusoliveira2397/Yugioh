@@ -74,18 +74,18 @@ export default function AdminSleevesPanel() {
 
       if (selectedImageFile) {
         try {
-          const imageFormData = new FormData();
-          imageFormData.append('cardImage', selectedImageFile);
-          imageFormData.append('cardName', formData.name || 'sleeve');
+          const formDataUpload = new FormData();
+          formDataUpload.append('image', selectedImageFile);
+          formDataUpload.append('name', formData.name || 'sleeve');
 
-          const uploadResponse = await api.post('/cards/upload-image', imageFormData, {
+          const uploadResponse = await api.post('/cosmetics/admin/upload-sleeve', formDataUpload, {
             headers: {
               'Content-Type': 'multipart/form-data',
             },
-            timeout: 30000, // 30 segundos para upload de imagem
+            timeout: 30000,
           });
           
-          imagePath = uploadResponse.data.imagePath;
+          imagePath = uploadResponse.data.imageUrl;
         } catch (uploadError: any) {
           console.error('❌ Erro detalhado no upload:', uploadError);
           const errorMessage = uploadError.code === 'ECONNABORTED' || uploadError.message?.includes('timeout')
