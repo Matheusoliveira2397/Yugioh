@@ -6,6 +6,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { LoggingInterceptor } from './logging.interceptor';
 import { HttpExceptionFilter } from './http-exception.filter';
+import { RedisIoAdapter } from './redis-io.adapter';
 import * as fs from 'fs';
 
 async function bootstrap() {
@@ -239,9 +240,14 @@ async function bootstrap() {
     customCss: '.swagger-ui .topbar { display: none }',
   });
 
+  // Socket.IO: usar Redis adapter em produção quando REDIS_URL estiver definido (múltiplas instâncias)
+  const redisIoAdapter = new RedisIoAdapter(app);
+  await redisIoAdapter.connectToRedis();
+  app.useWebSocketAdapter(redisIoAdapter);
+
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  
+
   console.log(`🚀 Yu-Gi-Oh! Backend running on: http://localhost:${port}`);
   console.log(`📚 API Documentation: http://localhost:${port}/api/docs`);
   console.log(`🎮 WebSocket server ready for duels!`);

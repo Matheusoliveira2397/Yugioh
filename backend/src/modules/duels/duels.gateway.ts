@@ -7584,15 +7584,13 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         // Limpar escolha pendente
         await this.duelsService.clearPendingChoice(duelId);
         
-        // Buscar duelo atualizado
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId);
+        // Buscar duelo atualizado do banco (forçar para garantir pendingChoice=null)
+        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
         if (!updatedDuel) {
           client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
           return;
         }
         
-        // Emitir evento explícito para fechar o modal ANTES do duelUpdate
-        // Isso garante que o modal seja fechado corretamente
         console.log(`📤 [FORCEFUL_SENTRY_CHOICE] Emitindo closePendingChoiceModal para fechar o modal`);
         client.emit('closePendingChoiceModal', { 
           duelId, 
@@ -7937,22 +7935,20 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         // Limpar escolha pendente
         await this.duelsService.clearPendingChoice(duelId);
         
-        // Buscar duelo atualizado
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId);
+        // Buscar duelo atualizado do banco (forçar para garantir pendingChoice=null)
+        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
         if (!updatedDuel) {
           client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
           return;
         }
         
         // Emitir evento explícito para fechar o modal ANTES do duelUpdate
-        // Isso garante que o modal seja fechado corretamente
         console.log(`📤 [CONFISCATION_CHOICE] Emitindo closePendingChoiceModal para fechar o modal`);
         client.emit('closePendingChoiceModal', { 
           duelId, 
           reason: 'choice_completed',
           cardEffectType: 'confiscation'
         });
-        // Também emitir para a room inteira caso o jogador tenha múltiplas abas
         this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', { 
           duelId, 
           reason: 'choice_completed',
@@ -7980,11 +7976,11 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           turnStartedAt: (updatedDuel as any).turnStartedAt,
           player1Field: player1Field,
           player2Field: player2Field,
+          pendingChoice: (updatedDuel as any).pendingChoice ?? null,
           createdAt: updatedDuel.createdAt,
           updatedAt: updatedDuel.updatedAt,
         };
         
-        // Aguardar um pequeno delay antes de emitir duelUpdate para garantir que o modal feche primeiro
         await new Promise(resolve => setTimeout(resolve, 100));
         this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
       } else if (actionType === 'GRACEFUL_CHARITY_CHOICE') {
@@ -8006,12 +8002,16 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         // Limpar escolha pendente
         await this.duelsService.clearPendingChoice(duelId);
         
-        // Buscar duelo atualizado
-        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId);
+        // Buscar duelo atualizado do banco (forçar para garantir pendingChoice=null)
+        const updatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
         if (!updatedDuel) {
           client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
           return;
         }
+        
+        // Emitir closePendingChoiceModal antes do duelUpdate para o cliente fechar o modal primeiro
+        client.emit('closePendingChoiceModal', { duelId, reason: 'choice_completed', cardEffectType: 'gracefulCharity' });
+        this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', { duelId, reason: 'choice_completed', cardEffectType: 'gracefulCharity' });
         
         const player1Field = (updatedDuel as any).player1Field;
         const player2Field = (updatedDuel as any).player2Field;
@@ -8034,11 +8034,12 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           turnStartedAt: (updatedDuel as any).turnStartedAt,
           player1Field: player1Field,
           player2Field: player2Field,
-          pendingChoice: null, // Limpar pendingChoice para fechar o modal
+          pendingChoice: (updatedDuel as any).pendingChoice ?? null,
           createdAt: updatedDuel.createdAt,
           updatedAt: updatedDuel.updatedAt,
         };
         
+        await new Promise(resolve => setTimeout(resolve, 100));
         this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
       } else if (actionType === 'MASTER_ADD_CARD_TO_HAND') {
         // Ação especial para MASTER: adicionar carta do deck à mão pelo nome

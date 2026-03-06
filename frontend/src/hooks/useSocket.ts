@@ -2,7 +2,23 @@ import { useEffect, useRef, useState } from 'react';
 import io, { Socket } from 'socket.io-client';
 import { useAuthStore } from '../stores/authStore';
 
-const SOCKET_URL = import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_URL || 'http://localhost:3000';
+/** URL do WebSocket: usa env ou em produção same-origin (ws/wss conforme a página) */
+function getSocketUrl(): string {
+  const envWs = import.meta.env.VITE_WS_URL;
+  const envApi = import.meta.env.VITE_API_URL;
+  if (envWs && String(envWs).trim() !== '') return String(envWs).trim();
+  if (envApi && String(envApi).trim() !== '') {
+    const api = String(envApi).trim();
+    if (api.startsWith('http://')) return api.replace(/^http/, 'ws');
+    if (api.startsWith('https://')) return api.replace(/^https/, 'wss');
+    return api;
+  }
+  if (import.meta.env.PROD && typeof window !== 'undefined') {
+    const origin = window.location.origin;
+    return origin.startsWith('https') ? origin.replace(/^https/, 'wss') : origin.replace(/^http/, 'ws');
+  }
+  return 'http://localhost:3000';
+}
 
 interface DuelFoundData {
   duelId: string | null;
@@ -189,7 +205,7 @@ const getSocketForCurrentTab = (): Socket => {
   const clientInstanceId = getClientInstanceId();
   console.log(`🆔 [${tabId}] Usando clientInstanceId: ${clientInstanceId}`);
   
-  const socket = io(SOCKET_URL, {
+  const socket = io(getSocketUrl(), {
     auth: { 
       token,
       clientInstanceId, // Enviar clientInstanceId no auth para o backend

@@ -103,7 +103,6 @@ export class AuthService {
           role: fullProfile.role,
           clanTag: fullProfile.clanTag || null,
           level: fullProfile.level || 1,
-          experience: fullProfile.experience || 0,
           totalScore: fullProfile.totalScore != null ? Number(fullProfile.totalScore) : 0,
           equippedDeckName: (fullProfile as any).equippedDeckName || null,
           group: fullProfile.group || null,
@@ -204,7 +203,6 @@ export class AuthService {
       email: registerDto.email,
       password: hashedPassword,
       level: 1,
-      experience: 0,
       totalScore: 0,
       winsGeral: 0,
       lossesGeral: 0,
@@ -300,21 +298,24 @@ export class AuthService {
     let emailSent = false;
     try {
       console.log(`📧 [AuthService] Enviando email de verificação para: ${user.email}`);
-      console.log(`📧 [AuthService] Token gerado: ${verificationToken.substring(0, 10)}...`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`📧 [AuthService] Token gerado: ${verificationToken.substring(0, 8)}...`);
+      }
       const emailResult = await this.mailService.sendVerificationEmail(user.email, user.nickname, verificationToken);
       emailSent = emailResult === true; // Se retornar true, email foi enviado
       if (emailSent) {
         console.log(`✅ [AuthService] Email de verificação enviado com sucesso para: ${user.email}`);
       } else {
         console.warn(`⚠️ [AuthService] Email não foi enviado, mas usuário foi criado`);
-        console.log(`\n🔗 [AuthService] Link de verificação (copie e cole no navegador):`);
-        console.log(`   ${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email/${verificationToken}\n`);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`\n🔗 [AuthService] Link (dev): ${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email/***\n`);
+        }
       }
     } catch (error: any) {
-      console.error('❌ [AuthService] Erro ao enviar email, mas usuário foi criado:', error);
-      console.error(`   Detalhes: ${error?.message || 'Erro desconhecido'}`);
-      console.log(`\n🔗 [AuthService] Link de verificação (copie e cole no navegador):`);
-      console.log(`   ${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email/${verificationToken}\n`);
+      console.error('❌ [AuthService] Erro ao enviar email, mas usuário foi criado:', error?.message || error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`\n🔗 [AuthService] Link (dev): ${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email/***\n`);
+      }
       emailSent = false;
     }
 

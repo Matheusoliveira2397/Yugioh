@@ -240,6 +240,8 @@ const DuelArena: React.FC = () => {
   const [showOpponentGraveyardModal, setShowOpponentGraveyardModal] = useState(false);
   const [showOpponentExtraDeckModal, setShowOpponentExtraDeckModal] = useState(false);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [chatMinimized, setChatMinimized] = useState(false);
+  const [logsMinimized, setLogsMinimized] = useState(false);
   
   // Estado para mostrar mão do oponente virada (The Forceful Sentry ou Confiscation)
   const [showOpponentHandRevealed, setShowOpponentHandRevealed] = useState(false);
@@ -520,12 +522,16 @@ const DuelArena: React.FC = () => {
   // Estado para rastrear se já houve mudança de turno (para identificar primeiro turno)
   const [hasTurnChanged, setHasTurnChanged] = useState(false);
   const previousTurnRef = useRef<number | null>(null);
+  // Evitar reabrir modal quando duelUpdate atrasado chega depois de choice_completed
+  const justResolvedChoiceRef = useRef<{ type: string; at: number } | null>(null);
 
   // Bloquear nova ação (usar carta/invocar/efeito) enquanto uma invocação ou efeito ainda não foi concluído
   const hasActionInProgress = Boolean(
     currentPendingChoice != null ||
     showOpponentHandRevealed ||
     showGracefulCharityModal ||
+    showUnitedWeStandModal ||
+    showMagePowerModal ||
     tributeModalData != null ||
     chaosSorcererData != null ||
     redEyesDarknessMetalDragonData != null ||
@@ -938,7 +944,14 @@ const DuelArena: React.FC = () => {
         console.log(`🔍 [handleDuelUpdate] ===========================================`);
         
         if (isMyChoice) {
-          console.log(`✅ [handleDuelUpdate] É MINHA ESCOLHA! Restaurando modal para:`, pendingChoice.type);
+          // Ignorar duelUpdate atrasado que reabre o modal logo após choice_completed (evita bug em produção)
+          const resolved = justResolvedChoiceRef.current;
+          if (resolved && resolved.type === pendingChoice.type && (Date.now() - resolved.at) < 2500) {
+            console.log(`🔒 [handleDuelUpdate] Ignorando pendingChoice duplicado/atrasado (${pendingChoice.type}) - escolha já foi confirmada`);
+            justResolvedChoiceRef.current = null;
+          } else {
+            if (resolved && (Date.now() - resolved.at) >= 2500) justResolvedChoiceRef.current = null;
+            console.log(`✅ [handleDuelUpdate] É MINHA ESCOLHA! Restaurando modal para:`, pendingChoice.type);
           
           // Abrir modal IMEDIATAMENTE quando há pendingChoice
           if (pendingChoice.type === 'CONFISCATION' && pendingChoice.data?.opponentHand) {
@@ -970,6 +983,7 @@ const DuelArena: React.FC = () => {
             setSelectedMagePowerMonster(null);
           } else {
             console.warn(`⚠️ [handleDuelUpdate] Tipo de escolha pendente desconhecido ou dados faltando:`, pendingChoice);
+          }
           }
         } else {
           // Escolha pendente não é minha - fechar modais se estiverem abertos
@@ -1959,8 +1973,10 @@ const DuelArena: React.FC = () => {
             currentPendingChoice.type === 'FORCEFUL_SENTRY'
           );
           
-          if (!isSelectionRequired) {
-            // Limpar pendingChoice apenas se não for um modal de seleção obrigatória
+          if (data.reason === 'choice_completed') {
+            justResolvedChoiceRef.current = currentPendingChoice ? { type: currentPendingChoice.type, at: Date.now() } : null;
+            setCurrentPendingChoice(null);
+          } else if (!isSelectionRequired) {
             setCurrentPendingChoice(null);
           } else {
             console.log('⚠️ [closePendingChoiceModal] Mantendo pendingChoice ativo para modal de seleção obrigatória:', currentPendingChoice.type);
@@ -2110,6 +2126,17 @@ const DuelArena: React.FC = () => {
         currentSocket.off('soulTakerShowOpponentMonsters', soulTakerListener);
         currentSocket.off('lightningStormShowOptions', lightningStormListener);
         currentSocket.off('exiledForceShowTargets', exiledForceListener);
+        currentSocket.off('monsterRebornShowGraveyards', monsterRebornListener);
+        currentSocket.off('prematureBurialShowGraveyard', prematureBurialListener);
+        currentSocket.off('autonomousActionUnitShowOpponentGraveyard', autonomousActionUnitListener);
+        currentSocket.off('monsterReincarnationShowHand', monsterReincarnationDiscardListener);
+        currentSocket.off('monsterReincarnationShowGraveyard', monsterReincarnationGraveyardListener);
+        currentSocket.off('changeOfHeartShowOpponentMonsters', changeOfHeartListener);
+        currentSocket.off('brainControlShowOpponentMonsters', brainControlListener);
+        currentSocket.off('unitedWeStandShowMonsters', unitedWeStandListener);
+        currentSocket.off('magePowerShowMonsters', magePowerListener);
+        currentSocket.off('reinforcementOfTheArmyShowDeck', reinforcementOfTheArmyListener);
+        currentSocket.off('lastWillShowDeck', lastWillListener);
         currentSocket.off('directAttackAnimation');
         currentSocket.off('attackCancelled');
         currentSocket.off('disconnect', disconnectListener);
@@ -3601,20 +3628,67 @@ const DuelArena: React.FC = () => {
             >
               ×
             </button>
-            <DuelChat
-              messages={chatMessages}
-              onSendMessage={(message) => {
-                if (duelId && user?.id) {
-                  const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
-                  if (!isNaN(userId)) {
-                    sendChatMessage(duelId, userId, message);
-                  } else {
-                    console.error('❌ ID de usuário inválido:', user.id);
-                  }
-                }
-              }}
-            />
-            <DuelLogs logs={duelLogs} />
+            {/* Chat do Duelo - minimizável */}
+            <div className="rounded-xl border border-slate-700/30 overflow-hidden flex flex-col bg-slate-900/20">
+              <button
+                type="button"
+                onClick={() => setChatMinimized((v) => !v)}
+                className="w-full px-4 py-2.5 flex items-center justify-between gap-2 bg-slate-800/40 hover:bg-slate-700/40 transition-colors text-left"
+                aria-label={chatMinimized ? 'Expandir chat' : 'Minimizar chat'}
+              >
+                <span className="flex items-center gap-2 text-sm font-bold text-white">
+                  <span>💬</span> Chat do Duelo
+                  {chatMessages.length > 0 && (
+                    <span className="bg-blue-500/20 text-blue-300 text-[10px] px-2 py-0.5 rounded-full font-semibold">
+                      {chatMessages.length}
+                    </span>
+                  )}
+                </span>
+                <span className="text-slate-400 text-lg leading-none">{chatMinimized ? '▶' : '▼'}</span>
+              </button>
+              {!chatMinimized && (
+                <div className="flex-1 min-h-0">
+                  <DuelChat
+                    hideHeader
+                    messages={chatMessages}
+                    onSendMessage={(message) => {
+                      if (duelId && user?.id) {
+                        const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
+                        if (!isNaN(userId)) {
+                          sendChatMessage(duelId, userId, message);
+                        } else {
+                          console.error('❌ ID de usuário inválido:', user.id);
+                        }
+                      }
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+            {/* Log de Ações - minimizável */}
+            <div className="rounded-xl border border-slate-700/30 overflow-hidden flex flex-col bg-slate-900/20">
+              <button
+                type="button"
+                onClick={() => setLogsMinimized((v) => !v)}
+                className="w-full px-4 py-2.5 flex items-center justify-between gap-2 bg-slate-800/40 hover:bg-slate-700/40 transition-colors text-left"
+                aria-label={logsMinimized ? 'Expandir log de ações' : 'Minimizar log de ações'}
+              >
+                <span className="flex items-center gap-2 text-sm font-bold text-white">
+                  <span>📋</span> Log de Ações
+                  {duelLogs.length > 0 && (
+                    <span className="bg-purple-500/10 text-purple-300 text-[10px] px-2 py-0.5 rounded-full font-semibold">
+                      {duelLogs.length}
+                    </span>
+                  )}
+                </span>
+                <span className="text-slate-400 text-lg leading-none">{logsMinimized ? '▶' : '▼'}</span>
+              </button>
+              {!logsMinimized && (
+                <div className="flex-1 min-h-0">
+                  <DuelLogs hideHeader logs={duelLogs} />
+                </div>
+              )}
+            </div>
             
             {/* Master Card Search - Apenas para MASTER */}
             {user?.role === 'MASTER' && (
@@ -4687,8 +4761,8 @@ const DuelArena: React.FC = () => {
               }}
               onActivateCard={(card, zoneIndex) => {
                 if (duelId && user?.id && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2')) {
-                  // Verificar se há modal de escolha aberto
-                  if (showOpponentHandRevealed || showGracefulCharityModal) {
+                  // Verificar se há modal de escolha aberto (qualquer efeito que exija conclusão)
+                  if (showOpponentHandRevealed || showGracefulCharityModal || showUnitedWeStandModal || showMagePowerModal || currentPendingChoice != null) {
                     alert('Você precisa completar a escolha pendente antes de fazer outras ações!');
                     return;
                   }
