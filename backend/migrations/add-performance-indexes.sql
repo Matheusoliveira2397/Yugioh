@@ -33,7 +33,6 @@ CREATE INDEX IF NOT EXISTS "IDX_user_cards_user_card" ON "user_cards"("userId", 
 -- Índices para tabela users (queries frequentes)
 CREATE INDEX IF NOT EXISTS "IDX_users_role" ON "users"("role");
 CREATE INDEX IF NOT EXISTS "IDX_users_is_online" ON "users"("isOnline") WHERE "isOnline" = true;
-CREATE INDEX IF NOT EXISTS "IDX_users_rating" ON "users"("rating" DESC);
 CREATE INDEX IF NOT EXISTS "IDX_users_level" ON "users"("level" DESC);
 
 -- Índices para duel_logs

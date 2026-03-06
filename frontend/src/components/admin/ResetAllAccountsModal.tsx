@@ -13,7 +13,7 @@ interface ResetAllAccountsModalProps {
 
 const RESET_OPTIONS = [
   { key: 'resetScoreSeason', label: 'Score da temporada (usuários)', description: 'Zera wins/losses da season e ranking da temporada' },
-  { key: 'resetScoreGeral', label: 'Score geral (usuários)', description: 'Zera total score, vitórias/derrotas gerais, level, experiência, rating e divisão' },
+  { key: 'resetScoreGeral', label: 'Score geral (usuários)', description: 'Zera total score, vitórias/derrotas gerais, level, experiência e divisão' },
   { key: 'resetCartas', label: 'Cartas e deck', description: 'Remove todas as cartas, decks e volta ao deck inicial (aplica cash/créditos iniciais)' },
   { key: 'resetCreditsCash', label: 'Créditos e cash', description: 'Volta créditos e cash de todos para o valor inicial (configuração de nova conta)' },
   { key: 'resetConquistas', label: 'Conquistas', description: 'Remove todas as conquistas dos usuários' },

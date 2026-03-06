@@ -221,7 +221,6 @@ CREATE TABLE IF NOT EXISTS "users" (
     "lossesGeral" INTEGER DEFAULT 0,
     "winsSeason" INTEGER DEFAULT 0,
     "lossesSeason" INTEGER DEFAULT 0,
-    "rating" INTEGER DEFAULT 1000,
     "credits" INTEGER DEFAULT 0,
     "cash" INTEGER DEFAULT 0,
     "level" INTEGER DEFAULT 1,
@@ -713,7 +712,6 @@ CREATE INDEX IF NOT EXISTS "IDX_social_media_order" ON "social_media"("order");
 -- ÍNDICES ADICIONAIS PARA PERFORMANCE
 -- ============================================
 
-CREATE INDEX IF NOT EXISTS "IDX_users_rating" ON "users"("rating" DESC);
 CREATE INDEX IF NOT EXISTS "IDX_users_total_score" ON "users"("total_score" DESC);
 CREATE INDEX IF NOT EXISTS "IDX_users_email" ON "users"("email");
 CREATE INDEX IF NOT EXISTS "IDX_users_username" ON "users"("username");

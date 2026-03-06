@@ -365,7 +365,6 @@ export class AdminService implements OnModuleInit {
       lossesGeral: 0,
       winsSeason: 0,
       lossesSeason: 0,
-      rating: 1000,
       credits: initialCredits,
       cash: initialCash,
       division: lowestDivision,
@@ -381,7 +380,7 @@ export class AdminService implements OnModuleInit {
   async getAllUsers(page: number = 1, limit: number = 50) {
     const skip = (page - 1) * limit;
     const selectFields = [
-      'id', 'username', 'nickname', 'email', 'role', 'rating', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason',
+      'id', 'username', 'nickname', 'email', 'role', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason',
       'credits', 'cash', 'profileImage', 'isOnline', 'lastIpAddress',
       'isBanned', 'banReason', 'createdAt', 'lastLogin', 'level', 'clanTag', 'totalScore',
     ];
@@ -478,8 +477,8 @@ export class AdminService implements OnModuleInit {
       // Buscar usuários marcados como online no banco (APÓS sincronização)
       const usersFromDb = await this.usersRepository.find({
         where: { isOnline: true, isBanned: false },
-        select: ['id', 'username', 'nickname', 'profileImage', 'rating', 'lastIpAddress', 'clanTag'],
-        order: { rating: 'DESC' },
+        select: ['id', 'username', 'nickname', 'profileImage', 'lastIpAddress', 'clanTag'],
+        order: { lastLogin: 'DESC' },
       });
 
       console.log(`✅ [getOnlineUsers] Verificação concluída. Total de ${usersFromDb.length} usuário(s) online no banco.`);
@@ -492,8 +491,8 @@ export class AdminService implements OnModuleInit {
       // Fallback: retornar apenas do banco
       const usersFromDb = await this.usersRepository.find({
         where: { isOnline: true, isBanned: false },
-        select: ['id', 'username', 'nickname', 'profileImage', 'rating', 'lastIpAddress', 'clanTag'],
-        order: { rating: 'DESC' },
+        select: ['id', 'username', 'nickname', 'profileImage', 'lastIpAddress', 'clanTag'],
+        order: { lastLogin: 'DESC' },
       });
       return {
         count: usersFromDb.length,
@@ -567,7 +566,7 @@ export class AdminService implements OnModuleInit {
     };
   }
 
-  async updateUserResources(userId: number, resources: { credits?: number; cash?: number; rating?: number }) {
+  async updateUserResources(userId: number, resources: { credits?: number; cash?: number }) {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     
     if (!user) {
@@ -579,9 +578,6 @@ export class AdminService implements OnModuleInit {
     }
     if (resources.cash !== undefined) {
       user.cash = resources.cash;
-    }
-    if (resources.rating !== undefined) {
-      user.rating = resources.rating;
     }
 
     await this.usersRepository.save(user);
@@ -693,12 +689,6 @@ export class AdminService implements OnModuleInit {
       bannedUsers,
       verifiedUsers,
       newUsersToday,
-      stats: {
-        avgRating: await this.usersRepository
-          .createQueryBuilder('user')
-          .select('AVG(user.rating)', 'avg')
-          .getRawOne(),
-      },
     };
   }
 
@@ -1604,7 +1594,6 @@ export class AdminService implements OnModuleInit {
         userSet.totalScore = 0;
         userSet.winsGeral = 0;
         userSet.lossesGeral = 0;
-        userSet.rating = 1000;
         userSet.level = 1;
         userSet.division = lowestDivision;
       }

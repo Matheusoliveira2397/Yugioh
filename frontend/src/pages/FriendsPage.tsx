@@ -15,7 +15,6 @@ interface Friend {
   isOnline: boolean;
   level: number;
   totalScore?: number;
-  rating?: number;
 }
 
 interface Message {
@@ -71,7 +70,7 @@ export default function FriendsPage() {
           profileImage: friend.profileImage || null,
           isOnline: friend.isOnline || false,
           level: friend.level || 1,
-          totalScore: friend.totalScore || friend.rating || 0,
+          totalScore: friend.totalScore || 0,
         })));
       } catch (error) {
         console.error('Erro ao carregar amigos:', error);
@@ -139,7 +138,7 @@ export default function FriendsPage() {
         profileImage: friend.profileImage || null,
         isOnline: friend.isOnline || false,
         level: friend.level || 1,
-        totalScore: friend.totalScore || friend.rating || 0,
+        totalScore: friend.totalScore || 0,
       })));
     } catch (error) {
       console.error('Erro ao aceitar solicitação:', error);

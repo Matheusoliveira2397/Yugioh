@@ -54,38 +54,5 @@ export class AchievementsService {
       }
     }
   }
-
-  // Verificar e conceder conquistas baseadas em rating
-  async checkRatingAchievements(userId: number, rating: number): Promise<void> {
-    const achievements = [
-      { threshold: 1500, title: 'Aprendiz', description: 'Alcance rating de 1500' },
-      { threshold: 2000, title: 'Veterano', description: 'Alcance rating de 2000' },
-      { threshold: 2500, title: 'Mestre', description: 'Alcance rating de 2500' },
-      { threshold: 3000, title: 'Lendário', description: 'Alcance rating de 3000' },
-    ];
-
-    for (const achievement of achievements) {
-      if (rating >= achievement.threshold) {
-        // Verificar se já existe esta conquista específica
-        const existing = await this.achievementsRepository.find({
-          where: { userId, type: AchievementType.RATING },
-        });
-        
-        const exists = existing.some(a => 
-          a.metadata && (a.metadata as any).threshold === achievement.threshold
-        );
-
-        if (!exists) {
-          await this.achievementsRepository.save({
-            userId,
-            type: AchievementType.RATING,
-            title: achievement.title,
-            description: achievement.description,
-            metadata: { threshold: achievement.threshold },
-          });
-        }
-      }
-    }
-  }
 }
 

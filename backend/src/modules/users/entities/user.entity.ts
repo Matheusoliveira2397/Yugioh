@@ -50,9 +50,6 @@ export class User {
   @Column({ default: 0 })
   lossesSeason: number;
 
-  @Column({ default: 1000 })
-  rating: number;
-
   // Sistema de Economia
   @Column({ type: 'int', default: 0 })
   credits: number; // Crédito (premium gratuito)
@@ -116,7 +113,7 @@ export class User {
   @Column({ type: 'text', nullable: true })
   biography: string | null;
 
-  // Classe do jogador (baseada em rating)
+  // Classe do jogador (baseada em totalScore e level)
   @Column({ type: 'varchar', nullable: true, default: 'Novato' })
   playerClass: string; // Novato, Aprendiz, Veterano, Mestre, Lendário, etc.
 

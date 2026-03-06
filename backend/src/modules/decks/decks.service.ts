@@ -199,7 +199,7 @@ export class DecksService implements OnModuleInit {
     const originalDeckName = saveDeckDto.originalDeckName?.trim() || null;
     if (allCardIds.length > 0) {
       await this.validateUserCardQuantities(userId, allCardIds, deckName, originalDeckName);
-      await this.validateCardLimitsByName(userId, allCardIds, deckName, originalDeckName);
+      await this.validateCardLimitsByName(userId, saveDeckDto.cardIds, validExtraDeckCardIds, deckName, originalDeckName);
     }
 
     let deck: Deck | null = null;
@@ -711,53 +711,51 @@ export class DecksService implements OnModuleInit {
   }
 
   /**
-   * Valida o limite de cópias por nome da carta (maxCopiesInDeck)
-   * Considera todas as skins da mesma carta como a mesma carta
+   * Valida o limite de cópias por nome da carta (maxCopiesInDeck).
+   * Deck principal e extra deck têm limites separados: cada um pode ter até maxCopies por nome.
    */
   private async validateCardLimitsByName(
     userId: number,
-    newDeckCardIds: string[],
+    mainDeckCardIds: string[],
+    extraDeckCardIds: string[],
     deckName: string,
     excludeDeckName?: string | null,
   ): Promise<void> {
-    if (newDeckCardIds.length === 0) {
+    const allIds = [...mainDeckCardIds, ...extraDeckCardIds].filter(id => id && id.trim() !== '');
+    if (allIds.length === 0) {
       return;
     }
 
-    // 1) Converter todos os cardIds para UUIDs e buscar informações das cartas
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const potentialUuids: string[] = [];
     const idCartas: string[] = [];
-    const uniqueCardIds = [...new Set(newDeckCardIds.filter(id => id && id.trim() !== ''))];
-
-    for (const id of uniqueCardIds) {
-      if (uuidRegex.test(id.trim())) {
-        potentialUuids.push(id.trim());
+    for (const id of allIds) {
+      const trimmed = id.trim();
+      if (uuidRegex.test(trimmed)) {
+        potentialUuids.push(trimmed);
       } else {
-        idCartas.push(id.trim());
+        idCartas.push(trimmed);
       }
     }
+    const uniqueUuids = [...new Set(potentialUuids)];
+    const uniqueIdCartas = [...new Set(idCartas)];
 
-    // Buscar cartas por UUID
     const cardsById: any[] = [];
-    if (potentialUuids.length > 0) {
+    if (uniqueUuids.length > 0) {
       const found = await this.cardsRepository.find({
-        where: { id: In(potentialUuids) },
+        where: { id: In(uniqueUuids) },
         select: ['id', 'name', 'maxCopiesInDeck'],
       });
       cardsById.push(...found);
     }
-
-    // Buscar cartas por idCarta
-    if (idCartas.length > 0) {
+    if (uniqueIdCartas.length > 0) {
       const found = await this.cardsRepository.find({
-        where: { idCarta: In(idCartas) },
+        where: { idCarta: In(uniqueIdCartas) },
         select: ['id', 'idCarta', 'name', 'maxCopiesInDeck'],
       });
       cardsById.push(...found);
     }
 
-    // Criar mapa de cardId -> carta
     const cardMap = new Map<string, any>();
     for (const card of cardsById) {
       cardMap.set(card.id, card);
@@ -766,70 +764,46 @@ export class DecksService implements OnModuleInit {
       }
     }
 
-    // 2) Buscar todos os decks do usuário (exceto o deck atual)
-    const otherDecks = await this.decksRepository.find({
-      where: { userId },
-      relations: ['cards', 'cards.card'],
-    });
-
-    const otherDecksFiltered = otherDecks.filter(
-      (d) => d.name !== deckName && (!excludeDeckName || d.name !== excludeDeckName),
-    );
-
-    // 3) Contar cartas por nome em outros decks
-    const countByNameInOtherDecks = new Map<string, number>();
-    for (const deck of otherDecksFiltered) {
-      for (const dc of deck.cards || []) {
-        if (dc.card && dc.card.name) {
-          const currentCount = countByNameInOtherDecks.get(dc.card.name) || 0;
-          countByNameInOtherDecks.set(dc.card.name, currentCount + 1);
+    const countByName = (cardIds: string[]) => {
+      const byName = new Map<string, number>();
+      for (const cardId of cardIds) {
+        const trimmed = cardId.trim();
+        if (!trimmed) continue;
+        const card = cardMap.get(trimmed);
+        if (card && card.name) {
+          byName.set(card.name, (byName.get(card.name) || 0) + 1);
         }
       }
-    }
+      return byName;
+    };
 
-    // 4) Contar cartas por nome no novo deck
-    const countByNameInNewDeck = new Map<string, number>();
-    for (const cardId of newDeckCardIds) {
-      const trimmed = cardId.trim();
-      if (!trimmed) continue;
-      
-      const card = cardMap.get(trimmed);
-      if (card && card.name) {
-        const currentCount = countByNameInNewDeck.get(card.name) || 0;
-        countByNameInNewDeck.set(card.name, currentCount + 1);
-      }
-    }
-
-    // 5) Validar limite para cada carta
+    const countByNameMain = countByName(mainDeckCardIds);
+    const countByNameExtra = countByName(extraDeckCardIds);
     const errors: string[] = [];
-    for (const [cardName, countInNew] of countByNameInNewDeck.entries()) {
-      // Buscar uma carta com esse nome para pegar o maxCopiesInDeck
-      const sampleCard = cardsById.find(c => c.name === cardName);
-      if (!sampleCard) continue;
 
-      const maxCopies = sampleCard.maxCopiesInDeck ?? 3;
-      
-      // Se maxCopies é 0, a carta está banida
-      if (maxCopies === 0) {
-        errors.push(`A carta "${cardName}" está banida e não pode ser adicionada ao deck.`);
-        continue;
+    const validateSection = (countByName: Map<string, number>, sectionLabel: string) => {
+      for (const [cardName, count] of countByName.entries()) {
+        const sampleCard = cardsById.find(c => c.name === cardName);
+        if (!sampleCard) continue;
+        const maxCopies = sampleCard.maxCopiesInDeck ?? 3;
+        if (maxCopies === 0) {
+          errors.push(`A carta "${cardName}" está banida e não pode ser adicionada ao deck.`);
+          continue;
+        }
+        if (count > maxCopies) {
+          errors.push(
+            `No ${sectionLabel}, a carta "${cardName}" tem ${count} cópia(s), mas o limite é ${maxCopies}.`,
+          );
+        }
       }
+    };
 
-      const countInOther = countByNameInOtherDecks.get(cardName) || 0;
-      const totalCount = countInOther + countInNew;
-
-      if (totalCount > maxCopies) {
-        errors.push(
-          `A carta "${cardName}" está sendo usada em ${totalCount} cópia(s), ` +
-          `mas o limite máximo é ${maxCopies}. Remova pelo menos ${totalCount - maxCopies} cópia(s) deste ou de outros decks.`,
-        );
-      }
-    }
+    validateSection(countByNameMain, 'deck principal');
+    validateSection(countByNameExtra, 'extra deck');
 
     if (errors.length > 0) {
       throw new BadRequestException(
-        'Limite de cópias excedido (considerando todas as skins da mesma carta):\n' +
-          errors.slice(0, 5).join('\n'),
+        'Limite de cópias excedido:\n' + errors.slice(0, 5).join('\n'),
       );
     }
   }

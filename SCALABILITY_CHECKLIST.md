@@ -82,7 +82,6 @@ pm2 scale yugioh-backend 4  # 4 instâncias
 
 ### **Adicionar Índices:**
 ```sql
-CREATE INDEX CONCURRENTLY idx_users_rating ON users(rating DESC);
 CREATE INDEX CONCURRENTLY idx_users_total_score ON users(total_score DESC);
 CREATE INDEX CONCURRENTLY idx_duels_active ON duels(status) WHERE status = 'IN_PROGRESS';
 ```

@@ -25,7 +25,7 @@
 
 ### ⚔️ Duelos e Matchmaking
 - ✅ **Duelos em Tempo Real** - WebSocket com mecânicas Yu-Gi-Oh!
-- ✅ **Random Duel** - Matchmaking automático por rating
+- ✅ **Random Duel** - Matchmaking automático por nível
 - ✅ **Arena de Desafios** - Eventos de 2h com recompensas extras
 - ✅ **Sistema de Turnos** - Mecânicas completas do jogo
 

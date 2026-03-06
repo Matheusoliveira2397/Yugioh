@@ -224,7 +224,11 @@ export default function DeckEditPage() {
       ])) as any;
 
       const inventoryResponse = inventoryRes?.data;
-      const decksData = decksRes?.data;
+      const decksPayload = decksRes?.data;
+      // Garantir que usamos sempre um array de decks (API pode retornar array direto ou wrapped)
+      const decksData = Array.isArray(decksPayload)
+        ? decksPayload
+        : (Array.isArray(decksPayload?.data) ? decksPayload.data : decksPayload?.decks ?? []);
 
       // O endpoint retorna { cards: UserCard[], playmats: any[], skins: any[] }
       const inventoryData = inventoryResponse?.cards || (Array.isArray(inventoryResponse) ? inventoryResponse : []);
@@ -234,15 +238,16 @@ export default function DeckEditPage() {
         cards: inventoryData.length,
         response: inventoryResponse
       });
-      console.log('📦 Decks recebidos:', Array.isArray(decksData) ? decksData.length : 'N/A');
+      console.log('📦 Decks recebidos:', Array.isArray(decksData) ? decksData.length : 'N/A', decksData);
 
-      // Mapear quantas cópias de cada cardId estão sendo usadas em TODOS os decks
+      // Mapear quantas cópias de cada cardId estão sendo usadas em TODOS os decks (não só o atual)
       const usedInDecks = new Map<string, number>();
-      if (Array.isArray(decksData)) {
+      if (Array.isArray(decksData) && decksData.length > 0) {
         decksData.forEach((deck: any) => {
-          if (Array.isArray(deck.cards)) {
-            deck.cards.forEach((deckCard: any) => {
-              const cid = deckCard.cardId;
+          const deckCards = deck.cards ?? deck.deck_cards ?? [];
+          if (Array.isArray(deckCards)) {
+            deckCards.forEach((deckCard: any) => {
+              const cid = deckCard.cardId ?? deckCard.card_id;
               if (!cid) return;
               usedInDecks.set(cid, (usedInDecks.get(cid) || 0) + 1);
             });
@@ -252,42 +257,30 @@ export default function DeckEditPage() {
 
       if (Array.isArray(inventoryData) && inventoryData.length > 0) {
         // IMPORTANTE: allUserCards deve manter a quantidade TOTAL que o usuário possui
-        // A quantidade disponível será calculada dinamicamente baseada nos decks
         setAllUserCards(inventoryData);
-        
-        // Para a maleta, calcular quantas cópias ainda estão disponíveis (total - usadas em decks)
-        const adjusted: UserCard[] = [];
 
-        inventoryData.forEach((uc: UserCard) => {
-          if (!uc || !uc.cardId) return;
-          const ownedQty = uc.quantity || 0; // Quantidade total que o usuário possui
-          const usedQty = usedInDecks.get(uc.cardId) || 0; // Quantidade usada em todos os decks
-          const available = ownedQty - usedQty; // Quantidade disponível na maleta
+        // Só recalcular maleta se tivermos a lista de decks (evita mostrar total quando GET /decks falha ou retorna vazio)
+        const hasDecksData = Array.isArray(decksData) && decksData.length > 0;
+        if (hasDecksData) {
+          const adjusted: UserCard[] = [];
+          inventoryData.forEach((uc: UserCard) => {
+            if (!uc || !uc.cardId) return;
+            const ownedQty = uc.quantity || 0;
+            const usedQty = usedInDecks.get(uc.cardId) || 0;
+            const available = ownedQty - usedQty;
 
-          console.log('📦 [Maleta] Card', {
-            cardId: uc.cardId,
-            name: uc.card?.name,
-            ownedQty, // Total que possui
-            usedQty, // Usadas em decks
-            available, // Disponível na maleta
+            if (available > 0) {
+              adjusted.push({ ...uc, quantity: available });
+            }
           });
-
-          // Mostrar na maleta apenas cartas com cópias disponíveis
-          if (available > 0) {
-            adjusted.push({
-              ...uc,
-              quantity: available, // Mostrar quantidade disponível na maleta
-            });
-          }
-        });
-
-        setMaleta(adjusted); // Maleta mostra apenas cartas disponíveis
-        console.log('✅ Maleta carregada:', {
-          totalCartas: inventoryData.length,
-          cartasDisponiveis: adjusted.length,
-          totalCópias: inventoryData.reduce((sum, uc) => sum + (uc.quantity || 0), 0),
-          cópiasDisponíveis: adjusted.reduce((sum, uc) => sum + (uc.quantity || 0), 0)
-        });
+          setMaleta(adjusted);
+          console.log('✅ Maleta carregada:', {
+            totalCartas: inventoryData.length,
+            cartasDisponiveis: adjusted.length,
+            cópiasDisponíveis: adjusted.reduce((sum, uc) => sum + (uc.quantity || 0), 0)
+          });
+        }
+        // Se não tiver decksData, não atualiza setMaleta (mantém estado anterior e evita mostrar 6 em vez de 3)
       } else {
         console.warn('⚠️ Dados de inventário vazios ou inválidos:', {
           inventoryData,
@@ -428,6 +421,8 @@ export default function DeckEditPage() {
           setDeckName(res.data.name);
         }
         setOriginalDeckNameForSave(loadedName || null);
+        // Recalcular maleta ao trocar de deck (garante que "disponível" considera todos os decks)
+        if (loadMaletaRef.current) loadMaletaRef.current();
       } else {
         console.warn('⚠️ [loadDeck] Resposta sem dados');
       }
@@ -534,15 +529,11 @@ export default function DeckEditPage() {
       return;
     }
 
-    // Verificar limite de deck: contar por NOME (todas as skins contam juntas)
+    // Verificar limite no DECK PRINCIPAL apenas (cada deck tem seu limite: main e extra separados)
     const cardName = userCard.card?.name;
     const cardsInMainDeckByName = getCardCountInDeck(userCard.cardId, cardName);
-    const cardsInExtraByName = getCardCountInExtraDeck(userCard.cardId, cardName);
-    const totalInDecksByName = cardsInMainDeckByName + cardsInExtraByName;
-    
-    // Verificar se já atingiu o limite máximo de cópias (por nome - todas as skins)
-    if (totalInDecksByName >= maxCopies) {
-      alert(`❌ Você já atingiu o limite máximo de ${maxCopies} cópia(s) desta carta no deck! (considerando todas as skins)`);
+    if (cardsInMainDeckByName >= maxCopies) {
+      alert(`❌ O deck principal já tem o limite máximo de ${maxCopies} cópia(s) desta carta!`);
       return;
     }
     
@@ -591,13 +582,9 @@ export default function DeckEditPage() {
     setDeck(prev => {
       const cardToRemove = prev[idx];
       
-      // Verificar se o deck tem 40 cartas (mínimo permitido)
-      const currentDeckCount = prev.filter(slot => slot !== null).length;
-      if (currentDeckCount <= 40) {
-        alert('❌ O deck principal não pode ter menos de 40 cartas!');
-        return prev; // Não remover a carta
-      }
-      
+      // Não exigir mínimo de 40 cartas ao editar: decks não equipados podem ter qualquer quantidade.
+      // O mínimo de 40 no deck principal só é exigido ao equipar o deck (DeckBuilderPage + backend).
+
       // Remover a carta e reorganizar o array para não deixar espaços vazios
       const cardsWithoutNull = prev.filter((slot, index) => index !== idx);
       // Preencher o array até 60 slots com null no final
@@ -660,15 +647,11 @@ export default function DeckEditPage() {
       return;
     }
 
-    // Verificar limite de deck: contar por NOME (todas as skins contam juntas)
+    // Verificar limite no EXTRA DECK apenas (cada deck tem seu limite: main e extra separados)
     const cardName = userCard.card?.name;
-    const cardsInMainDeckByName = getCardCountInDeck(userCard.cardId, cardName);
     const cardsInExtraDeckByName = getCardCountInExtraDeck(userCard.cardId, cardName);
-    const totalInDecksByName = cardsInMainDeckByName + cardsInExtraDeckByName;
-    
-    // Verificar se já atingiu o limite máximo de cópias (por nome - todas as skins)
-    if (totalInDecksByName >= maxCopies) {
-      alert(`❌ Você já atingiu o limite máximo de ${maxCopies} cópia(s) desta carta no deck! (considerando todas as skins)`);
+    if (cardsInExtraDeckByName >= maxCopies) {
+      alert(`❌ O extra deck já tem o limite máximo de ${maxCopies} cópia(s) desta carta!`);
       return;
     }
     
@@ -1327,13 +1310,12 @@ export default function DeckEditPage() {
                     const cardName = userCard.card?.name;
                     const cardsInMainDeck = getCardCountInDeck(userCard.cardId, cardName);
                     const cardsInExtraDeck = getCardCountInExtraDeck(userCard.cardId, cardName);
-                    const totalInDecks = cardsInMainDeck + cardsInExtraDeck;
-                    const available = getAvailableCount(userCard);
+                    // Usar quantity do item da maleta (já é "disponível" considerando TODOS os decks), não getAvailableCount (que usa só o deck atual)
+                    const qtyMaleta = userCard.quantity ?? 0;
                     const maxCopies = card.maxCopiesInDeck ?? 3;
                     const isFusion = isFusionMonster(card);
-                    const totalOwned = allUserCards.find(uc => uc.cardId === userCard.cardId)?.quantity || userCard.quantity;
-                    
-                    const canAdd = available > 0 && maxCopies > 0 && totalInDecks < maxCopies;
+                    // Limite é por seção: main pode ter até maxCopies, extra pode ter até maxCopies
+                    const canAdd = qtyMaleta > 0 && maxCopies > 0 && (isFusion ? cardsInExtraDeck < maxCopies : cardsInMainDeck < maxCopies);
                     
                     return (
                       <motion.div
@@ -1348,16 +1330,16 @@ export default function DeckEditPage() {
                             : 'opacity-55 cursor-not-allowed border-gray-600/40'
                         }`}
                         onClick={() => canAdd && addToDeck(userCard)}
-                        title={`${card.name}\nDisponível: ${available}/${totalOwned}\nNo deck principal: ${cardsInMainDeck}${isFusion ? `\nNo Extra Deck: ${cardsInExtraDeck}` : ''}\nTotal no deck: ${totalInDecks}/${maxCopies}\nLimite máximo: ${maxCopies === 0 ? 'Banida' : maxCopies}${isFusion ? '\n\n⭐ Clique para adicionar ao Extra Deck' : ''}`}
+                        title={`${card.name}\nNa maleta: ${qtyMaleta}\nDeck principal: ${cardsInMainDeck}/${maxCopies}\nExtra deck: ${cardsInExtraDeck}/${maxCopies}\nLimite por seção: ${maxCopies}${isFusion ? '\n\n⭐ Clique para adicionar ao Extra Deck' : ''}`}
                       >
                         <CardImage
                           card={card}
                           className="w-full h-full object-cover"
                           fallback="/images/fundoCarta.webp"
                         />
-                        {available > 0 && (
+                        {qtyMaleta > 0 && (
                           <div className="absolute top-1 left-1 min-w-[20px] h-5 px-1.5 rounded-md bg-amber-900/90 border border-amber-500/50 flex items-center justify-center">
-                            <span className="text-amber-200 text-xs font-bold">{available}</span>
+                            <span className="text-amber-200 text-xs font-bold">{qtyMaleta}</span>
                           </div>
                         )}
                         <div className="absolute bottom-0 left-0 right-0 bg-black/75 backdrop-blur-sm text-white text-[9px] leading-tight px-1.5 py-1 rounded-b-[10px] line-clamp-2 font-medium">

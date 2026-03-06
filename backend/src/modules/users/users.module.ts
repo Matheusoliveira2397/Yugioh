@@ -8,6 +8,7 @@ import { Achievement } from './entities/achievement.entity';
 import { AchievementsService } from './achievements.service';
 import { UploadModule } from '../upload/upload.module';
 import { MailModule } from '../mail/mail.module';
+import { RedisModule } from '../redis/redis.module';
 import { SeasonRanking } from '../seasons/entities/season-ranking.entity';
 import { Season } from '../seasons/entities/season.entity';
 import { GroupMember } from '../groups/entities/group-member.entity';
@@ -21,6 +22,7 @@ import { DeckCard } from '../decks/entities/deck-card.entity';
     TypeOrmModule.forFeature([User, Achievement, SeasonRanking, Season, GroupMember, Group, Deck, DeckCard]),
     UploadModule,
     MailModule,
+    RedisModule,
     LevelsModule,
   ],
   controllers: [UsersController, UsersCosmeticsController],

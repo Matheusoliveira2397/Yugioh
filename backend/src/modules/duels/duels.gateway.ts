@@ -6996,9 +6996,10 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
       } else if (actionType === 'UNITED_WE_STAND_CHOICE') {
         // Processar escolha do UnitedWeStand
-        const { chosenMonsterZoneIndex } = actionData;
+        const rawIndex = actionData?.chosenMonsterZoneIndex;
+        const chosenMonsterZoneIndex = typeof rawIndex === 'number' ? rawIndex : parseInt(String(rawIndex), 10);
 
-        if (chosenMonsterZoneIndex === undefined || chosenMonsterZoneIndex === null || chosenMonsterZoneIndex < 0 || chosenMonsterZoneIndex >= 5) {
+        if (Number.isNaN(chosenMonsterZoneIndex) || chosenMonsterZoneIndex < 0 || chosenMonsterZoneIndex >= 5) {
           client.emit('duelError', { message: 'Escolha de monstro inválida' });
           return;
         }
@@ -7010,7 +7011,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           return;
         }
 
-        // Não há pendingChoice para limpar (não é mais usado)
+        // Limpar pendingChoice para não reabrir o modal após equipar
+        await this.duelsService.clearPendingChoice(duelId, false);
 
         // Aguardar um pouco para garantir que o banco foi atualizado
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -7064,9 +7066,10 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
       } else if (actionType === 'MAGE_POWER_CHOICE') {
         // Processar escolha do MagePower
-        const { chosenMonsterZoneIndex } = actionData;
+        const rawIndex = actionData?.chosenMonsterZoneIndex;
+        const chosenMonsterZoneIndex = typeof rawIndex === 'number' ? rawIndex : parseInt(String(rawIndex), 10);
 
-        if (chosenMonsterZoneIndex === undefined || chosenMonsterZoneIndex === null || chosenMonsterZoneIndex < 0 || chosenMonsterZoneIndex >= 5) {
+        if (Number.isNaN(chosenMonsterZoneIndex) || chosenMonsterZoneIndex < 0 || chosenMonsterZoneIndex >= 5) {
           client.emit('duelError', { message: 'Escolha de monstro inválida' });
           return;
         }
@@ -7078,7 +7081,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           return;
         }
 
-        // Não há pendingChoice para limpar (não é mais usado)
+        // Limpar pendingChoice para não reabrir o modal após equipar
+        await this.duelsService.clearPendingChoice(duelId, false);
 
         // Aguardar um pouco para garantir que o banco foi atualizado
         await new Promise(resolve => setTimeout(resolve, 100));

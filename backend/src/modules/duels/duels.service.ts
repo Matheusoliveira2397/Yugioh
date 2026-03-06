@@ -264,7 +264,6 @@ export class DuelsService implements OnModuleInit {
         // users
         'CREATE INDEX IF NOT EXISTS "IDX_users_role" ON "users"("role")',
         'CREATE INDEX IF NOT EXISTS "IDX_users_is_online" ON "users"("isOnline") WHERE "isOnline" = true',
-        'CREATE INDEX IF NOT EXISTS "IDX_users_rating" ON "users"("rating" DESC)',
         'CREATE INDEX IF NOT EXISTS "IDX_users_level" ON "users"("level" DESC)',
         // duel_logs
         'CREATE INDEX IF NOT EXISTS "IDX_duel_logs_duel_id" ON "duel_logs"("duelId")',
@@ -15092,7 +15091,6 @@ export class DuelsService implements OnModuleInit {
             username: true,
             clanTag: true,
             profileImage: true,
-            rating: true,
           },
           player2: {
             id: true,
@@ -15100,7 +15098,6 @@ export class DuelsService implements OnModuleInit {
             username: true,
             clanTag: true,
             profileImage: true,
-            rating: true,
           },
         },
       });

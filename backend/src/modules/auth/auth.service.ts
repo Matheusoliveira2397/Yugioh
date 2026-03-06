@@ -94,7 +94,6 @@ export class AuthService {
           lossesGeral: fullProfile.lossesGeral,
           winsSeason: fullProfile.winsSeason,
           lossesSeason: fullProfile.lossesSeason,
-          rating: fullProfile.rating,
           credits: fullProfile.credits || 0,
           cash: fullProfile.cash || 0,
           profileImage: (fullProfile.profileImage && !fullProfile.profileImage.includes('/images/default') && !fullProfile.profileImage.includes('/avatars/default')) 
@@ -208,7 +207,6 @@ export class AuthService {
       lossesGeral: 0,
       winsSeason: 0,
       lossesSeason: 0,
-      rating: 1000,
       credits: newAccountSettings.initialCredits,
       cash: newAccountSettings.initialCash,
       profileImage: undefined,

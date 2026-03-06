@@ -9,6 +9,7 @@ import { GroupMember } from '../groups/entities/group-member.entity';
 import { Group } from '../groups/entities/group.entity';
 import { LevelsService } from '../levels/levels.service';
 import { MailService } from '../mail/mail.service';
+import { RedisService } from '../redis/redis.service';
 import { Deck } from '../decks/entities/deck.entity';
 import { DeckCard } from '../decks/entities/deck-card.entity';
 
@@ -31,6 +32,7 @@ export class UsersService implements OnModuleInit {
     private deckCardsRepository: Repository<DeckCard>,
     private levelsService: LevelsService,
     private mailService: MailService,
+    private redisService: RedisService,
   ) {}
 
   async onModuleInit() {
@@ -153,7 +155,6 @@ export class UsersService implements OnModuleInit {
           'lossesGeral',
           'winsSeason',
           'lossesSeason',
-          'rating',
           'credits',
           'cash',
           'level',
@@ -240,7 +241,6 @@ export class UsersService implements OnModuleInit {
         'lossesGeral',
         'winsSeason',
         'lossesSeason',
-        'rating',
         'credits',
         'cash',
         'level',
@@ -281,7 +281,6 @@ export class UsersService implements OnModuleInit {
         'lossesGeral',
         'winsSeason',
         'lossesSeason',
-        'rating',
         'credits',
         'cash',
         'level',
@@ -322,7 +321,6 @@ export class UsersService implements OnModuleInit {
         'lossesGeral',
         'winsSeason',
         'lossesSeason',
-        'rating',
         'credits',
         'cash',
         'level',
@@ -1687,7 +1685,6 @@ export class UsersService implements OnModuleInit {
         'lossesGeral',
         'winsSeason',
         'lossesSeason',
-        'rating',
         'credits',
         'cash',
         'level',
@@ -2265,6 +2262,22 @@ export class UsersService implements OnModuleInit {
       isOnline: true, // Marcar como online ao fazer login
     });
     console.log(`✅ [updateLastLogin] Último login atualizado e usuário marcado como online. Linhas afetadas: ${result.affected || 0}`);
+
+    // Registrar no histórico de IPs (Redis) para o admin visualizar
+    try {
+      const ipHistoryKey = `user:${userId}:ip_history`;
+      const entry = JSON.stringify({
+        ip: ipAddress,
+        timestamp: new Date().toISOString(),
+      });
+      await this.redisService.getClient().lPush(ipHistoryKey, entry);
+      await this.redisService.getClient().lTrim(ipHistoryKey, 0, 49); // Manter últimos 50
+    } catch (err) {
+      // Não falhar o login se Redis estiver indisponível
+      if (err instanceof Error) {
+        console.warn(`⚠️ [updateLastLogin] Redis indisponível para histórico de IP: ${err.message}`);
+      }
+    }
   }
 
   /**

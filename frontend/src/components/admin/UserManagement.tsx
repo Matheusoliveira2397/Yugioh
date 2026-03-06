@@ -11,7 +11,6 @@ interface User {
   username: string;
   email: string;
   role: string;
-  rating: number;
   winsGeral: number;
   lossesGeral: number;
   winsSeason: number;
@@ -87,12 +86,15 @@ export default function UserManagement() {
         return;
       }
       const headers = { Authorization: `Bearer ${token}` };
-      const [detailsRes, ipRes] = await Promise.all([
-        axios.get(`${API_URL}/admin/users/${userIdNum}`, { headers }),
-        axios.get(`${API_URL}/admin/users/${userIdNum}/ip-history`, { headers }),
-      ]);
+      const detailsRes = await axios.get(`${API_URL}/admin/users/${userIdNum}`, { headers });
       setSelectedUser(detailsRes.data);
-      setIpHistory(ipRes.data);
+      try {
+        const ipRes = await axios.get(`${API_URL}/admin/users/${userIdNum}/ip-history`, { headers });
+        const list = Array.isArray(ipRes.data) ? ipRes.data : (ipRes.data?.ipHistory ?? []);
+        setIpHistory(list);
+      } catch {
+        setIpHistory([]);
+      }
     } catch (error) {
       console.error('Erro ao buscar detalhes:', error);
     }
@@ -288,21 +290,35 @@ export default function UserManagement() {
               )}
             </div>
 
-            {ipHistory.length > 0 && (
-              <div className="mb-4">
-                <h4 className="font-bold mb-2">📍 Histórico de IPs:</h4>
-                <div className="bg-gray-900 rounded-lg p-3 max-h-48 overflow-y-auto">
-                  {ipHistory.map((entry, index) => (
-                    <div key={index} className="text-sm mb-1">
-                      <span className="text-blue-400 font-mono">{entry.ip}</span>
-                      <span className="text-gray-500 ml-2">
-                        {new Date(entry.timestamp).toLocaleString('pt-BR')}
+            <div className="mb-4">
+              <h4 className="font-bold mb-2">📍 Histórico de IPs</h4>
+              <div className="bg-gray-900 rounded-lg p-3 max-h-52 overflow-y-auto">
+                {ipHistory.length > 0 ? (
+                  ipHistory.map((entry, index) => (
+                    <div key={index} className="text-sm mb-1.5 flex flex-wrap items-center gap-x-2">
+                      <span className="text-blue-400 font-mono break-all">{entry.ip}</span>
+                      <span className="text-gray-500 text-xs">
+                        {entry.timestamp ? new Date(entry.timestamp).toLocaleString('pt-BR') : '—'}
                       </span>
                     </div>
-                  ))}
-                </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-400">
+                    {selectedUser.lastIpAddress ? (
+                      <>
+                        Último IP registrado:{' '}
+                        <span className="text-blue-400 font-mono">{selectedUser.lastIpAddress}</span>
+                        <span className="block text-xs text-gray-500 mt-1">
+                          (Histórico em Redis vazio; novos logins passarão a preencher.)
+                        </span>
+                      </>
+                    ) : (
+                      'Nenhum IP registrado.'
+                    )}
+                  </p>
+                )}
               </div>
-            )}
+            </div>
 
             <button
               onClick={() => setSelectedUser(null)}

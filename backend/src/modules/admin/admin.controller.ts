@@ -120,7 +120,7 @@ export class AdminController {
   @Put('users/:id/resources')
   updateUserResources(
     @Param('id') id: string,
-    @Body() body: { credits?: number; cash?: number; rating?: number }
+    @Body() body: { credits?: number; cash?: number }
   ) {
     const userId = parseInt(id, 10);
     if (isNaN(userId)) {

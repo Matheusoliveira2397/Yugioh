@@ -39,7 +39,6 @@ export class FriendsService {
         profileImage: friend.profileImage,
         isOnline: friend.isOnline,
         level: friend.level || 1,
-        rating: friend.rating,
       };
     });
   }

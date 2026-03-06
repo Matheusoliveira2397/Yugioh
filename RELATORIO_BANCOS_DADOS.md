@@ -26,7 +26,7 @@ Armazenar todos os dados estruturados e relacionais do jogo, garantindo integrid
 #### 👤 **Sistema de Usuários**
 - **`users`** - Dados dos jogadores
   - Informações de perfil (nickname, username, email, senha)
-  - Estatísticas (wins, losses, rating, level, experience)
+  - Estatísticas (wins, losses, level, experience)
   - Sistema econômico (credits, cash)
   - Status (isOnline, isBanned, isEmailVerified)
   - Classe do jogador (Novato, Aprendiz, Veterano, Mestre, Lendário)

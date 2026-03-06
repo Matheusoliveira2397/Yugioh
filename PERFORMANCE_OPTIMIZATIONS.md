@@ -141,7 +141,6 @@ Execute estas migrations:
 
 ```sql
 -- Índices para performance
-CREATE INDEX IF NOT EXISTS idx_users_rating ON users(rating DESC);
 CREATE INDEX IF NOT EXISTS idx_users_total_score ON users(total_score DESC);
 CREATE INDEX IF NOT EXISTS idx_duels_player1 ON duels(player1_id, status);
 CREATE INDEX IF NOT EXISTS idx_duels_player2 ON duels(player2_id, status);
