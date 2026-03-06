@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../api/axios';
+import { getImageUrl } from '../utils/imageUrl';
 
 interface Player {
   id: number;
@@ -13,6 +14,7 @@ interface Player {
   isBanned: boolean;
   banReason?: string;
   lastIpAddress?: string;
+  last_login?: string;
   lastLogin?: string;
   winsGeral: number;
   lossesGeral: number;
@@ -22,9 +24,10 @@ interface Player {
   credits: number;
   cash: number;
   level: number;
-  experience: number;
   profileImage?: string;
+  profile_image?: string;
   createdAt: string;
+  created_at?: string;
 }
 
 interface UserDetails extends Player {
@@ -426,9 +429,10 @@ export default function AdminPlayersPanel() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-3">
                           <img
-                            src={player.profileImage || '/images/default.png'}
+                            src={getImageUrl(player.profileImage ?? (player as any).profile_image)}
                             alt={player.nickname || player.username}
                             className="w-10 h-10 rounded-full object-cover border-2 border-gray-600"
+                            onError={(e) => { (e.target as HTMLImageElement).src = getImageUrl(null); }}
                           />
                           <div>
                             <p className="font-bold text-white cursor-pointer hover:text-purple-400 transition-colors"
@@ -469,10 +473,10 @@ export default function AdminPlayersPanel() {
                             Season: {player.winsSeason || 0}V / {player.lossesSeason || 0}D
                           </div>
                           <div className="text-xs text-purple-400">
-                            ⭐ Score: {player.totalScore?.toFixed(1) || 0}
+                            ⭐ Score: {Number(player.totalScore ?? 0).toFixed(1)}
                           </div>
                           <div className="text-xs text-blue-400">
-                            Lv.{player.level || 1} ({player.experience || 0} XP)
+                            Lv.{player.level || 1}
                           </div>
                         </div>
                       </td>
@@ -591,8 +595,9 @@ export default function AdminPlayersPanel() {
               <div className="space-y-4">
                 <div className="flex items-center gap-4">
                   <img
-                    src={selectedPlayer.profileImage || '/images/default.png'}
+                    src={getImageUrl(selectedPlayer.profileImage ?? (selectedPlayer as any).profile_image)}
                     alt={selectedPlayer.nickname || selectedPlayer.username}
+                    onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }}
                     className="w-20 h-20 rounded-full object-cover border-2 border-purple-500"
                   />
                   <div>
@@ -615,8 +620,8 @@ export default function AdminPlayersPanel() {
                   </div>
                   <div className="bg-gray-800/50 p-4 rounded-lg min-w-0 overflow-hidden">
                     <p className="text-gray-400 text-sm">Último IP</p>
-                    <p className="text-white font-semibold font-mono break-all" title={selectedPlayer.lastIpAddress || undefined}>
-                      {selectedPlayer.lastIpAddress || 'N/A'}
+                    <p className="text-white font-semibold font-mono break-all" title={(selectedPlayer as any).last_ip_address || selectedPlayer.lastIpAddress || undefined}>
+                      {(selectedPlayer as any).last_ip_address || selectedPlayer.lastIpAddress || 'N/A'}
                     </p>
                   </div>
                   <div className="bg-gray-800/50 p-4 rounded-lg">
