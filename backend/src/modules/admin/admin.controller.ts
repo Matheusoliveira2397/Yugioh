@@ -1,6 +1,7 @@
 import { Controller, Put, Param, UseGuards, Get, Query, Delete, Post, Body, UseInterceptors, UploadedFile, ParseIntPipe, Request } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AdminService } from './admin.service';
+import { AuthService } from '../auth/auth.service';
 import { UsersService } from '../users/users.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
@@ -14,6 +15,7 @@ import { DuelsService } from '../duels/duels.service';
 export class AdminController {
   constructor(
     private adminService: AdminService,
+    private authService: AuthService,
     private usersService: UsersService,
     private uploadService: UploadService,
     private randomDuelLevelRangesService: RandomDuelLevelRangesService,
@@ -402,9 +404,14 @@ export class AdminController {
     });
   }
 
-  // ==================== CRIAR CONTA ADMIN (APENAS MASTER) ====================
+  // ==================== CRIAR CONTA (ADMIN OU NORMAL) ====================
   @Post('create-admin')
   createAdmin(@Request() req: any, @Body() body: { username: string; nickname: string; password: string; allowedTabs: string[] }) {
     return this.adminService.createAdminByMaster(req.user.id, body);
+  }
+
+  @Post('create-user')
+  createUser(@Body() body: { username: string; nickname: string; email: string; password: string }) {
+    return this.authService.createUserByAdmin(body);
   }
 }

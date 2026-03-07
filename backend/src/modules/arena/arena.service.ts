@@ -157,6 +157,51 @@ export class ArenaService implements OnModuleInit {
   }
 
   /**
+   * Última arena já encerrada (endTime no passado). Para exibir top 5 da última arena.
+   */
+  async getLastFinishedArena(): Promise<ChallengeArena | null> {
+    try {
+      const now = new Date();
+      const arena = await Promise.race([
+        this.arenaRepository
+          .createQueryBuilder('a')
+          .where('a.endTime < :now', { now })
+          .andWhere(`(a.config->>'isRecurring' IS NULL OR a.config->>'isRecurring' <> 'true')`)
+          .orderBy('a.endTime', 'DESC')
+          .getOne(),
+        new Promise<ChallengeArena | null>((_, reject) =>
+          setTimeout(() => reject(new Error('Query timeout: getLastFinishedArena')), 2000)
+        ),
+      ]).catch(() => null);
+      return arena;
+    } catch (error) {
+      console.error(`[getLastFinishedArena] Erro:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Top 5 de cada faixa da última arena encerrada. Para exibir na página da arena.
+   */
+  async getLastArenaTop5PerDivision(): Promise<{ arena: { id: string; name: string; endTime: string }; rankings: Record<string, any[]> } | null> {
+    const lastArena = await this.getLastFinishedArena();
+    if (!lastArena) return null;
+    const allRankings = await this.getAllArenaRankings(lastArena.id);
+    const top5PerDivision: Record<string, any[]> = {};
+    for (const [divisionName, list] of Object.entries(allRankings)) {
+      top5PerDivision[divisionName] = Array.isArray(list) ? list.slice(0, 5) : [];
+    }
+    return {
+      arena: {
+        id: lastArena.id,
+        name: lastArena.name,
+        endTime: (lastArena.endTime instanceof Date ? lastArena.endTime : new Date(lastArena.endTime)).toISOString(),
+      },
+      rankings: top5PerDivision,
+    };
+  }
+
+  /**
    * Próxima arena agendada. Apenas instâncias (não templates).
    */
   async getNextArena(): Promise<ChallengeArena | null> {

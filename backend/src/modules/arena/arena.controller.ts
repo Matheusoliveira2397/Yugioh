@@ -124,6 +124,12 @@ export class ArenaController {
     return await this.arenaService.getArenaStats(id);
   }
 
+  @Get('last-ranking')
+  async getLastArenaTop5() {
+    const data = await this.arenaService.getLastArenaTop5PerDivision();
+    return data ?? { arena: null, rankings: {} };
+  }
+
   @Get('ranking/:id')
   async getArenaRankings(@Param('id') id: string) {
     return await this.arenaService.getAllArenaRankings(id);

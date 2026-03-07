@@ -64,10 +64,33 @@ export default function ArenaPage() {
   const [timeUntilNextArena, setTimeUntilNextArena] = useState<number>(0);
   const [nextArena, setNextArena] = useState<Arena | null>(null);
   const [levelRanges, setLevelRanges] = useState<Array<{ min: number; max: number; name: string }>>([]);
+  const [lastArenaTop5, setLastArenaTop5] = useState<{ arena: { id: string; name: string; endTime: string }; rankings: Record<string, ArenaRanking[]> } | null>(null);
+  const [loadingLastTop5, setLoadingLastTop5] = useState(false);
+
+  const fetchLastArenaTop5 = async () => {
+    try {
+      setLoadingLastTop5(true);
+      const response = await axios.get(`${API_URL}/arena/last-ranking`);
+      if (response.data?.arena && response.data?.rankings) {
+        setLastArenaTop5({
+          arena: response.data.arena,
+          rankings: response.data.rankings,
+        });
+      } else {
+        setLastArenaTop5(null);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar top 5 da última arena:', error);
+      setLastArenaTop5(null);
+    } finally {
+      setLoadingLastTop5(false);
+    }
+  };
 
   useEffect(() => {
     fetchArenas();
     fetchLevelRanges();
+    fetchLastArenaTop5();
     // Limpar match anterior ao abrir a página (ex.: voltou de um duelo) para poder procurar de novo (até 50 duelos por arena)
     clearDuelFound();
     // Atualizar a cada 30s para pegar a arena quando abrir no horário (criada pelo cron)
@@ -645,6 +668,69 @@ export default function ArenaPage() {
             </p>
           )}
         </motion.div>
+      )}
+
+      {/* Top 5 da última arena (todas as faixas) - sempre visível quando houver dados */}
+      {(lastArenaTop5?.arena && Object.keys(lastArenaTop5.rankings).length > 0) && (
+        <motion.section
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-6 sm:mt-8 rounded-xl p-3 sm:p-5 border-2 border-amber-500/30 bg-gradient-to-b from-amber-950/40 to-transparent"
+        >
+          <h2 className="text-base sm:text-lg font-bold text-center mb-1 sm:mb-2 text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-yellow-400">
+            🏆 Top 5 da última arena
+          </h2>
+          <p className="text-[10px] sm:text-xs text-center text-gray-400 mb-3 sm:mb-4">
+            {lastArenaTop5.arena.name} — encerrada em {new Date(lastArenaTop5.arena.endTime).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+          </p>
+          <div className={`grid grid-cols-1 ${Object.keys(lastArenaTop5.rankings).length === 2 ? 'sm:grid-cols-2' : Object.keys(lastArenaTop5.rankings).length === 3 ? 'sm:grid-cols-2 lg:grid-cols-3' : 'sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4'} gap-2 sm:gap-3`}>
+            {Object.entries(lastArenaTop5.rankings).map(([divisionName, players]) => (
+              <motion.div
+                key={divisionName}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-lg p-2 sm:p-4 border-2 border-amber-500/20 hover:border-amber-500/50 transition-all"
+              >
+                <h3 className="text-sm sm:text-base font-bold mb-1.5 sm:mb-2 text-center text-amber-200/90">{divisionName}</h3>
+                {players.length === 0 ? (
+                  <div className="text-center py-3 text-gray-500 text-xs">Nenhum duelista</div>
+                ) : (
+                  <div className="space-y-1 sm:space-y-1.5">
+                    {players.map((player: ArenaRanking) => {
+                      const rankBg = player.rank === 1 ? 'bg-amber-500/30 border-amber-400' : player.rank === 2 ? 'bg-slate-400/30 border-slate-300' : player.rank === 3 ? 'bg-amber-700/30 border-amber-600' : 'border-white/10';
+                      return (
+                        <div
+                          key={player.userId}
+                          className={`flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 rounded-lg border ${rankBg}`}
+                        >
+                          <div className={`flex-shrink-0 w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-bold ${
+                            player.rank === 1 ? 'bg-amber-500 text-black' : player.rank === 2 ? 'bg-slate-300 text-slate-800' : player.rank === 3 ? 'bg-amber-600 text-white' : 'bg-white/20 text-white'
+                          }`}>
+                            {player.rank}°
+                          </div>
+                          <img
+                            src={getImageUrl(player.profileImage) + (player.profileImage ? `?t=${Date.now()}` : '')}
+                            alt={player.nickname}
+                            className="w-7 h-7 sm:w-9 sm:h-9 rounded-full border-2 border-slate-500 object-cover flex-shrink-0"
+                            onError={(e) => { e.currentTarget.src = '/images/default.png'; }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold text-white text-xs sm:text-sm truncate">
+                              {player.clanTag ? `[${player.clanTag}] ${player.nickname}` : player.nickname}
+                            </div>
+                            <div className="text-[10px] sm:text-xs text-gray-300">
+                              <strong className="text-amber-400">AP:</strong> {player.score}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </motion.div>
+            ))}
+          </div>
+        </motion.section>
       )}
     </div>
   );

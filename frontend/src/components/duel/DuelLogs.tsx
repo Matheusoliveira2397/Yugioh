@@ -7,14 +7,20 @@ interface DuelLog {
   actionType: string;
   message: string;
   createdAt: Date | string;
+  /** Para ações privadas: mensagem genérica para o oponente (ex.: "Oponente comprou 1 carta") */
+  genericMessage?: string;
+  /** userId de quem fez a ação; se for !== currentUserId, mostrar genericMessage */
+  forUserId?: number;
 }
 
 interface DuelLogsProps {
   logs: DuelLog[];
   hideHeader?: boolean;
+  /** ID do usuário atual: usado para mostrar mensagem completa só para quem fez a ação */
+  currentUserId?: number | null;
 }
 
-const DuelLogs: React.FC<DuelLogsProps> = ({ logs, hideHeader }) => {
+const DuelLogs: React.FC<DuelLogsProps> = ({ logs, hideHeader, currentUserId }) => {
   const logsContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -94,6 +100,9 @@ const DuelLogs: React.FC<DuelLogsProps> = ({ logs, hideHeader }) => {
             ) : (
               <div className="space-y-2">
                 {logs.map((log) => {
+                  const isPrivateForOther = log.forUserId != null && log.genericMessage && currentUserId != null && Number(log.forUserId) !== Number(currentUserId);
+                  const displayMessage = isPrivateForOther ? log.genericMessage! : log.message;
+                  const displayUsername = isPrivateForOther ? 'Oponente' : log.username;
                   const colors = getActionColor(log.actionType);
                   return (
                     <motion.div
@@ -108,9 +117,9 @@ const DuelLogs: React.FC<DuelLogsProps> = ({ logs, hideHeader }) => {
                         <span className={`${colors.text} text-[10px] font-bold uppercase tracking-wide`}>
                           {formatActionType(log.actionType)}
                         </span>
-                        {log.username && (
+                        {displayUsername && (
                           <span className="text-slate-300 text-[10px] font-semibold">
-                            • {log.username}
+                            • {displayUsername}
                           </span>
                         )}
                         <span className="text-slate-500 text-[9px] ml-auto">
@@ -122,7 +131,7 @@ const DuelLogs: React.FC<DuelLogsProps> = ({ logs, hideHeader }) => {
                         </span>
                       </div>
                       <div className="text-slate-200 text-xs leading-relaxed break-words">
-                        {log.message}
+                        {displayMessage}
                       </div>
                     </motion.div>
                   );

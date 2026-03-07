@@ -8279,30 +8279,39 @@ export class DuelsService implements OnModuleInit {
       cardWasOnField = pendingChoice.data.cardWasOnField;
       cardData = pendingChoice.data.cardData;
       const cardIdFromPending = pendingChoice.data.cardId;
+      const cardInstanceIdFromPending = pendingChoice.data.cardInstanceId;
       
-      logger.info(`🔍 [processMysticalSpaceTyphoonChoice] pendingChoice encontrado - cardWasOnField: ${cardWasOnField}`);
+      logger.info(`🔍 [processMysticalSpaceTyphoonChoice] pendingChoice encontrado - cardWasOnField: ${cardWasOnField}, cardId: ${cardIdFromPending}, hasCardData: ${!!cardData}, cardInstanceId: ${cardInstanceIdFromPending}`);
       
-      if (cardData && cardIdFromPending) {
-        if (!cardWasOnField) {
-          // A carta estava na mão - remover da mão e preparar para ir direto ao cemitério
-          // IMPORTANTE: NÃO colocar no campo - vai direto para o cemitério após destruir o alvo
-          const handIndex = playerField.hand.findIndex((c: any) => {
-            if (pendingChoice.data.cardInstanceId && c.instanceId) {
-              return c.instanceId === pendingChoice.data.cardInstanceId;
-            }
-            const cId = c.idCarta || c.id || c.cardId;
-            return cId === cardIdFromPending;
-          });
-          
-          if (handIndex !== -1) {
-            mysticalSpaceTyphoon = playerField.hand[handIndex];
-            playerField.hand.splice(handIndex, 1);
-            logger.info(`✅ [processMysticalSpaceTyphoonChoice] Mystical Space Typhoon removida da mão - irá direto para o cemitério (SEM passar pelo campo)`);
-          } else {
-            logger.error(`❌ [processMysticalSpaceTyphoonChoice] Mystical Space Typhoon não encontrada na mão`);
-            return { success: false, message: 'Mystical Space Typhoon não encontrada na mão' };
-          }
+      if (!cardWasOnField) {
+        // A carta estava na mão - remover da mão e preparar para ir direto ao cemitério
+        if (!playerField.hand || !Array.isArray(playerField.hand)) {
+          logger.error(`❌ [processMysticalSpaceTyphoonChoice] Mão inválida`);
+          return { success: false, message: 'Mystical Space Typhoon não encontrada na mão' };
+        }
+        let handIndex = -1;
+        if (cardInstanceIdFromPending) {
+          handIndex = playerField.hand.findIndex((c: any) => c && c.instanceId === cardInstanceIdFromPending);
+          if (handIndex >= 0) logger.info(`✅ [processMysticalSpaceTyphoonChoice] MST encontrada na mão por instanceId`);
+        }
+        if (handIndex === -1 && cardIdFromPending) {
+          handIndex = playerField.hand.findIndex((c: any) => c && this.isExactCard(c, 'MysticalSpaceTyphoon'));
+          if (handIndex >= 0) logger.info(`✅ [processMysticalSpaceTyphoonChoice] MST encontrada na mão por id/nome`);
+        }
+        if (handIndex === -1) {
+          handIndex = playerField.hand.findIndex((c: any) => c && (String(c.idCarta || c.id || c.cardId || '').toLowerCase().includes('mysticalspacetyphoon') || (c.name || c.cardName || '').toLowerCase().includes('mystical space typhoon')));
+          if (handIndex >= 0) logger.info(`✅ [processMysticalSpaceTyphoonChoice] MST encontrada na mão por fallback`);
+        }
+        if (handIndex !== -1) {
+          mysticalSpaceTyphoon = playerField.hand[handIndex];
+          playerField.hand.splice(handIndex, 1);
+          logger.info(`✅ [processMysticalSpaceTyphoonChoice] Mystical Space Typhoon removida da mão - irá direto para o cemitério (SEM passar pelo campo)`);
         } else {
+          logger.error(`❌ [processMysticalSpaceTyphoonChoice] Mystical Space Typhoon não encontrada na mão (hand.length=${playerField.hand.length})`);
+          return { success: false, message: 'Mystical Space Typhoon não encontrada na mão' };
+        }
+      } else if (cardIdFromPending || cardData) {
+        // cardWasOnField === true: carta estava no campo em "set"
           // A carta estava no campo em "set" - remover do campo e preparar para ir direto ao cemitério (sem revelar)
           const targetZoneIndex = pendingChoice.data.zoneIndex;
           if (targetZoneIndex !== undefined && targetZoneIndex !== null && 
@@ -8319,7 +8328,6 @@ export class DuelsService implements OnModuleInit {
             logger.error(`❌ [processMysticalSpaceTyphoonChoice] Mystical Space Typhoon não encontrada no campo`);
             return { success: false, message: 'Mystical Space Typhoon não encontrada no campo' };
           }
-        }
       }
     } else {
       // Fallback: Se não há pendingChoice, tentar encontrar Mystical Space Typhoon no campo
@@ -8423,12 +8431,7 @@ export class DuelsService implements OnModuleInit {
 
     logger.info(`✅ [processMysticalSpaceTyphoonChoice] Ambas as cartas foram movidas para o cemitério com sucesso!`);
 
-    // Limpar pendingChoice
-    await this.clearPendingChoice(duelId);
-    
     // Garantir que os campos estão atualizados no objeto duel
-    // IMPORTANTE: playerField e opponentField são referências, então as mudanças já estão no objeto duel
-    // Mas vamos garantir que estão corretos
     if (isPlayer1) {
       (duel as any).player1Field = playerField;
       (duel as any).player2Field = opponentField;
@@ -8436,28 +8439,18 @@ export class DuelsService implements OnModuleInit {
       (duel as any).player1Field = opponentField;
       (duel as any).player2Field = playerField;
     }
-    
-    // Verificar se as cartas foram realmente removidas do campo antes de salvar
-    const player1FieldCheck = (duel as any).player1Field;
-    const player2FieldCheck = (duel as any).player2Field;
-    
-    logger.info(`🔍 [processMysticalSpaceTyphoonChoice] Verificando campos antes de salvar:`);
-    logger.info(`  - Player1 spellTrap zones: ${player1FieldCheck?.spellTrap?.map((c: any, i: number) => c ? `${i}:${c.name || 'card'}` : `${i}:null`).join(', ')}`);
-    logger.info(`  - Player2 spellTrap zones: ${player2FieldCheck?.spellTrap?.map((c: any, i: number) => c ? `${i}:${c.name || 'card'}` : `${i}:null`).join(', ')}`);
-    logger.info(`  - Player1 graveyard: ${player1FieldCheck?.graveyard?.length || 0} cartas`);
-    logger.info(`  - Player2 graveyard: ${player2FieldCheck?.graveyard?.length || 0} cartas`);
-    
-    // Salvar no banco
-    logger.info(`💾 [processMysticalSpaceTyphoonChoice] Salvando duelo no banco de dados...`);
+
+    // IMPORTANTE: Salvar campos no banco e atualizar o cache ANTES de clearPendingChoice.
+    // Caso contrário, clearPendingChoice usa o cache (cópia antiga) e grava estado antigo no DB, sobrescrevendo a destruição.
+    this.activeDuels.set(duelIdStr, duel);
+    logger.info(`💾 [processMysticalSpaceTyphoonChoice] Salvando campos no banco antes de limpar pendingChoice...`);
     await this.updateDuelInDatabase(duelId, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
     } as any);
-    
-    logger.info(`✅ [processMysticalSpaceTyphoonChoice] Duelo salvo no banco de dados`);
 
-    // Atualizar cache
-    this.activeDuels.set(duelIdStr, duel);
+    // Limpar pendingChoice (agora o cache e o DB já têm o estado correto)
+    await this.clearPendingChoice(duelId);
 
     logger.info(`✅ [processMysticalSpaceTyphoonChoice] Spell/Trap destruída com sucesso! Ambas as cartas foram para o cemitério.`);
     return { success: true, duel };

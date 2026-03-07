@@ -467,9 +467,10 @@ export const useSocket = () => {
       socket.on('chatMessage', chatMessageListener);
       listenersRef.current.set('chatMessage', chatMessageListener);
       
-      // Listener para logs do duelo
-      const duelLogListener = (data: { log: DuelLog }) => {
-        setDuelLogs(prev => [...prev, data.log]);
+      // Listener para logs do duelo (payload pode ter genericMessage/forUserId para ações privadas)
+      const duelLogListener = (data: { log: DuelLog; genericMessage?: string; forUserId?: number }) => {
+        const entry = { ...data.log, genericMessage: data.genericMessage, forUserId: data.forUserId };
+        setDuelLogs(prev => [...prev, entry]);
       };
       socket.on('duelLog', duelLogListener);
       listenersRef.current.set('duelLog', duelLogListener);

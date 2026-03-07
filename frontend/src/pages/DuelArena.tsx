@@ -2820,6 +2820,8 @@ const DuelArena: React.FC = () => {
         // Se é o turno do oponente (não é meu turno), marcar como expirado para mostrar botão "Roubar Turno"
         if (!isMyTurnRef.current) {
           setTimeExpired(true);
+          // Garantir que o botão apareça sem depender de update do servidor
+          setTurnTimeRemainingFromServer(0);
         } else {
           // Se é meu turno, notificar o oponente que meu tempo expirou
           const socket = getSocket();
@@ -3628,26 +3630,54 @@ const DuelArena: React.FC = () => {
             >
               ×
             </button>
-            {/* Chat do Duelo - minimizável */}
-            <div className="rounded-xl border border-slate-700/30 overflow-hidden flex flex-col bg-slate-900/20">
-              <button
-                type="button"
-                onClick={() => setChatMinimized((v) => !v)}
-                className="w-full px-4 py-2.5 flex items-center justify-between gap-2 bg-slate-800/40 hover:bg-slate-700/40 transition-colors text-left"
-                aria-label={chatMinimized ? 'Expandir chat' : 'Minimizar chat'}
-              >
-                <span className="flex items-center gap-2 text-sm font-bold text-white">
-                  <span>💬</span> Chat do Duelo
-                  {chatMessages.length > 0 && (
-                    <span className="bg-blue-500/20 text-blue-300 text-[10px] px-2 py-0.5 rounded-full font-semibold">
-                      {chatMessages.length}
-                    </span>
-                  )}
-                </span>
-                <span className="text-slate-400 text-lg leading-none">{chatMinimized ? '▶' : '▼'}</span>
-              </button>
+            {/* Chat do Duelo - card inteiro recolhe para a esquerda */}
+            <motion.div
+              initial={false}
+              animate={{ width: chatMinimized ? 52 : '100%' }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+              className="rounded-xl border border-slate-700/30 overflow-hidden flex flex-col bg-slate-900/20 flex-shrink-0 shadow-lg"
+              style={{ minWidth: 0 }}
+            >
+              {chatMinimized ? (
+                <button
+                  type="button"
+                  onClick={() => setChatMinimized(false)}
+                  title="Clique para abrir Chat do Duelo"
+                  className="w-full min-w-0 flex-shrink-0 flex flex-col justify-center items-center py-4 px-2 bg-slate-800/60 hover:bg-slate-700/70 border-b border-slate-600/30 transition-colors cursor-pointer"
+                  aria-label="Expandir chat"
+                >
+                  <span className="text-xl" aria-hidden>💬</span>
+                </button>
+              ) : (
+                <div className="w-full min-w-0 flex-shrink-0 overflow-hidden flex items-center gap-2 flex-row justify-between px-3 py-2 bg-slate-800/50">
+                  <button
+                    type="button"
+                    onClick={() => setChatMinimized((v) => !v)}
+                    title="Recolher chat"
+                    className="flex items-center gap-2 text-left transition-colors rounded-lg hover:bg-white/10 min-w-0 flex-1 py-1 pr-1"
+                    aria-label="Minimizar chat"
+                  >
+                    <span className="flex-shrink-0 text-lg" aria-hidden>💬</span>
+                    <span className="text-sm font-semibold text-white truncate">Chat do Duelo</span>
+                    {chatMessages.length > 0 && (
+                      <span className="bg-blue-500/30 text-blue-200 text-[10px] px-2 py-0.5 rounded-full font-bold flex-shrink-0">
+                        {chatMessages.length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setChatMinimized(true)}
+                    title="Recolher chat"
+                    className="flex-shrink-0 w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white flex items-center justify-center text-sm font-bold transition-colors"
+                    aria-label="Recolher chat"
+                  >
+                    ◀
+                  </button>
+                </div>
+              )}
               {!chatMinimized && (
-                <div className="flex-1 min-h-0">
+                <div className="flex-1 min-h-0 overflow-hidden">
                   <DuelChat
                     hideHeader
                     messages={chatMessages}
@@ -3664,31 +3694,59 @@ const DuelArena: React.FC = () => {
                   />
                 </div>
               )}
-            </div>
-            {/* Log de Ações - minimizável */}
-            <div className="rounded-xl border border-slate-700/30 overflow-hidden flex flex-col bg-slate-900/20">
-              <button
-                type="button"
-                onClick={() => setLogsMinimized((v) => !v)}
-                className="w-full px-4 py-2.5 flex items-center justify-between gap-2 bg-slate-800/40 hover:bg-slate-700/40 transition-colors text-left"
-                aria-label={logsMinimized ? 'Expandir log de ações' : 'Minimizar log de ações'}
-              >
-                <span className="flex items-center gap-2 text-sm font-bold text-white">
-                  <span>📋</span> Log de Ações
-                  {duelLogs.length > 0 && (
-                    <span className="bg-purple-500/10 text-purple-300 text-[10px] px-2 py-0.5 rounded-full font-semibold">
-                      {duelLogs.length}
-                    </span>
-                  )}
-                </span>
-                <span className="text-slate-400 text-lg leading-none">{logsMinimized ? '▶' : '▼'}</span>
-              </button>
-              {!logsMinimized && (
-                <div className="flex-1 min-h-0">
-                  <DuelLogs hideHeader logs={duelLogs} />
+            </motion.div>
+            {/* Log de Ações - card inteiro recolhe para a esquerda */}
+            <motion.div
+              initial={false}
+              animate={{ width: logsMinimized ? 52 : '100%' }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+              className="rounded-xl border border-slate-700/30 overflow-hidden flex flex-col bg-slate-900/20 flex-shrink-0 shadow-lg"
+              style={{ minWidth: 0 }}
+            >
+              {logsMinimized ? (
+                <button
+                  type="button"
+                  onClick={() => setLogsMinimized(false)}
+                  title="Clique para abrir Log de Ações"
+                  className="w-full min-w-0 flex-shrink-0 flex flex-col justify-center items-center py-4 px-2 bg-slate-800/60 hover:bg-slate-700/70 border-b border-slate-600/30 transition-colors cursor-pointer"
+                  aria-label="Expandir log de ações"
+                >
+                  <span className="text-xl" aria-hidden>📋</span>
+                </button>
+              ) : (
+                <div className="w-full min-w-0 flex-shrink-0 overflow-hidden flex items-center gap-2 flex-row justify-between px-3 py-2 bg-slate-800/50">
+                  <button
+                    type="button"
+                    onClick={() => setLogsMinimized((v) => !v)}
+                    title="Recolher log"
+                    className="flex items-center gap-2 text-left transition-colors rounded-lg hover:bg-white/10 min-w-0 flex-1 py-1 pr-1"
+                    aria-label="Minimizar log"
+                  >
+                    <span className="flex-shrink-0 text-lg" aria-hidden>📋</span>
+                    <span className="text-sm font-semibold text-white truncate">Log de Ações</span>
+                    {duelLogs.length > 0 && (
+                      <span className="bg-purple-500/30 text-purple-200 text-[10px] px-2 py-0.5 rounded-full font-bold flex-shrink-0">
+                        {duelLogs.length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLogsMinimized(true)}
+                    title="Recolher log"
+                    className="flex-shrink-0 w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white flex items-center justify-center text-sm font-bold transition-colors"
+                    aria-label="Recolher log"
+                  >
+                    ◀
+                  </button>
                 </div>
               )}
-            </div>
+              {!logsMinimized && (
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <DuelLogs hideHeader logs={duelLogs} currentUserId={user?.id != null ? (typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id)) : undefined} />
+                </div>
+              )}
+            </motion.div>
             
             {/* Master Card Search - Apenas para MASTER */}
             {user?.role === 'MASTER' && (
@@ -3856,8 +3914,18 @@ const DuelArena: React.FC = () => {
               }`}>
                 {isSpectator
                   ? (currentTurn === 1 ? `Turno de ${duelData.player1?.nickname || 'Jogador 1'}` : `Turno de ${duelData.player2?.nickname || 'Jogador 2'}`)
-                  : (isMyTurn ? 'Seu Turno' : 'Turno Oponente')}
+                  : (isMyTurn ? 'Seu Turno' : 'Turno do Oponente')}
               </div>
+              {!isMyTurn && !isSpectator && currentPhase && (
+                <div className="text-xs sm:text-sm text-center font-bold text-slate-300 mb-0.5">
+                  {currentPhase === 'DRAW' ? 'Fase de Compras' :
+                    currentPhase === 'STANDBY' ? 'Fase de Apoio' :
+                    currentPhase === 'MAIN1' ? 'Fase Principal 1' :
+                    currentPhase === 'BATTLE' ? 'Fase de Batalha' :
+                    currentPhase === 'MAIN2' ? 'Fase Principal 2' :
+                    currentPhase === 'END' ? 'Fase Final' : currentPhase}
+                </div>
+              )}
               <motion.div 
                 key={turnTimeLeft}
                 initial={{ scale: 1.1 }}
@@ -3875,7 +3943,7 @@ const DuelArena: React.FC = () => {
             </motion.div>
           </div>
 
-          {/* OPONENTE (Direita) - Modernizado - compacto no mobile */}
+          {/* OPONENTE (Direita) - card com nick e LP; fase fica no centro abaixo de "Turno do Oponente" */}
           <div className="flex flex-col items-end flex-shrink-0 z-10">
             <motion.div 
               transition={{ duration: 0.2 }}
@@ -3947,13 +4015,14 @@ const DuelArena: React.FC = () => {
             </motion.div>
           </motion.div>
 
-          {/* Mão do Oponente (embaixo do perfil) - espectador não vê cartas, só a quantidade */}
+          {/* Mão do Oponente (embaixo do perfil) - espectador não vê cartas, só a quantidade; scrollbar oculta para não piscar ao passar turno */}
           {!isSpectator && ((showOpponentHandRevealed && cardEffectType === 'forcefulSentry' ? opponentHandRevealed : opponentHand).length > 0) && (
             <motion.div 
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.4 }}
-              className="flex justify-center gap-1 sm:gap-2 py-2 sm:py-3 overflow-x-auto overflow-y-visible px-2 sm:px-3 mt-4 sm:mt-8"
+              className="flex justify-center gap-1 sm:gap-2 py-2 sm:py-3 overflow-x-auto overflow-y-visible px-2 sm:px-3 mt-4 sm:mt-8 [&::-webkit-scrollbar]:hidden"
+              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             >
               {(showOpponentHandRevealed && cardEffectType === 'forcefulSentry' ? opponentHandRevealed : opponentHand).map((card: any, index: number) => {
                 const uniqueKey = `opp-hand-${index}-${card.idCarta || card.id || card.cardId || index}`;
@@ -3994,7 +4063,8 @@ const DuelArena: React.FC = () => {
             <motion.div
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="w-full flex justify-center gap-1 sm:gap-2 overflow-x-auto px-2 sm:px-4 py-2 sm:py-3 mt-4 sm:mt-8"
+              className="w-full flex justify-center gap-1 sm:gap-2 overflow-x-auto px-2 sm:px-4 py-2 sm:py-3 mt-4 sm:mt-8 [&::-webkit-scrollbar]:hidden"
+              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             >
               {Array.from({ length: topHandCountSpectator }).map((_, index) => (
                 <div
@@ -6032,8 +6102,8 @@ const DuelArena: React.FC = () => {
             )}
             </motion.div>
           </div>
-          </motion.div>
-        </div>
+        </motion.div>
+      </div>
       </div>
 
       {/* Aviso de Descarte (quando está na fase END com mais de 6 cartas) */}
@@ -8741,34 +8811,7 @@ const DuelArena: React.FC = () => {
                       })}
                     </div>
                   </div>
-                ) : (
-                  // Sem cartas do oponente: pode ser ação já processada (ex: MST destruiu a carta) — mostrar mensagem amigável e fechar
-                  <div className="mb-6 p-4 bg-stone-800/50 border border-stone-600/50 rounded">
-                    <h3 className="text-xl font-bold text-white mb-2">Campo do Oponente</h3>
-                    <p className="text-stone-300">
-                      {mysticalSpaceTyphoonData.playerSpellTraps.length === 0 && mysticalSpaceTyphoonData.opponentSpellTraps.length === 0
-                        ? 'Spell/Trap já foi processada. Pode fechar.'
-                        : (() => {
-                            const opponentSpellTraps = mysticalSpaceTyphoonData?.opponentSpellTraps;
-                            if (!opponentSpellTraps || !Array.isArray(opponentSpellTraps) || opponentSpellTraps.length === 0) {
-                              return 'Nenhuma Spell/Trap do oponente no campo.';
-                            }
-                            return null;
-                          })()}
-                    </p>
-                    <button
-                      onClick={() => {
-                        setShowMysticalSpaceTyphoonModal(false);
-                        setMysticalSpaceTyphoonData(null);
-                        setSelectedMSTTarget(null);
-                        setIsSelectingMSTTarget(false);
-                      }}
-                      className="mt-3 bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg font-bold transition-colors text-sm"
-                    >
-                      Fechar
-                    </button>
-                  </div>
-                )}
+                ) : null}
 
                 {/* Mensagem e botão quando não há spell/trap (antes de escolher ou já processado) */}
                 {mysticalSpaceTyphoonData.playerSpellTraps.length === 0 && mysticalSpaceTyphoonData.opponentSpellTraps.length === 0 && (

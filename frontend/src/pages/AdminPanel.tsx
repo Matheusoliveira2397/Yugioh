@@ -3,11 +3,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { Navigate, useNavigate } from 'react-router-dom';
 import ResetAllAccountsModal from '../components/admin/ResetAllAccountsModal';
-import { api } from '../api/axios';
 
 const STORAGE_KEY = 'admin-panel-cards-order';
 
 const defaultCards: { id: string; label: string; icon: string; description: string; route: string; bg: string; iconBg: string; accent: string }[] = [
+  { id: 'create-account', label: 'Criar conta', icon: '➕', description: 'Criar conta normal ou admin', route: '/admin/create-account', bg: 'bg-emerald-900/40', iconBg: 'bg-emerald-500/30', accent: 'border-l-emerald-500' },
   { id: 'site-tabs', label: 'Gerenciar Abas', icon: '🔧', description: 'Ativar/desativar abas do site', route: '/admin/site-tabs', bg: 'bg-slate-800/90', iconBg: 'bg-amber-500/20', accent: 'border-l-amber-500' },
   { id: 'cards', label: 'Cartas', icon: '🎴', description: 'Gerenciar cartas do jogo', route: '/admin/cartas', bg: 'bg-purple-900/40', iconBg: 'bg-purple-500/30', accent: 'border-l-purple-500' },
   { id: 'initial-decks', label: 'Decks Iniciais', icon: '📚', description: 'Decks iniciais para novos jogadores', route: '/admin/initial-decks', bg: 'bg-violet-900/40', iconBg: 'bg-violet-500/30', accent: 'border-l-purple-500' },
@@ -55,14 +55,6 @@ export default function AdminPanel() {
   const [order, setOrder] = useState<string[]>(() => loadOrder());
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
-  const [createAdminUsername, setCreateAdminUsername] = useState('');
-  const [createAdminNickname, setCreateAdminNickname] = useState('');
-  const [createAdminPassword, setCreateAdminPassword] = useState('');
-  const [createAdminTabs, setCreateAdminTabs] = useState<string[]>([]);
-  const [createAdminLoading, setCreateAdminLoading] = useState(false);
-  const [createAdminError, setCreateAdminError] = useState('');
-  const [createAdminSuccess, setCreateAdminSuccess] = useState('');
-
   useEffect(() => {
     saveOrder(order);
   }, [order]);
@@ -109,44 +101,6 @@ export default function AdminPanel() {
     });
   };
 
-  const toggleCreateAdminTab = (id: string) => {
-    setCreateAdminTabs((prev) =>
-      prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]
-    );
-  };
-
-  const handleCreateAdmin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setCreateAdminError('');
-    setCreateAdminSuccess('');
-    if (!createAdminUsername.trim() || !createAdminNickname.trim() || !createAdminPassword) {
-      setCreateAdminError('Preencha login, nick e senha.');
-      return;
-    }
-    if (createAdminPassword.length < 6) {
-      setCreateAdminError('Senha deve ter pelo menos 6 caracteres.');
-      return;
-    }
-    setCreateAdminLoading(true);
-    try {
-      await api.post('/admin/create-admin', {
-        username: createAdminUsername.trim(),
-        nickname: createAdminNickname.trim(),
-        password: createAdminPassword,
-        allowedTabs: createAdminTabs,
-      });
-      setCreateAdminSuccess(`Conta Admin "${createAdminNickname}" criada. O admin pode acessar pelo /login com o login informado.`);
-      setCreateAdminUsername('');
-      setCreateAdminNickname('');
-      setCreateAdminPassword('');
-      setCreateAdminTabs([]);
-    } catch (err: any) {
-      setCreateAdminError(err.response?.data?.message || 'Erro ao criar conta admin.');
-    } finally {
-      setCreateAdminLoading(false);
-    }
-  };
-
   // Proteção: apenas ADMIN ou MASTER
   if (!user || (user.role !== 'ADMIN' && user.role !== 'MASTER')) {
     return <Navigate to="/" replace />;
@@ -182,85 +136,6 @@ export default function AdminPanel() {
           </div>
         </motion.div>
 
-        {/* Criar conta Admin – apenas Master */}
-        {user?.role === 'MASTER' && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-10 rounded-2xl bg-amber-950/30 border border-amber-500/30 p-5 sm:p-6"
-          >
-            <h2 className="text-lg font-bold text-amber-200 mb-1 flex items-center gap-2">
-              <span>👤</span> Criar conta Admin
-            </h2>
-            <p className="text-slate-400 text-sm mb-4">
-              Crie um admin sem email: apenas login, senha e nick. Escolha quais abas do painel ele pode ver.
-            </p>
-            <form onSubmit={handleCreateAdmin} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-amber-200/90 text-xs font-medium mb-1">Login (usuário)</label>
-                  <input
-                    type="text"
-                    value={createAdminUsername}
-                    onChange={(e) => setCreateAdminUsername(e.target.value)}
-                    className="w-full py-2 px-3 rounded-lg bg-black/30 border border-white/20 text-white text-sm placeholder-white/40"
-                    placeholder="ex: admin1"
-                  />
-                </div>
-                <div>
-                  <label className="block text-amber-200/90 text-xs font-medium mb-1">Nick</label>
-                  <input
-                    type="text"
-                    value={createAdminNickname}
-                    onChange={(e) => setCreateAdminNickname(e.target.value)}
-                    className="w-full py-2 px-3 rounded-lg bg-black/30 border border-white/20 text-white text-sm placeholder-white/40"
-                    placeholder="ex: Moderador"
-                  />
-                </div>
-                <div>
-                  <label className="block text-amber-200/90 text-xs font-medium mb-1">Senha (mín. 6)</label>
-                  <input
-                    type="password"
-                    value={createAdminPassword}
-                    onChange={(e) => setCreateAdminPassword(e.target.value)}
-                    className="w-full py-2 px-3 rounded-lg bg-black/30 border border-white/20 text-white text-sm placeholder-white/40"
-                    placeholder="••••••"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-amber-200/90 text-xs font-medium mb-2">Abas que o admin pode ver</label>
-                <div className="flex flex-wrap gap-2">
-                  {defaultCards.map((card) => (
-                    <label key={card.id} className="inline-flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={createAdminTabs.includes(card.id)}
-                        onChange={() => toggleCreateAdminTab(card.id)}
-                        className="rounded border-amber-500/50 bg-black/30 text-amber-500"
-                      />
-                      <span className="text-white/90 text-sm">{card.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-              {createAdminError && (
-                <p className="text-red-300 text-sm">{createAdminError}</p>
-              )}
-              {createAdminSuccess && (
-                <p className="text-green-300 text-sm">{createAdminSuccess}</p>
-              )}
-              <button
-                type="submit"
-                disabled={createAdminLoading}
-                className="px-4 py-2 rounded-lg text-sm font-semibold bg-amber-600 hover:bg-amber-500 text-black disabled:opacity-50"
-              >
-                {createAdminLoading ? 'Criando…' : 'Criar conta Admin'}
-              </button>
-            </form>
-          </motion.div>
-        )}
-
         {/* Lista de abas do painel */}
         <div className="rounded-2xl bg-black/20 border border-white/5 p-4 sm:p-5">
           {user?.role === 'MASTER' && (
@@ -271,7 +146,7 @@ export default function AdminPanel() {
           {visibleCards.length === 0 && user?.role === 'ADMIN' && (
             <p className="text-amber-200/80 text-sm py-4">Nenhuma aba liberada para sua conta. Peça ao Master para definir suas permissões.</p>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4">
             {visibleCards.map((card) => {
               const orderIndex = order.indexOf(card.id);
               return (
@@ -292,40 +167,40 @@ export default function AdminPanel() {
                 onDragOver={handleDragOver}
                 onDrop={handleDrop(orderIndex)}
               >
-                <div className="p-4 flex items-center gap-3">
+                <div className="p-5 sm:p-6 flex items-center gap-4">
                   {user?.role === 'MASTER' ? (
                     <div
                       draggable
                       onDragStart={handleDragStart(orderIndex)}
                       onDragEnd={handleDragEnd}
-                      className="flex-shrink-0 w-8 h-11 rounded-lg flex items-center justify-center text-slate-400 hover:text-white cursor-grab active:cursor-grabbing hover:bg-white/10 transition-colors touch-none"
+                      className="flex-shrink-0 w-10 h-14 rounded-lg flex items-center justify-center text-slate-400 hover:text-white cursor-grab active:cursor-grabbing hover:bg-white/10 transition-colors touch-none"
                       title="Arraste para reordenar"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <span className="text-lg leading-none select-none">⋮⋮</span>
+                      <span className="text-xl leading-none select-none">⋮⋮</span>
                     </div>
                   ) : (
-                    <div className="flex-shrink-0 w-8 h-11 rounded-lg flex items-center justify-center text-slate-500">
-                      <span className="text-lg">⋮⋮</span>
+                    <div className="flex-shrink-0 w-10 h-14 rounded-lg flex items-center justify-center text-slate-500">
+                      <span className="text-xl">⋮⋮</span>
                     </div>
                   )}
                   <div
-                    className="min-w-0 flex-1 cursor-pointer flex items-center gap-3"
+                    className="min-w-0 flex-1 cursor-pointer flex items-center gap-4"
                     onClick={() => navigate(card.route)}
                   >
-                    <div className={`flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center text-xl ${card.iconBg} ring-1 ring-white/10`}>
+                    <div className={`flex-shrink-0 w-14 h-14 rounded-xl flex items-center justify-center text-2xl ${card.iconBg} ring-1 ring-white/10`}>
                       {card.icon}
                     </div>
                     <div className="min-w-0">
-                      <h3 className="font-semibold text-white text-sm mb-0.5 group-hover:text-white">
+                      <h3 className="font-semibold text-white text-base mb-1 group-hover:text-white">
                         {card.label}
                       </h3>
-                      <p className="text-slate-400 text-xs leading-snug">
+                      <p className="text-slate-400 text-sm leading-snug">
                         {card.description}
                       </p>
                     </div>
                   </div>
-                  <span className="flex-shrink-0 text-slate-500 group-hover:text-white group-hover:translate-x-0.5 transition-all text-lg pointer-events-none">→</span>
+                  <span className="flex-shrink-0 text-slate-500 group-hover:text-white group-hover:translate-x-0.5 transition-all text-xl pointer-events-none">→</span>
                 </div>
               </motion.div>
             );

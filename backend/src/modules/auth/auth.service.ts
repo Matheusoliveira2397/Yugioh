@@ -326,6 +326,117 @@ export class AuthService {
     };
   }
 
+  /**
+   * Cria uma conta normal (PLAYER) pelo Admin/Master. Email já fica verificado; sem envio de email.
+   */
+  async createUserByAdmin(
+    body: { username: string; nickname: string; email: string; password: string },
+  ): Promise<{ id: number; username: string; nickname: string; email: string }> {
+    const username = (body.username || '').trim();
+    const nickname = (body.nickname || '').trim();
+    const email = (body.email || '').trim().toLowerCase();
+    const password = body.password;
+
+    if (!username || username.length < 3) {
+      throw new BadRequestException('Username deve ter pelo menos 3 caracteres.');
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      throw new BadRequestException('Username deve conter apenas letras, números e underscore.');
+    }
+    if (!nickname || nickname.length < 3) {
+      throw new BadRequestException('Nickname deve ter pelo menos 3 caracteres.');
+    }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new BadRequestException('Email inválido.');
+    }
+    if (!password || password.length < 6) {
+      throw new BadRequestException('Senha deve ter pelo menos 6 caracteres.');
+    }
+
+    const existingNick = await this.usersService.findByNickname(nickname);
+    if (existingNick) {
+      throw new BadRequestException('Este nickname já está em uso.');
+    }
+    const existingUser = await this.usersService.findByUsername(username);
+    if (existingUser) {
+      throw new BadRequestException('Este username já está em uso.');
+    }
+    const existingEmail = await this.usersService.findByEmail(email);
+    if (existingEmail) {
+      throw new BadRequestException('Este email já está cadastrado.');
+    }
+
+    const newAccountSettings = await this.newAccountSettingsService.getSettings();
+    const lowestDivision = await this.divisionsService.getLowestAvailableDivision();
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const user = await this.usersService.create({
+      nickname,
+      username,
+      email,
+      password: hashedPassword,
+      level: 1,
+      totalScore: 0,
+      winsGeral: 0,
+      lossesGeral: 0,
+      winsSeason: 0,
+      lossesSeason: 0,
+      credits: newAccountSettings.initialCredits,
+      cash: newAccountSettings.initialCash,
+      profileImage: undefined,
+      clanTag: undefined,
+      biography: undefined,
+      playerClass: 'Novato',
+      division: lowestDivision,
+      isOnline: false,
+      isBanned: false,
+      isEmailVerified: true,
+      emailVerificationToken: undefined,
+      equippedPlaymatId: null,
+      equippedPlaymatImage: null,
+      equippedSkinId: null,
+      equippedSkinImage: null,
+    });
+
+    const cosmeticsUpdate: { equippedPlaymatId?: string; equippedPlaymatImage?: string; equippedSkinId?: string; equippedSkinImage?: string } = {};
+    const playmatId = newAccountSettings.defaultPlaymatId?.trim() || null;
+    const skinId = newAccountSettings.defaultSkinId?.trim() || null;
+    if (playmatId) {
+      try {
+        const playmat = await this.cosmeticsService.findOnePlaymat(playmatId);
+        if (playmat?.image) {
+          cosmeticsUpdate.equippedPlaymatId = playmat.id;
+          cosmeticsUpdate.equippedPlaymatImage = playmat.image;
+        }
+      } catch (_) {}
+    }
+    if (skinId) {
+      try {
+        const sleeve = await this.cosmeticsService.findOneSleeve(skinId);
+        if (sleeve?.image) {
+          cosmeticsUpdate.equippedSkinId = sleeve.id;
+          cosmeticsUpdate.equippedSkinImage = sleeve.image;
+        }
+      } catch (_) {}
+    }
+    if (Object.keys(cosmeticsUpdate).length > 0) {
+      await this.usersService.updateCosmetics(user.id, cosmeticsUpdate);
+    }
+
+    try {
+      await this.seasonsService.createUserRanking(user.id);
+    } catch (_) {}
+
+    try {
+      const deckIds = (newAccountSettings.availableInitialDeckIds && newAccountSettings.availableInitialDeckIds.length > 0)
+        ? newAccountSettings.availableInitialDeckIds
+        : undefined;
+      await this.initialDecksService.assignDeckToUser(user.id, deckIds);
+    } catch (_) {}
+
+    return { id: user.id, username: user.username, nickname: user.nickname, email: user.email };
+  }
+
   async verifyEmail(token: string) {
     const user = await this.usersService.findByVerificationToken(token);
     

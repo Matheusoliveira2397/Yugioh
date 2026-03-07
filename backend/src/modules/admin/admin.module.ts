@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminController } from './admin.controller';
 import { PublicController } from './public.controller';
 import { AdminService } from './admin.service';
+import { AuthModule } from '../auth/auth.module';
 import { User } from '../users/entities/user.entity';
 import { UserCard } from '../shop/entities/user-card.entity';
 import { Deck } from '../decks/entities/deck.entity';
@@ -41,6 +42,7 @@ import { Card } from '../cards/entities/card.entity';
 
 @Module({
   imports: [
+    AuthModule,
     TypeOrmModule.forFeature([
       User,
       Card,

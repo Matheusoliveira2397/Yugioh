@@ -942,20 +942,36 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
       client.emit('duelUpdate', duelData);
       
-      // Carregar logs do duelo do banco de dados e enviar para o cliente (persistência ao fechar/reabrir duelo)
+      // Carregar logs do duelo do banco e enviar para o cliente filtrados por jogador (cada um vê só seus logs completos; ações privadas do oponente vêm genéricas)
       try {
         const savedLogs = await this.duelsService.getDuelLogs(duel.id);
+        const clientUserId = numericUserId;
+        const privateActionTypes = new Set(['DRAW_CARD']);
         const formattedLogs = (savedLogs && savedLogs.length > 0)
-          ? savedLogs.map((log: any) => ({
-              id: log.id,
-              username: log.user?.clanTag ? `|${log.user.clanTag}| ${log.user.nickname}` : log.user?.nickname || 'Jogador',
-              actionType: log.actionType,
-              message: log.message,
-              createdAt: log.createdAt,
-            }))
+          ? savedLogs.map((log: any) => {
+              const logUserId = log.user?.id ?? (log as any).user?.id;
+              const isOwnLog = Number(logUserId) === Number(clientUserId);
+              const isPrivate = privateActionTypes.has(log.actionType);
+              if (!isOwnLog && isPrivate) {
+                return {
+                  id: log.id,
+                  username: 'Oponente',
+                  actionType: log.actionType,
+                  message: log.actionType === 'DRAW_CARD' ? 'Oponente comprou 1 carta' : log.message,
+                  createdAt: log.createdAt,
+                };
+              }
+              return {
+                id: log.id,
+                username: log.user?.clanTag ? `|${log.user.clanTag}| ${log.user.nickname}` : log.user?.nickname || 'Jogador',
+                actionType: log.actionType,
+                message: log.message,
+                createdAt: log.createdAt,
+              };
+            })
           : [];
         client.emit('duelLogsLoaded', { logs: formattedLogs });
-        console.log(`📋 [handleJoinDuelRoom] ${formattedLogs.length} logs carregados do banco e enviados`);
+        console.log(`📋 [handleJoinDuelRoom] ${formattedLogs.length} logs carregados do banco e enviados (filtrados por jogador)`);
       } catch (logError) {
         console.error(`❌ [handleJoinDuelRoom] Erro ao carregar logs:`, logError);
         client.emit('duelLogsLoaded', { logs: [] });
@@ -7136,7 +7152,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
       } else if (actionType === 'MYSTICAL_SPACE_TYPHOON_CHOICE') {
         // Processar escolha do alvo para Mystical Space Typhoon
-        const { targetPlayer, targetZoneIndex, spellTrapZoneIndex } = actionData;
+        let { targetPlayer, targetZoneIndex, spellTrapZoneIndex } = actionData;
+        targetPlayer = (targetPlayer === 'opponent' || targetPlayer === 'player') ? targetPlayer : (String(targetPlayer).toLowerCase() === 'opponent' ? 'opponent' : 'player');
 
         if (targetPlayer === undefined || targetZoneIndex === undefined || targetZoneIndex < 0 || targetZoneIndex >= 5) {
           client.emit('duelError', { message: 'Escolha de alvo inválida' });
@@ -7145,7 +7162,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
         console.log(`🔍 [MYSTICAL_SPACE_TYPHOON_CHOICE] Processando escolha - targetPlayer: ${targetPlayer}, targetZoneIndex: ${targetZoneIndex}, spellTrapZoneIndex: ${spellTrapZoneIndex}`);
         console.log(`🔍 [MYSTICAL_SPACE_TYPHOON_CHOICE] Chamando processMysticalSpaceTyphoonChoice...`);
-        const result = await this.duelsService.processMysticalSpaceTyphoonChoice(duelId, userId, targetPlayer, targetZoneIndex, spellTrapZoneIndex);
+        const result = await this.duelsService.processMysticalSpaceTyphoonChoice(duelId, Number(userId), targetPlayer, Number(targetZoneIndex), spellTrapZoneIndex != null ? Number(spellTrapZoneIndex) : undefined);
 
         if (!result.success) {
           console.error(`❌ [MYSTICAL_SPACE_TYPHOON_CHOICE] Erro ao processar: ${result.message}`);
@@ -7155,15 +7172,10 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
         console.log(`✅ [MYSTICAL_SPACE_TYPHOON_CHOICE] processMysticalSpaceTyphoonChoice concluído com sucesso`);
 
-        // Usar o duelo retornado pelo serviço (já com monstro devolvido ao oponente se era Change Of Heart/Brain Control)
-        let updatedDuelAfterMST = (result as any).duel;
+        // Usar o duelo retornado pelo serviço (já com spell/trap destruída e campos salvos) para garantir que o frontend receba o estado correto
+        const updatedDuelAfterMST = (result as any).duel;
         if (!updatedDuelAfterMST) {
-          await new Promise(resolve => setTimeout(resolve, 200));
-          console.log(`🔍 [MYSTICAL_SPACE_TYPHOON_CHOICE] Buscando duelo atualizado do banco...`);
-          updatedDuelAfterMST = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
-        }
-        if (!updatedDuelAfterMST) {
-          client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
+          client.emit('duelError', { message: 'Erro ao obter duelo após processar escolha' });
           return;
         }
 
@@ -7171,11 +7183,9 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         const player2Field = (updatedDuelAfterMST as any).player2Field;
         const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuelAfterMST);
 
-        // Garantir que os campos player1 e player2 existam
         const player1 = (updatedDuelAfterMST as any).player1 || null;
         const player2 = (updatedDuelAfterMST as any).player2 || null;
 
-        // Validar que os campos necessários existem
         if (!player1Field || !player2Field) {
           console.error(`❌ [MYSTICAL_SPACE_TYPHOON_CHOICE] Campos do duelo incompletos - player1Field: ${!!player1Field}, player2Field: ${!!player2Field}`);
           client.emit('duelError', { message: 'Erro ao buscar dados do duelo atualizado' });
@@ -7200,12 +7210,12 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           turnStartedAt: (updatedDuelAfterMST as any).turnStartedAt,
           player1Field: player1Field,
           player2Field: player2Field,
-          pendingChoice: (updatedDuelAfterMST as any).pendingChoice || null,
+          pendingChoice: null,
           createdAt: updatedDuelAfterMST.createdAt,
           updatedAt: updatedDuelAfterMST.updatedAt,
         };
 
-        console.log(`✅ [MYSTICAL_SPACE_TYPHOON_CHOICE] Emitindo duelUpdate - id: ${duelData.id}, player1Field: ${!!duelData.player1Field}, player2Field: ${!!duelData.player2Field}, pendingChoice: ${duelData.pendingChoice}`);
+        console.log(`✅ [MYSTICAL_SPACE_TYPHOON_CHOICE] Emitindo duelUpdate - id: ${duelData.id}, pendingChoice: null`);
         this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
       } else if (actionType === 'SNOWMAN_EATER_CHOICE') {
         // Processar escolha de alvo do SnowmanEater
@@ -8592,8 +8602,13 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         createdAt: new Date(),
       };
 
-      // Emitir para todos na room do duelo
-      this.server.to(`duel_${duelId}`).emit('duelLog', { log: logData });
+      // Ações privadas (ex.: compra de carta): só quem fez vê a mensagem completa; oponente vê genérico
+      const privateActionTypes = new Set(['DRAW_CARD']);
+      const payload = privateActionTypes.has(actionType)
+        ? { log: logData, genericMessage: 'Oponente comprou 1 carta', forUserId: userId }
+        : { log: logData };
+
+      this.server.to(`duel_${duelId}`).emit('duelLog', payload);
       console.log(`📝 [createAndEmitDuelLog] Log criado e emitido - ${actionType}: ${message}`);
     } catch (error) {
       console.error(`❌ [createAndEmitDuelLog] Erro:`, error);

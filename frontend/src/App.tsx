@@ -23,6 +23,7 @@ import GroupDetailPage from './pages/GroupDetailPage';
 import RankingPage from './pages/RankingPage';
 import { ProfilePage } from './pages/ProfilePage';
 import AdminPanel from './pages/AdminPanel';
+import AdminCreateAccountPanel from './pages/AdminCreateAccountPanel';
 import AdminCardsPanel from './pages/AdminCardsPanel';
 import AdminPlayersPanel from './pages/AdminPlayersPanel';
 import AdminNewsPanel from './pages/AdminNewsPanel';
@@ -339,6 +340,19 @@ function App() {
             isAuthenticated ? (
               <Layout>
                 <AdminPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/create-account"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminCreateAccountPanel />
               </Layout>
             ) : (
               <Navigate to="/login" />
