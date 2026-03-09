@@ -1,18 +1,21 @@
-import { Injectable, NotFoundException, BadRequestException, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { ShopItem, ShopItemCurrency } from './entities/shop-item.entity';
 import { Card, CardRarity } from '../cards/entities/card.entity';
 import { UserCard } from './entities/user-card.entity';
+import { TalismanTemplate } from './entities/talisman-template.entity';
+import { UserTalisman } from './entities/user-talisman.entity';
 import { User } from '../users/entities/user.entity';
 import { DeckCard } from '../decks/entities/deck-card.entity';
 import { PurchaseCardDto, PaymentMethod } from './dto/purchase-card.dto';
 import { EconomyService } from '../economy/economy.service';
 import { CurrencyType, TransactionType } from '../economy/entities/transaction.entity';
 import { CosmeticsService } from '../cosmetics/cosmetics.service';
+import { PromotionsService } from '../promotions/promotions.service';
 
 // Mantém apenas UMA definição da classe ShopService
-export class ShopService {
+export class ShopService implements OnModuleInit {
   constructor(
     @InjectRepository(ShopItem)
     private shopItemRepository: Repository<ShopItem>,
@@ -24,10 +27,93 @@ export class ShopService {
     private cardRepository: Repository<Card>,
     @InjectRepository(DeckCard)
     private deckCardRepository: Repository<DeckCard>,
+    @InjectRepository(TalismanTemplate)
+    private talismanTemplateRepository: Repository<TalismanTemplate>,
+    @InjectRepository(UserTalisman)
+    private userTalismanRepository: Repository<UserTalisman>,
     @Inject(EconomyService)
     private economyService: EconomyService,
     private cosmeticsService: CosmeticsService,
+    private promotionsService: PromotionsService,
   ) {}
+
+  async onModuleInit() {
+    try {
+      const tableExists = await this.talismanTemplateRepository.query(`
+        SELECT table_name FROM information_schema.tables WHERE table_name = 'talisman_templates'
+      `);
+      if (tableExists.length === 0) {
+        console.log('🔧 [ShopService] Criando tabelas talisman_templates e user_talismans...');
+        await this.talismanTemplateRepository.query(`
+          CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+        `).catch(() => {});
+        await this.talismanTemplateRepository.query(`
+          CREATE TABLE "talisman_templates" (
+            "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+            "name" character varying(120) NOT NULL,
+            "description" text,
+            "image" character varying(500),
+            "bonusScorePct" integer NOT NULL DEFAULT 0,
+            "bonusCashPct" integer NOT NULL DEFAULT 0,
+            "bonusArenaPointsPct" integer NOT NULL DEFAULT 0,
+            "priceCredits" integer DEFAULT 0,
+            "priceCash" integer DEFAULT 0,
+            "initialCharges" integer NOT NULL DEFAULT 10,
+            "isActive" boolean NOT NULL DEFAULT true,
+            "isForSale" boolean NOT NULL DEFAULT true,
+            "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
+            "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
+            CONSTRAINT "PK_talisman_templates" PRIMARY KEY ("id")
+          )
+        `);
+        await this.talismanTemplateRepository.query(`
+          CREATE TABLE "user_talismans" (
+            "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+            "userId" integer NOT NULL,
+            "talismanTemplateId" uuid NOT NULL,
+            "equipped" boolean NOT NULL DEFAULT false,
+            "charges" integer NOT NULL DEFAULT 10,
+            "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
+            "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
+            CONSTRAINT "PK_user_talismans" PRIMARY KEY ("id"),
+            CONSTRAINT "FK_user_talismans_user" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE,
+            CONSTRAINT "FK_user_talismans_template" FOREIGN KEY ("talismanTemplateId") REFERENCES "talisman_templates"("id") ON DELETE CASCADE
+          )
+        `);
+        await this.talismanTemplateRepository.query(`CREATE INDEX "IDX_user_talismans_userId" ON "user_talismans" ("userId")`);
+        await this.talismanTemplateRepository.query(`CREATE INDEX "IDX_user_talismans_equipped" ON "user_talismans" ("userId", "equipped") WHERE "equipped" = true`);
+        const count = await this.talismanTemplateRepository.count();
+        if (count === 0) {
+          await this.talismanTemplateRepository.query(`
+            INSERT INTO "talisman_templates" ("id", "name", "description", "image", "bonusScorePct", "bonusCashPct", "bonusArenaPointsPct", "priceCredits", "priceCash", "initialCharges", "isActive", "isForSale")
+            VALUES
+              (uuid_generate_v4(), 'Talismã do Iniciante', 'Bônus modestos na Arena.', NULL, 5, 5, 10, 500, 50, 10, true, true),
+              (uuid_generate_v4(), 'Talismã do Guerreiro', 'Aumenta recompensas da Arena.', NULL, 10, 10, 15, 1500, 150, 15, true, true),
+              (uuid_generate_v4(), 'Talismã do Mestre', 'Grandes bônus em Score, Cash e Arena Points.', NULL, 15, 15, 20, 4000, 400, 20, true, true),
+              (uuid_generate_v4(), 'Talismã Lendário', 'Máximos bônus na Arena de Duelos.', NULL, 25, 25, 30, 10000, 1000, 30, true, true)
+          `);
+        }
+        console.log('✅ [ShopService] Tabelas de talismãs criadas com sucesso.');
+      } else {
+        const cols = await this.talismanTemplateRepository.query(`
+          SELECT column_name FROM information_schema.columns WHERE table_name = 'talisman_templates' AND column_name = 'initialCharges'
+        `);
+        if (cols.length === 0) {
+          await this.talismanTemplateRepository.query(`ALTER TABLE "talisman_templates" ADD COLUMN IF NOT EXISTS "initialCharges" integer NOT NULL DEFAULT 10`);
+          console.log('✅ [ShopService] Coluna initialCharges adicionada em talisman_templates.');
+        }
+        const userCols = await this.talismanTemplateRepository.query(`
+          SELECT column_name FROM information_schema.columns WHERE table_name = 'user_talismans' AND column_name = 'charges'
+        `);
+        if (userCols.length === 0) {
+          await this.talismanTemplateRepository.query(`ALTER TABLE "user_talismans" ADD COLUMN IF NOT EXISTS "charges" integer NOT NULL DEFAULT 10`);
+          console.log('✅ [ShopService] Coluna charges adicionada em user_talismans.');
+        }
+      }
+    } catch (error: any) {
+      console.error('❌ [ShopService] Erro ao criar tabelas de talismãs:', error?.message || error);
+    }
+  }
 
   // Adicionar carta automaticamente na loja quando for cadastrada
   async addCardToShop(card: Card): Promise<ShopItem> {
@@ -194,7 +280,7 @@ export class ShopService {
     const quantity = Math.min(Math.max(1, Number(purchaseDto.quantity) || 1), 99);
 
     // 3. VERIFICAR PREÇO E SALDO (preço unitário * quantidade)
-    const { price: unitPrice, canPurchase, missingAmount } = this.checkUserBalance(
+    const { price: unitPrice, canPurchase, missingAmount } = await this.checkUserBalanceWithPromotion(
       user,
       card,
       purchaseDto.paymentMethod
@@ -242,28 +328,32 @@ export class ShopService {
   }
 
   // ==================== VERIFICAR SALDO DO USUÁRIO ====================
-  private checkUserBalance(
+  private async checkUserBalanceWithPromotion(
     user: User,
     card: Card,
     paymentMethod: string
-  ): { price: number; canPurchase: boolean; missingAmount: number } {
-    let price = 0;
+  ): Promise<{ price: number; canPurchase: boolean; missingAmount: number }> {
+    let basePrice = 0;
     let userBalance = 0;
 
-    // Determinar preço e saldo baseado no método de pagamento
-    // SISTEMA DE MOEDAS REMOVIDO - apenas Credits e Cash
     switch (paymentMethod) {
       case 'coins':
-        // MOEDAS DESATIVADAS - retornar erro
         throw new BadRequestException('Sistema de moedas foi desativado. Use Créditos ou Cash.');
       case 'credits':
-        price = card.priceCredits || 0;
+        basePrice = card.priceCredits || 0;
         userBalance = user.credits || 0;
         break;
       case 'cash':
-        price = Number(card.priceCash) || 0;
+        basePrice = Number(card.priceCash) || 0;
         userBalance = user.cash || 0;
         break;
+    }
+
+    let price = basePrice;
+    const promotionsMap = await this.promotionsService.findActiveForCardIds([card.id]);
+    const promo = promotionsMap.get(card.id);
+    if (promo) {
+      price = this.promotionsService.getEffectivePrice(basePrice, promo.discountPercent);
     }
 
     // Verificar se a carta tem preço definido para este método
@@ -336,7 +426,7 @@ export class ShopService {
   }
 
   // ==================== BUSCAR INVENTÁRIO DO USUÁRIO ====================
-  async getUserInventory(userId: number): Promise<{ cards: (UserCard & { quantityInDecks?: number; sellableQuantity?: number })[]; playmats: any[]; skins: any[] }> {
+  async getUserInventory(userId: number): Promise<{ cards: (UserCard & { quantityInDecks?: number; sellableQuantity?: number })[]; playmats: any[]; skins: any[]; talismans: any[] }> {
     try {
       const cards = await Promise.race([
         this.userCardRepository.find({
@@ -404,11 +494,248 @@ export class ShopService {
         }
       }
 
-      return { cards: cardsWithSellable, playmats, skins };
+      // Talismãs do usuário (com template eager)
+      const userTalismans = await this.userTalismanRepository.find({
+        where: { userId },
+        relations: ['template'],
+        order: { createdAt: 'DESC' },
+      }).catch(() => []);
+      const talismans = userTalismans.map((ut: UserTalisman) => ({
+        id: ut.id,
+        talismanTemplateId: ut.talismanTemplateId,
+        equipped: ut.equipped,
+        charges: ut.charges ?? 10,
+        name: ut.template?.name,
+        description: ut.template?.description,
+        image: ut.template?.image,
+        bonusScorePct: ut.template?.bonusScorePct ?? 0,
+        bonusCashPct: ut.template?.bonusCashPct ?? 0,
+        bonusArenaPointsPct: ut.template?.bonusArenaPointsPct ?? 0,
+        initialCharges: ut.template?.initialCharges ?? 10,
+      }));
+
+      return { cards: cardsWithSellable, playmats, skins, talismans };
     } catch (error) {
       console.error('❌ [getUserInventory] Erro ao buscar inventário:', error);
-      return { cards: [], playmats: [], skins: [] };
+      return { cards: [], playmats: [], skins: [], talismans: [] };
     }
+  }
+
+  // ==================== TALISMÃS ====================
+  async getTalismanTemplates(): Promise<TalismanTemplate[]> {
+    return this.talismanTemplateRepository.find({
+      where: { isActive: true, isForSale: true },
+      order: { bonusArenaPointsPct: 'ASC' },
+    });
+  }
+
+  /** Lista todos os talismãs para o admin (incluindo inativos). */
+  async getTalismanTemplatesForAdmin(): Promise<TalismanTemplate[]> {
+    return this.talismanTemplateRepository.find({
+      order: { bonusArenaPointsPct: 'ASC', name: 'ASC' },
+    });
+  }
+
+  /** Cria um novo template de talismã (admin). */
+  async createTalismanTemplate(dto: {
+    name: string;
+    description?: string | null;
+    image?: string | null;
+    bonusScorePct?: number;
+    bonusCashPct?: number;
+    bonusArenaPointsPct?: number;
+    priceCredits?: number | null;
+    priceCash?: number | null;
+    initialCharges?: number;
+    isActive?: boolean;
+    isForSale?: boolean;
+  }): Promise<TalismanTemplate> {
+    const template = this.talismanTemplateRepository.create({
+      name: dto.name.trim(),
+      description: dto.description?.trim() || null,
+      image: dto.image?.trim() || null,
+      bonusScorePct: dto.bonusScorePct ?? 0,
+      bonusCashPct: dto.bonusCashPct ?? 0,
+      bonusArenaPointsPct: dto.bonusArenaPointsPct ?? 0,
+      priceCredits: dto.priceCredits ?? 0,
+      priceCash: dto.priceCash ?? 0,
+      initialCharges: dto.initialCharges ?? 10,
+      isActive: dto.isActive ?? true,
+      isForSale: dto.isForSale ?? true,
+    });
+    return this.talismanTemplateRepository.save(template);
+  }
+
+  /** Atualiza um template de talismã (admin). */
+  async updateTalismanTemplate(
+    id: string,
+    dto: Partial<{
+      name: string;
+      description: string | null;
+      image: string | null;
+      bonusScorePct: number;
+      bonusCashPct: number;
+      bonusArenaPointsPct: number;
+      priceCredits: number | null;
+      priceCash: number | null;
+      initialCharges: number;
+      isActive: boolean;
+      isForSale: boolean;
+    }>
+  ): Promise<TalismanTemplate> {
+    const template = await this.talismanTemplateRepository.findOne({ where: { id } });
+    if (!template) throw new NotFoundException('Talismã não encontrado');
+    if (dto.name !== undefined) template.name = dto.name.trim();
+    if (dto.description !== undefined) template.description = dto.description?.trim() || null;
+    if (dto.image !== undefined) template.image = dto.image?.trim() || null;
+    if (dto.bonusScorePct !== undefined) template.bonusScorePct = dto.bonusScorePct;
+    if (dto.bonusCashPct !== undefined) template.bonusCashPct = dto.bonusCashPct;
+    if (dto.bonusArenaPointsPct !== undefined) template.bonusArenaPointsPct = dto.bonusArenaPointsPct;
+    if (dto.priceCredits !== undefined) template.priceCredits = dto.priceCredits;
+    if (dto.priceCash !== undefined) template.priceCash = dto.priceCash;
+    if (dto.initialCharges !== undefined) template.initialCharges = dto.initialCharges;
+    if (dto.isActive !== undefined) template.isActive = dto.isActive;
+    if (dto.isForSale !== undefined) template.isForSale = dto.isForSale;
+    return this.talismanTemplateRepository.save(template);
+  }
+
+  /** Remove um template de talismã (admin). Usuários que tinham esse talismã perdem a referência (CASCADE). */
+  async deleteTalismanTemplate(id: string): Promise<void> {
+    const template = await this.talismanTemplateRepository.findOne({ where: { id } });
+    if (!template) throw new NotFoundException('Talismã não encontrado');
+    await this.talismanTemplateRepository.remove(template);
+  }
+
+  async purchaseTalisman(
+    userId: number,
+    templateId: string,
+    paymentMethod: 'credits' | 'cash'
+  ): Promise<{ success: boolean; message: string; remainingBalance: { credits: number; cash: number } }> {
+    const template = await this.talismanTemplateRepository.findOne({ where: { id: templateId } });
+    if (!template || !template.isForSale || !template.isActive) {
+      throw new BadRequestException('Este talismã não está disponível para compra');
+    }
+
+    const price = paymentMethod === 'credits' ? (template.priceCredits ?? 0) : (template.priceCash ?? 0);
+    if (price <= 0) {
+      throw new BadRequestException(`Este talismã não tem preço definido para ${this.getCurrencyName(paymentMethod)}`);
+    }
+
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+
+    const balance = paymentMethod === 'credits' ? (user.credits || 0) : (user.cash || 0);
+    if (balance < price) {
+      throw new BadRequestException(
+        `Saldo insuficiente! Precisa de ${price} ${this.getCurrencyName(paymentMethod)}. Você tem ${balance}.`
+      );
+    }
+
+    this.deductBalance(user, price, paymentMethod);
+    await this.userRepository.save(user);
+
+    const userTalisman = this.userTalismanRepository.create({
+      userId,
+      talismanTemplateId: templateId,
+      equipped: false,
+      charges: template.initialCharges ?? 10,
+    });
+    await this.userTalismanRepository.save(userTalisman);
+
+    return {
+      success: true,
+      message: `Talismã "${template.name}" comprado com sucesso!`,
+      remainingBalance: { credits: user.credits ?? 0, cash: user.cash ?? 0 },
+    };
+  }
+
+  async equipTalisman(userId: number, userTalismanId: string): Promise<{ success: boolean; message: string }> {
+    const userTalisman = await this.userTalismanRepository.findOne({
+      where: { id: userTalismanId, userId },
+      relations: ['template'],
+    });
+    if (!userTalisman) {
+      throw new NotFoundException('Talismã não encontrado no seu inventário');
+    }
+
+    // Desequipar todos os outros talismãs do usuário
+    await this.userTalismanRepository.update({ userId }, { equipped: false });
+    // Equipar este
+    userTalisman.equipped = true;
+    await this.userTalismanRepository.save(userTalisman);
+
+    return { success: true, message: `Talismã "${userTalisman.template?.name}" equipado!` };
+  }
+
+  async unequipTalisman(userId: number): Promise<{ success: boolean; message: string }> {
+    await this.userTalismanRepository.update({ userId }, { equipped: false });
+    return { success: true, message: 'Talismã desequipado.' };
+  }
+
+  /** Retorna o talismã equipado do usuário (para aplicar bônus na arena). */
+  async getEquippedTalisman(userId: number): Promise<{ bonusScorePct: number; bonusCashPct: number; bonusArenaPointsPct: number } | null> {
+    const ut = await this.userTalismanRepository.findOne({
+      where: { userId, equipped: true },
+      relations: ['template'],
+    });
+    if (!ut?.template) return null;
+    return {
+      bonusScorePct: ut.template.bonusScorePct ?? 0,
+      bonusCashPct: ut.template.bonusCashPct ?? 0,
+      bonusArenaPointsPct: ut.template.bonusArenaPointsPct ?? 0,
+    };
+  }
+
+  /** Retorna dados do talismã equipado para exibição no frontend (nome + bônus). */
+  async getEquippedTalismanForDisplay(userId: number): Promise<{ name: string; bonusScorePct: number; bonusCashPct: number; bonusArenaPointsPct: number; charges: number } | null> {
+    const ut = await this.userTalismanRepository.findOne({
+      where: { userId, equipped: true },
+      relations: ['template'],
+    });
+    if (!ut?.template) return null;
+    return {
+      name: ut.template.name ?? 'Talismã',
+      bonusScorePct: ut.template.bonusScorePct ?? 0,
+      bonusCashPct: ut.template.bonusCashPct ?? 0,
+      bonusArenaPointsPct: ut.template.bonusArenaPointsPct ?? 0,
+      charges: ut.charges ?? 0,
+    };
+  }
+
+  /** Consome 1 carga do talismã equipado do usuário após um duelo na arena. Se chegar a 0, remove o talismã. */
+  async consumeTalismanChargeForArenaDuel(userId: number): Promise<void> {
+    const ut = await this.userTalismanRepository.findOne({
+      where: { userId, equipped: true },
+    });
+    if (!ut) return;
+    ut.charges = (ut.charges ?? 10) - 1;
+    if (ut.charges <= 0) {
+      await this.userTalismanRepository.remove(ut);
+      return;
+    }
+    await this.userTalismanRepository.save(ut);
+  }
+
+  /** Retorna bônus de talismã equipado para vários usuários (uma query). */
+  async getEquippedTalismansForUsers(
+    userIds: number[]
+  ): Promise<Map<number, { bonusScorePct: number; bonusCashPct: number; bonusArenaPointsPct: number }>> {
+    if (userIds.length === 0) return new Map();
+    const list = await this.userTalismanRepository.find({
+      where: { userId: In(userIds), equipped: true },
+      relations: ['template'],
+    });
+    const map = new Map<number, { bonusScorePct: number; bonusCashPct: number; bonusArenaPointsPct: number }>();
+    for (const ut of list) {
+      if (ut.template) {
+        map.set(ut.userId, {
+          bonusScorePct: ut.template.bonusScorePct ?? 0,
+          bonusCashPct: ut.template.bonusCashPct ?? 0,
+          bonusArenaPointsPct: ut.template.bonusArenaPointsPct ?? 0,
+        });
+      }
+    }
+    return map;
   }
 
   // ==================== COMPRAR SKIN DE CARTA (SLEEVE) ====================

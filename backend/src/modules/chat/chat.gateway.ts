@@ -288,6 +288,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
             username: u.nickname,
             clanTag: u.clanTag,
             profileImage: userProfile.profileImage || null,
+            level: userProfile.level ?? 1,
           };
         } catch (error) {
           console.error(`Erro ao buscar perfil do usuário ${u.userId}:`, error);
@@ -296,6 +297,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
             username: u.nickname,
             clanTag: u.clanTag,
             profileImage: null,
+            level: 1,
           };
         }
       })
@@ -313,6 +315,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
             username: u.nickname,
             clanTag: u.clanTag,
             profileImage: userProfile.profileImage || null,
+            level: userProfile.level ?? 1,
           };
         } catch (error) {
           console.error(`Erro ao buscar perfil do usuário ${u.userId}:`, error);
@@ -321,6 +324,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
             username: u.nickname,
             clanTag: u.clanTag,
             profileImage: null,
+            level: 1,
           };
         }
       })

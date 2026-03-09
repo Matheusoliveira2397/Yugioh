@@ -15,6 +15,7 @@ import { UsersService } from '../users/users.service';
 import { RandomDuelLevelRangesService } from '../admin/random-duel-level-ranges.service';
 import { EconomyService } from '../economy/economy.service';
 import { CurrencyType, TransactionType } from '../economy/entities/transaction.entity';
+import { ShopService } from '../shop/shop.service';
 import { logger } from '../../common/utils/logger.util';
 import { CardEffectsService } from './services/card-effects.service';
 import { DuelUtilsService } from './services/duel-utils.service';
@@ -55,6 +56,7 @@ export class DuelsService implements OnModuleInit {
     private duelUtils: DuelUtilsService,
     @Inject(forwardRef(() => CardEffectHandlersService))
     private cardEffectHandlersService: CardEffectHandlersService,
+    private shopService: ShopService,
   ) {}
 
   /**
@@ -14545,6 +14547,14 @@ export class DuelsService implements OnModuleInit {
         
         await this.duelHistoryRepository.save([history1, history2]);
         logger.info(`📊 [finishDuel] Empate: ambos os jogadores receberam derrota`);
+        if (duel.origin === DuelOrigin.ARENA) {
+          try {
+            await this.shopService.consumeTalismanChargeForArenaDuel(player1Id);
+            await this.shopService.consumeTalismanChargeForArenaDuel(player2Id);
+          } catch (talismanErr: any) {
+            logger.warn(`⚠️ [finishDuel] Erro ao consumir carga do talismã (empate):`, talismanErr?.message || talismanErr);
+          }
+        }
       } else if (result === DuelResult.CANCELLED) {
         // Cancelado: salvar histórico mas não atualizar estatísticas
         const history1 = this.duelHistoryRepository.create({
@@ -14778,6 +14788,16 @@ export class DuelsService implements OnModuleInit {
             winnerHistory: winnerHistory,
             loserHistory: loserHistory
           });
+        }
+
+        // ========== CONSUMIR CARGA DO TALISMÃ (ARENA) ==========
+        if (duel.origin === DuelOrigin.ARENA) {
+          try {
+            await this.shopService.consumeTalismanChargeForArenaDuel(player1Id);
+            await this.shopService.consumeTalismanChargeForArenaDuel(player2Id);
+          } catch (talismanErr: any) {
+            logger.warn(`⚠️ [finishDuel] Erro ao consumir carga do talismã:`, talismanErr?.message || talismanErr);
+          }
         }
         
         // ========== DISTRIBUIR CASH BASEADO NA FAIXA DE NÍVEL (RANDOM DUEL) ==========

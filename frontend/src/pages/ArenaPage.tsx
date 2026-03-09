@@ -66,6 +66,7 @@ export default function ArenaPage() {
   const [levelRanges, setLevelRanges] = useState<Array<{ min: number; max: number; name: string }>>([]);
   const [lastArenaTop5, setLastArenaTop5] = useState<{ arena: { id: string; name: string; endTime: string }; rankings: Record<string, ArenaRanking[]> } | null>(null);
   const [loadingLastTop5, setLoadingLastTop5] = useState(false);
+  const [equippedTalisman, setEquippedTalisman] = useState<{ name: string; bonusScorePct: number; bonusCashPct: number; bonusArenaPointsPct: number; charges?: number } | null>(null);
 
   const fetchLastArenaTop5 = async () => {
     try {
@@ -97,6 +98,24 @@ export default function ArenaPage() {
     const interval = setInterval(fetchArenas, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!token || !user) {
+      setEquippedTalisman(null);
+      return;
+    }
+    const fetchEquippedTalisman = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/shop/talisman/equipped`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setEquippedTalisman(res.data?.name ? res.data : null);
+      } catch {
+        setEquippedTalisman(null);
+      }
+    };
+    fetchEquippedTalisman();
+  }, [token, user]);
 
   const fetchLevelRanges = async () => {
     try {
@@ -411,6 +430,23 @@ export default function ArenaPage() {
               </div>
             </div>
           </motion.div>
+
+          {equippedTalisman && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-lg p-2 sm:p-3 mb-2 sm:mb-4 bg-amber-900/30 border border-amber-500/40 flex items-center justify-center gap-2 flex-wrap"
+            >
+              <span className="text-amber-300 text-sm font-bold">✨ Talismã:</span>
+              <span className="text-white font-medium">{equippedTalisman.name}</span>
+              <span className="text-amber-200/90 text-xs">
+                (Score +{equippedTalisman.bonusScorePct}% • Cash +{equippedTalisman.bonusCashPct}% • Arena +{equippedTalisman.bonusArenaPointsPct}%)
+              </span>
+              {(equippedTalisman.charges ?? 0) >= 0 && (
+                <span className="text-amber-300 text-xs font-semibold">⚡ {equippedTalisman.charges} cargas</span>
+              )}
+            </motion.div>
+          )}
 
           {nextArena && timeUntilNextArena > 0 && (
             <motion.div

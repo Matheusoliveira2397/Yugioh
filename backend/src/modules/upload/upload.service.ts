@@ -427,7 +427,7 @@ export class UploadService {
    */
   async uploadCosmeticImage(
     file: any,
-    type: 'playmat' | 'sleeve',
+    type: 'playmat' | 'sleeve' | 'talisman',
     name: string,
   ): Promise<string> {
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
@@ -437,10 +437,12 @@ export class UploadService {
     if (file.size > 5 * 1024 * 1024) {
       throw new Error('Imagem muito grande. Tamanho máximo: 5MB.');
     }
+    const dirName = type === 'sleeve' ? 'sleeves' : type === 'talisman' ? 'talismans' : 'playmats';
+    const prefix = type === 'sleeve' ? 'sleeve' : type === 'talisman' ? 'talisman' : 'playmat';
     const fileExtension = path.extname(file.originalname);
     const sanitizedName = name.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    const fileName = `${type === 'sleeve' ? 'sleeve' : 'playmat'}_${sanitizedName}_${Date.now()}${fileExtension}`;
-    const filePath = `${type === 'sleeve' ? 'sleeves' : 'playmats'}/${fileName}`;
+    const fileName = `${prefix}_${sanitizedName}_${Date.now()}${fileExtension}`;
+    const filePath = `${dirName}/${fileName}`;
 
     if (this.supabaseStorage.isEnabled()) {
       const publicUrl = await this.supabaseStorage.upload(
@@ -453,14 +455,14 @@ export class UploadService {
       return publicUrl;
     }
 
-    const localDir = path.join(__dirname, '..', '..', 'uploads', 'cosmetics', type === 'sleeve' ? 'sleeves' : 'playmats');
+    const localDir = path.join(__dirname, '..', '..', 'uploads', 'cosmetics', dirName);
     if (!fs.existsSync(localDir)) {
       fs.mkdirSync(localDir, { recursive: true });
     }
     const localPath = path.join(localDir, fileName);
     fs.writeFileSync(localPath, file.buffer);
     console.log(`✅ Cosmético (${type}) salvo (local):`, fileName);
-    return `/uploads/cosmetics/${type === 'sleeve' ? 'sleeves' : 'playmats'}/${fileName}`;
+    return `/uploads/cosmetics/${dirName}/${fileName}`;
   }
 
   async uploadAchievementImage(file: any, achievementTitle: string): Promise<string> {

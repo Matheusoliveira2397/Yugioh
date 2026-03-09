@@ -241,9 +241,6 @@ export default function RankingPage() {
   
   // Quando mudar o tipo de ranking, aba ou season selecionada, buscar dados
   useEffect(() => {
-    if (activeTab === 'general' && rankingType === 'clan') {
-      setRankingType('duelista');
-    }
     if (rankingType === 'duelista' && activeTab === 'season' && !selectedDivision) {
       setSelectedDivision('Legendary');
     }
@@ -384,45 +381,42 @@ export default function RankingPage() {
             <span className="sm:hidden">Ranking</span>
           </h1>
           <p className="text-slate-400 text-sm md:text-lg">
-            {activeTab === 'general' 
-              ? 'Veja os melhores duelistas do jogo' 
-              : (rankingType === 'duelista' ? 'Veja os melhores duelistas do jogo' : 'Veja os melhores clãs do jogo')}
+            {rankingType === 'duelista' ? 'Veja os melhores duelistas do jogo' : 'Veja os melhores clãs do jogo'}
           </p>
         </motion.div>
 
-        {/* Tabs Duelista/Clã - Apenas para Ranking da Season */}
-        {activeTab === 'season' && (
-          <div className="flex gap-2 md:gap-4 mb-4 md:mb-6 justify-center">
-            <button
-              onClick={() => {
-                setRankingType('duelista');
-                setSelectedDivision('Legendary');
-              }}
-              className={`flex-1 sm:flex-none px-4 sm:px-8 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 text-sm sm:text-lg ${
-                rankingType === 'duelista'
-                  ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white shadow-lg shadow-purple-500/50 scale-105'
-                  : 'text-slate-400 hover:bg-white/10 hover:text-white hover:scale-105 border border-white/20'
-              }`}
-            >
-              <span className="hidden sm:inline">⚔️ Duelista</span>
-              <span className="sm:hidden">⚔️ Duelista</span>
-            </button>
-            <button
-              onClick={() => {
-                setRankingType('clan');
-                setSelectedDivision(null);
-              }}
-              className={`flex-1 sm:flex-none px-4 sm:px-8 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 text-sm sm:text-lg ${
-                rankingType === 'clan'
-                  ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white shadow-lg shadow-purple-500/50 scale-105'
-                  : 'text-slate-400 hover:bg-white/10 hover:text-white hover:scale-105 border border-white/20'
-              }`}
-            >
-              <span className="hidden sm:inline">🏰 Clã</span>
-              <span className="sm:hidden">🏰 Clã</span>
-            </button>
-          </div>
-        )}
+        {/* Tabs Duelista/Clã - Season e Geral */}
+        <div className="flex gap-2 md:gap-4 mb-4 md:mb-6 justify-center">
+          <button
+            onClick={() => {
+              setRankingType('duelista');
+              if (activeTab === 'season') setSelectedDivision('Legendary');
+              else setSelectedDivision(null);
+            }}
+            className={`flex-1 sm:flex-none px-4 sm:px-8 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 text-sm sm:text-lg ${
+              rankingType === 'duelista'
+                ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white shadow-lg shadow-purple-500/50 scale-105'
+                : 'text-slate-400 hover:bg-white/10 hover:text-white hover:scale-105 border border-white/20'
+            }`}
+          >
+            <span className="hidden sm:inline">⚔️ Duelista</span>
+            <span className="sm:hidden">⚔️ Duelista</span>
+          </button>
+          <button
+            onClick={() => {
+              setRankingType('clan');
+              setSelectedDivision(null);
+            }}
+            className={`flex-1 sm:flex-none px-4 sm:px-8 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 text-sm sm:text-lg ${
+              rankingType === 'clan'
+                ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white shadow-lg shadow-purple-500/50 scale-105'
+                : 'text-slate-400 hover:bg-white/10 hover:text-white hover:scale-105 border border-white/20'
+            }`}
+          >
+            <span className="hidden sm:inline">🏰 Clã</span>
+            <span className="sm:hidden">🏰 Clã</span>
+          </button>
+        </div>
 
         {/* Tabs Season/Geral */}
         <div className="flex gap-2 md:gap-4 mb-4 md:mb-8 justify-center">
@@ -448,10 +442,7 @@ export default function RankingPage() {
           <button
             onClick={() => {
               setActiveTab('general');
-              // No ranking geral, não há filtro por divisão - mostrar todos
-              // E sempre mostrar duelistas (não clãs)
               setSelectedDivision(null);
-              setRankingType('duelista');
             }}
             className={`flex-1 sm:flex-none px-4 sm:px-8 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 text-sm sm:text-lg ${
               activeTab === 'general'
@@ -476,11 +467,14 @@ export default function RankingPage() {
               <select
                 value={selectedSeasonId ?? ''}
                 onChange={(e) => setSelectedSeasonId(e.target.value ? e.target.value : null)}
-                className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm font-medium focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none min-w-[180px]"
+                className="bg-slate-800 border border-white/30 rounded-lg px-3 py-2 text-white text-sm font-medium focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none min-w-[180px] appearance-none cursor-pointer"
+                style={{ colorScheme: 'dark' }}
               >
-                <option value="">Season atual</option>
+                <option value="" className="bg-slate-800 text-white">
+                  Season atual
+                </option>
                 {seasons.map((s) => (
-                  <option key={s.id} value={s.id}>
+                  <option key={s.id} value={s.id} className="bg-slate-800 text-white">
                     {s.name} {s.isActive ? '(ativa)' : ''}
                   </option>
                 ))}
@@ -567,9 +561,8 @@ export default function RankingPage() {
                       {activeTab === 'season' ? 'Posição' : '#'}
                     </th>
                     <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-purple-300 font-bold text-sm lg:text-lg">Duelista</th>
-                    <th className="px-4 lg:px-6 py-3 lg:py-4 text-center text-purple-300 font-bold text-sm lg:text-lg">Divisão</th>
-                    {activeTab === 'season' && (
-                      <th className="px-4 lg:px-6 py-3 lg:py-4 text-center text-purple-300 font-bold text-sm lg:text-lg">Season</th>
+                    {activeTab === 'general' && (
+                      <th className="px-4 lg:px-6 py-3 lg:py-4 text-center text-purple-300 font-bold text-sm lg:text-lg">Divisão</th>
                     )}
                     <th className="px-4 lg:px-6 py-3 lg:py-4 text-right text-purple-300 font-bold text-sm lg:text-lg">Score</th>
                     <th className="px-4 lg:px-6 py-3 lg:py-4 text-center text-purple-300 font-bold text-sm lg:text-lg">V/D</th>
@@ -578,13 +571,13 @@ export default function RankingPage() {
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan={activeTab === 'season' ? 6 : 5} className="px-6 py-12 text-center text-slate-400 text-xl">
+                      <td colSpan={activeTab === 'season' ? 4 : 5} className="px-6 py-12 text-center text-slate-400 text-xl">
                         Carregando ranking...
                       </td>
                     </tr>
                   ) : sortedPlayers.length === 0 ? (
                     <tr>
-                      <td colSpan={activeTab === 'season' ? 6 : 5} className="px-6 py-12 text-center text-slate-400">
+                      <td colSpan={activeTab === 'season' ? 4 : 5} className="px-6 py-12 text-center text-slate-400">
                         Nenhum duelista encontrado
                       </td>
                     </tr>
@@ -641,30 +634,27 @@ export default function RankingPage() {
                             </div>
                           </Link>
                         </td>
-                        <td className="px-4 lg:px-6 py-3 lg:py-5 text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            {(() => {
-                              const divisionImage = getDivisionImage(player.division);
-                              const divisionLabel = getDivisionDisplayName(player.division || 'Bronze');
-                              return divisionImage ? (
-                                <img 
-                                  src={divisionImage}
-                                  alt={divisionLabel}
-                                  className="w-6 h-6 lg:w-8 lg:h-8 object-contain"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = 'none';
-                                  }}
-                                />
-                              ) : null;
-                            })()}
-                            <span className={`font-bold text-sm lg:text-lg ${getDivisionColor(player.division)}`}>
-                              {getDivisionDisplayName(player.division || 'Bronze')}
-                            </span>
-                          </div>
-                        </td>
-                        {activeTab === 'season' && (
-                          <td className="px-4 lg:px-6 py-3 lg:py-5 text-center text-slate-300 text-sm lg:text-base">
-                            {player.seasonName ?? 'Season atual'}
+                        {activeTab === 'general' && (
+                          <td className="px-4 lg:px-6 py-3 lg:py-5 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              {(() => {
+                                const divisionImage = getDivisionImage(player.division);
+                                const divisionLabel = getDivisionDisplayName(player.division || 'Bronze');
+                                return divisionImage ? (
+                                  <img 
+                                    src={divisionImage}
+                                    alt={divisionLabel}
+                                    className="w-6 h-6 lg:w-8 lg:h-8 object-contain"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = 'none';
+                                    }}
+                                  />
+                                ) : null;
+                              })()}
+                              <span className={`font-bold text-sm lg:text-lg ${getDivisionColor(player.division)}`}>
+                                {getDivisionDisplayName(player.division || 'Bronze')}
+                              </span>
+                            </div>
                           </td>
                         )}
                         <td className="px-4 lg:px-6 py-3 lg:py-5 text-right">
@@ -755,7 +745,7 @@ export default function RankingPage() {
                         </div>
                       </Link>
                     </div>
-                    <div className={`grid gap-2 text-xs ${activeTab === 'season' ? 'grid-cols-2' : 'grid-cols-2'}`}>
+                    <div className="grid gap-2 text-xs grid-cols-2">
                       <div>
                         <span className="text-slate-400">Score: </span>
                         <span className="text-yellow-400 font-bold">
@@ -770,30 +760,26 @@ export default function RankingPage() {
                         <span className="text-slate-400">/</span>
                         <span className="text-red-400 font-bold">{player.losses || 0}</span>
                       </div>
-                      <div>
-                        <span className="text-slate-400">Divisão: </span>
-                        <span className={`font-bold ${getDivisionColor(player.division)} flex items-center gap-1`}>
-                          {(() => {
-                            const divisionImage = getDivisionImage(player.division);
-                            const divisionLabel = getDivisionDisplayName(player.division || 'Bronze');
-                            return divisionImage ? (
-                              <img 
-                                src={divisionImage}
-                                alt={divisionLabel}
-                                className="w-5 h-5 object-contain"
-                                onError={(e) => {
-                                  e.currentTarget.style.display = 'none';
-                                }}
-                              />
-                            ) : null;
-                          })()}
-                          {getDivisionDisplayName(player.division || 'Bronze')}
-                        </span>
-                      </div>
-                      {activeTab === 'season' && (
+                      {activeTab === 'general' && (
                         <div>
-                          <span className="text-slate-400">Season: </span>
-                          <span className="text-slate-300 font-medium">{player.seasonName ?? 'Season atual'}</span>
+                          <span className="text-slate-400">Divisão: </span>
+                          <span className={`font-bold ${getDivisionColor(player.division)} flex items-center gap-1`}>
+                            {(() => {
+                              const divisionImage = getDivisionImage(player.division);
+                              const divisionLabel = getDivisionDisplayName(player.division || 'Bronze');
+                              return divisionImage ? (
+                                <img 
+                                  src={divisionImage}
+                                  alt={divisionLabel}
+                                  className="w-5 h-5 object-contain"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                              ) : null;
+                            })()}
+                            {getDivisionDisplayName(player.division || 'Bronze')}
+                          </span>
                         </div>
                       )}
                     </div>

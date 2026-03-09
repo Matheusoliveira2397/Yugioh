@@ -39,10 +39,18 @@ import { UsersModule } from '../users/users.module';
 import { RandomDuelLevelRangesService } from './random-duel-level-ranges.service';
 import { PublicStatsService } from './public-stats.service';
 import { Card } from '../cards/entities/card.entity';
+import { ShopModule } from '../shop/shop.module';
+import { PromotionsModule } from '../promotions/promotions.module';
+import { CardsModule } from '../cards/cards.module';
+import { CosmeticsModule } from '../cosmetics/cosmetics.module';
 
 @Module({
   imports: [
     AuthModule,
+    ShopModule,
+    CosmeticsModule,
+    PromotionsModule,
+    CardsModule,
     TypeOrmModule.forFeature([
       User,
       Card,

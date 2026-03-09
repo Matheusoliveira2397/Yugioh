@@ -8,11 +8,20 @@ import { UpdateCardDto } from './dto/update-card.dto';
 import { AddEffectDto } from './dto/add-effect.dto';
 import { YugiohApiService } from './services/yugioh-api.service';
 import { UploadService } from '../upload/upload.service';
+import { PromotionsService } from '../promotions/promotions.service';
+
+export type CardForSale = Card & {
+  promotionDiscountPercent?: number;
+  promotionEndsAt?: Date;
+  promotionLabel?: string | null;
+  effectivePriceCredits?: number;
+  effectivePriceCash?: number;
+};
 
 @Injectable()
 export class CardsService implements OnModuleInit {
   // Cache simples em memória para cartas da loja
-  private shopCardsCache: { data: Card[]; timestamp: number } | null = null;
+  private shopCardsCache: { data: CardForSale[]; timestamp: number } | null = null;
   private readonly CACHE_TTL = 60000; // 1 minuto
   private renameImagesExecuted = false;
 
@@ -23,6 +32,7 @@ export class CardsService implements OnModuleInit {
     private shopService: ShopService,
     private yugiohApiService: YugiohApiService,
     private uploadService: UploadService,
+    private promotionsService: PromotionsService,
   ) {}
 
   async onModuleInit() {
@@ -914,7 +924,7 @@ export class CardsService implements OnModuleInit {
     });
   }
 
-  async getCardsForSale(): Promise<Card[]> {
+  async getCardsForSale(): Promise<CardForSale[]> {
     // Verificar cache
     const now = Date.now();
     if (this.shopCardsCache && (now - this.shopCardsCache.timestamp) < this.CACHE_TTL) {
@@ -962,12 +972,30 @@ export class CardsService implements OnModuleInit {
         )
       ]);
 
-      // Atualizar cache
-      this.shopCardsCache = { data: cards, timestamp: now };
-      return cards;
+      const cardIds = cards.map((c) => c.id);
+      const promotionsMap = await this.promotionsService.findActiveForCardIds(cardIds);
+
+      const result: CardForSale[] = cards.map((card) => {
+        const promo = promotionsMap.get(card.id);
+        if (!promo) {
+          return { ...card } as CardForSale;
+        }
+        const credits = card.priceCredits ?? 0;
+        const cash = Number(card.priceCash) || 0;
+        return {
+          ...card,
+          promotionDiscountPercent: promo.discountPercent,
+          promotionEndsAt: promo.endsAt,
+          promotionLabel: promo.label,
+          effectivePriceCredits: this.promotionsService.getEffectivePrice(credits, promo.discountPercent),
+          effectivePriceCash: this.promotionsService.getEffectivePrice(cash, promo.discountPercent),
+        } as CardForSale;
+      });
+
+      this.shopCardsCache = { data: result, timestamp: now };
+      return result;
     } catch (error) {
       console.error(`[getCardsForSale] Erro ou timeout:`, error);
-      // Retornar cache antigo se disponível, senão array vazio
       if (this.shopCardsCache) {
         console.warn(`[getCardsForSale] Retornando cache antigo devido a erro`);
         return this.shopCardsCache.data;

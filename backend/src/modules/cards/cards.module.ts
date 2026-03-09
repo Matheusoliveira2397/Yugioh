@@ -5,6 +5,7 @@ import { CardsController } from './cards.controller';
 import { Card } from './entities/card.entity';
 import { UploadModule } from '../upload/upload.module';
 import { ShopModule } from '../shop/shop.module';
+import { PromotionsModule } from '../promotions/promotions.module';
 import { CardsDbMigrationService } from './cards-db-migration.service';
 import { YugiohApiService } from './services/yugioh-api.service';
 
@@ -12,6 +13,7 @@ import { YugiohApiService } from './services/yugioh-api.service';
   imports: [
     TypeOrmModule.forFeature([Card]),
     UploadModule,
+    PromotionsModule,
     forwardRef(() => ShopModule),
   ],
   controllers: [CardsController],

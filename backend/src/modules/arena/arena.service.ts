@@ -367,6 +367,8 @@ export class ArenaService implements OnModuleInit {
       const playerMap = new Map(players.map(p => [p.id, p]));
       const inRange = (level: number) => level >= min && level <= max;
 
+      const talismanBonusMap = await this.shopService.getEquippedTalismansForUsers(Array.from(playerIds));
+
       const playerScores: Map<number, { wins: number; losses: number; score: number; user: User | null }> = new Map();
 
       for (const duel of duels) {
@@ -378,23 +380,28 @@ export class ArenaService implements OnModuleInit {
         const l2 = p2.level ?? 1;
         if (!inRange(l1) || !inRange(l2)) continue;
 
+        const p1Bonus = talismanBonusMap.get(p1.id)?.bonusArenaPointsPct ?? 0;
+        const p2Bonus = talismanBonusMap.get(p2.id)?.bonusArenaPointsPct ?? 0;
+        const p1Multiplier = 1 + p1Bonus / 100;
+        const p2Multiplier = 1 + p2Bonus / 100;
+
         if (duel.result === DuelResult.PLAYER1_WIN) {
           const p1Data = playerScores.get(p1.id) || { wins: 0, losses: 0, score: 0, user: p1 };
           p1Data.wins++;
-          p1Data.score += ArenaService.ARENA_WIN_POINTS;
+          p1Data.score += Math.round(ArenaService.ARENA_WIN_POINTS * p1Multiplier);
           playerScores.set(p1.id, p1Data);
           const p2Data = playerScores.get(p2.id) || { wins: 0, losses: 0, score: 0, user: p2 };
           p2Data.losses++;
-          p2Data.score += ArenaService.ARENA_LOSS_POINTS;
+          p2Data.score += Math.round(ArenaService.ARENA_LOSS_POINTS * p2Multiplier);
           playerScores.set(p2.id, p2Data);
         } else if (duel.result === DuelResult.PLAYER2_WIN) {
           const p2Data = playerScores.get(p2.id) || { wins: 0, losses: 0, score: 0, user: p2 };
           p2Data.wins++;
-          p2Data.score += ArenaService.ARENA_WIN_POINTS;
+          p2Data.score += Math.round(ArenaService.ARENA_WIN_POINTS * p2Multiplier);
           playerScores.set(p2.id, p2Data);
           const p1Data = playerScores.get(p1.id) || { wins: 0, losses: 0, score: 0, user: p1 };
           p1Data.losses++;
-          p1Data.score += ArenaService.ARENA_LOSS_POINTS;
+          p1Data.score += Math.round(ArenaService.ARENA_LOSS_POINTS * p1Multiplier);
           playerScores.set(p1.id, p1Data);
         }
       }
@@ -676,9 +683,13 @@ export class ArenaService implements OnModuleInit {
             const user = await this.userRepository.findOne({ where: { id: player.userId } });
             if (!user) continue;
 
-            const cashToAdd = reward.cash || 0;
+            const talisman = await this.shopService.getEquippedTalisman(player.userId);
+            const cashMult = 1 + (talisman?.bonusCashPct ?? 0) / 100;
+            const scoreMult = 1 + (talisman?.bonusScorePct ?? 0) / 100;
+
+            const cashToAdd = Math.floor((reward.cash || 0) * cashMult);
             const creditsToAdd = reward.credits || 0;
-            const totalScoreToAdd = (reward.score || 0) + (reward.additionalScore || 0);
+            const totalScoreToAdd = Math.floor(((reward.score || 0) + (reward.additionalScore || 0)) * scoreMult);
             const cardId = reward.cardId;
 
             const hasAnyReward = cashToAdd > 0 || creditsToAdd > 0 || totalScoreToAdd > 0 || (cardId && cardId.trim() !== '');

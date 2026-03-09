@@ -1,4 +1,4 @@
-import { Controller, Put, Param, UseGuards, Get, Query, Delete, Post, Body, UseInterceptors, UploadedFile, ParseIntPipe, Request } from '@nestjs/common';
+import { Controller, Put, Param, UseGuards, Get, Query, Delete, Post, Body, UseInterceptors, UploadedFile, ParseIntPipe, Request, ForbiddenException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AdminService } from './admin.service';
 import { AuthService } from '../auth/auth.service';
@@ -9,6 +9,9 @@ import { AchievementType } from '../users/entities/achievement.entity';
 import { UploadService } from '../upload/upload.service';
 import { RandomDuelLevelRangesService } from './random-duel-level-ranges.service';
 import { DuelsService } from '../duels/duels.service';
+import { ShopService } from '../shop/shop.service';
+import { PromotionsService } from '../promotions/promotions.service';
+import { CardsService } from '../cards/cards.service';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -20,6 +23,9 @@ export class AdminController {
     private uploadService: UploadService,
     private randomDuelLevelRangesService: RandomDuelLevelRangesService,
     private duelsService: DuelsService,
+    private shopService: ShopService,
+    private promotionsService: PromotionsService,
+    private cardsService: CardsService,
   ) {}
 
   // Gestão de Usuários
@@ -116,6 +122,21 @@ export class AdminController {
       throw new Error('ID inválido');
     }
     return this.adminService.demoteToPlayer(userId);
+  }
+
+  /** Atualizar abas permitidas de um admin. Apenas MASTER. */
+  @Put('users/:id/allowed-tabs')
+  updateAdminAllowedTabs(
+    @Request() req: { user?: { id: number; role?: string } },
+    @Param('id') id: string,
+    @Body() body: { allowedTabs: string[] },
+  ) {
+    if (req.user?.role !== 'MASTER') {
+      throw new ForbiddenException('Apenas conta Master pode alterar as abas permitidas de um admin.');
+    }
+    const userId = parseInt(id, 10);
+    if (isNaN(userId)) throw new Error('ID inválido');
+    return this.adminService.updateAdminAllowedTabs(userId, body.allowedTabs ?? []);
   }
 
   // Editar Recursos do Usuário
@@ -413,5 +434,104 @@ export class AdminController {
   @Post('create-user')
   createUser(@Body() body: { username: string; nickname: string; email: string; password: string }) {
     return this.authService.createUserByAdmin(body);
+  }
+
+  // ==================== TALISMÃS ====================
+
+  @Get('talismans')
+  getAllTalismans() {
+    return this.shopService.getTalismanTemplatesForAdmin();
+  }
+
+  @Post('talismans')
+  createTalisman(@Body() body: {
+    name: string;
+    description?: string | null;
+    image?: string | null;
+    bonusScorePct?: number;
+    bonusCashPct?: number;
+    bonusArenaPointsPct?: number;
+    priceCredits?: number | null;
+    priceCash?: number | null;
+    initialCharges?: number;
+    isActive?: boolean;
+    isForSale?: boolean;
+  }) {
+    return this.shopService.createTalismanTemplate(body);
+  }
+
+  @Put('talismans/:id')
+  updateTalisman(
+    @Param('id') id: string,
+    @Body() body: {
+      name?: string;
+      description?: string | null;
+      image?: string | null;
+      bonusScorePct?: number;
+      bonusCashPct?: number;
+      bonusArenaPointsPct?: number;
+      priceCredits?: number | null;
+      priceCash?: number | null;
+      initialCharges?: number;
+      isActive?: boolean;
+      isForSale?: boolean;
+    },
+  ) {
+    return this.shopService.updateTalismanTemplate(id, body);
+  }
+
+  @Delete('talismans/:id')
+  deleteTalisman(@Param('id') id: string) {
+    return this.shopService.deleteTalismanTemplate(id);
+  }
+
+  // ==================== PROMOÇÕES (CARTAS) ====================
+
+  @Get('promotions')
+  getAllPromotions() {
+    return this.promotionsService.findAll();
+  }
+
+  @Get('promotions/:id')
+  getPromotion(@Param('id') id: string) {
+    return this.promotionsService.findOne(id);
+  }
+
+  @Post('promotions')
+  async createPromotion(
+    @Body()
+    body: {
+      cardId: string;
+      discountPercent: number;
+      startsAt: string;
+      endsAt: string;
+      label?: string | null;
+    },
+  ) {
+    const result = await this.promotionsService.create(body);
+    this.cardsService.invalidateShopCache();
+    return result;
+  }
+
+  @Put('promotions/:id')
+  async updatePromotion(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      discountPercent?: number;
+      startsAt?: string;
+      endsAt?: string;
+      label?: string | null;
+    },
+  ) {
+    const result = await this.promotionsService.update(id, body);
+    this.cardsService.invalidateShopCache();
+    return result;
+  }
+
+  @Delete('promotions/:id')
+  async deletePromotion(@Param('id') id: string) {
+    await this.promotionsService.remove(id);
+    this.cardsService.invalidateShopCache();
   }
 }

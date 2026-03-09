@@ -8,12 +8,15 @@ const STORAGE_KEY = 'admin-panel-cards-order';
 
 const defaultCards: { id: string; label: string; icon: string; description: string; route: string; bg: string; iconBg: string; accent: string }[] = [
   { id: 'create-account', label: 'Criar conta', icon: '➕', description: 'Criar conta normal ou admin', route: '/admin/create-account', bg: 'bg-emerald-900/40', iconBg: 'bg-emerald-500/30', accent: 'border-l-emerald-500' },
+  { id: 'admin-control', label: 'Controle de Admins', icon: '🛡️', description: 'Definir quais abas cada admin pode ver', route: '/admin/admin-control', bg: 'bg-slate-800/90', iconBg: 'bg-slate-500/30', accent: 'border-l-slate-400' },
   { id: 'site-tabs', label: 'Gerenciar Abas', icon: '🔧', description: 'Ativar/desativar abas do site', route: '/admin/site-tabs', bg: 'bg-slate-800/90', iconBg: 'bg-amber-500/20', accent: 'border-l-amber-500' },
   { id: 'cards', label: 'Cartas', icon: '🎴', description: 'Gerenciar cartas do jogo', route: '/admin/cartas', bg: 'bg-purple-900/40', iconBg: 'bg-purple-500/30', accent: 'border-l-purple-500' },
   { id: 'initial-decks', label: 'Decks Iniciais', icon: '📚', description: 'Decks iniciais para novos jogadores', route: '/admin/initial-decks', bg: 'bg-violet-900/40', iconBg: 'bg-violet-500/30', accent: 'border-l-purple-500' },
   { id: 'news', label: 'Notícias', icon: '📢', description: 'Notícias e avisos do site', route: '/admin/news', bg: 'bg-fuchsia-900/30', iconBg: 'bg-fuchsia-500/30', accent: 'border-l-purple-500' },
   { id: 'playmats', label: 'Playmats', icon: '🎨', description: 'Tapetes de duelo', route: '/admin/playmats', bg: 'bg-cyan-900/40', iconBg: 'bg-cyan-500/30', accent: 'border-l-cyan-500' },
   { id: 'sleeves', label: 'Skins', icon: '🎭', description: 'Skins de cartas', route: '/admin/sleeves', bg: 'bg-teal-900/40', iconBg: 'bg-teal-500/30', accent: 'border-l-cyan-500' },
+  { id: 'talismans', label: 'Talismãs', icon: '✨', description: 'Criar e gerenciar talismãs da loja', route: '/admin/talismans', bg: 'bg-amber-900/40', iconBg: 'bg-amber-500/30', accent: 'border-l-amber-500' },
+  { id: 'promotions', label: 'Promoções', icon: '🏷️', description: 'Promoções e descontos nas cartas da loja', route: '/admin/promotions', bg: 'bg-rose-900/40', iconBg: 'bg-rose-500/30', accent: 'border-l-rose-500' },
   { id: 'players', label: 'Jogadores', icon: '👤', description: 'Usuários e perfis', route: '/admin/players', bg: 'bg-blue-900/40', iconBg: 'bg-blue-500/30', accent: 'border-l-blue-500' },
   { id: 'arena', label: 'Arena', icon: '🏟️', description: 'Arenas e agendamentos', route: '/admin/arena', bg: 'bg-indigo-900/40', iconBg: 'bg-indigo-500/30', accent: 'border-l-blue-500' },
   { id: 'active-duels', label: 'Duelos Ativos', icon: '⚔️', description: 'Listar e excluir duelos em andamento', route: '/admin/active-duels', bg: 'bg-sky-900/40', iconBg: 'bg-sky-500/30', accent: 'border-l-blue-500' },
@@ -69,7 +72,7 @@ export default function AdminPanel() {
     if (user.role === 'MASTER') return orderedCards;
     const allowed = user.adminAllowedTabs;
     if (allowed == null || allowed === undefined) return orderedCards;
-    return orderedCards.filter((c) => allowed.includes(c.id));
+    return orderedCards.filter((c) => c.id !== 'admin-control' && allowed.includes(c.id));
   }, [user, orderedCards]);
 
   const handleDragStart = (index: number) => (e: React.DragEvent) => {

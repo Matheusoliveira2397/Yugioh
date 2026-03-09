@@ -41,10 +41,12 @@ import { SeasonsModule } from '../seasons/seasons.module';
 import { LevelsModule } from '../levels/levels.module';
 import { AdminModule } from '../admin/admin.module';
 import { EconomyModule } from '../economy/economy.module';
+import { ShopModule } from '../shop/shop.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Duel, DuelLog, DuelHistory, User]),
+    ShopModule,
     DecksModule,
     forwardRef(() => ArenaModule),
     forwardRef(() => GroupsModule),

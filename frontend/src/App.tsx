@@ -29,6 +29,9 @@ import AdminPlayersPanel from './pages/AdminPlayersPanel';
 import AdminNewsPanel from './pages/AdminNewsPanel';
 import AdminPlaymatsPanel from './pages/AdminPlaymatsPanel';
 import AdminSleevesPanel from './pages/AdminSleevesPanel';
+import AdminTalismansPanel from './pages/AdminTalismansPanel';
+import AdminPromotionsPanel from './pages/AdminPromotionsPanel';
+import AdminControlPanel from './pages/AdminControlPanel';
 import AdminInitialDecksPanel from './pages/AdminInitialDecksPanel';
 import AdminTournamentsPanel from './pages/AdminTournamentsPanel';
 import AdminArenaPanel from './pages/AdminArenaPanel';
@@ -418,6 +421,45 @@ function App() {
             isAuthenticated ? (
               <Layout>
                 <AdminSleevesPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/talismans"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminTalismansPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/promotions"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminPromotionsPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/admin-control"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminControlPanel />
               </Layout>
             ) : (
               <Navigate to="/login" />

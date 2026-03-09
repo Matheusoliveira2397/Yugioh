@@ -1,4 +1,4 @@
-import { Injectable, Inject, forwardRef, OnModuleInit, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Inject, forwardRef, OnModuleInit, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not, IsNull, In, MoreThan, LessThan } from 'typeorm';
 import { User, UserRole } from '../users/entities/user.entity';
@@ -25,6 +25,8 @@ import { Division } from './entities/division.entity';
 import { SocialMedia } from './entities/social-media.entity';
 import { NewAccountSettingsService } from '../new-account-settings/new-account-settings.service';
 import { InitialDecksService } from '../initial-decks/initial-decks.service';
+import { CosmeticsService } from '../cosmetics/cosmetics.service';
+import { UsersService } from '../users/users.service';
 import { DuelsGateway } from '../duels/duels.gateway';
 import { ChatGateway } from '../chat/chat.gateway';
 import { FriendsGateway } from '../friends/friends.gateway';
@@ -83,6 +85,8 @@ export class AdminService implements OnModuleInit {
     private redisService: RedisService,
     @Inject(forwardRef(() => InitialDecksService))
     private initialDecksService: InitialDecksService,
+    private cosmeticsService: CosmeticsService,
+    private usersService: UsersService,
     @Inject(forwardRef(() => DuelsGateway))
     private duelsGateway: DuelsGateway,
     @Inject(forwardRef(() => ChatGateway))
@@ -293,6 +297,33 @@ export class AdminService implements OnModuleInit {
   }
 
   /**
+   * Atualiza as abas permitidas de um admin. Apenas MASTER pode executar.
+   */
+  async updateAdminAllowedTabs(
+    targetUserId: number,
+    allowedTabs: string[],
+  ): Promise<{ id: number; username: string; adminAllowedTabs: string[] | null }> {
+    const user = await this.usersRepository.findOne({
+      where: { id: targetUserId },
+      select: ['id', 'username', 'role', 'adminAllowedTabs'],
+    });
+    if (!user) {
+      throw new NotFoundException('Usuário não encontrado');
+    }
+    if (user.role !== UserRole.ADMIN) {
+      throw new BadRequestException('Só é possível definir abas permitidas para usuários com role ADMIN.');
+    }
+    const tabs = Array.isArray(allowedTabs) ? allowedTabs : [];
+    user.adminAllowedTabs = tabs.length > 0 ? tabs : null;
+    await this.usersRepository.save(user);
+    return {
+      id: user.id,
+      username: user.username,
+      adminAllowedTabs: user.adminAllowedTabs,
+    };
+  }
+
+  /**
    * Cria uma conta ADMIN pelo Master. Não exige email; login/senha/nick e abas permitidas.
    */
   async createAdminByMaster(
@@ -373,6 +404,47 @@ export class AdminService implements OnModuleInit {
       isBanned: false,
     });
     const saved = await this.usersRepository.save(user);
+
+    // Aplicar skin e playmat padrão (mesmo que contas normais)
+    const playmatId = newAccountSettings.defaultPlaymatId?.trim() || null;
+    const skinId = newAccountSettings.defaultSkinId?.trim() || null;
+    const cosmeticsUpdate: { equippedPlaymatId?: string; equippedPlaymatImage?: string; equippedSkinId?: string; equippedSkinImage?: string } = {};
+    if (playmatId) {
+      try {
+        const playmat = await this.cosmeticsService.findOnePlaymat(playmatId);
+        if (playmat?.image) {
+          cosmeticsUpdate.equippedPlaymatId = playmat.id;
+          cosmeticsUpdate.equippedPlaymatImage = playmat.image;
+        }
+      } catch (err: any) {
+        console.warn(`[AdminService] Playmat padrão não aplicado ao admin (ID ${playmatId}):`, err?.message || err);
+      }
+    }
+    if (skinId) {
+      try {
+        const sleeve = await this.cosmeticsService.findOneSleeve(skinId);
+        if (sleeve?.image) {
+          cosmeticsUpdate.equippedSkinId = sleeve.id;
+          cosmeticsUpdate.equippedSkinImage = sleeve.image;
+        }
+      } catch (err: any) {
+        console.warn(`[AdminService] Skin padrão não aplicada ao admin (ID ${skinId}):`, err?.message || err);
+      }
+    }
+    if (Object.keys(cosmeticsUpdate).length > 0) {
+      await this.usersService.updateCosmetics(saved.id, cosmeticsUpdate);
+    }
+
+    // Atribuir deck inicial (mesmo que contas normais)
+    try {
+      const deckIds = (newAccountSettings.availableInitialDeckIds && newAccountSettings.availableInitialDeckIds.length > 0)
+        ? newAccountSettings.availableInitialDeckIds
+        : undefined;
+      await this.initialDecksService.assignDeckToUser(saved.id, deckIds);
+    } catch (err: any) {
+      console.warn(`[AdminService] Deck inicial não aplicado ao admin:`, err?.message || err);
+    }
+
     return { id: saved.id, username: saved.username, nickname: saved.nickname };
   }
 
@@ -380,7 +452,8 @@ export class AdminService implements OnModuleInit {
   async getAllUsers(page: number = 1, limit: number = 50) {
     const skip = (page - 1) * limit;
     const selectFields = [
-      'id', 'username', 'nickname', 'email', 'role', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason',
+      'id', 'username', 'nickname', 'email', 'role', 'adminAllowedTabs',
+      'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason',
       'credits', 'cash', 'profileImage', 'isOnline', 'lastIpAddress',
       'isBanned', 'banReason', 'createdAt', 'lastLogin', 'level', 'clanTag', 'totalScore',
     ];

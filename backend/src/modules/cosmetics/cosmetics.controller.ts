@@ -46,6 +46,17 @@ export class CosmeticsController {
     return { imageUrl };
   }
 
+  @Post('admin/upload-talisman')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseInterceptors(FileInterceptor('image', { storage: memoryStorage() }))
+  async uploadTalismanImage(@UploadedFile() file: any, @Body('name') name?: string) {
+    if (!file?.buffer) {
+      throw new BadRequestException('Envie um arquivo de imagem (campo "image")');
+    }
+    const imageUrl = await this.uploadService.uploadCosmeticImage(file, 'talisman', name || 'talisman');
+    return { imageUrl };
+  }
+
   // ==================== PLAYMATS - ADMIN (DEVEM VIR ANTES DAS ROTAS PÚBLICAS) ====================
   @Post('admin/playmats')
   @UseGuards(JwtAuthGuard, AdminGuard)

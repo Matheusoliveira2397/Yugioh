@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
 import api from '../api/axios';
 import CardImage from '../components/CardImage';
+import LatestCardsMarquee, { type MarqueeCard } from '../components/LatestCardsMarquee';
 import { useCosmeticsStore } from '../stores/cosmeticsStore';
 
 interface Card {
@@ -20,6 +21,12 @@ interface Card {
   level?: number;
   priceCredits?: number;
   priceCash?: number;
+  /** Preço com desconto de promoção (quando ativa) */
+  effectivePriceCredits?: number;
+  effectivePriceCash?: number;
+  promotionDiscountPercent?: number;
+  promotionEndsAt?: string;
+  promotionLabel?: string | null;
   isForSale: boolean;
   stock?: number;
   rating?: number;
@@ -48,22 +55,38 @@ interface Sleeve {
 type SortOption = 'name' | 'priceAsc' | 'priceDesc';
 type CardTypeFilter = 'Monster' | 'Spell' | 'Trap';
 type MonsterTypeFilter = 'Normal' | 'Effect' | 'Fusion';
-type ShopCategory = 'cards' | 'playmats' | 'sleeves';
+interface TalismanTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  image: string | null;
+  bonusScorePct: number;
+  bonusCashPct: number;
+  bonusArenaPointsPct: number;
+  priceCredits: number | null;
+  priceCash: number | null;
+  initialCharges?: number;
+  isActive: boolean;
+  isForSale: boolean;
+}
+type ShopCategory = 'cards' | 'playmats' | 'sleeves' | 'talismans';
 
 export default function ShopPage() {
   const { user } = useAuthStore();
   const [mode, setMode] = useState<'buy' | 'sell'>('buy');
-  const [category, setCategory] = useState<ShopCategory>('cards');
+  /** null = tela inicial da loja (escolher categoria); senão mostra a categoria selecionada */
+  const [category, setCategory] = useState<ShopCategory | null>(null);
   const [cards, setCards] = useState<Card[]>([]);
   const [playmats, setPlaymats] = useState<Playmat[]>([]);
   const [sleeves, setSleeves] = useState<Sleeve[]>([]);
+  const [talismans, setTalismans] = useState<TalismanTemplate[]>([]);
   const [inventory, setInventory] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sellingCardId, setSellingCardId] = useState<string | null>(null);
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [showPurchaseConfirm, setShowPurchaseConfirm] = useState(false);
-  const [purchaseItem, setPurchaseItem] = useState<{ item: Card | Playmat | Sleeve; method: 'credits' | 'cash' } | null>(null);
+  const [purchaseItem, setPurchaseItem] = useState<{ item: Card | Playmat | Sleeve | TalismanTemplate; method: 'credits' | 'cash' } | null>(null);
   const [purchaseQuantity, setPurchaseQuantity] = useState(1);
   const [sellModal, setSellModal] = useState<{ userCard: any; quantity: number } | null>(null);
   const {
@@ -86,6 +109,12 @@ export default function ShopPage() {
 
   // Estado dos dropdowns
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+
+  // Ao entrar na loja, mostrar sempre a aba/tela de destaque
+  useEffect(() => {
+    setCategory(null);
+    setMode('buy');
+  }, []);
 
   // Buscar cartas da loja
   useEffect(() => {
@@ -134,7 +163,7 @@ export default function ShopPage() {
       }
     };
 
-    if (mode === 'buy' && category === 'cards') {
+    if (mode === 'buy' && (category === null || category === 'cards')) {
       fetchCards();
     }
     
@@ -238,10 +267,29 @@ export default function ShopPage() {
       }
     };
 
-    if (category === 'playmats' && mode === 'buy') {
-      fetchPlaymats();
-    } else if (category === 'sleeves' && mode === 'buy') {
-      fetchSleeves();
+    const fetchTalismans = async () => {
+      try {
+        setLoading(true);
+        const response = await api.get('/shop/talismans');
+        if (!cancelled) {
+          setTalismans(Array.isArray(response.data) ? response.data : []);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar talismãs:', error);
+        if (!cancelled) {
+          setTalismans([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    if (mode === 'buy') {
+      if (category === null || category === 'playmats') fetchPlaymats();
+      if (category === null || category === 'sleeves') fetchSleeves();
+      if (category === null || category === 'talismans') fetchTalismans();
     }
     
     return () => {
@@ -455,10 +503,15 @@ export default function ShopPage() {
     if (category === 'cards' && mode === 'sell') {
       return filteredAndSortedSellList;
     }
+    if (mode === 'sell' && category === 'talismans') {
+      return []; // venda de talismãs não disponível
+    }
     if (category === 'cards') {
       return filteredAndSortedCards;
     } else if (category === 'playmats') {
       return playmats;
+    } else if (category === 'talismans') {
+      return talismans;
     } else {
       return sleeves;
     }
@@ -541,7 +594,7 @@ export default function ShopPage() {
   };
 
   const handlePurchaseClick = (
-    item: Card | Playmat | Sleeve,
+    item: Card | Playmat | Sleeve | TalismanTemplate,
     paymentMethod: 'credits' | 'cash'
   ) => {
     if (!user) {
@@ -549,9 +602,9 @@ export default function ShopPage() {
       return;
     }
 
-    const priceCredits = item.priceCredits || 0;
-    const priceCash = item.priceCash || 0;
-    const price = paymentMethod === 'credits' ? priceCredits : priceCash;
+    const priceCredits = (item as Card).effectivePriceCredits ?? item.priceCredits ?? 0;
+    const priceCash = (item as Card).effectivePriceCash ?? item.priceCash ?? 0;
+    const price = paymentMethod === 'credits' ? priceCredits : (typeof priceCash === 'number' ? priceCash : Number(priceCash) || 0);
 
     if (price <= 0) {
       alert(`Esta opção de pagamento não está disponível para este item.`);
@@ -567,10 +620,11 @@ export default function ShopPage() {
     if (!purchaseItem || !user) return;
 
     const { item, method: paymentMethod } = purchaseItem;
-    const priceCredits = item.priceCredits || 0;
-    const priceCash = item.priceCash || 0;
+    const priceCredits = (item as Card).effectivePriceCredits ?? item.priceCredits ?? 0;
+    const priceCash = (item as Card).effectivePriceCash ?? item.priceCash ?? 0;
+    const cashNum = typeof priceCash === 'number' ? priceCash : Number(priceCash) || 0;
     const qty = category === 'cards' ? Math.min(99, Math.max(1, purchaseQuantity)) : 1;
-    const price = (paymentMethod === 'credits' ? priceCredits : priceCash) * qty;
+    const price = (paymentMethod === 'credits' ? priceCredits : cashNum) * qty;
 
     try {
       setLoading(true);
@@ -668,6 +722,28 @@ export default function ShopPage() {
           image: (item as Sleeve).image,
         });
         alert('✅ Skin de carta adquirida e adicionada ao seu inventário de cosméticos!');
+      } else if (category === 'talismans') {
+        const hasBalance =
+          paymentMethod === 'credits'
+            ? (user.credits || 0) >= price
+            : (user.cash || 0) >= price;
+        if (!hasBalance) {
+          const current = paymentMethod === 'credits' ? user.credits || 0 : user.cash || 0;
+          alert(`${paymentMethod === 'credits' ? 'Créditos' : 'Cash'} insuficientes! Você tem ${current} mas precisa de ${price}`);
+          setPurchaseItem(null);
+          return;
+        }
+        const response = await api.post('/shop/purchase-talisman', {
+          talismanTemplateId: (item as TalismanTemplate).id,
+          paymentMethod,
+        });
+        const updatedUser = {
+          ...user,
+          credits: response.data.remainingBalance.credits,
+          cash: response.data.remainingBalance.cash,
+        };
+        useAuthStore.getState().setUser(updatedUser);
+        alert('✅ Talismã adquirido! Equipe-o no inventário para ganhar bônus de Score, Cash e Arena Points na Arena.');
       }
       
       setPurchaseItem(null);
@@ -703,6 +779,29 @@ export default function ShopPage() {
     setCurrentPage(1);
   }, [category]);
 
+  // Novos itens no formato do carrossel (para a seção "Novos Itens Adicionados")
+  const newItemsMarqueeCards: MarqueeCard[] = useMemo(() => {
+    return newItems.map((c) => ({
+      id: c.id,
+      name: c.name,
+      cardImage: c.cardImage,
+      type: c.type,
+      rarity: c.rarity,
+      createdAt: c.createdAt,
+    }));
+  }, [newItems]);
+
+  // Itens em destaque (para a tela inicial da loja)
+  const featuredCards = useMemo(() => cards.slice(0, 6), [cards]);
+  const featuredPlaymats = useMemo(() => playmats.slice(0, 3), [playmats]);
+  const featuredSleeves = useMemo(() => sleeves.slice(0, 3), [sleeves]);
+  const featuredTalismans = useMemo(() => talismans.slice(0, 3), [talismans]);
+
+  // Últimos itens por categoria (para a tela inicial)
+  const latestPlaymats = useMemo(() => playmats.slice(0, 4), [playmats]);
+  const latestSleeves = useMemo(() => sleeves.slice(0, 4), [sleeves]);
+  const latestTalismans = useMemo(() => talismans.slice(0, 4), [talismans]);
+
   return (
     <div className="min-h-screen text-white py-6">
       <div className="max-w-7xl mx-auto px-4">
@@ -710,7 +809,7 @@ export default function ShopPage() {
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="mb-6"
         >
           <h1 className="text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-red-400">
             🛒 Loja
@@ -718,8 +817,8 @@ export default function ShopPage() {
           <p className="text-sm text-gray-300">Compre cartas, playmats e skins de cartas para personalizar seu deck</p>
         </motion.div>
 
-        {/* Tabs para Comprar/Vender */}
-        <div className="flex gap-2 mb-6">
+        {/* Tabs Comprar / Vender */}
+        <div className="flex gap-2 mb-4">
           <button
             onClick={() => { setMode('buy'); setCurrentPage(1); }}
             className={`px-6 py-3 text-sm font-bold transition-all rounded-xl border-2 ${
@@ -742,12 +841,22 @@ export default function ShopPage() {
           </button>
         </div>
 
-        {/* Abas de Categorias (Comprar e Vender) */}
+        {/* Abas: Destaques | Cartas | Playmats | Skins | Talismãs */}
         <div className="mb-6">
-          <div className="flex gap-3 rounded-xl p-2">
+          <div className="flex flex-wrap gap-2 rounded-xl p-2">
+            <button
+              onClick={() => { setCategory(null); setCurrentPage(1); }}
+              className={`px-4 py-2.5 text-sm font-bold transition-all rounded-lg ${
+                category === null
+                  ? 'bg-gradient-to-r from-yellow-500/90 to-orange-500/90 text-white shadow-lg'
+                  : 'text-gray-300 hover:bg-white/10'
+              }`}
+            >
+              ⭐ Destaques
+            </button>
             <button
               onClick={() => { setCategory('cards'); setCurrentPage(1); }}
-              className={`flex-1 px-6 py-3 text-sm font-bold transition-all rounded-lg ${
+              className={`px-4 py-2.5 text-sm font-bold transition-all rounded-lg ${
                 category === 'cards'
                   ? 'bg-gradient-to-r from-purple-600/80 to-pink-600/80 text-white shadow-lg'
                   : 'text-gray-300 hover:bg-white/10'
@@ -757,7 +866,7 @@ export default function ShopPage() {
             </button>
             <button
               onClick={() => { setCategory('playmats'); setCurrentPage(1); }}
-              className={`flex-1 px-6 py-3 text-sm font-bold transition-all rounded-lg ${
+              className={`px-4 py-2.5 text-sm font-bold transition-all rounded-lg ${
                 category === 'playmats'
                   ? 'bg-gradient-to-r from-blue-600/80 to-cyan-600/80 text-white shadow-lg'
                   : 'text-gray-300 hover:bg-white/10'
@@ -767,7 +876,7 @@ export default function ShopPage() {
             </button>
             <button
               onClick={() => { setCategory('sleeves'); setCurrentPage(1); }}
-              className={`flex-1 px-6 py-3 text-sm font-bold transition-all rounded-lg ${
+              className={`px-4 py-2.5 text-sm font-bold transition-all rounded-lg ${
                 category === 'sleeves'
                   ? 'bg-gradient-to-r from-green-600/80 to-emerald-600/80 text-white shadow-lg'
                   : 'text-gray-300 hover:bg-white/10'
@@ -775,9 +884,215 @@ export default function ShopPage() {
             >
               🎭 Skins de cartas
             </button>
+            <button
+              onClick={() => { setCategory('talismans'); setCurrentPage(1); }}
+              className={`px-4 py-2.5 text-sm font-bold transition-all rounded-lg ${
+                category === 'talismans'
+                  ? 'bg-gradient-to-r from-amber-600/80 to-yellow-600/80 text-white shadow-lg'
+                  : 'text-gray-300 hover:bg-white/10'
+              }`}
+            >
+              ✨ Talismãs
+            </button>
           </div>
         </div>
 
+        {category === null ? (
+          /* ---------- Aba Destaques: escolher categoria + itens em destaque + últimos ---------- */
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-10"
+          >
+            {/* Escolha da categoria */}
+            <div>
+              <h2 className="text-xl font-bold text-white mb-4">Escolha uma categoria</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { id: 'cards' as const, label: 'Cartas', icon: '🎴', gradient: 'from-purple-600 to-pink-600' },
+                  { id: 'playmats' as const, label: 'Playmats', icon: '🎨', gradient: 'from-blue-600 to-cyan-600' },
+                  { id: 'sleeves' as const, label: 'Skins de cartas', icon: '🎭', gradient: 'from-green-600 to-emerald-600' },
+                  { id: 'talismans' as const, label: 'Talismãs', icon: '✨', gradient: 'from-amber-600 to-yellow-600' },
+                ].map((cat) => (
+                  <motion.button
+                    key={cat.id}
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => { setMode('buy'); setCategory(cat.id); setCurrentPage(1); }}
+                    className={`p-6 rounded-2xl bg-gradient-to-br ${cat.gradient} border border-white/20 shadow-xl hover:shadow-2xl transition-all text-white text-center`}
+                  >
+                    <span className="text-4xl block mb-2">{cat.icon}</span>
+                    <span className="font-bold text-sm md:text-base">{cat.label}</span>
+                  </motion.button>
+                ))}
+              </div>
+            </div>
+
+            {/* Itens em destaque */}
+            <div>
+              <div className="flex items-center gap-3 mb-4">
+                <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-400">
+                  ⭐ Itens em destaque
+                </h2>
+                <div className="flex-1 h-px bg-gradient-to-r from-yellow-400/50 to-transparent" />
+              </div>
+              <div className="rounded-2xl p-4 bg-white/5 border border-white/10 space-y-6">
+                {featuredCards.length > 0 && (
+                  <div>
+                    <p className="text-sm text-gray-400 mb-2">🎴 Cartas</p>
+                    <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                      {featuredCards.map((card) => (
+                        <motion.div
+                          key={card.id}
+                          whileHover={{ scale: 1.05 }}
+                          onClick={() => { setCategory('cards'); setMode('buy'); setSelectedCard(card); setCurrentPage(1); }}
+                          className="flex-shrink-0 w-24 cursor-pointer relative"
+                        >
+                          <div className="relative w-full aspect-[2/3] rounded-lg overflow-hidden border border-white/20">
+                            <CardImage card={card} className="w-full h-full object-cover" fallback="/images/fundoCarta.webp" />
+                            {card.promotionDiscountPercent ? (
+                              <div className="absolute top-0.5 right-0.5 min-w-[22px] h-5 px-1 rounded bg-rose-500/95 text-white text-[10px] font-bold flex items-center justify-center shadow">
+                                -{card.promotionDiscountPercent}%
+                              </div>
+                            ) : null}
+                          </div>
+                          <p className="text-[10px] text-white truncate mt-1">{card.name}</p>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {featuredPlaymats.length > 0 && (
+                  <div>
+                    <p className="text-sm text-gray-400 mb-2">🎨 Playmats</p>
+                    <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                      {featuredPlaymats.map((pm) => {
+                        const src = pm.image ? (pm.image.startsWith('http') ? pm.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${pm.image}`) : '';
+                        return (
+                          <motion.div
+                            key={pm.id}
+                            whileHover={{ scale: 1.03 }}
+                            onClick={() => { setCategory('playmats'); setMode('buy'); setCurrentPage(1); }}
+                            className="flex-shrink-0 w-32 cursor-pointer rounded-lg overflow-hidden border border-white/20 bg-slate-800/50"
+                          >
+                            {src ? <img src={src} alt={pm.name} className="w-full aspect-video object-cover" /> : <div className="w-full aspect-video flex items-center justify-center text-2xl">🎨</div>}
+                            <p className="text-[10px] text-white truncate p-1">{pm.name}</p>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {featuredSleeves.length > 0 && (
+                  <div>
+                    <p className="text-sm text-gray-400 mb-2">🎭 Skins de cartas</p>
+                    <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                      {featuredSleeves.map((sl) => {
+                        const src = sl.image ? (sl.image.startsWith('http') ? sl.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${sl.image}`) : '';
+                        return (
+                          <motion.div
+                            key={sl.id}
+                            whileHover={{ scale: 1.03 }}
+                            onClick={() => { setCategory('sleeves'); setMode('buy'); setCurrentPage(1); }}
+                            className="flex-shrink-0 w-20 cursor-pointer rounded-lg overflow-hidden border border-white/20 bg-slate-800/50"
+                          >
+                            {src ? <img src={src} alt={sl.name} className="w-full aspect-[2/3] object-cover" /> : <div className="w-full aspect-[2/3] flex items-center justify-center text-xl">🎭</div>}
+                            <p className="text-[10px] text-white truncate p-1">{sl.name}</p>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {featuredTalismans.length > 0 && (
+                  <div>
+                    <p className="text-sm text-gray-400 mb-2">✨ Talismãs</p>
+                    <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                      {featuredTalismans.map((t) => {
+                        const src = t.image ? (t.image.startsWith('http') ? t.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${t.image}`) : '';
+                        return (
+                          <motion.div
+                            key={t.id}
+                            whileHover={{ scale: 1.03 }}
+                            onClick={() => { setCategory('talismans'); setMode('buy'); setCurrentPage(1); }}
+                            className="flex-shrink-0 w-24 cursor-pointer rounded-lg overflow-hidden border border-amber-500/30 bg-slate-800/50"
+                          >
+                            {src ? <img src={src} alt={t.name} className="w-full aspect-square object-cover" /> : <div className="w-full aspect-square flex items-center justify-center text-2xl">✨</div>}
+                            <p className="text-[10px] text-white truncate p-1">{t.name}</p>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {featuredCards.length === 0 && featuredPlaymats.length === 0 && featuredSleeves.length === 0 && featuredTalismans.length === 0 && (
+                  <p className="text-gray-400 text-sm text-center py-4">Carregando itens em destaque...</p>
+                )}
+              </div>
+            </div>
+
+            {/* Últimos itens adicionados */}
+            <div>
+              <div className="flex items-center gap-3 mb-4">
+                <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400">
+                  ✨ Últimos itens adicionados
+                </h2>
+                <div className="flex-1 h-px bg-gradient-to-r from-cyan-400/50 to-transparent" />
+              </div>
+              {newItemsMarqueeCards.length > 0 && (
+                <LatestCardsMarquee cards={newItemsMarqueeCards} showVerLoja={false} />
+              )}
+              {(latestPlaymats.length > 0 || latestSleeves.length > 0 || latestTalismans.length > 0) && (
+                <div className="mt-4 rounded-2xl p-4 bg-white/5 border border-white/10 space-y-3">
+                  {latestPlaymats.length > 0 && (
+                    <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+                      {latestPlaymats.map((pm) => {
+                        const src = pm.image ? (pm.image.startsWith('http') ? pm.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${pm.image}`) : '';
+                        return (
+                          <motion.div key={pm.id} whileHover={{ scale: 1.02 }} onClick={() => { setCategory('playmats'); setMode('buy'); setCurrentPage(1); }} className="flex-shrink-0 w-28 cursor-pointer rounded-lg overflow-hidden border border-white/20">
+                            {src ? <img src={src} alt={pm.name} className="w-full aspect-video object-cover" /> : <div className="w-full aspect-video flex items-center justify-center text-xl">🎨</div>}
+                            <p className="text-[10px] text-white truncate p-1">{pm.name}</p>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {latestSleeves.length > 0 && (
+                    <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+                      {latestSleeves.map((sl) => {
+                        const src = sl.image ? (sl.image.startsWith('http') ? sl.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${sl.image}`) : '';
+                        return (
+                          <motion.div key={sl.id} whileHover={{ scale: 1.02 }} onClick={() => { setCategory('sleeves'); setMode('buy'); setCurrentPage(1); }} className="flex-shrink-0 w-20 cursor-pointer rounded-lg overflow-hidden border border-white/20">
+                            {src ? <img src={src} alt={sl.name} className="w-full aspect-[2/3] object-cover" /> : <div className="w-full aspect-[2/3] flex items-center justify-center text-lg">🎭</div>}
+                            <p className="text-[10px] text-white truncate p-1">{sl.name}</p>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {latestTalismans.length > 0 && (
+                    <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+                      {latestTalismans.map((t) => {
+                        const src = t.image ? (t.image.startsWith('http') ? t.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${t.image}`) : '';
+                        return (
+                          <motion.div key={t.id} whileHover={{ scale: 1.02 }} onClick={() => { setCategory('talismans'); setMode('buy'); setCurrentPage(1); }} className="flex-shrink-0 w-24 cursor-pointer rounded-lg overflow-hidden border border-amber-500/30">
+                            {src ? <img src={src} alt={t.name} className="w-full aspect-square object-cover" /> : <div className="w-full aspect-square flex items-center justify-center text-xl">✨</div>}
+                            <p className="text-[10px] text-white truncate p-1">{t.name}</p>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+              {newItemsMarqueeCards.length === 0 && latestPlaymats.length === 0 && latestSleeves.length === 0 && latestTalismans.length === 0 && (
+                <p className="text-gray-400 text-sm text-center py-4">Nenhum item recente no momento.</p>
+              )}
+            </div>
+          </motion.div>
+        ) : (
+          <>
         {/* Barra de pesquisa (cartas – Comprar e Vender) */}
         {category === 'cards' && (
           <div className="mb-6">
@@ -1021,8 +1336,8 @@ export default function ShopPage() {
         {mode === 'buy' ? (
           // MODO COMPRAR
           <>
-            {/* Seção: Novos Itens Adicionados */}
-            {newItems.length > 0 && category === 'cards' && (
+            {/* Seção: Novos Itens Adicionados — carrossel igual ao da tela de login */}
+            {newItemsMarqueeCards.length > 0 && category === 'cards' && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -1034,64 +1349,7 @@ export default function ShopPage() {
                   </h2>
                   <div className="flex-1 h-px bg-gradient-to-r from-yellow-400/50 to-transparent"></div>
                 </div>
-                <div className="rounded-2xl p-6">
-                  <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
-                    {newItems.map((card, index) => (
-                      <motion.div
-                        key={card.id}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: index * 0.1 }}
-                        whileHover={{ scale: 1.05, zIndex: 10 }}
-                        className="flex-shrink-0 w-20"
-                      >
-                        <div 
-                          className="relative aspect-[2/3] mb-1.5 cursor-pointer" 
-                          onClick={() => setSelectedCard(card)}
-                        >
-                          <CardImage
-                            card={card}
-                            className="w-full h-full object-cover rounded-lg shadow-lg hover:shadow-2xl transition-all"
-                            fallback="/images/fundoCarta.webp"
-                          />
-                        </div>
-                        <div className="space-y-0.5">
-                          <h3 
-                            className="text-[9px] font-bold text-white truncate cursor-pointer hover:text-purple-300 transition-colors"
-                            onClick={() => setSelectedCard(card)}
-                            title={card.name}
-                          >
-                            {card.name}
-                          </h3>
-                          <div className="flex items-center gap-0.5 flex-wrap">
-                            {card.priceCredits ? (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handlePurchaseClick(card, 'credits');
-                                }}
-                                className="flex items-center gap-0.5 bg-yellow-500/80 hover:bg-yellow-500 backdrop-blur-sm px-1 py-0.5 rounded text-[8px] font-bold text-white transition-all"
-                              >
-                                💰 {card.priceCredits}
-                              </button>
-                            ) : null}
-                            {card.priceCash ? (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handlePurchaseClick(card, 'cash');
-                                }}
-                                className="flex items-center gap-0.5 bg-emerald-500/80 hover:bg-emerald-500 backdrop-blur-sm px-1 py-0.5 rounded text-[8px] font-bold text-white transition-all"
-                              >
-                                💵 {Math.floor(Number(card.priceCash))}
-                              </button>
-                            ) : null}
-                          </div>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                </div>
+                <LatestCardsMarquee cards={newItemsMarqueeCards} showVerLoja={false} />
               </motion.div>
             )}
 
@@ -1111,7 +1369,7 @@ export default function ShopPage() {
               </div>
             ) : (
               <div className="bg-transparent p-4 mb-6">
-                <div className={category === 'playmats' 
+                <div className={category === 'playmats' || category === 'talismans'
                   ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center"
                   : "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3"
                 }>
@@ -1136,6 +1394,14 @@ export default function ShopPage() {
                               className="w-full h-full object-cover rounded-lg shadow-lg hover:shadow-xl transition-all"
                               fallback="/images/fundoCarta.webp"
                             />
+                            {card.promotionDiscountPercent ? (
+                              <div
+                                className="absolute top-1 right-1 flex items-center justify-center min-w-[28px] h-7 px-1.5 rounded-md bg-rose-500/95 text-white text-xs font-bold shadow-lg border border-rose-300/50"
+                                title={card.promotionLabel || `${card.promotionDiscountPercent}% off`}
+                              >
+                                -{card.promotionDiscountPercent}%
+                              </div>
+                            ) : null}
                             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity rounded-lg"></div>
                           </div>
                           <div className="space-y-2 flex-1">
@@ -1147,7 +1413,7 @@ export default function ShopPage() {
                               {card.name}
                             </h3>
                             <div className="flex items-center gap-2 flex-wrap">
-                              {card.priceCredits ? (
+                              {(card.effectivePriceCredits ?? card.priceCredits) ? (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1155,10 +1421,13 @@ export default function ShopPage() {
                                   }}
                                   className="flex items-center gap-1 bg-gradient-to-r from-yellow-500/90 to-yellow-600/90 hover:from-yellow-500 hover:to-yellow-600 backdrop-blur-sm px-2 py-1 rounded-lg text-[10px] font-bold text-white transition-all shadow-md hover:shadow-lg"
                                 >
-                                  💰 {card.priceCredits}
+                                  💰 {card.effectivePriceCredits ?? card.priceCredits}
+                                  {card.promotionDiscountPercent ? (
+                                    <span className="ml-0.5 text-rose-200" title={card.promotionLabel || `${card.promotionDiscountPercent}% off`}> (-{card.promotionDiscountPercent}%)</span>
+                                  ) : null}
                                 </button>
                               ) : null}
-                              {card.priceCash ? (
+                              {(card.effectivePriceCash ?? card.priceCash) ? (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1166,7 +1435,10 @@ export default function ShopPage() {
                                   }}
                                   className="flex items-center gap-1 bg-gradient-to-r from-emerald-500/90 to-emerald-600/90 hover:from-emerald-500 hover:to-emerald-600 backdrop-blur-sm px-2 py-1 rounded-lg text-[10px] font-bold text-white transition-all shadow-md hover:shadow-lg"
                                 >
-                                  💵 {Math.floor(Number(card.priceCash))}
+                                  💵 {Math.floor(Number(card.effectivePriceCash ?? card.priceCash))}
+                                  {card.promotionDiscountPercent ? (
+                                    <span className="ml-0.5 text-rose-200" title={card.promotionLabel || `${card.promotionDiscountPercent}% off`}> (-{card.promotionDiscountPercent}%)</span>
+                                  ) : null}
                                 </button>
                               ) : null}
                             </div>
@@ -1243,6 +1515,70 @@ export default function ShopPage() {
                                 </button>
                               ) : null}
                             </div>
+                          </div>
+                        </motion.div>
+                      );
+                    } else if (category === 'talismans') {
+                      const talisman = item as TalismanTemplate;
+                      const imageSrc = talisman.image
+                        ? (talisman.image.startsWith('http')
+                            ? talisman.image
+                            : `${API_URL}${talisman.image}`)
+                        : '';
+                      return (
+                        <motion.div
+                          key={talisman.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.05 }}
+                          whileHover={{ scale: 1.03, zIndex: 10 }}
+                          className="flex flex-col bg-gradient-to-br from-amber-900/40 to-yellow-900/40 backdrop-blur-sm rounded-xl p-5 border border-amber-500/30 hover:border-amber-400/50 shadow-xl hover:shadow-2xl transition-all w-full max-w-md mx-auto"
+                        >
+                          <div className="relative w-full aspect-square mb-4 bg-gradient-to-br from-amber-500/30 via-yellow-500/20 to-orange-500/30 rounded-xl overflow-hidden border border-amber-400/40 flex items-center justify-center">
+                            {imageSrc ? (
+                              <img
+                                src={imageSrc}
+                                alt={talisman.name}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display = 'none';
+                                }}
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-5xl text-amber-200/80">
+                                ✨
+                              </div>
+                            )}
+                          </div>
+                          <h3 className="text-base font-bold text-white mb-1 truncate" title={talisman.name}>
+                            {talisman.name}
+                          </h3>
+                          {talisman.description ? (
+                            <p className="text-xs text-gray-400 mb-3 line-clamp-2">{talisman.description}</p>
+                          ) : null}
+                          <div className="flex flex-wrap gap-1 mb-3 text-[10px] text-amber-200/90">
+                            {talisman.bonusScorePct > 0 && <span>Score +{talisman.bonusScorePct}%</span>}
+                            {talisman.bonusCashPct > 0 && <span>• Cash +{talisman.bonusCashPct}%</span>}
+                            {talisman.bonusArenaPointsPct > 0 && <span>• Arena +{talisman.bonusArenaPointsPct}%</span>}
+                            {(talisman.initialCharges ?? 0) > 0 && <span>• ⚡ {talisman.initialCharges} cargas</span>}
+                          </div>
+                          <div className="flex gap-2">
+                            {(talisman.priceCredits ?? 0) > 0 ? (
+                              <button
+                                onClick={() => handlePurchaseClick(talisman, 'credits')}
+                                className="flex-1 px-3 py-2 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-700 hover:to-yellow-700 rounded text-xs font-bold transition-all shadow-lg text-white"
+                              >
+                                💰 {talisman.priceCredits}
+                              </button>
+                            ) : null}
+                            {(talisman.priceCash ?? 0) > 0 ? (
+                              <button
+                                onClick={() => handlePurchaseClick(talisman, 'cash')}
+                                className="flex-1 px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded text-xs font-bold transition-all shadow-lg text-white"
+                              >
+                                💵 {Math.floor(Number(talisman.priceCash ?? 0))}
+                              </button>
+                            ) : null}
                           </div>
                         </motion.div>
                       );
@@ -1365,6 +1701,7 @@ export default function ShopPage() {
                   {category === 'cards' && ` (${currentItems.length} cartas)`}
                   {category === 'playmats' && ` (${currentItems.length} playmats)`}
                   {category === 'sleeves' && ` (${currentItems.length} skins)`}
+                  {category === 'talismans' && ` (${currentItems.length} talismãs)`}
                 </span>
               </div>
             )}
@@ -1553,6 +1890,8 @@ export default function ShopPage() {
             )}
           </div>
         )}
+          </>
+        )}
 
         {/* Modal de Informações da Carta */}
         {selectedCard && (
@@ -1585,12 +1924,21 @@ export default function ShopPage() {
                 </button>
               </div>
               
-              <div className="w-full mb-4" style={{ maxHeight: '400px' }}>
+              <div className="w-full mb-4 relative rounded-lg overflow-hidden border-2 border-white/20 shadow-lg mx-auto" style={{ aspectRatio: '421/614', maxWidth: '200px', maxHeight: '280px' }}>
                 <CardImage
                   card={selectedCard}
-                  className="w-full h-auto rounded-lg"
+                  className="w-full h-full rounded-lg"
+                  style={{ minHeight: '140px' }}
                   fallback="/images/fundoCarta.webp"
                 />
+                {selectedCard.promotionDiscountPercent ? (
+                  <div
+                    className="absolute top-2 right-2 min-w-[36px] h-9 px-2 rounded-lg bg-rose-500/95 text-white text-sm font-bold shadow-lg border border-rose-300/50 flex items-center justify-center"
+                    title={selectedCard.promotionLabel || `${selectedCard.promotionDiscountPercent}% off`}
+                  >
+                    -{selectedCard.promotionDiscountPercent}%
+                  </div>
+                ) : null}
               </div>
               
               <h3 className="text-xl font-bold text-white mb-2">{selectedCard.name}</h3>
@@ -1624,8 +1972,15 @@ export default function ShopPage() {
                 </div>
               )}
               
+              {(selectedCard.effectivePriceCredits ?? selectedCard.priceCredits) || (selectedCard.effectivePriceCash ?? selectedCard.priceCash) ? (
+                selectedCard.promotionDiscountPercent ? (
+                  <p className="text-rose-300 text-sm pt-2">
+                    🏷️ Promoção: {selectedCard.promotionLabel || `${selectedCard.promotionDiscountPercent}% off`}
+                  </p>
+                ) : null
+              ) : null}
               <div className="flex gap-2 pt-4 border-t border-white/20">
-                {selectedCard.priceCredits ? (
+                {(selectedCard.effectivePriceCredits ?? selectedCard.priceCredits) ? (
                   <button
                     onClick={() => {
                       setSelectedCard(null);
@@ -1633,10 +1988,10 @@ export default function ShopPage() {
                     }}
                     className="flex-1 px-4 py-2 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 rounded-lg text-white font-bold transition-all"
                   >
-                    💰 {selectedCard.priceCredits} Créditos
+                    💰 {selectedCard.effectivePriceCredits ?? selectedCard.priceCredits} Créditos
                   </button>
                 ) : null}
-                {selectedCard.priceCash ? (
+                {(selectedCard.effectivePriceCash ?? selectedCard.priceCash) ? (
                   <button
                     onClick={() => {
                       setSelectedCard(null);
@@ -1644,7 +1999,7 @@ export default function ShopPage() {
                     }}
                     className="flex-1 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 rounded-lg text-white font-bold transition-all"
                   >
-                    💵 {Math.floor(Number(selectedCard.priceCash))} Cash
+                    💵 {Math.floor(Number(selectedCard.effectivePriceCash ?? selectedCard.priceCash))} Cash
                   </button>
                 ) : null}
               </div>
@@ -1675,28 +2030,43 @@ export default function ShopPage() {
                   <span className="font-semibold">Item:</span> {purchaseItem.item.name}
                 </p>
                 {category === 'cards' && (
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className="text-white/80 font-semibold">Quantidade:</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={99}
-                      value={purchaseQuantity}
-                      onChange={(e) => setPurchaseQuantity(Math.min(99, Math.max(1, parseInt(e.target.value, 10) || 1)))}
-                      className="w-20 px-2 py-1 rounded bg-slate-700 text-white border border-white/20"
-                    />
+                  <div className="mb-2">
+                    <span className="text-white/80 font-semibold block mb-2">Quantidade:</span>
+                    <div className="inline-flex items-center rounded-lg overflow-hidden border border-white/20 bg-slate-700/80">
+                      <button
+                        type="button"
+                        onClick={() => setPurchaseQuantity((q) => Math.max(1, q - 1))}
+                        disabled={purchaseQuantity <= 1}
+                        className="w-10 h-10 flex items-center justify-center bg-slate-600 hover:bg-slate-500 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-600 text-white font-bold text-lg transition-colors"
+                        aria-label="Diminuir quantidade"
+                      >
+                        −
+                      </button>
+                      <span className="w-12 h-10 flex items-center justify-center text-white font-bold bg-slate-700 border-x border-white/10 text-center tabular-nums">
+                        {purchaseQuantity}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPurchaseQuantity((q) => Math.min(99, q + 1))}
+                        disabled={purchaseQuantity >= 99}
+                        className="w-10 h-10 flex items-center justify-center bg-slate-600 hover:bg-slate-500 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-600 text-white font-bold text-lg transition-colors"
+                        aria-label="Aumentar quantidade"
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
                 )}
                 <p className="text-white/80 mb-2">
                   <span className="font-semibold">Preço:</span>{' '}
                   {purchaseItem.method === 'credits' ? '💰' : '💵'}{' '}
                   {purchaseItem.method === 'credits' 
-                    ? (purchaseItem.item.priceCredits || 0) * (category === 'cards' ? purchaseQuantity : 1)
-                    : Math.floor((purchaseItem.item.priceCash || 0) * (category === 'cards' ? purchaseQuantity : 1))}{' '}
+                    ? ((purchaseItem.item.effectivePriceCredits ?? purchaseItem.item.priceCredits) || 0) * (category === 'cards' ? purchaseQuantity : 1)
+                    : Math.floor((Number(purchaseItem.item.effectivePriceCash ?? purchaseItem.item.priceCash) || 0) * (category === 'cards' ? purchaseQuantity : 1))}{' '}
                   {purchaseItem.method === 'credits' ? 'Créditos' : 'Cash'}
                   {category === 'cards' && purchaseQuantity > 1 && (
                     <span className="text-white/60 text-sm ml-1">
-                      ({purchaseQuantity} × {purchaseItem.method === 'credits' ? purchaseItem.item.priceCredits : Math.floor(Number(purchaseItem.item.priceCash))})
+                      ({purchaseQuantity} × {purchaseItem.method === 'credits' ? (purchaseItem.item.effectivePriceCredits ?? purchaseItem.item.priceCredits) : Math.floor(Number(purchaseItem.item.effectivePriceCash ?? purchaseItem.item.priceCash))})
                     </span>
                   )}
                 </p>

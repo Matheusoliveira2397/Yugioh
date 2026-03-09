@@ -8064,11 +8064,11 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           return;
         }
 
-        // Verificar se o usuário é MASTER
+        // Verificar se o usuário é ADMIN ou MASTER
         try {
           const user = await this.usersService.findById(userId);
-          if (!user || user.role !== 'MASTER') {
-            client.emit('duelError', { message: 'Apenas usuários MASTER podem usar esta função' });
+          if (!user || (user.role !== 'MASTER' && user.role !== 'ADMIN')) {
+            client.emit('duelError', { message: 'Apenas usuários Admin ou Master podem usar esta função' });
             return;
           }
 

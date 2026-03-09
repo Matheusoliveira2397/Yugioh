@@ -8,12 +8,16 @@ import { api } from '../api/axios';
 type TabType = 'normal' | 'admin';
 
 const ADMIN_TAB_OPTIONS = [
+  { id: 'create-account', label: 'Criar conta' },
+  { id: 'admin-control', label: 'Controle de Admins' },
   { id: 'site-tabs', label: 'Gerenciar Abas' },
   { id: 'cards', label: 'Cartas' },
   { id: 'initial-decks', label: 'Decks Iniciais' },
   { id: 'news', label: 'Notícias' },
   { id: 'playmats', label: 'Playmats' },
   { id: 'sleeves', label: 'Skins' },
+  { id: 'talismans', label: 'Talismãs' },
+  { id: 'promotions', label: 'Promoções' },
   { id: 'players', label: 'Jogadores' },
   { id: 'arena', label: 'Arena' },
   { id: 'active-duels', label: 'Duelos Ativos' },
@@ -26,7 +30,6 @@ const ADMIN_TAB_OPTIONS = [
   { id: 'social-media', label: 'Redes Sociais' },
   { id: 'new-account-settings', label: 'Contas Novas' },
   { id: 'cash-division', label: 'Divisão de Cash' },
-  { id: 'create-account', label: 'Criar Conta' },
 ];
 
 export default function AdminCreateAccountPanel() {

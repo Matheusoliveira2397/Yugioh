@@ -4,6 +4,7 @@ import { ShopItemCurrency } from './entities/shop-item.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PurchaseCardDto } from './dto/purchase-card.dto';
 import { PurchaseSleeveDto, PurchasePlaymatDto } from './dto/purchase-cosmetic.dto';
+import { PurchaseTalismanDto } from './dto/purchase-talisman.dto';
 import { AdminGuard } from '../auth/guards/admin.guard';
 
 @Controller('shop')
@@ -68,6 +69,43 @@ export class ShopController {
     this.logRequest('POST', '/purchase-playmat');
     const userId = req.user.id;
     return this.shopService.purchasePlaymat(userId, dto.playmatId, dto.paymentMethod);
+  }
+
+  @Get('talismans')
+  async getTalismanTemplates() {
+    this.logRequest('GET', '/talismans');
+    return this.shopService.getTalismanTemplates();
+  }
+
+  @Post('purchase-talisman')
+  @UseGuards(JwtAuthGuard)
+  async purchaseTalisman(@Request() req: any, @Body() dto: PurchaseTalismanDto) {
+    this.logRequest('POST', '/purchase-talisman');
+    const userId = req.user.id;
+    return this.shopService.purchaseTalisman(userId, dto.talismanTemplateId, dto.paymentMethod as 'credits' | 'cash');
+  }
+
+  @Post('talisman/equip')
+  @UseGuards(JwtAuthGuard)
+  async equipTalisman(@Request() req: any, @Body() body: { userTalismanId: string }) {
+    this.logRequest('POST', '/talisman/equip');
+    const userId = req.user.id;
+    return this.shopService.equipTalisman(userId, body.userTalismanId);
+  }
+
+  @Post('talisman/unequip')
+  @UseGuards(JwtAuthGuard)
+  async unequipTalisman(@Request() req: any) {
+    this.logRequest('POST', '/talisman/unequip');
+    const userId = req.user.id;
+    return this.shopService.unequipTalisman(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('talisman/equipped')
+  async getEquippedTalisman(@Request() req: any) {
+    const userId = req.user.id;
+    return this.shopService.getEquippedTalismanForDisplay(userId);
   }
 
   @Get()

@@ -3748,8 +3748,8 @@ const DuelArena: React.FC = () => {
               )}
             </motion.div>
             
-            {/* Master Card Search - Apenas para MASTER */}
-            {user?.role === 'MASTER' && (
+            {/* Adicionar carta à mão - Apenas para ADMIN e MASTER */}
+            {(user?.role === 'MASTER' || user?.role === 'ADMIN') && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -3758,7 +3758,7 @@ const DuelArena: React.FC = () => {
                 <div className="bg-gradient-to-r from-purple-700/50 to-indigo-800/50 px-4 py-3 border-b border-purple-700/50">
                   <h3 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
                     <span className="text-lg">👑</span>
-                    Master: Buscar Carta do Deck
+                    Adicionar carta à mão
                   </h3>
                 </div>
                 <div className="p-4">

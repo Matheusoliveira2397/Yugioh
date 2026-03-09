@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
@@ -26,6 +26,7 @@ interface OnlineUser {
   username: string;
   clanTag?: string;
   profileImage?: string | null;
+  level?: number;
 }
 
 interface PrivateChat {
@@ -33,6 +34,7 @@ interface PrivateChat {
   username: string;
   clanTag?: string;
   messages: Message[];
+  level?: number;
 }
 
 export default function ChatPage() {
@@ -52,7 +54,21 @@ export default function ChatPage() {
     challengerClanTag?: string;
   }>>(new Map());
 
-  const handleOpenPrivateChat = (targetUserId: string, targetUsername: string, targetClanTag?: string) => {
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  // Sempre mostrar as mensagens mais recentes: rolar para o final ao entrar e ao receber novas mensagens
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const scrollToBottom = () => {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    };
+    const t = setTimeout(scrollToBottom, 50);
+    return () => clearTimeout(t);
+  }, [messages]);
+
+  const handleOpenPrivateChat = (targetUserId: string, targetUsername: string, targetClanTag?: string, targetLevel?: number) => {
     // Não permitir abrir chat privado com você mesmo
     const currentUserId = user?.id ? (typeof user.id === 'string' ? user.id : user.id.toString()) : null;
     if (targetUserId === currentUserId) {
@@ -62,12 +78,16 @@ export default function ChatPage() {
     setActivePrivateChat(targetUserId);
     setPrivateChats((prev) => {
       const newChats = new Map(prev);
-      if (!newChats.has(targetUserId)) {
+      if (newChats.has(targetUserId) && targetLevel !== undefined) {
+        const existing = newChats.get(targetUserId)!;
+        newChats.set(targetUserId, { ...existing, level: targetLevel });
+      } else if (!newChats.has(targetUserId)) {
         newChats.set(targetUserId, {
           userId: targetUserId,
           username: targetUsername,
           clanTag: targetClanTag,
           messages: [],
+          level: targetLevel,
         });
       }
       return newChats;
@@ -525,8 +545,8 @@ export default function ChatPage() {
         className="w-full max-w-7xl rounded-xl overflow-hidden flex flex-col border border-white/20 shadow-2xl"
         style={{ height: 'calc(100vh - 8rem)', maxHeight: '900px' }}
       >
-          {/* Header */}
-          <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 p-3 sm:p-4 shadow-lg">
+          {/* Header: Chat Global + texto Online na mesma linha */}
+          <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 p-3 sm:p-4 shadow-lg flex flex-row items-center justify-between gap-2">
             <h1 className="text-lg sm:text-2xl font-bold flex items-center gap-2">
               💬 <span className="hidden sm:inline">Chat Global</span><span className="sm:hidden">Chat</span>
               {isConnected ? (
@@ -535,6 +555,9 @@ export default function ChatPage() {
                 <span className="text-red-400 text-xs sm:text-sm">(○ Desconectado)</span>
               )}
             </h1>
+            <span className="text-sm sm:text-base font-bold whitespace-nowrap">
+              👥 Online ({onlineUsers.length})
+            </span>
           </div>
 
           {/* Container principal com chat e online lado a lado */}
@@ -542,8 +565,11 @@ export default function ChatPage() {
             {/* Chat Principal */}
             <div className={`flex-1 flex flex-col transition-all duration-300 ${activePrivateChat ? 'lg:mr-0' : ''}`}>
 
-              {/* Mensagens */}
-              <div className="flex-1 overflow-y-auto p-2 sm:p-4">
+              {/* Mensagens — scroll bonito e sempre no final (mais recentes) */}
+              <div
+                ref={messagesContainerRef}
+                className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 custom-scrollbar scroll-smooth"
+              >
           {messages.length === 0 ? (
             <div className="text-center text-gray-500 py-8 sm:py-16">
               <p className="text-2xl sm:text-4xl mb-2 sm:mb-4">💭</p>
@@ -663,6 +689,11 @@ export default function ChatPage() {
                       <div className="flex items-center gap-2">
                         <h2 className="text-lg font-bold">
                           💬 {chat.clanTag ? `|${chat.clanTag}| ` : ''}{chat.username}
+                          {(chat.level ?? 0) > 0 && (
+                            <span className="text-yellow-300/90 text-sm font-semibold ml-1" title="Nível do duelista">
+                              {chat.level}
+                            </span>
+                          )}
                         </h2>
                       </div>
                       <button
@@ -802,81 +833,77 @@ export default function ChatPage() {
             {!activePrivateChat && <div className="w-px bg-white/20"></div>}
 
             {/* Lista de Usuários Online */}
-            <div className="hidden lg:flex w-64 flex-shrink-0 flex-col border-l border-white/20">
+            <div className="hidden lg:flex w-80 flex-shrink-0 flex-col border-l border-white/20">
               <div className="bg-gradient-to-r from-green-600 to-emerald-600 p-3 sm:p-4">
                 <h2 className="text-lg sm:text-xl font-bold flex items-center gap-2">
                   👥 Online ({onlineUsers.length})
                 </h2>
               </div>
               <div className="flex-1 overflow-y-auto p-4">
-            {onlineUsers.length === 0 ? (
-              <div className="text-center text-gray-500 py-4">
-                <p className="text-2xl mb-2">👤</p>
-                <p className="text-sm">Nenhum usuário online</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {onlineUsers.map((onlineUser) => (
-                  <div
-                    key={onlineUser.userId}
-                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-white/10 border border-white/20 transition-colors"
-                  >
-                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                    <div className="flex-1 min-w-0 flex items-center gap-2">
-                      {/* Imagem do perfil */}
-                      <img
-                        src={
-                          onlineUser.profileImage
-                            ? getImageUrl(onlineUser.profileImage) + (onlineUser.profileImage ? `?t=${Date.now()}` : '')
-                            : `https://ui-avatars.com/api/?name=${encodeURIComponent(onlineUser.username)}&background=6366f1&color=fff&size=32`
-                        }
-                        alt={onlineUser.username}
-                        className="w-6 h-6 rounded-full object-cover border border-gray-600 flex-shrink-0"
-                        onError={(e) => {
-                          e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(onlineUser.username)}&background=6366f1&color=fff&size=32`;
-                        }}
-                      />
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <Link
-                          to={`/profile/${onlineUser.userId}`}
-                          className="text-sm font-medium text-white hover:text-blue-400 transition-colors cursor-pointer truncate flex-1 text-left"
-                          title="Ver perfil"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {onlineUser.clanTag ? `|${onlineUser.clanTag}| ` : ''}
-                          {onlineUser.username}
-                        </Link>
-                        <button
-                          onClick={() => handleOpenPrivateChat(onlineUser.userId.toString(), onlineUser.username, onlineUser.clanTag)}
-                          className="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded transition-colors"
-                          title="Conversar em particular"
-                        >
-                          💬
-                        </button>
-                      </div>
-                    </div>
-                    {(() => {
+                {onlineUsers.length === 0 ? (
+                  <div className="text-center text-gray-500 py-4">
+                    <p className="text-2xl mb-2">👤</p>
+                    <p className="text-sm">Nenhum usuário online</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {onlineUsers.map((onlineUser) => {
                       const currentUserId = user?.id ? (typeof user.id === 'string' ? user.id : user.id.toString()) : null;
                       const isSelf = onlineUser.userId.toString() === currentUserId;
-                      
-                      if (isSelf) {
-                        return null; // Não mostrar botão se for o próprio usuário
-                      }
-                      
                       return (
-                        <button
-                          onClick={() => handleChallengePlayer(onlineUser.userId.toString(), onlineUser.username, onlineUser.clanTag)}
-                          className="text-xs bg-yellow-600 hover:bg-yellow-700 text-white px-2 py-1 rounded transition-colors"
-                          title="Desafiar para duelo"
+                        <div
+                          key={onlineUser.userId}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => !isSelf && handleOpenPrivateChat(onlineUser.userId.toString(), onlineUser.username, onlineUser.clanTag, onlineUser.level)}
+                          onKeyDown={(e) => e.key === 'Enter' && !isSelf && handleOpenPrivateChat(onlineUser.userId.toString(), onlineUser.username, onlineUser.clanTag, onlineUser.level)}
+                          className={`flex items-center gap-3 p-3 rounded-xl border border-white/20 transition-colors ${
+                            isSelf ? 'opacity-75 cursor-default' : 'hover:bg-white/10 cursor-pointer'
+                          }`}
+                          title={isSelf ? 'Você' : 'Clique para abrir chat particular'}
                         >
-                          ⚔️
-                        </button>
+                          <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse flex-shrink-0"></div>
+                          <div className="relative flex-shrink-0">
+                            <img
+                              src={
+                                onlineUser.profileImage
+                                  ? getImageUrl(onlineUser.profileImage) + (onlineUser.profileImage ? `?t=${Date.now()}` : '')
+                                  : `https://ui-avatars.com/api/?name=${encodeURIComponent(onlineUser.username)}&background=6366f1&color=fff&size=64`
+                              }
+                              alt={onlineUser.username}
+                              className="w-12 h-12 rounded-full object-cover border-2 border-gray-600"
+                              onError={(e) => {
+                                e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(onlineUser.username)}&background=6366f1&color=fff&size=64`;
+                              }}
+                            />
+                            {(onlineUser.level ?? 0) > 0 && (
+                              <span
+                                className="absolute -bottom-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-black/85 text-yellow-400 text-xs font-bold border-2 border-yellow-500/60"
+                                title="Nível do duelista"
+                              >
+                                {onlineUser.level}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-base font-medium text-white truncate flex-1 text-left">
+                            {onlineUser.clanTag ? `|${onlineUser.clanTag}| ` : ''}
+                            {onlineUser.username}
+                          </span>
+                          {!isSelf && (
+                            <Link
+                              to={`/profile/${onlineUser.userId}`}
+                              className="text-sm text-gray-400 hover:text-white transition-colors flex-shrink-0 p-1"
+                              title="Ver perfil"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              👤
+                            </Link>
+                          )}
+                        </div>
                       );
-                    })()}
+                    })}
                   </div>
-                ))}
-              </div>
-            )}
+                )}
               </div>
             </div>
           </div>
