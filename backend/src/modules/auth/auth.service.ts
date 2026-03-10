@@ -124,7 +124,8 @@ export class AuthService {
   }
 
   private getAccessTokenExpiresInSeconds(): number {
-    const exp = this.configService.get('JWT_ACCESS_EXPIRES_IN', this.configService.get('JWT_EXPIRES_IN', '15m'));
+    const fallback = this.configService.get<string>('JWT_EXPIRES_IN') ?? '15m';
+    const exp = this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') ?? fallback;
     if (typeof exp === 'number') return exp;
     const match = String(exp).match(/^(\d+)([smhd])$/);
     if (!match) return 15 * 60;
@@ -140,7 +141,7 @@ export class AuthService {
   private async createRefreshToken(userId: number): Promise<string> {
     const token = crypto.randomBytes(48).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    const refreshDays = this.configService.get('REFRESH_TOKEN_DAYS', '7');
+    const refreshDays = this.configService.get<string>('REFRESH_TOKEN_DAYS') ?? '7';
     const days = parseInt(String(refreshDays), 10) || 7;
     const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
     const lastUsedAt = new Date();
@@ -170,7 +171,7 @@ export class AuthService {
       await this.refreshTokenRepository.delete({ id: row.id });
       throw new UnauthorizedException('Sessão expirada. Faça login novamente.');
     }
-    const inactivityDays = this.configService.get('REFRESH_INACTIVITY_DAYS', '7');
+    const inactivityDays = this.configService.get<string>('REFRESH_INACTIVITY_DAYS') ?? '7';
     const inactivityMs = (parseInt(String(inactivityDays), 10) || 7) * 24 * 60 * 60 * 1000;
     if (row.lastUsedAt.getTime() < now.getTime() - inactivityMs) {
       await this.refreshTokenRepository.delete({ id: row.id });
