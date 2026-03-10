@@ -1,4 +1,4 @@
--- Adicionar colunas para cosméticos equipados do usuário (playmat e skin de carta)
+-- Adicionar colunas para cosméticos equipados do usuário (playmat e sleeve)
 
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS "equippedPlaymatId" character varying(100),

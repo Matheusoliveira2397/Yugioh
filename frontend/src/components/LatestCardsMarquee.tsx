@@ -11,6 +11,8 @@ export interface MarqueeCard {
   type: string;
   rarity?: string;
   createdAt?: string;
+  /** Percentual de desconto da promoção (ex.: 20). Usado para exibir badge igual à aba Cartas. */
+  promotionDiscountPercent?: number;
 }
 
 interface LatestCardsMarqueeProps {
@@ -23,14 +25,18 @@ interface LatestCardsMarqueeProps {
   onCardClick?: (card: MarqueeCard) => void;
   /** Ocultar título interno (ex.: quando o título já vem de fora, como na loja) */
   hideTitle?: boolean;
+  /** Exibir ícone de promoção no canto superior direito de cada carta */
+  showPromotionBadge?: boolean;
 }
 
 function CardMarqueeItem({
   card,
   onClick,
+  showPromotionBadge = false,
 }: {
   card: MarqueeCard;
   onClick: (card: MarqueeCard) => void;
+  showPromotionBadge?: boolean;
 }) {
   return (
     <div
@@ -41,6 +47,14 @@ function CardMarqueeItem({
       className="flex-shrink-0 cursor-pointer group focus:outline-none focus:ring-2 focus:ring-blue-400/50 rounded-lg"
     >
       <div className="relative w-16 h-24 sm:w-20 sm:h-28 md:w-24 md:h-32 rounded-md overflow-hidden border border-blue-600/50 shadow group-hover:border-amber-500/60 group-hover:shadow-amber-500/20 group-hover:scale-105 group-hover:z-10 transition-all duration-300">
+        {showPromotionBadge && (card.promotionDiscountPercent != null && card.promotionDiscountPercent > 0) && (
+          <div
+            className="absolute top-1 right-1 z-20 flex items-center justify-center min-w-[28px] h-7 px-1.5 rounded-md bg-rose-500/95 text-white text-xs font-bold shadow-lg border border-rose-300/50"
+            title={`${card.promotionDiscountPercent}% off`}
+          >
+            -{card.promotionDiscountPercent}%
+          </div>
+        )}
         <img
           src={getCardImage(card) || '/images/fundoCarta.webp'}
           alt={card.name}
@@ -65,6 +79,7 @@ export default function LatestCardsMarquee({
   className = '',
   onCardClick,
   hideTitle = false,
+  showPromotionBadge = false,
 }: LatestCardsMarqueeProps) {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -132,6 +147,7 @@ export default function LatestCardsMarquee({
                 key={`top-${card.id}-${index}`}
                 card={card}
                 onClick={handleCardClick}
+                showPromotionBadge={showPromotionBadge}
               />
             ))}
           </div>

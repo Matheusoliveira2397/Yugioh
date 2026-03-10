@@ -15,7 +15,7 @@ const ADMIN_TAB_OPTIONS = [
   { id: 'initial-decks', label: 'Decks Iniciais' },
   { id: 'news', label: 'Notícias' },
   { id: 'playmats', label: 'Playmats' },
-  { id: 'sleeves', label: 'Skins' },
+  { id: 'sleeves', label: 'Sleeves' },
   { id: 'talismans', label: 'Talismãs' },
   { id: 'promotions', label: 'Promoções' },
   { id: 'players', label: 'Jogadores' },

@@ -464,7 +464,7 @@ export class ShopService implements OnModuleInit {
         return { ...uc, quantityInDecks, sellableQuantity };
       });
 
-      // Buscar usuário para obter playmats e skins comprados (ownedSleeveIds, ownedPlaymatIds)
+      // Buscar usuário para obter playmats e sleeves comprados (ownedSleeveIds, ownedPlaymatIds)
       const user = await this.userRepository.findOne({
         where: { id: userId },
         select: ['equippedPlaymatId', 'equippedPlaymatImage', 'equippedSkinId', 'equippedSkinImage', 'ownedSleeveIds', 'ownedPlaymatIds']
@@ -738,7 +738,7 @@ export class ShopService implements OnModuleInit {
     return map;
   }
 
-  // ==================== COMPRAR SKIN DE CARTA (SLEEVE) ====================
+  // ==================== COMPRAR SLEEVE ====================
   async purchaseSleeve(
     userId: number,
     sleeveId: string,
@@ -746,12 +746,12 @@ export class ShopService implements OnModuleInit {
   ): Promise<{ success: boolean; message: string; remainingBalance: { credits: number; cash: number } }> {
     const sleeve = await this.cosmeticsService.findOneSleeve(sleeveId);
     if (!sleeve.isForSale || !sleeve.isActive) {
-      throw new BadRequestException('Esta skin de carta não está disponível para compra');
+      throw new BadRequestException('Esta sleeve não está disponível para compra');
     }
 
     const price = paymentMethod === 'credits' ? (sleeve.priceCredits ?? 0) : (sleeve.priceCash ?? 0);
     if (price <= 0) {
-      throw new BadRequestException(`Esta skin não tem preço definido para ${this.getCurrencyName(paymentMethod)}`);
+      throw new BadRequestException(`Esta sleeve não tem preço definido para ${this.getCurrencyName(paymentMethod)}`);
     }
 
     const user = await this.userRepository.findOne({ where: { id: userId } });
@@ -766,7 +766,7 @@ export class ShopService implements OnModuleInit {
 
     const ownedIds = Array.isArray(user.ownedSleeveIds) ? user.ownedSleeveIds : [];
     if (ownedIds.includes(sleeveId)) {
-      throw new BadRequestException('Você já possui esta skin de carta');
+      throw new BadRequestException('Você já possui esta sleeve');
     }
 
     this.deductBalance(user, price, paymentMethod);
@@ -775,7 +775,7 @@ export class ShopService implements OnModuleInit {
 
     return {
       success: true,
-      message: `Skin "${sleeve.name}" comprada com sucesso!`,
+      message: `Sleeve "${sleeve.name}" comprada com sucesso!`,
       remainingBalance: { credits: user.credits ?? 0, cash: user.cash ?? 0 },
     };
   }

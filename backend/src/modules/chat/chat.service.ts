@@ -51,6 +51,18 @@ export class ChatService {
     }
   }
 
+  async clearGlobalChat(): Promise<number> {
+    try {
+      const result = await this.messageModel.deleteMany({ channel: 'global' }).exec();
+      const deleted = result.deletedCount ?? 0;
+      console.log(`✅ [ChatService] Chat global limpo: ${deleted} mensagens removidas`);
+      return deleted;
+    } catch (error) {
+      console.error('❌ [ChatService] Erro ao limpar chat global:', error);
+      throw error;
+    }
+  }
+
   async getPrivateMessages(
     userId1: string,
     userId2: string,

@@ -104,7 +104,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
   const defaultFieldImage = isOpponent 
     ? '/images/CampoDeDuelo01.jpg' 
     : '/images/CampoDeDuelo02.jpg';
-  // Fallback em níveis: 1) skin equipada, 2) SkinDefault (API), 3) fundoCarta (local, sempre existe)
+  // Fallback em níveis: 1) sleeve equipada, 2) SkinDefault (API), 3) fundoCarta (local, sempre existe)
   const FUNDO_CARTA_LOCAL = '/images/fundoCarta.webp';
   const defaultSkinCardUrl = getDefaultSkinCardImageUrl();
 
@@ -123,7 +123,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
     setDefaultSkinLoadError(false);
   }, [cardBackImage]);
 
-  // Pré-carregar skin equipada; se falhar, usaremos SkinDefault
+  // Pré-carregar sleeve equipada; se falhar, usaremos SkinDefault
   React.useEffect(() => {
     if (!cardBackImage) return;
     const img = new Image();
@@ -1216,7 +1216,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                   }}
                 >
                   {monster.position === 'set' ? (
-                    // Face-down (set): mostrar skin da carta
+                    // Face-down (set): mostrar sleeve da carta
                     // Quando invocamos em defesa da mão, sempre vai face-down (set)
                     <div
                       className={isSelectingTarget && isOpponent ? 'ring-4 ring-yellow-400/70' : ''}
@@ -1748,7 +1748,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
           style={{ aspectRatio: '59/86' }}>
           {deckCount > 0 ? (
             <>
-              {/* Imagem de verso de carta (usa skin de carta equipada ou fundo padrão) */}
+              {/* Imagem de verso de carta (usa sleeve equipada ou fundo padrão) */}
               <div 
                 className="absolute inset-0"
                 style={{

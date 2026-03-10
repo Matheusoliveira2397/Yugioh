@@ -260,7 +260,7 @@ export default function InventoryPage() {
             )}
           </motion.div>
 
-          {/* Skins de cartas */}
+          {/* Sleeves */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -269,7 +269,7 @@ export default function InventoryPage() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-2xl font-bold text-emerald-300 flex items-center gap-2">
-                  🎭 Skins de cartas
+                  🎭 Sleeves
                 </h2>
                 <p className="text-gray-400 text-sm">
                   Verso personalizado das cartas
@@ -285,7 +285,7 @@ export default function InventoryPage() {
             {ownedSkins.length === 0 ? (
               <div className="text-center py-10 text-gray-400 rounded-lg border border-dashed border-emerald-500/40">
                 <p className="text-3xl mb-2">🛒</p>
-                <p className="font-semibold">Você ainda não possui skins de cartas</p>
+                <p className="font-semibold">Você ainda não possui sleeves</p>
                 <p className="text-xs mt-1">Compre skins na loja para personalizar o verso das cartas</p>
               </div>
             ) : (

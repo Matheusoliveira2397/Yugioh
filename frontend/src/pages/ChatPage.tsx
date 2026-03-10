@@ -53,8 +53,20 @@ export default function ChatPage() {
     challengerUsername: string;
     challengerClanTag?: string;
   }>>(new Map());
+  const [mentionNotification, setMentionNotification] = useState<{
+    fromUsername: string;
+    fromClanTag?: string;
+    contentPreview: string;
+  } | null>(null);
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-esconder toast de menção após 5s
+  useEffect(() => {
+    if (!mentionNotification) return;
+    const t = setTimeout(() => setMentionNotification(null), 5000);
+    return () => clearTimeout(t);
+  }, [mentionNotification]);
 
   // Sempre mostrar as mensagens mais recentes: rolar para o final ao entrar e ao receber novas mensagens
   useEffect(() => {
@@ -216,6 +228,20 @@ export default function ChatPage() {
         });
       });
 
+      // Escutar comando Master: chat limpo
+      socket.on('chatCleared', () => {
+        setMessages([]);
+      });
+
+      // Escutar quando alguém te menciona no chat (@nick)
+      socket.on('mention', (data: { fromUsername: string; fromClanTag?: string; contentPreview: string }) => {
+        setMentionNotification({
+          fromUsername: data.fromUsername,
+          fromClanTag: data.fromClanTag,
+          contentPreview: data.contentPreview,
+        });
+      });
+
       // Escutar desafios de duelo
       socket.on('duelChallenge', (data: { challengerId: string; challengerUsername?: string; challengerClanTag?: string }) => {
         const challengerName = data.challengerUsername || onlineUsers.find(u => u.userId.toString() === data.challengerId)?.username || 'Alguém';
@@ -297,10 +323,28 @@ export default function ChatPage() {
         socket.off('userLeft');
         socket.off('privateMessage');
         socket.off('duelChallenge');
+        socket.off('chatCleared');
+        socket.off('mention');
         socket.emit('leaveChannel', { channel: 'global' });
       }
     };
   }, [user, getSocket, connect]);
+
+  // Ctrl+L: Master limpa o chat global
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && (e.key === 'l' || e.key === 'L')) {
+        if (user?.role !== 'MASTER') return;
+        e.preventDefault();
+        const socket = getSocket();
+        if (socket?.connected) {
+          socket.emit('clearGlobalChat');
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [user?.role, getSocket]);
 
   const handleSendMessage = () => {
     if (!messageInput.trim() || !user) return;
@@ -563,7 +607,30 @@ export default function ChatPage() {
           {/* Container principal com chat e online lado a lado */}
           <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
             {/* Chat Principal */}
-            <div className={`flex-1 flex flex-col transition-all duration-300 ${activePrivateChat ? 'lg:mr-0' : ''}`}>
+            <div className={`relative flex-1 flex flex-col transition-all duration-300 ${activePrivateChat ? 'lg:mr-0' : ''}`}>
+
+              {/* Toast: você foi mencionado */}
+              {mentionNotification && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="absolute top-2 left-2 right-2 z-10 mx-auto max-w-md rounded-lg border border-blue-500/50 bg-blue-900/95 px-4 py-3 shadow-lg backdrop-blur-sm"
+                >
+                  <p className="text-sm font-semibold text-blue-200">
+                    💬 {mentionNotification.fromClanTag ? `|${mentionNotification.fromClanTag}| ` : ''}
+                    {mentionNotification.fromUsername} te mencionou no chat
+                  </p>
+                  <p className="mt-1 truncate text-xs text-gray-300">{mentionNotification.contentPreview}</p>
+                  <button
+                    type="button"
+                    onClick={() => setMentionNotification(null)}
+                    className="mt-2 text-xs text-blue-300 hover:text-white underline"
+                  >
+                    Fechar
+                  </button>
+                </motion.div>
+              )}
 
               {/* Mensagens — scroll bonito e sempre no final (mais recentes) */}
               <div
@@ -576,7 +643,7 @@ export default function ChatPage() {
               <p className="text-sm sm:text-base">Nenhuma mensagem ainda. Seja o primeiro a falar!</p>
             </div>
           ) : (
-            <div className="space-y-2 sm:space-y-3">
+            <div className="space-y-1.5 sm:space-y-2">
               {messages.map((msg, index) => {
                 const currentUserId = user?.id ? (typeof user.id === 'string' ? user.id : user.id.toString()) : null;
                 const isMyMessage = msg.userId === currentUserId || msg.username === user?.username;
@@ -591,7 +658,7 @@ export default function ChatPage() {
                     key={index}
                     initial={{ opacity: 0, x: isMyMessage ? 20 : -20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className={`flex gap-1.5 sm:gap-2 ${isMyMessage ? 'flex-row-reverse' : 'flex-row'} max-w-[85%] sm:max-w-[80%] ${isMyMessage ? 'ml-auto' : 'mr-auto'}`}
+                    className={`flex gap-1 sm:gap-1.5 ${isMyMessage ? 'flex-row-reverse' : 'flex-row'} max-w-[85%] sm:max-w-[80%] ${isMyMessage ? 'ml-auto' : 'mr-auto'}`}
                   >
                     {/* Avatar */}
                     <div className="flex-shrink-0">
@@ -599,20 +666,20 @@ export default function ChatPage() {
                         src={
                           msg.profileImage
                             ? getImageUrl(msg.profileImage) + (msg.profileImage ? `?t=${Date.now()}` : '')
-                            : `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMyMessage ? '3b82f6' : 'ef4444'}&color=fff&size=64`
+                            : `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMyMessage ? '3b82f6' : 'ef4444'}&color=fff&size=48`
                         }
                         alt={msg.username}
-                        className="w-10 h-10 rounded-full object-cover border-2 border-gray-600"
+                        className="w-8 h-8 rounded-full object-cover border border-gray-600"
                         onError={(e) => {
-                          e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMyMessage ? '3b82f6' : 'ef4444'}&color=fff&size=64`;
+                          e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMyMessage ? '3b82f6' : 'ef4444'}&color=fff&size=48`;
                         }}
                       />
                     </div>
                     
                     {/* Mensagem */}
-                    <div className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'} flex-1`}>
-                      <div className={`p-2 sm:p-3 rounded-xl shadow-md ${isMyMessage ? 'border border-blue-500/50' : 'border border-white/20'}`}>
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <div className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'} flex-1 min-w-0`}>
+                      <div className={`p-1.5 sm:p-2 rounded-lg shadow-md ${isMyMessage ? 'border border-blue-500/50' : 'border border-white/20'}`}>
+                        <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                           <button
                             onClick={() => {
                               const currentUserId = user?.id ? (typeof user.id === 'string' ? user.id : user.id.toString()) : null;
@@ -623,7 +690,7 @@ export default function ChatPage() {
                                 return;
                               }
                             }}
-                            className={`text-sm font-semibold transition-colors cursor-pointer hover:underline ${
+                            className={`text-xs sm:text-sm font-semibold transition-colors cursor-pointer hover:underline ${
                               msg.userId === (user?.id ? (typeof user.id === 'string' ? user.id : user.id.toString()) : null)
                                 ? 'text-gray-300 hover:text-white'
                                 : 'text-blue-400 hover:text-blue-300'
@@ -632,9 +699,18 @@ export default function ChatPage() {
                           >
                             {msg.clanTag ? `|${msg.clanTag}| ${msg.username}` : msg.username}
                           </button>
-                          <span className="text-xs text-gray-500">{timeString}</span>
+                          <span className="text-[10px] sm:text-xs text-gray-500">{timeString}</span>
                         </div>
-                        <p className="text-white">{msg.content}</p>
+                        <p className="text-white text-sm">
+                          <ChatMessageContent
+                            content={msg.content}
+                            onlineUsers={onlineUsers}
+                            onMentionClick={(userId, username, clanTag) => {
+                              const currentUserId = user?.id ? (typeof user.id === 'string' ? user.id : user.id.toString()) : null;
+                              if (userId !== currentUserId) handleOpenPrivateChat(userId, username, clanTag);
+                            }}
+                          />
+                        </p>
                       </div>
                     </div>
                   </motion.div>
@@ -652,7 +728,7 @@ export default function ChatPage() {
                     value={messageInput}
                     onChange={(e) => setMessageInput(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder="Digite sua mensagem..."
+                    placeholder="Digite sua mensagem... (@nick para mencionar)"
                     className="flex-1 bg-gray-800 text-white placeholder-gray-400 px-4 py-3 rounded-lg border border-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     disabled={!isConnected}
                   />
@@ -664,6 +740,10 @@ export default function ChatPage() {
                     Enviar
                   </button>
                 </div>
+                <p className="text-xs text-gray-500 mt-1.5">
+                  @nick para mencionar alguém
+                  {user?.role === 'MASTER' && ' · Ctrl+L limpa o chat (Master)'}
+                </p>
               </div>
             </div>
 
@@ -839,14 +919,14 @@ export default function ChatPage() {
                   👥 Online ({onlineUsers.length})
                 </h2>
               </div>
-              <div className="flex-1 overflow-y-auto p-4">
+              <div className="flex-1 overflow-y-auto p-2 sm:p-3">
                 {onlineUsers.length === 0 ? (
-                  <div className="text-center text-gray-500 py-4">
-                    <p className="text-2xl mb-2">👤</p>
-                    <p className="text-sm">Nenhum usuário online</p>
+                  <div className="text-center text-gray-500 py-3">
+                    <p className="text-xl mb-1">👤</p>
+                    <p className="text-xs">Nenhum usuário online</p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {onlineUsers.map((onlineUser) => {
                       const currentUserId = user?.id ? (typeof user.id === 'string' ? user.id : user.id.toString()) : null;
                       const isSelf = onlineUser.userId.toString() === currentUserId;
@@ -857,35 +937,35 @@ export default function ChatPage() {
                           tabIndex={0}
                           onClick={() => !isSelf && handleOpenPrivateChat(onlineUser.userId.toString(), onlineUser.username, onlineUser.clanTag, onlineUser.level)}
                           onKeyDown={(e) => e.key === 'Enter' && !isSelf && handleOpenPrivateChat(onlineUser.userId.toString(), onlineUser.username, onlineUser.clanTag, onlineUser.level)}
-                          className={`flex items-center gap-3 p-3 rounded-xl border border-white/20 transition-colors ${
+                          className={`flex items-center gap-2 p-2 rounded-lg border border-white/20 transition-colors ${
                             isSelf ? 'opacity-75 cursor-default' : 'hover:bg-white/10 cursor-pointer'
                           }`}
                           title={isSelf ? 'Você' : 'Clique para abrir chat particular'}
                         >
-                          <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse flex-shrink-0"></div>
+                          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse flex-shrink-0"></div>
                           <div className="relative flex-shrink-0">
                             <img
                               src={
                                 onlineUser.profileImage
                                   ? getImageUrl(onlineUser.profileImage) + (onlineUser.profileImage ? `?t=${Date.now()}` : '')
-                                  : `https://ui-avatars.com/api/?name=${encodeURIComponent(onlineUser.username)}&background=6366f1&color=fff&size=64`
+                                  : `https://ui-avatars.com/api/?name=${encodeURIComponent(onlineUser.username)}&background=6366f1&color=fff&size=48`
                               }
                               alt={onlineUser.username}
-                              className="w-12 h-12 rounded-full object-cover border-2 border-gray-600"
+                              className="w-10 h-10 rounded-full object-cover border border-gray-600"
                               onError={(e) => {
-                                e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(onlineUser.username)}&background=6366f1&color=fff&size=64`;
+                                e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(onlineUser.username)}&background=6366f1&color=fff&size=48`;
                               }}
                             />
                             {(onlineUser.level ?? 0) > 0 && (
                               <span
-                                className="absolute -bottom-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-black/85 text-yellow-400 text-xs font-bold border-2 border-yellow-500/60"
+                                className="absolute -bottom-0.5 -right-0.5 min-w-[14px] h-[14px] flex items-center justify-center rounded-full bg-black/85 text-yellow-400 text-[10px] font-bold border border-yellow-500/60"
                                 title="Nível do duelista"
                               >
                                 {onlineUser.level}
                               </span>
                             )}
                           </div>
-                          <span className="text-base font-medium text-white truncate flex-1 text-left">
+                          <span className="text-sm font-medium text-white truncate flex-1 text-left">
                             {onlineUser.clanTag ? `|${onlineUser.clanTag}| ` : ''}
                             {onlineUser.username}
                           </span>
@@ -913,6 +993,44 @@ export default function ChatPage() {
       </motion.div>
 
     </div>
+  );
+}
+
+/** Renderiza conteúdo da mensagem com @nick como menção clicável (abre chat privado se o usuário estiver online). */
+function ChatMessageContent({
+  content,
+  onlineUsers,
+  onMentionClick,
+}: {
+  content: string;
+  onlineUsers: OnlineUser[];
+  onMentionClick: (userId: string, username: string, clanTag?: string) => void;
+}) {
+  const parts = content.split(/(@[^\s@]+)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith('@') && part.length > 1) {
+          const nick = part.slice(1);
+          const online = onlineUsers.find(
+            (u) => u.username.toLowerCase() === nick.toLowerCase()
+          );
+          if (online) {
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => onMentionClick(online.userId.toString(), online.username, online.clanTag)}
+                className="text-blue-400 hover:text-blue-300 hover:underline font-medium cursor-pointer mx-0.5"
+              >
+                {part}
+              </button>
+            );
+          }
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
   );
 }
 

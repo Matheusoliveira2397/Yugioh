@@ -156,6 +156,7 @@ export default function Layout({ children }: LayoutProps) {
                     };
 
                     const colors = getColors(tab.route);
+                    const tabIcon = tab.route === '/shop' ? '/images/Icones/Shop.png' : tab.icon;
 
                     return (
                       <Link
@@ -178,9 +179,9 @@ export default function Layout({ children }: LayoutProps) {
                         )}
                         
                         {/* Conteúdo */}
-                        {tab.icon && tab.icon.startsWith('/images/') ? (
+                        {tabIcon && tabIcon.startsWith('/images/') ? (
                           <img 
-                            src={tab.icon} 
+                            src={tabIcon} 
                             alt={tab.label}
                             className={`h-20 w-20 md:h-24 md:w-24 relative z-10 drop-shadow-lg object-contain ${isActive ? 'animate-pulse' : ''}`}
                             onError={(e) => {
@@ -192,7 +193,7 @@ export default function Layout({ children }: LayoutProps) {
                           <span 
                             className={`text-lg md:text-xl relative z-10 drop-shadow-lg ${isActive ? 'animate-pulse' : ''}`}
                           >
-                            {tab.icon}
+                            {tabIcon}
                           </span>
                         )}
                         <span className="relative z-10 text-center leading-tight">{tab.label}</span>
@@ -217,6 +218,7 @@ export default function Layout({ children }: LayoutProps) {
                   };
 
                   const colors = getColors(tab.route);
+                  const tabIcon = tab.route === '/shop' ? '/images/Icones/Shop.png' : tab.icon;
 
                   return (
                     <Link
@@ -228,9 +230,9 @@ export default function Layout({ children }: LayoutProps) {
                           : 'text-gray-300 hover:text-white'
                       }`}
                     >
-                      {tab.icon && tab.icon.startsWith('/images/') ? (
+                      {tabIcon && tabIcon.startsWith('/images/') ? (
                         <img 
-                          src={tab.icon} 
+                          src={tabIcon} 
                           alt={tab.label}
                           className="h-10 w-10 sm:h-12 sm:w-12 object-contain drop-shadow-lg"
                           onError={(e) => {
@@ -239,7 +241,7 @@ export default function Layout({ children }: LayoutProps) {
                         />
                       ) : (
                         <span className="text-sm sm:text-base drop-shadow-lg">
-                          {tab.icon}
+                          {tabIcon}
                         </span>
                       )}
                       <span className="text-center leading-tight">{tab.label}</span>
@@ -277,6 +279,7 @@ export default function Layout({ children }: LayoutProps) {
                     };
 
                     const colors = getColors(tab.route);
+                    const tabIcon = tab.route === '/shop' ? '/images/Icones/Shop.png' : tab.icon;
 
                     return (
                       <Link
@@ -289,9 +292,9 @@ export default function Layout({ children }: LayoutProps) {
                             : 'text-gray-300 hover:text-white hover:bg-white/10'
                         }`}
                       >
-                        {tab.icon && tab.icon.startsWith('/images/') ? (
+                        {tabIcon && tabIcon.startsWith('/images/') ? (
                           <img 
-                            src={tab.icon} 
+                            src={tabIcon} 
                             alt={tab.label}
                             className="h-12 w-12 object-contain drop-shadow-lg"
                             onError={(e) => {
@@ -300,7 +303,7 @@ export default function Layout({ children }: LayoutProps) {
                           />
                         ) : (
                           <span className="text-xl drop-shadow-lg">
-                            {tab.icon}
+                            {tabIcon}
                           </span>
                         )}
                         <span className="text-center">{tab.label}</span>

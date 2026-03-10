@@ -52,11 +52,11 @@ export default function AdminSleevesPanel() {
       });
       setSleeves(response.data || []);
     } catch (error: any) {
-      console.error('Erro ao carregar skins de cartas:', error);
+      console.error('Erro ao carregar sleeves:', error);
       if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-        console.error('Timeout ao carregar skins de cartas');
+        console.error('Timeout ao carregar sleeves');
       } else if (error.code === 'ERR_NETWORK' || !error.response) {
-        console.error('Erro de conexão ao carregar skins de cartas');
+        console.error('Erro de conexão ao carregar sleeves');
       }
       setSleeves([]);
     } finally {
@@ -116,10 +116,10 @@ export default function AdminSleevesPanel() {
 
       if (editingSleeve) {
         await api.put(`/cosmetics/admin/sleeves/${editingSleeve.id}`, cleanedFormData);
-        setMessage({ type: 'success', text: '✅ Skin de carta atualizada com sucesso!' });
+        setMessage({ type: 'success', text: '✅ Sleeve atualizada com sucesso!' });
       } else {
         await api.post('/cosmetics/admin/sleeves', cleanedFormData);
-        setMessage({ type: 'success', text: '✅ Skin de carta criada com sucesso!' });
+        setMessage({ type: 'success', text: '✅ Sleeve criada com sucesso!' });
       }
 
       resetForm();
@@ -154,11 +154,11 @@ export default function AdminSleevesPanel() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Deseja realmente deletar esta skin de carta?')) return;
+    if (!confirm('Deseja realmente deletar esta sleeve?')) return;
 
     try {
       await api.delete(`/cosmetics/admin/sleeves/${id}`);
-      setMessage({ type: 'success', text: '✅ Skin de carta deletada com sucesso!' });
+      setMessage({ type: 'success', text: '✅ Sleeve deletada com sucesso!' });
       loadSleeves();
     } catch (error: any) {
       setMessage({ type: 'error', text: error.response?.data?.message || '❌ Erro ao deletar sleeve' });
@@ -196,8 +196,8 @@ export default function AdminSleevesPanel() {
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-4xl font-bold mb-2">🎭 Gerenciamento de Skins de cartas</h1>
-              <p className="text-gray-300">Crie e gerencie skins de carta para a loja</p>
+              <h1 className="text-4xl font-bold mb-2">🎭 Gerenciamento de Sleeves</h1>
+              <p className="text-gray-300">Crie e gerencie sleeves para a loja</p>
             </div>
             <button
               onClick={() => {
@@ -206,7 +206,7 @@ export default function AdminSleevesPanel() {
               }}
               className="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-bold transition-all"
             >
-              {showForm ? '❌ Cancelar' : '➕ Nova Skin de carta'}
+              {showForm ? '❌ Cancelar' : '➕ Nova Sleeve'}
             </button>
           </div>
         </div>
@@ -233,7 +233,7 @@ export default function AdminSleevesPanel() {
             className="bg-gray-800 rounded-lg p-6 mb-8"
           >
             <h2 className="text-2xl font-bold mb-6">
-              {editingSleeve ? '✏️ Editar Skin de carta' : '➕ Nova Skin de carta'}
+              {editingSleeve ? '✏️ Editar Sleeve' : '➕ Nova Sleeve'}
             </h2>
             
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -294,7 +294,7 @@ export default function AdminSleevesPanel() {
               </div>
 
               <div className="border-2 border-dashed border-gray-700 rounded-lg p-4">
-                <label className="block text-sm font-bold mb-3">🖼️ Imagem da Skin de carta</label>
+                <label className="block text-sm font-bold mb-3">🖼️ Imagem da Sleeve</label>
                 <input
                   type="file"
                   accept="image/*"
@@ -373,7 +373,7 @@ export default function AdminSleevesPanel() {
         <div className="bg-gray-800 rounded-lg p-4 mb-6 flex gap-4">
           <input
             type="text"
-            placeholder="🔍 Buscar skin de carta..."
+            placeholder="🔍 Buscar sleeve..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"

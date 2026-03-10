@@ -2123,7 +2123,7 @@ export class UsersService implements OnModuleInit {
     return this.findById(userId);
   }
 
-  // Atualizar cosméticos equipados (playmat e skin de carta)
+  // Atualizar cosméticos equipados (playmat e sleeve)
   async updateCosmetics(
     userId: number,
     cosmetics: {
@@ -2190,6 +2190,28 @@ export class UsersService implements OnModuleInit {
     const updatedUser = await this.findById(userId);
     console.log(`🔍 [updateCosmetics] Usuário atualizado. equippedDeckName agora é: "${(updatedUser as any).equippedDeckName || 'null/undefined'}"`);
     return updatedUser;
+  }
+
+  /**
+   * Adiciona um playmat à lista de itens possuídos do usuário (para contas novas com playmat padrão).
+   */
+  async addOwnedPlaymatIfNotPresent(userId: number, playmatId: string): Promise<void> {
+    const user = await this.usersRepository.findOne({ where: { id: userId }, select: ['id', 'ownedPlaymatIds'] });
+    if (!user) return;
+    const owned = Array.isArray(user.ownedPlaymatIds) ? user.ownedPlaymatIds : [];
+    if (owned.includes(playmatId)) return;
+    await this.usersRepository.update(userId, { ownedPlaymatIds: [...owned, playmatId] });
+  }
+
+  /**
+   * Adiciona uma sleeve à lista de itens possuídos do usuário (para contas novas com sleeve padrão).
+   */
+  async addOwnedSleeveIfNotPresent(userId: number, sleeveId: string): Promise<void> {
+    const user = await this.usersRepository.findOne({ where: { id: userId }, select: ['id', 'ownedSleeveIds'] });
+    if (!user) return;
+    const owned = Array.isArray(user.ownedSleeveIds) ? user.ownedSleeveIds : [];
+    if (owned.includes(sleeveId)) return;
+    await this.usersRepository.update(userId, { ownedSleeveIds: [...owned, sleeveId] });
   }
 
   async updateOnlineStatus(userId: number, isOnline: boolean): Promise<void> {

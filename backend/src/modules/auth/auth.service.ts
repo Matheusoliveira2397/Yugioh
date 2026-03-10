@@ -269,7 +269,7 @@ export class AuthService {
     // Buscar a divisão mais baixa disponível
     const lowestDivision = await this.divisionsService.getLowestAvailableDivision();
     
-    // Criar usuário com valores das configurações (novas contas: sem playmat, skin Default)
+    // Criar usuário com valores das configurações (novas contas: sem playmat, sleeve Default)
     const user = await this.usersService.create({
       nickname: registerDto.nickname,
       username: registerDto.username,
@@ -299,7 +299,7 @@ export class AuthService {
       equippedSkinImage: null,
     });
 
-    // Aplicar playmat e skin padrão conforme "Contas Novas" no admin
+    // Aplicar playmat e sleeve padrão conforme "Contas Novas" no admin
     const cosmeticsUpdate: { equippedPlaymatId?: string; equippedPlaymatImage?: string; equippedSkinId?: string; equippedSkinImage?: string } = {};
     const playmatId = newAccountSettings.defaultPlaymatId?.trim() || null;
     const skinId = newAccountSettings.defaultSkinId?.trim() || null;
@@ -323,11 +323,17 @@ export class AuthService {
           cosmeticsUpdate.equippedSkinImage = sleeve.image;
         }
       } catch (err: any) {
-        console.warn(`⚠️ [AuthService] Skin padrão não aplicada (ID ${skinId}):`, err?.message || err);
+        console.warn(`⚠️ [AuthService] Sleeve padrão não aplicada (ID ${skinId}):`, err?.message || err);
       }
     }
     if (Object.keys(cosmeticsUpdate).length > 0) {
       await this.usersService.updateCosmetics(user.id, cosmeticsUpdate);
+      if (cosmeticsUpdate.equippedPlaymatId) {
+        await this.usersService.addOwnedPlaymatIfNotPresent(user.id, cosmeticsUpdate.equippedPlaymatId);
+      }
+      if (cosmeticsUpdate.equippedSkinId) {
+        await this.usersService.addOwnedSleeveIfNotPresent(user.id, cosmeticsUpdate.equippedSkinId);
+      }
     }
 
     // Criar SeasonRanking para o usuário na season ativa
@@ -495,6 +501,12 @@ export class AuthService {
     }
     if (Object.keys(cosmeticsUpdate).length > 0) {
       await this.usersService.updateCosmetics(user.id, cosmeticsUpdate);
+      if (cosmeticsUpdate.equippedPlaymatId) {
+        await this.usersService.addOwnedPlaymatIfNotPresent(user.id, cosmeticsUpdate.equippedPlaymatId);
+      }
+      if (cosmeticsUpdate.equippedSkinId) {
+        await this.usersService.addOwnedSleeveIfNotPresent(user.id, cosmeticsUpdate.equippedSkinId);
+      }
     }
 
     try {

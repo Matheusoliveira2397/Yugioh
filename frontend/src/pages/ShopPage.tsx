@@ -225,7 +225,7 @@ export default function ShopPage() {
     };
   }, [mode, category, user]);
 
-  // Buscar playmats e skins de cartas do backend
+  // Buscar playmats e sleeves do backend
   useEffect(() => {
     let cancelled = false;
     
@@ -256,7 +256,7 @@ export default function ShopPage() {
           setSleeves(response.data);
         }
       } catch (error) {
-        console.error('Erro ao carregar skins de cartas:', error);
+        console.error('Erro ao carregar sleeves:', error);
         if (!cancelled) {
           setSleeves([]);
         }
@@ -721,7 +721,7 @@ export default function ShopPage() {
           name: item.name,
           image: (item as Sleeve).image,
         });
-        alert('✅ Skin de carta adquirida e adicionada ao seu inventário de cosméticos!');
+        alert('✅ Sleeve adquirida e adicionada ao seu inventário de cosméticos!');
       } else if (category === 'talismans') {
         const hasBalance =
           paymentMethod === 'credits'
@@ -827,6 +827,7 @@ export default function ShopPage() {
       type: c.type,
       rarity: c.rarity,
       createdAt: c.createdAt,
+      promotionDiscountPercent: c.promotionDiscountPercent,
     }));
   }, [promotionCards]);
 
@@ -839,10 +840,11 @@ export default function ShopPage() {
           animate={{ opacity: 1, y: 0 }}
           className="mb-6"
         >
-          <h1 className="text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-red-400">
-            🛒 Loja
+          <h1 className="text-4xl font-bold mb-2 flex items-center gap-3 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-red-400">
+            <img src="/images/Icones/Shop.png" alt="" className="w-12 h-12 sm:w-14 sm:h-14 object-contain flex-shrink-0" aria-hidden />
+            Loja
           </h1>
-          <p className="text-sm text-gray-300">Compre cartas, playmats e skins de cartas para personalizar seu deck</p>
+          <p className="text-sm text-gray-300">Compre cartas, playmats e sleeves para personalizar seu deck</p>
         </motion.div>
 
         {/* Tabs Comprar / Vender */}
@@ -869,7 +871,7 @@ export default function ShopPage() {
           </button>
         </div>
 
-        {/* Abas: Destaques | Cartas | Playmats | Skins | Talismãs */}
+        {/* Abas: Destaques | Cartas | Playmats | Sleeves | Talismãs */}
         <div className="mb-6">
           <div className="flex flex-wrap gap-2 rounded-xl p-2">
             <button
@@ -910,7 +912,7 @@ export default function ShopPage() {
                   : 'text-gray-300 hover:bg-white/10'
               }`}
             >
-              🎭 Skins de cartas
+              🎭 Sleeves
             </button>
             <button
               onClick={() => { setCategory('talismans'); setCurrentPage(1); }}
@@ -926,44 +928,13 @@ export default function ShopPage() {
         </div>
 
         {category === null ? (
-          /* ---------- Aba Destaques: promoções + itens em destaque ---------- */
+          /* ---------- Aba Destaques: itens em destaque primeiro, depois cartas em promoção ---------- */
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3 }}
             className="space-y-10"
           >
-            {/* Cartas em promoção */}
-            {promotionCardsMarquee.length > 0 && (
-              <div>
-                <div className="flex items-center gap-3 mb-4">
-                  <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-pink-500">
-                    🏷️ Cartas em promoção
-                  </h2>
-                  <div className="flex-1 h-px bg-gradient-to-r from-rose-400/50 to-transparent" />
-                </div>
-                <div className="rounded-2xl p-4 bg-white/5 border border-rose-500/20 space-y-2">
-                  <p className="text-sm text-gray-400">Aproveite descontos por tempo limitado</p>
-                  <div className="max-w-full -mx-2 md:mx-0">
-                    <LatestCardsMarquee
-                      cards={promotionCardsMarquee}
-                      showVerLoja={false}
-                      hideTitle
-                      onCardClick={(c) => {
-                        const full = cards.find((x) => x.id === c.id);
-                        if (full) {
-                          setCategory('cards');
-                          setMode('buy');
-                          setSelectedCard(full);
-                          setCurrentPage(1);
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Itens em destaque */}
             <div>
               <div className="flex items-center gap-3 mb-4">
@@ -981,6 +952,29 @@ export default function ShopPage() {
                         cards={featuredCardsMarquee}
                         showVerLoja={false}
                         hideTitle
+                        onCardClick={(c) => {
+                          const full = cards.find((x) => x.id === c.id);
+                          if (full) {
+                            setCategory('cards');
+                            setMode('buy');
+                            setSelectedCard(full);
+                            setCurrentPage(1);
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+                {/* Cartas em promoção — logo abaixo das últimas cartas cadastradas */}
+                {promotionCardsMarquee.length > 0 && (
+                  <div>
+                    <p className="text-sm text-gray-400 mb-2">🏷️ Cartas em promoção</p>
+                    <div className="max-w-full -mx-2 md:mx-0">
+                      <LatestCardsMarquee
+                        cards={promotionCardsMarquee}
+                        showVerLoja={false}
+                        hideTitle
+                        showPromotionBadge
                         onCardClick={(c) => {
                           const full = cards.find((x) => x.id === c.id);
                           if (full) {
@@ -1017,7 +1011,7 @@ export default function ShopPage() {
                 )}
                 {featuredSleeves.length > 0 && (
                   <div>
-                    <p className="text-sm text-gray-400 mb-2">🎭 Skins de cartas</p>
+                    <p className="text-sm text-gray-400 mb-2">🎭 Sleeves</p>
                     <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
                       {featuredSleeves.map((sl) => {
                         const src = sl.image ? (sl.image.startsWith('http') ? sl.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${sl.image}`) : '';
@@ -1672,7 +1666,7 @@ export default function ShopPage() {
                   Página {currentPage} de {Math.max(totalPages, 1)}
                   {category === 'cards' && ` (${currentItems.length} cartas)`}
                   {category === 'playmats' && ` (${currentItems.length} playmats)`}
-                  {category === 'sleeves' && ` (${currentItems.length} skins)`}
+                  {category === 'sleeves' && ` (${currentItems.length} sleeves)`}
                   {category === 'talismans' && ` (${currentItems.length} talismãs)`}
                 </span>
               </div>

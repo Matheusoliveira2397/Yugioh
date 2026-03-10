@@ -422,7 +422,7 @@ export class UploadService {
   }
 
   /**
-   * Upload de imagem de playmat ou sleeve (skin de carta) para Supabase Storage.
+   * Upload de imagem de playmat ou sleeve para Supabase Storage.
    * Em produção as imagens ficam persistidas; sem Supabase salva em disco (efêmero no Fly.io).
    */
   async uploadCosmeticImage(

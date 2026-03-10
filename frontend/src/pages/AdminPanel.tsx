@@ -16,7 +16,7 @@ const defaultCards: AdminCard[] = [
   { id: 'initial-decks', label: 'Decks Iniciais', icon: '📚', description: 'Decks iniciais para novos jogadores', route: '/admin/initial-decks', bg: 'bg-violet-900/40', iconBg: 'bg-violet-500/30', accent: 'border-l-purple-500' },
   { id: 'news', label: 'Notícias', icon: '📢', description: 'Notícias e avisos do site', route: '/admin/news', bg: 'bg-fuchsia-900/30', iconBg: 'bg-fuchsia-500/30', accent: 'border-l-purple-500' },
   { id: 'playmats', label: 'Playmats', icon: '🎨', description: 'Tapetes de duelo', route: '/admin/playmats', bg: 'bg-cyan-900/40', iconBg: 'bg-cyan-500/30', accent: 'border-l-cyan-500' },
-  { id: 'sleeves', label: 'Skins', icon: '🎭', description: 'Skins de cartas', route: '/admin/sleeves', bg: 'bg-teal-900/40', iconBg: 'bg-teal-500/30', accent: 'border-l-cyan-500' },
+  { id: 'sleeves', label: 'Sleeves', icon: '🎭', description: 'Sleeves (fundo de carta)', route: '/admin/sleeves', bg: 'bg-teal-900/40', iconBg: 'bg-teal-500/30', accent: 'border-l-cyan-500' },
   { id: 'talismans', label: 'Talismãs', icon: '✨', description: 'Criar e gerenciar talismãs da loja', route: '/admin/talismans', bg: 'bg-amber-900/40', iconBg: 'bg-amber-500/30', accent: 'border-l-amber-500' },
   { id: 'promotions', label: 'Promoções', icon: '🏷️', description: 'Promoções e descontos nas cartas da loja', route: '/admin/promotions', bg: 'bg-rose-900/40', iconBg: 'bg-rose-500/30', accent: 'border-l-rose-500' },
   { id: 'players', label: 'Jogadores', icon: '👤', description: 'Usuários e perfis', route: '/admin/players', bg: 'bg-blue-900/40', iconBg: 'bg-blue-500/30', accent: 'border-l-blue-500' },

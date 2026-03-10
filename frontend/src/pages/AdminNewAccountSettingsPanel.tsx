@@ -103,7 +103,7 @@ export default function AdminNewAccountSettingsPanel() {
       setAllPlaymats(playmatsRes.data || []);
       setAllSleeves(sleevesRes.data || []);
     } catch (error) {
-      console.error('Erro ao carregar playmats/skins:', error);
+      console.error('Erro ao carregar playmats/sleeves:', error);
     }
   };
 
@@ -218,11 +218,11 @@ export default function AdminNewAccountSettingsPanel() {
               </div>
             </div>
 
-            {/* Playmat e Skin padrão */}
+            {/* Playmat e Sleeve padrão */}
             <div className="border-b border-slate-700 pb-6">
               <h2 className="text-2xl font-bold text-white mb-4">🎨 Cosméticos Padrão</h2>
               <p className="text-slate-400 mb-4 text-sm">
-                Playmat e skin de carta que novas contas receberão ao se registrar. Deixe em &quot;Nenhum&quot; para não equipar.
+                Playmat e sleeve que novas contas receberão ao se registrar. Deixe em &quot;Nenhum&quot; para não equipar.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
@@ -249,7 +249,7 @@ export default function AdminNewAccountSettingsPanel() {
                   })()}
                 </div>
                 <div>
-                  <label className="block text-slate-300 mb-2 font-semibold">Skin de carta padrão</label>
+                  <label className="block text-slate-300 mb-2 font-semibold">Sleeve padrão</label>
                   <select
                     value={formData.defaultSkinId ?? ''}
                     onChange={(e) => setFormData({ ...formData, defaultSkinId: e.target.value || null })}

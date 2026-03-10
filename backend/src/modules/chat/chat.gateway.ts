@@ -59,6 +59,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         }
 
         socket.data.userId = userId;
+        socket.data.role = (decoded as any).role || 'PLAYER';
         console.log(`✅ [ChatGateway] Usuário ${userId} autenticado (socket: ${socket.id})`);
         next();
       } catch (error) {
@@ -419,6 +420,27 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       
       this.server.to(data.channel).emit('newMessage', messageData);
       console.log(`✅ [ChatGateway] Mensagem emitida com sucesso para canal ${data.channel}`);
+
+      // Notificar usuários mencionados (@nick) no canal global
+      if (data.channel === 'global' && data.content) {
+        const mentionMatches = data.content.matchAll(/@([^\s@]+)/g);
+        const mentionedNicks = [...new Set([...mentionMatches].map((m) => m[1].toLowerCase()))];
+        const senderId = userId;
+        for (const entry of globalChatUsers.values()) {
+          if (entry.userId === senderId) continue;
+          const nickLower = (entry.nickname || entry.username || '').toLowerCase();
+          const userLower = (entry.username || '').toLowerCase();
+          const wasMentioned = mentionedNicks.some((n) => nickLower === n || userLower === n);
+          if (wasMentioned) {
+            this.server.to(entry.socketId).emit('mention', {
+              fromUserId: senderId,
+              fromUsername: nickname || data.username,
+              fromClanTag: clanTag,
+              contentPreview: data.content.length > 80 ? data.content.slice(0, 77) + '...' : data.content,
+            });
+          }
+        }
+      }
     } catch (error) {
       console.error('❌ [ChatGateway] Erro ao criar mensagem:', error);
       // Mesmo se falhar ao salvar, enviar a mensagem
@@ -436,6 +458,26 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       console.log(`📤 [ChatGateway] Emitindo newMessage (fallback) para canal ${data.channel}`);
       this.server.to(data.channel).emit('newMessage', messageData);
       console.log(`✅ [ChatGateway] Mensagem emitida (fallback) com sucesso`);
+
+      if (data.channel === 'global' && data.content) {
+        const mentionMatches = data.content.matchAll(/@([^\s@]+)/g);
+        const mentionedNicks = [...new Set([...mentionMatches].map((m) => m[1].toLowerCase()))];
+        const senderId = userId;
+        for (const entry of globalChatUsers.values()) {
+          if (entry.userId === senderId) continue;
+          const nickLower = (entry.nickname || entry.username || '').toLowerCase();
+          const userLower = (entry.username || '').toLowerCase();
+          const wasMentioned = mentionedNicks.some((n) => nickLower === n || userLower === n);
+          if (wasMentioned) {
+            this.server.to(entry.socketId).emit('mention', {
+              fromUserId: senderId,
+              fromUsername: nickname || data.username,
+              fromClanTag: clanTag,
+              contentPreview: data.content.length > 80 ? data.content.slice(0, 77) + '...' : data.content,
+            });
+          }
+        }
+      }
     }
   }
 
@@ -546,6 +588,23 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       });
     } else {
       client.emit('error', { message: 'Jogador desafiado não está online' });
+    }
+  }
+
+  @SubscribeMessage('clearGlobalChat')
+  async handleClearGlobalChat(@ConnectedSocket() client: Socket) {
+    const role = client.data.role;
+    if (role !== 'MASTER') {
+      client.emit('error', { message: 'Apenas contas Master podem limpar o chat.' });
+      return;
+    }
+    try {
+      const deleted = await this.chatService.clearGlobalChat();
+      this.server.to('global').emit('chatCleared', { deleted });
+      console.log(`✅ [ChatGateway] Chat global limpo por Master (socket ${client.id}), ${deleted} mensagens removidas`);
+    } catch (error) {
+      console.error('❌ [ChatGateway] Erro ao limpar chat global:', error);
+      client.emit('error', { message: 'Erro ao limpar o chat.' });
     }
   }
 }

@@ -6,7 +6,7 @@ import { UsersService } from './users.service';
 export class UsersCosmeticsController {
   constructor(private readonly usersService: UsersService) {}
 
-  // Atualizar cosméticos equipados do próprio usuário (playmat e skin de carta)
+  // Atualizar cosméticos equipados do próprio usuário (playmat e sleeve)
   @UseGuards(JwtAuthGuard)
   @Patch('cosmetics')
   async updateMyCosmetics(

@@ -33,7 +33,7 @@ export function getImageUrl(
 }
 
 /**
- * URL para cosméticos (playmat, skin de carta do oponente). Retorna URL absoluta ou undefined se não houver.
+ * URL para cosméticos (playmat, sleeve do oponente). Retorna URL absoluta ou undefined se não houver.
  * Em produção usa VITE_API_URL; se não definida, usa o mesmo origin para funcionar com proxy reverso.
  */
 export function getCosmeticImageUrl(url: string | null | undefined): string | undefined {
@@ -43,11 +43,11 @@ export function getCosmeticImageUrl(url: string | null | undefined): string | un
   return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
-/** Path da imagem da skin padrão (sleeve "Default" / SkinDefault) nas skins de carta. Usado quando a skin equipada não carrega. */
+/** Path da imagem da sleeve padrão ("Default" / SkinDefault). Usado quando a sleeve equipada não carrega. */
 export const DEFAULT_SKIN_CARD_IMAGE_PATH = '/uploads/cards/card_default_1764393525708.webp';
 
 /**
- * URL da imagem SkinDefault (skin de carta padrão). Use como fallback quando a skin equipada falhar ao carregar.
+ * URL da imagem SkinDefault (sleeve padrão). Use como fallback quando a sleeve equipada falhar ao carregar.
  */
 export function getDefaultSkinCardImageUrl(): string {
   const url = getCosmeticImageUrl(DEFAULT_SKIN_CARD_IMAGE_PATH);

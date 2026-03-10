@@ -408,7 +408,7 @@ export class AdminService implements OnModuleInit {
     });
     const saved = await this.usersRepository.save(user);
 
-    // Aplicar skin e playmat padrão (mesmo que contas normais)
+    // Aplicar sleeve e playmat padrão (mesmo que contas normais)
     const playmatId = newAccountSettings.defaultPlaymatId?.trim() || null;
     const skinId = newAccountSettings.defaultSkinId?.trim() || null;
     const cosmeticsUpdate: { equippedPlaymatId?: string; equippedPlaymatImage?: string; equippedSkinId?: string; equippedSkinImage?: string } = {};
@@ -431,11 +431,17 @@ export class AdminService implements OnModuleInit {
           cosmeticsUpdate.equippedSkinImage = sleeve.image;
         }
       } catch (err: any) {
-        console.warn(`[AdminService] Skin padrão não aplicada ao admin (ID ${skinId}):`, err?.message || err);
+        console.warn(`[AdminService] Sleeve padrão não aplicada ao admin (ID ${skinId}):`, err?.message || err);
       }
     }
     if (Object.keys(cosmeticsUpdate).length > 0) {
       await this.usersService.updateCosmetics(saved.id, cosmeticsUpdate);
+      if (cosmeticsUpdate.equippedPlaymatId) {
+        await this.usersService.addOwnedPlaymatIfNotPresent(saved.id, cosmeticsUpdate.equippedPlaymatId);
+      }
+      if (cosmeticsUpdate.equippedSkinId) {
+        await this.usersService.addOwnedSleeveIfNotPresent(saved.id, cosmeticsUpdate.equippedSkinId);
+      }
     }
 
     // Atribuir deck inicial (mesmo que contas normais)

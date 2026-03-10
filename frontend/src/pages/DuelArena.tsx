@@ -669,7 +669,7 @@ const DuelArena: React.FC = () => {
         return;
       }
       
-      // Preservar player1/player2 (cosméticos/skin do oponente) se o payload não trouxer, para não perder a skin
+      // Preservar player1/player2 (cosméticos/sleeve do oponente) se o payload não trouxer, para não perder a sleeve
       setDuelData((prev) => {
         const merged = {
           ...data,
@@ -2686,7 +2686,7 @@ const DuelArena: React.FC = () => {
         turnStartedAtRef.current = startTime;
       }
 
-      // Preservar player1/player2 (skin do oponente) se o update não trouxer, para não perder a skin
+      // Preservar player1/player2 (sleeve do oponente) se o update não trouxer, para não perder a sleeve
       const newDuelData = {
         id: duelUpdate.id,
         player1Id: duelUpdate.player1Id,
@@ -3239,7 +3239,7 @@ const DuelArena: React.FC = () => {
         });
       } else {
         // Para defesa ou set, usar SET_MONSTER
-        // Quando colocar em defesa, sempre usar 'set' (face-down) para mostrar a skin da carta
+        // Quando colocar em defesa, sempre usar 'set' (face-down) para mostrar a sleeve da carta
         const finalPosition = position === 'defense' ? 'set' : position;
         console.log(`📤 [handlePlaceCardOnField] Enviando SET_MONSTER - card: ${card.name}, zoneIndex: ${zoneIndex}, position: ${finalPosition}`);
         performAction(duelId, user.id, 'SET_MONSTER', {
@@ -3512,10 +3512,10 @@ const DuelArena: React.FC = () => {
   const myClanTag = user?.clanTag || '';
   const opponentClanTag = (opponent as any).clanTag || '';
 
-  // Cosméticos do duelo (playmat e skin) vindos do backend, por jogador
+  // Cosméticos do duelo (playmat e sleeve) vindos do backend, por jogador
   const myUserInDuel = isPlayer1 ? (duelData as any).player1 : (duelData as any).player2;
   const opponentInDuel = isPlayer1 ? (duelData as any).player2 : (duelData as any).player1;
-  // No modo espectador: topo = Jogador 1, baixo = Jogador 2 (cada um com seu nome e skin)
+  // No modo espectador: topo = Jogador 1, baixo = Jogador 2 (cada um com seu nome e sleeve)
   const player1DuelRef = (duelData as any).player1;
   const player2DuelRef = (duelData as any).player2;
   const topPanelUser = isSpectator ? player1DuelRef : opponent;
@@ -3523,10 +3523,10 @@ const DuelArena: React.FC = () => {
   const topPanelClanTag = isSpectator ? (player1DuelRef as any)?.clanTag || '' : opponentClanTag;
   const bottomPanelClanTag = isSpectator ? (player2DuelRef as any)?.clanTag || '' : myClanTag;
 
-  // URLs de playmat e skin: usar helper que em produção usa VITE_API_URL para paths relativos
+  // URLs de playmat e sleeve: usar helper que em produção usa VITE_API_URL para paths relativos
   const myPlaymatImageUrl = getCosmeticImageUrl(myUserInDuel?.equippedPlaymatImage);
   const opponentPlaymatImageUrl = getCosmeticImageUrl(opponentInDuel?.equippedPlaymatImage);
-  // SkinDefault (sleeve padrão) quando não há skin equipada ou quando a imagem não carregar
+  // SkinDefault (sleeve padrão) quando não há sleeve equipada ou quando a imagem não carregar
   const defaultSkinCardUrl = getDefaultSkinCardImageUrl();
   const mySkinImageUrl = getCosmeticImageUrl(myUserInDuel?.equippedSkinImage) ?? defaultSkinCardUrl;
   const opponentSkinImageUrl = getCosmeticImageUrl(opponentInDuel?.equippedSkinImage) ?? defaultSkinCardUrl;
@@ -8062,7 +8062,7 @@ const DuelArena: React.FC = () => {
                               }}
                             >
                               {isFaceDown ? (
-                                // Monstro face down: mostrar skin da carta do oponente
+                                // Monstro face down: mostrar sleeve da carta do oponente
                                 <div
                                   className="w-full h-full"
                                   style={{
