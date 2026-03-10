@@ -251,6 +251,16 @@ export class ArenaScheduleService implements OnModuleInit {
       scoreMultiplier?: number;
       bonusGems?: number;
       description?: string;
+      rewards?: {
+        levelRangeRewards?: Array<{
+          levelRange: string;
+          top1?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+          top2?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+          top3?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+          top4?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+          top5?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+        }>;
+      };
     };
   }): Promise<ArenaSchedule> {
     const schedule = this.scheduleRepository.create({
@@ -284,11 +294,11 @@ export class ArenaScheduleService implements OnModuleInit {
         rewards?: {
           levelRangeRewards?: Array<{
             levelRange: string;
-            top1?: { cash?: number; score?: number; additionalScore?: number };
-            top2?: { cash?: number; score?: number; additionalScore?: number };
-            top3?: { cash?: number; score?: number; additionalScore?: number };
-            top4?: { cash?: number; score?: number; additionalScore?: number };
-            top5?: { cash?: number; score?: number; additionalScore?: number };
+            top1?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+            top2?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+            top3?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+            top4?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+            top5?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
           }>;
         };
       };

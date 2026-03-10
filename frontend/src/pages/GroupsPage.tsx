@@ -273,12 +273,14 @@ export default function GroupsPage() {
             </p>
           </div>
 
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-8 py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold text-lg hover:scale-105 transition-transform shadow-lg shadow-purple-500/50"
-          >
-            ➕ Criar Grupo
-          </button>
+          {(!user?.group && !user?.clanTag) && (
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="px-8 py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold text-lg hover:scale-105 transition-transform shadow-lg shadow-purple-500/50"
+            >
+              ➕ Criar Grupo
+            </button>
+          )}
         </motion.div>
 
         {/* Filtros */}

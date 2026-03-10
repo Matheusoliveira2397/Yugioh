@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
@@ -11,11 +11,16 @@ interface LevelRange {
 
 interface LevelRangeReward {
   levelRange: string;
-  top1?: { cash?: number; score?: number; additionalScore?: number };
-  top2?: { cash?: number; score?: number; additionalScore?: number };
-  top3?: { cash?: number; score?: number; additionalScore?: number };
-  top4?: { cash?: number; score?: number; additionalScore?: number };
-  top5?: { cash?: number; score?: number; additionalScore?: number };
+  top1?: { cash?: number; credits?: number; cardId?: string; score?: number };
+  top2?: { cash?: number; credits?: number; cardId?: string; score?: number };
+  top3?: { cash?: number; credits?: number; cardId?: string; score?: number };
+  top4?: { cash?: number; credits?: number; cardId?: string; score?: number };
+  top5?: { cash?: number; credits?: number; cardId?: string; score?: number };
+}
+
+interface CardOption {
+  id: string;
+  name: string;
 }
 
 interface ArenaSchedule {
@@ -44,6 +49,11 @@ export default function AdminArenaSchedulesPanel() {
   const [editingSchedule, setEditingSchedule] = useState<ArenaSchedule | null>(null);
   const [levelRanges, setLevelRanges] = useState<LevelRange[]>([]);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [cardSearchTarget, setCardSearchTarget] = useState<{ levelRange: string; position: number } | null>(null);
+  const [cardSearchTerm, setCardSearchTerm] = useState('');
+  const [cardSearchResults, setCardSearchResults] = useState<CardOption[]>([]);
+  const [cardSearching, setCardSearching] = useState(false);
+  const [cardDisplayNames, setCardDisplayNames] = useState<Record<string, string>>({});
 
   const [formData, setFormData] = useState({
     name: '',
@@ -60,6 +70,28 @@ export default function AdminArenaSchedulesPanel() {
     loadSchedules();
     loadLevelRanges();
   }, []);
+
+  const searchCardsByName = useCallback(async (term: string) => {
+    if (!term || term.trim().length < 2) {
+      setCardSearchResults([]);
+      return;
+    }
+    setCardSearching(true);
+    try {
+      const res = await api.get<CardOption[]>('/cards', { params: { search: term.trim() } });
+      setCardSearchResults(Array.isArray(res.data) ? res.data.slice(0, 15) : []);
+    } catch {
+      setCardSearchResults([]);
+    } finally {
+      setCardSearching(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!cardSearchTarget) return;
+    const t = setTimeout(() => searchCardsByName(cardSearchTerm), 300);
+    return () => clearTimeout(t);
+  }, [cardSearchTarget, cardSearchTerm, searchCardsByName]);
 
   const loadSchedules = async () => {
     try {
@@ -84,11 +116,11 @@ export default function AdminArenaSchedulesPanel() {
           ...prev,
           levelRangeRewards: response.data.map((range: LevelRange) => ({
             levelRange: range.name,
-            top1: { cash: 0, score: 0, additionalScore: 0 },
-            top2: { cash: 0, score: 0, additionalScore: 0 },
-            top3: { cash: 0, score: 0, additionalScore: 0 },
-            top4: { cash: 0, score: 0, additionalScore: 0 },
-            top5: { cash: 0, score: 0, additionalScore: 0 },
+            top1: { cash: 0, credits: 0, cardId: '', score: 0 },
+            top2: { cash: 0, credits: 0, cardId: '', score: 0 },
+            top3: { cash: 0, credits: 0, cardId: '', score: 0 },
+            top4: { cash: 0, credits: 0, cardId: '', score: 0 },
+            top5: { cash: 0, credits: 0, cardId: '', score: 0 },
           })),
         }));
       }
@@ -103,6 +135,14 @@ export default function AdminArenaSchedulesPanel() {
     setMessage(null);
 
     try {
+      const normalizeReward = (r: LevelRangeReward) => ({
+        levelRange: r.levelRange,
+        top1: r.top1 ? { ...r.top1, additionalScore: 0 } : undefined,
+        top2: r.top2 ? { ...r.top2, additionalScore: 0 } : undefined,
+        top3: r.top3 ? { ...r.top3, additionalScore: 0 } : undefined,
+        top4: r.top4 ? { ...r.top4, additionalScore: 0 } : undefined,
+        top5: r.top5 ? { ...r.top5, additionalScore: 0 } : undefined,
+      });
       const scheduleData = {
         name: formData.name,
         startTime: formData.startTime,
@@ -114,7 +154,7 @@ export default function AdminArenaSchedulesPanel() {
           scoreMultiplier: formData.scoreMultiplier,
           description: formData.description,
           rewards: {
-            levelRangeRewards: formData.levelRangeRewards,
+            levelRangeRewards: formData.levelRangeRewards.map(normalizeReward),
           },
         },
       };
@@ -143,6 +183,8 @@ export default function AdminArenaSchedulesPanel() {
 
   const handleEdit = (schedule: ArenaSchedule) => {
     setEditingSchedule(schedule);
+    const activeRanges = schedule.config?.levelRanges || levelRanges;
+    setLevelRanges(activeRanges);
     setFormData({
       name: schedule.name,
       startTime: schedule.startTime,
@@ -153,6 +195,8 @@ export default function AdminArenaSchedulesPanel() {
       description: schedule.config?.description || '',
       levelRangeRewards: schedule.config?.rewards?.levelRangeRewards || [],
     });
+    setCardSearchTarget(null);
+    setCardDisplayNames({});
     setShowModal(true);
   };
 
@@ -188,7 +232,7 @@ export default function AdminArenaSchedulesPanel() {
     setEditingSchedule(null);
   };
 
-  const updateReward = (levelRange: string, position: number, field: 'cash' | 'score' | 'additionalScore', value: number) => {
+  const updateReward = (levelRange: string, position: number, field: 'cash' | 'credits' | 'cardId' | 'score', value: number | string) => {
     setFormData(prev => {
       const rewards = [...prev.levelRangeRewards];
       const rewardIndex = rewards.findIndex(r => r.levelRange === levelRange);
@@ -232,9 +276,11 @@ export default function AdminArenaSchedulesPanel() {
               ← Voltar
             </button>
             <button
-              onClick={() => {
+              onClick={async () => {
                 resetForm();
-                loadLevelRanges();
+                setCardSearchTarget(null);
+                setCardDisplayNames({});
+                await loadLevelRanges();
                 setShowModal(true);
               }}
               className="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-bold transition-all"
@@ -428,61 +474,136 @@ export default function AdminArenaSchedulesPanel() {
                 </div>
               </div>
 
-              {/* Premiações por Faixa de Nível */}
+              {/* Premiações por Faixa de Nível - só faixas ativas */}
               <div className="bg-gradient-to-br from-yellow-900/50 to-orange-900/50 rounded-lg p-6 border border-yellow-500/50">
                 <h3 className="text-xl font-bold mb-6 text-yellow-300">🏆 Premiações - Top 5 por Faixa de Nível</h3>
                 <p className="text-gray-300 text-sm mb-4">
-                  Configure as premiações para os top 5 jogadores de cada faixa de nível. As premiações são distribuídas automaticamente quando a arena termina.
+                  Configure as premiações para os top 5 jogadores de cada faixa de nível (apenas as faixas ativas deste horário). As premiações são distribuídas automaticamente quando a arena termina.
                 </p>
                 
-                {levelRanges.map((range) => (
-                  <div key={range.name} className="mb-6 bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-                    <h4 className="font-bold text-lg mb-4 text-yellow-400">{range.name}</h4>
-                    <div className="space-y-3">
-                      {[1, 2, 3, 4, 5].map((position) => (
-                        <div key={position} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700">
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="text-sm font-bold text-yellow-300">
-                              {position === 1 ? '🥇' : position === 2 ? '🥈' : position === 3 ? '🥉' : `#${position}`} {position}º Lugar
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-3 gap-2">
-                            <div>
-                              <label className="block text-xs font-bold mb-1">💵 Cash</label>
-                              <input
-                                type="number"
-                                min="0"
-                                value={formData.levelRangeRewards.find(r => r.levelRange === range.name)?.[`top${position}` as 'top1' | 'top2' | 'top3' | 'top4' | 'top5']?.cash || 0}
-                                onChange={(e) => updateReward(range.name, position, 'cash', parseInt(e.target.value) || 0)}
-                                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-sm"
-                              />
+                {levelRanges.length === 0 ? (
+                  <p className="text-amber-200/80 text-sm">Nenhuma faixa de nível ativa. Ao editar, só aparecem as faixas configuradas neste horário; ao criar novo, carregue as faixas primeiro.</p>
+                ) : (
+                  levelRanges.map((range) => (
+                    <div key={range.name} className="mb-6 bg-gray-800/50 rounded-lg p-4 border border-gray-700">
+                      <h4 className="font-bold text-lg mb-4 text-yellow-400">{range.name}</h4>
+                      <div className="space-y-3">
+                        {[1, 2, 3, 4, 5].map((position) => {
+                          const topKey = `top${position}` as 'top1' | 'top2' | 'top3' | 'top4' | 'top5';
+                          const reward = formData.levelRangeRewards.find(r => r.levelRange === range.name)?.[topKey];
+                          const cardId = reward?.cardId ?? '';
+                          const cardKey = `${range.name}-${position}`;
+                          const isSearchTarget = cardSearchTarget?.levelRange === range.name && cardSearchTarget?.position === position;
+                          const displayName = cardDisplayNames[cardKey];
+                          return (
+                            <div key={position} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-sm font-bold text-yellow-300">
+                                  {position === 1 ? '🥇' : position === 2 ? '🥈' : position === 3 ? '🥉' : `#${position}`} {position}º Lugar
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                                <div>
+                                  <label className="block text-xs font-bold mb-1">💵 Cash</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={reward?.cash ?? ''}
+                                    onChange={(e) => updateReward(range.name, position, 'cash', parseInt(e.target.value) || 0)}
+                                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-sm"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-bold mb-1">🪙 Créditos</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={reward?.credits ?? ''}
+                                    onChange={(e) => updateReward(range.name, position, 'credits', parseInt(e.target.value) || 0)}
+                                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-sm"
+                                  />
+                                </div>
+                                <div className="relative">
+                                  <label className="block text-xs font-bold mb-1">🃏 Carta</label>
+                                  {cardId && (displayName || !isSearchTarget) ? (
+                                    <div className="flex items-center gap-1">
+                                      <span className="flex-1 truncate text-sm bg-gray-800 px-2 py-1 rounded border border-gray-600" title={cardId}>
+                                        {displayName || cardId}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          updateReward(range.name, position, 'cardId', '');
+                                          setCardDisplayNames(prev => { const next = { ...prev }; delete next[cardKey]; return next; });
+                                          setCardSearchTarget({ levelRange: range.name, position });
+                                          setCardSearchTerm('');
+                                        }}
+                                        className="text-xs text-red-400 hover:text-red-300 px-1"
+                                      >
+                                        Limpar
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <input
+                                        type="text"
+                                        placeholder="Buscar por nome..."
+                                        value={isSearchTarget ? cardSearchTerm : ''}
+                                        onChange={(e) => {
+                                          setCardSearchTarget({ levelRange: range.name, position });
+                                          setCardSearchTerm(e.target.value);
+                                        }}
+                                        onFocus={() => {
+                                          setCardSearchTarget({ levelRange: range.name, position });
+                                          if (!cardId) setCardSearchTerm('');
+                                        }}
+                                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-sm"
+                                      />
+                                      {isSearchTarget && (cardSearchResults.length > 0 || cardSearching) && (
+                                        <div className="absolute z-10 left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                                          {cardSearching ? (
+                                            <div className="px-2 py-2 text-xs text-gray-400">Buscando...</div>
+                                          ) : (
+                                            cardSearchResults.map((card) => (
+                                              <button
+                                                key={card.id}
+                                                type="button"
+                                                className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-700 truncate"
+                                                onClick={() => {
+                                                  updateReward(range.name, position, 'cardId', card.id);
+                                                  setCardDisplayNames(prev => ({ ...prev, [cardKey]: card.name }));
+                                                  setCardSearchTarget(null);
+                                                  setCardSearchTerm('');
+                                                  setCardSearchResults([]);
+                                                }}
+                                              >
+                                                {card.name}
+                                              </button>
+                                            ))
+                                          )}
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-bold mb-1">⭐ Score</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={reward?.score ?? ''}
+                                    onChange={(e) => updateReward(range.name, position, 'score', parseInt(e.target.value) || 0)}
+                                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-sm"
+                                  />
+                                </div>
+                              </div>
                             </div>
-                            <div>
-                              <label className="block text-xs font-bold mb-1">⭐ Score</label>
-                              <input
-                                type="number"
-                                min="0"
-                                value={formData.levelRangeRewards.find(r => r.levelRange === range.name)?.[`top${position}` as 'top1' | 'top2' | 'top3' | 'top4' | 'top5']?.score || 0}
-                                onChange={(e) => updateReward(range.name, position, 'score', parseInt(e.target.value) || 0)}
-                                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-sm"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-bold mb-1">⭐ Score Adicional</label>
-                              <input
-                                type="number"
-                                min="0"
-                                value={formData.levelRangeRewards.find(r => r.levelRange === range.name)?.[`top${position}` as 'top1' | 'top2' | 'top3' | 'top4' | 'top5']?.additionalScore || 0}
-                                onChange={(e) => updateReward(range.name, position, 'additionalScore', parseInt(e.target.value) || 0)}
-                                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-sm"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
 
               {/* Status */}

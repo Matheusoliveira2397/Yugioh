@@ -40,11 +40,11 @@ export class ArenaSchedule {
       // Premiações por faixa de nível (top 5 de cada faixa)
       levelRangeRewards?: Array<{
         levelRange: string; // Nome da faixa (ex: "Nível 1", "Nível 2-3")
-        top1?: { cash?: number; score?: number; additionalScore?: number };
-        top2?: { cash?: number; score?: number; additionalScore?: number };
-        top3?: { cash?: number; score?: number; additionalScore?: number };
-        top4?: { cash?: number; score?: number; additionalScore?: number };
-        top5?: { cash?: number; score?: number; additionalScore?: number };
+        top1?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+        top2?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+        top3?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+        top4?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
+        top5?: { cash?: number; credits?: number; cardId?: string; score?: number; additionalScore?: number };
       }>;
     };
   };

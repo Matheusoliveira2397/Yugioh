@@ -406,27 +406,30 @@ export default function ArenaPage() {
   }));
 
   return (
-    <div className="max-w-4xl mx-auto px-2 sm:px-4 py-2 sm:py-5 min-h-0 w-full">
+    <div className="max-w-6xl mx-auto px-3 sm:px-6 py-3 sm:py-6 min-h-0 w-full">
       {currentArena && inArena ? (
         <>
-          {/* Banner Superior - responsivo: empilha em mobile */}
+          {/* Banner Superior - seus pontos, tempo e duelos restantes */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-lg p-2 sm:p-4 mb-2 sm:mb-4 border border-amber-400/30"
+            className="rounded-xl p-3 sm:p-5 mb-3 sm:mb-4 bg-gradient-to-r from-amber-950/60 via-amber-900/40 to-amber-950/60 border border-amber-400/40 shadow-lg shadow-amber-500/10"
           >
-            <div className="grid grid-cols-3 gap-2 sm:gap-3 text-white">
-              <div className="flex flex-col items-center justify-center py-1 sm:py-0">
-                <span className="text-[10px] sm:text-xs font-semibold text-white/80 mb-0.5">Arena Points</span>
-                <span className="text-lg sm:text-2xl font-bold tabular-nums">{userArenaPoints}</span>
+            <div className="grid grid-cols-3 gap-3 sm:gap-4 text-white">
+              <div className="flex flex-col items-center justify-center rounded-lg bg-black/20 py-3 sm:py-4 px-2 border border-amber-400/20">
+                <span className="text-amber-300/90 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-1">Seus pontos</span>
+                <span className="text-2xl sm:text-3xl font-black tabular-nums text-amber-300">{userArenaPoints}</span>
+                <span className="text-[10px] text-amber-200/70 mt-0.5">AP</span>
               </div>
-              <div className="flex flex-col items-center justify-center py-1 sm:py-0 border-x border-amber-400/20">
-                <span className="text-[10px] sm:text-xs font-semibold text-white/80 mb-0.5">para finalizar</span>
-                <span className="text-base sm:text-xl md:text-2xl font-bold tabular-nums">{formatTimeRemaining(timeRemaining)}</span>
+              <div className="flex flex-col items-center justify-center rounded-lg bg-black/20 py-3 sm:py-4 px-2 border border-amber-400/20">
+                <span className="text-amber-300/90 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-1">Tempo restante</span>
+                <span className="text-xl sm:text-2xl md:text-3xl font-black tabular-nums text-white font-mono">{formatTimeRemaining(timeRemaining)}</span>
+                <span className="text-[10px] text-amber-200/70 mt-0.5">até o fim da arena</span>
               </div>
-              <div className="flex flex-col items-center justify-center py-1 sm:py-0">
-                <span className="text-[10px] sm:text-xs font-semibold text-white/80 mb-0.5">Duelos Rest.</span>
-                <span className="text-lg sm:text-2xl font-bold tabular-nums">{remainingDuels}</span>
+              <div className="flex flex-col items-center justify-center rounded-lg bg-black/20 py-3 sm:py-4 px-2 border border-amber-400/20">
+                <span className="text-amber-300/90 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-1">Duelos restantes</span>
+                <span className="text-2xl sm:text-3xl font-black tabular-nums text-amber-300">{remainingDuels}</span>
+                <span className="text-[10px] text-amber-200/70 mt-0.5">de 50 por arena</span>
               </div>
             </div>
           </motion.div>
@@ -537,58 +540,74 @@ export default function ArenaPage() {
             )}
           </motion.div>
 
-          {/* Painéis de Ranking - 1 col mobile, 2+ em telas maiores */}
-          <div className={`grid grid-cols-1 ${sortedRankings.length === 2 ? 'sm:grid-cols-2' : sortedRankings.length === 3 ? 'sm:grid-cols-2 lg:grid-cols-3' : sortedRankings.length >= 4 ? 'sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4' : 'sm:grid-cols-2'} gap-2 sm:gap-3`}>
+          {/* Ranking da arena - layout ampliado tipo tabela */}
+          <section className="mb-2 sm:mb-3">
+            <h2 className="text-base sm:text-lg font-bold text-center text-white/90 mb-1 sm:mb-2">🏆 Ranking por faixa de nível</h2>
+            <p className="text-[10px] sm:text-xs text-gray-400 text-center max-w-xl mx-auto">
+              <span className="text-amber-300 font-semibold">AP</span> = pontos na arena · <span className="text-blue-300 font-semibold">DR</span> = duelos que ainda pode jogar (máx. 50)
+            </p>
+          </section>
+          <div className={`grid grid-cols-1 ${sortedRankings.length === 2 ? 'sm:grid-cols-2' : sortedRankings.length === 3 ? 'sm:grid-cols-2 lg:grid-cols-3' : sortedRankings.length >= 4 ? 'sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4' : 'sm:grid-cols-2'} gap-4 sm:gap-5`}>
             {sortedRankings.map((divisionData, index) => (
               <motion.div
                 key={divisionData.name}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
-                className="rounded-lg p-2 sm:p-4 border-2 border-white/20 hover:border-purple-500/50 transition-all duration-300"
+                className="rounded-2xl p-4 sm:p-5 border-2 border-white/20 hover:border-purple-500/50 bg-slate-900/60 backdrop-blur-sm transition-all duration-300 shadow-xl min-w-0 w-max max-w-full"
               >
-                <h3 className="text-sm sm:text-lg font-bold mb-1.5 sm:mb-3 text-center text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-blue-300">{divisionData.name}</h3>
-                
+                <h3 className="text-base sm:text-xl font-bold mb-3 sm:mb-4 text-center text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-blue-300 pb-2 border-b-2 border-white/15">{divisionData.name}</h3>
+
                 {loadingRankings ? (
-                  <div className="text-center py-4 sm:py-6 text-gray-400 text-xs sm:text-sm">Carregando...</div>
+                  <div className="text-center py-8 sm:py-10 text-gray-400 text-sm">Carregando...</div>
                 ) : divisionData.rankings.length === 0 ? (
-                  <div className="text-center py-4 sm:py-6 text-gray-500 text-xs sm:text-sm">Nenhum duelista nesta divisão ainda</div>
+                  <div className="text-center py-8 sm:py-10 text-gray-500 text-sm">Nenhum duelista nesta divisão ainda</div>
                 ) : (
-                  <div className="space-y-1 sm:space-y-1.5 max-h-[280px] sm:max-h-[380px] overflow-y-auto custom-scrollbar overflow-x-hidden">
-                    {divisionData.rankings.map((player) => {
-                      const dr = player.remainingDuels ?? Math.max(0, 50 - (player.wins + player.losses));
-                      const rankBg = player.rank === 1 ? 'bg-amber-500/30 border-amber-400' : player.rank === 2 ? 'bg-slate-400/30 border-slate-300' : player.rank === 3 ? 'bg-amber-700/30 border-amber-600' : 'border-white/10';
-                      return (
-                        <div
-                          key={player.userId}
-                          className={`flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 rounded-lg hover:bg-white/10 transition-colors border ${rankBg}`}
-                        >
-                          <div className={`flex-shrink-0 w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-bold ${
-                            player.rank === 1 ? 'bg-amber-500 text-black' : player.rank === 2 ? 'bg-slate-300 text-slate-800' : player.rank === 3 ? 'bg-amber-600 text-white' : 'bg-white/20 text-white'
-                          }`}>
-                            {player.rank}°
-                          </div>
-                          <img
-                            src={getImageUrl(player.profileImage) + (player.profileImage ? `?t=${Date.now()}` : '')}
-                            alt={player.nickname}
-                            className="w-7 h-7 sm:w-9 sm:h-9 rounded-full border-2 border-slate-500 object-cover flex-shrink-0"
-                            onError={(e) => {
-                              e.currentTarget.src = '/images/default.png';
-                            }}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="font-bold text-white text-xs sm:text-sm truncate">
-                              {player.clanTag ? `[${player.clanTag}] ${player.nickname}` : player.nickname}
+                  <>
+                    {/* Cabeçalho do ranking (tipo tabela) - colunas fixas para alinhar AP e DR */}
+                    <div className="grid gap-2 px-2 py-2.5 mb-2 rounded-lg bg-white/5 border border-white/10 text-[10px] sm:text-xs font-bold uppercase tracking-wider text-gray-400"
+                      style={{ gridTemplateColumns: '28px 150px 52px 60px' }}
+                    >
+                      <span className="text-center">#</span>
+                      <span className="truncate min-w-0">Jogador</span>
+                      <span className="text-amber-300 text-right pl-2 border-l border-white/20">AP</span>
+                      <span className="text-blue-300 text-right">DR</span>
+                    </div>
+                    <div className="space-y-2 sm:space-y-2.5 max-h-[320px] sm:max-h-[420px] md:max-h-[480px] overflow-y-auto overflow-x-auto custom-scrollbar min-w-0">
+                      {divisionData.rankings.map((player) => {
+                        const dr = player.remainingDuels ?? Math.max(0, 50 - (player.wins + player.losses));
+                        const rankBg = player.rank === 1 ? 'bg-amber-500/25 border-amber-400/60' : player.rank === 2 ? 'bg-slate-400/25 border-slate-300/60' : player.rank === 3 ? 'bg-amber-700/25 border-amber-600/60' : 'bg-white/5 border-white/10';
+                        return (
+                          <div
+                            key={player.userId}
+                            className={`grid items-center gap-2 p-2.5 sm:p-3 rounded-xl hover:bg-white/10 transition-colors border ${rankBg}`}
+                            style={{ gridTemplateColumns: '28px 150px 52px 60px' }}
+                          >
+                            <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-black ${
+                              player.rank === 1 ? 'bg-amber-500 text-black shadow' : player.rank === 2 ? 'bg-slate-300 text-slate-800 shadow' : player.rank === 3 ? 'bg-amber-600 text-white shadow' : 'bg-white/25 text-white'
+                            }`}>
+                              {player.rank}°
                             </div>
-                            <div className="text-[10px] sm:text-xs text-gray-300 flex items-center gap-1.5 sm:gap-2">
-                              <span><strong className="text-amber-400">AP:</strong> {player.score}</span>
-                              <span><strong className="text-blue-300">DR:</strong> {dr}</span>
+                            <div className="flex items-center gap-2 min-w-0 overflow-hidden">
+                              <img
+                                src={getImageUrl(player.profileImage) + (player.profileImage ? `?t=${Date.now()}` : '')}
+                                alt={player.nickname}
+                                className="w-9 h-9 rounded-full border-2 border-slate-500 object-cover flex-shrink-0 shadow"
+                                onError={(e) => {
+                                  e.currentTarget.src = '/images/default.png';
+                                }}
+                              />
+                              <span className="font-bold text-white text-sm sm:text-base truncate min-w-0" title={player.clanTag ? `[${player.clanTag}] ${player.nickname}` : player.nickname}>
+                                {player.clanTag ? `[${player.clanTag}] ${player.nickname}` : player.nickname}
+                              </span>
                             </div>
+                            <span className="text-right font-bold text-amber-300 text-sm tabular-nums pl-2 border-l border-white/20 w-[52px] flex-shrink-0">{player.score}</span>
+                            <span className="text-right font-bold text-blue-300 text-sm tabular-nums w-[60px] flex-shrink-0">{dr}</span>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
               </motion.div>
             ))}

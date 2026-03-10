@@ -43,8 +43,9 @@ export default function ChatPage() {
   const { connect, emit, on, isConnected, getSocket } = useSocketStore();
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageInput, setMessageInput] = useState('');
-  const [currentChannel] = useState('global');
+  const [channelTab, setChannelTab] = useState<'global' | 'clan'>('global');
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
+  const currentChannel = channelTab === 'global' ? 'global' : (user?.clanTag ? `clan:${user.clanTag}` : 'global');
   const [privateChats, setPrivateChats] = useState<Map<string, PrivateChat>>(new Map());
   const [activePrivateChat, setActivePrivateChat] = useState<string | null>(null);
   const [privateMessageInput, setPrivateMessageInput] = useState<Map<string, string>>(new Map());
@@ -122,7 +123,9 @@ export default function ChatPage() {
     const socket = getSocket();
     if (!socket) return;
 
-    // Aguardar conexão antes de entrar no canal
+    // Canal a entrar: global ou clan:TAG (só se tiver clã). Aba clã sem clã = não entra em nenhum
+    const channelToJoin = channelTab === 'global' ? 'global' : (user?.clanTag ? `clan:${user.clanTag}` : null);
+
     const setupChat = () => {
       if (!socket.connected || !user) {
         console.log('⚠️ [ChatPage] setupChat: Socket não conectado ou usuário não disponível', {
@@ -134,20 +137,20 @@ export default function ChatPage() {
 
       console.log('✅ [ChatPage] Configurando chat - socket conectado:', socket.id);
 
-      // Entrar no canal global com informações do usuário
-      console.log('📤 [ChatPage] Enviando joinChannel:', {
-        channel: 'global',
-        userId: user.id,
-        username: user.username,
-      });
-      
-      socket.emit('joinChannel', {
-        channel: 'global',
-        userId: user.id,
-        username: user.username,
-        nickname: user.nickname || user.username,
-        clanTag: user.clanTag,
-      });
+      setMessages([]);
+      socket.emit('leaveChannel', { channel: 'global' });
+      if (user.clanTag) socket.emit('leaveChannel', { channel: `clan:${user.clanTag}` });
+
+      if (channelToJoin) {
+        console.log('📤 [ChatPage] Enviando joinChannel:', { channel: channelToJoin, userId: user.id });
+        socket.emit('joinChannel', {
+          channel: channelToJoin,
+          userId: user.id,
+          username: user.username,
+          nickname: user.nickname || user.username,
+          clanTag: user.clanTag,
+        });
+      }
 
       // Escutar mensagens carregadas do banco
       socket.on('messagesLoaded', (data: { messages: Message[] }) => {
@@ -228,9 +231,9 @@ export default function ChatPage() {
         });
       });
 
-      // Escutar comando Master: chat limpo
+      // Escutar comando Master: chat global limpo (só limpa se estiver no global)
       socket.on('chatCleared', () => {
-        setMessages([]);
+        if (channelTab === 'global') setMessages([]);
       });
 
       // Escutar quando alguém te menciona no chat (@nick)
@@ -326,9 +329,10 @@ export default function ChatPage() {
         socket.off('chatCleared');
         socket.off('mention');
         socket.emit('leaveChannel', { channel: 'global' });
+        if (user?.clanTag) socket.emit('leaveChannel', { channel: `clan:${user.clanTag}` });
       }
     };
-  }, [user, getSocket, connect]);
+  }, [user, user?.clanTag, channelTab, getSocket, connect]);
 
   // Ctrl+L: Master limpa o chat global
   useEffect(() => {
@@ -589,16 +593,33 @@ export default function ChatPage() {
         className="w-full max-w-7xl rounded-xl overflow-hidden flex flex-col border border-white/20 shadow-2xl"
         style={{ height: 'calc(100vh - 8rem)', maxHeight: '900px' }}
       >
-          {/* Header: Chat Global + texto Online na mesma linha */}
-          <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 p-3 sm:p-4 shadow-lg flex flex-row items-center justify-between gap-2">
-            <h1 className="text-lg sm:text-2xl font-bold flex items-center gap-2">
-              💬 <span className="hidden sm:inline">Chat Global</span><span className="sm:hidden">Chat</span>
-              {isConnected ? (
-                <span className="text-green-400 text-xs sm:text-sm">(● Conectado)</span>
-              ) : (
-                <span className="text-red-400 text-xs sm:text-sm">(○ Desconectado)</span>
-              )}
-            </h1>
+          {/* Header: abas Global / Chat do clã + Online */}
+          <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 p-3 sm:p-4 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setChannelTab('global')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${channelTab === 'global' ? 'bg-white/20 text-white ring-2 ring-white/50' : 'text-white/80 hover:bg-white/10'}`}
+                >
+                  💬 Global
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChannelTab('clan')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${channelTab === 'clan' ? 'bg-white/20 text-white ring-2 ring-white/50' : 'text-white/80 hover:bg-white/10'}`}
+                >
+                  🏴 Chat do clã {user?.clanTag ? `|${user.clanTag}|` : ''}
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                {isConnected ? (
+                  <span className="text-green-400 text-xs sm:text-sm">(● Conectado)</span>
+                ) : (
+                  <span className="text-red-400 text-xs sm:text-sm">(○ Desconectado)</span>
+                )}
+              </div>
+            </div>
             <span className="text-sm sm:text-base font-bold whitespace-nowrap">
               👥 Online ({onlineUsers.length})
             </span>
@@ -637,10 +658,18 @@ export default function ChatPage() {
                 ref={messagesContainerRef}
                 className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 custom-scrollbar scroll-smooth"
               >
-          {messages.length === 0 ? (
+          {channelTab === 'clan' && !user?.clanTag ? (
+            <div className="text-center text-gray-400 py-8 sm:py-16 px-4">
+              <p className="text-4xl mb-4">🏴</p>
+              <p className="text-base font-medium text-white/90 mb-2">Chat do clã</p>
+              <p className="text-sm">Entre em um clã para ver e enviar mensagens aqui. Apenas membros do mesmo clã têm acesso.</p>
+            </div>
+          ) : messages.length === 0 ? (
             <div className="text-center text-gray-500 py-8 sm:py-16">
               <p className="text-2xl sm:text-4xl mb-2 sm:mb-4">💭</p>
-              <p className="text-sm sm:text-base">Nenhuma mensagem ainda. Seja o primeiro a falar!</p>
+              <p className="text-sm sm:text-base">
+                {channelTab === 'clan' ? 'Nenhuma mensagem no chat do clã. Seja o primeiro!' : 'Nenhuma mensagem ainda. Seja o primeiro a falar!'}
+              </p>
             </div>
           ) : (
             <div className="space-y-1.5 sm:space-y-2">
@@ -728,21 +757,22 @@ export default function ChatPage() {
                     value={messageInput}
                     onChange={(e) => setMessageInput(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder="Digite sua mensagem... (@nick para mencionar)"
+                    placeholder={channelTab === 'clan' && !user?.clanTag ? 'Entre em um clã para enviar mensagens' : 'Digite sua mensagem... (@nick para mencionar)'}
                     className="flex-1 bg-gray-800 text-white placeholder-gray-400 px-4 py-3 rounded-lg border border-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    disabled={!isConnected}
+                    disabled={!isConnected || (channelTab === 'clan' && !user?.clanTag)}
                   />
                   <button
                     onClick={handleSendMessage}
-                    disabled={!isConnected || !messageInput.trim()}
+                    disabled={!isConnected || !messageInput.trim() || (channelTab === 'clan' && !user?.clanTag)}
                     className="btn-primary px-6"
                   >
                     Enviar
                   </button>
                 </div>
                 <p className="text-xs text-gray-500 mt-1.5">
-                  @nick para mencionar alguém
-                  {user?.role === 'MASTER' && ' · Ctrl+L limpa o chat (Master)'}
+                  {channelTab === 'global' && '@nick para mencionar alguém'}
+                  {channelTab === 'global' && user?.role === 'MASTER' && ' · Ctrl+L limpa o chat (Master)'}
+                  {channelTab === 'clan' && user?.clanTag && `Chat visível apenas para membros do clã |${user.clanTag}|`}
                 </p>
               </div>
             </div>

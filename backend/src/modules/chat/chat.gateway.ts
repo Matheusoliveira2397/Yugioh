@@ -161,6 +161,64 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     client.join(data.channel);
     console.log(`✅ [ChatGateway] Cliente ${client.id} entrou no canal ${data.channel}`);
 
+    // Canal do clã: só membros do clã podem entrar
+    if (data.channel.startsWith('clan:')) {
+      const channelClanTag = data.channel.replace(/^clan:/i, '').trim();
+      try {
+        const userProfile = await this.usersService.getFullProfile(userId);
+        const userClanTag = (userProfile.clanTag || '').trim();
+        if (!userClanTag || userClanTag.toLowerCase() !== channelClanTag.toLowerCase()) {
+          client.leave(data.channel);
+          client.emit('error', { message: 'Acesso negado. Apenas membros do clã podem acessar este chat.' });
+          return;
+        }
+      } catch (e) {
+        client.leave(data.channel);
+        client.emit('error', { message: 'Erro ao verificar clã.' });
+        return;
+      }
+      // Carregar mensagens do canal do clã
+      try {
+        const recentMessages = await this.chatService.getMessages(data.channel, 50);
+        if (recentMessages && recentMessages.length > 0) {
+          const formattedMessages = await Promise.all(
+            recentMessages.reverse().map(async (msg: any) => {
+              let username = msg.username || 'Usuário';
+              let clanTag: string | undefined;
+              let profileImage: string | null = null;
+              try {
+                const msgUserId = typeof msg.userId === 'string'
+                  ? (msg.userId.match(/^\d+$/) ? parseInt(msg.userId, 10) : null)
+                  : (typeof msg.userId === 'number' ? msg.userId : null);
+                if (msgUserId !== null && !isNaN(msgUserId)) {
+                  const userProfile = await this.usersService.getFullProfile(msgUserId);
+                  username = userProfile.nickname || userProfile.username || username;
+                  clanTag = userProfile.clanTag || undefined;
+                  profileImage = userProfile.profileImage || null;
+                }
+              } catch {
+                // usar dados da mensagem
+              }
+              return {
+                id: msg._id?.toString() || msg.id || Date.now().toString(),
+                userId: msg.userId?.toString() || String(msg.userId),
+                username,
+                clanTag,
+                profileImage,
+                content: msg.content,
+                timestamp: msg.createdAt || new Date(),
+                createdAt: msg.createdAt || new Date(),
+              };
+            })
+          );
+          client.emit('messagesLoaded', { messages: formattedMessages });
+        }
+      } catch (error) {
+        console.error('❌ [ChatGateway] Erro ao carregar mensagens do canal do clã:', error);
+      }
+      return;
+    }
+
     // Se for o canal global, adicionar à lista de usuários online
     if (data.channel === 'global') {
       // Buscar informações do usuário se não foram fornecidas
@@ -366,6 +424,22 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       console.error(`❌ [ChatGateway] sendMessage: userId inválido:`, data.userId);
       client.emit('error', { message: 'Usuário inválido' });
       return;
+    }
+
+    // Canal do clã: só membros do clã podem enviar
+    if (data.channel.startsWith('clan:')) {
+      const channelClanTag = data.channel.replace(/^clan:/i, '').trim();
+      try {
+        const userProfile = await this.usersService.getFullProfile(userId);
+        const userClanTag = (userProfile.clanTag || '').trim();
+        if (!userClanTag || userClanTag.toLowerCase() !== channelClanTag.toLowerCase()) {
+          client.emit('error', { message: 'Apenas membros do clã podem enviar mensagens neste chat.' });
+          return;
+        }
+      } catch {
+        client.emit('error', { message: 'Erro ao verificar clã.' });
+        return;
+      }
     }
     
     // Buscar informações completas do usuário se necessário
