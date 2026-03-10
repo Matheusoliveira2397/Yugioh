@@ -791,16 +791,44 @@ export default function ShopPage() {
     }));
   }, [newItems]);
 
-  // Itens em destaque (para a tela inicial da loja)
-  const featuredCards = useMemo(() => cards.slice(0, 6), [cards]);
+  // Itens em destaque: cartas = últimas cadastradas (carrossel); demais = primeiros da lista
+  const featuredCards = useMemo(() => {
+    return [...cards]
+      .sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      })
+      .slice(0, 16);
+  }, [cards]);
+  const featuredCardsMarquee: MarqueeCard[] = useMemo(() => {
+    return featuredCards.map((c) => ({
+      id: c.id,
+      name: c.name,
+      cardImage: c.cardImage,
+      type: c.type,
+      rarity: c.rarity,
+      createdAt: c.createdAt,
+    }));
+  }, [featuredCards]);
   const featuredPlaymats = useMemo(() => playmats.slice(0, 3), [playmats]);
   const featuredSleeves = useMemo(() => sleeves.slice(0, 3), [sleeves]);
   const featuredTalismans = useMemo(() => talismans.slice(0, 3), [talismans]);
 
-  // Últimos itens por categoria (para a tela inicial)
-  const latestPlaymats = useMemo(() => playmats.slice(0, 4), [playmats]);
-  const latestSleeves = useMemo(() => sleeves.slice(0, 4), [sleeves]);
-  const latestTalismans = useMemo(() => talismans.slice(0, 4), [talismans]);
+  // Cartas em promoção (com desconto ativo)
+  const promotionCards = useMemo(() => {
+    return cards.filter((c) => c.promotionDiscountPercent != null && c.promotionDiscountPercent > 0);
+  }, [cards]);
+  const promotionCardsMarquee: MarqueeCard[] = useMemo(() => {
+    return promotionCards.map((c) => ({
+      id: c.id,
+      name: c.name,
+      cardImage: c.cardImage,
+      type: c.type,
+      rarity: c.rarity,
+      createdAt: c.createdAt,
+    }));
+  }, [promotionCards]);
 
   return (
     <div className="min-h-screen text-white py-6">
@@ -898,36 +926,43 @@ export default function ShopPage() {
         </div>
 
         {category === null ? (
-          /* ---------- Aba Destaques: escolher categoria + itens em destaque + últimos ---------- */
+          /* ---------- Aba Destaques: promoções + itens em destaque ---------- */
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3 }}
             className="space-y-10"
           >
-            {/* Escolha da categoria */}
-            <div>
-              <h2 className="text-xl font-bold text-white mb-4">Escolha uma categoria</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[
-                  { id: 'cards' as const, label: 'Cartas', icon: '🎴', gradient: 'from-purple-600 to-pink-600' },
-                  { id: 'playmats' as const, label: 'Playmats', icon: '🎨', gradient: 'from-blue-600 to-cyan-600' },
-                  { id: 'sleeves' as const, label: 'Skins de cartas', icon: '🎭', gradient: 'from-green-600 to-emerald-600' },
-                  { id: 'talismans' as const, label: 'Talismãs', icon: '✨', gradient: 'from-amber-600 to-yellow-600' },
-                ].map((cat) => (
-                  <motion.button
-                    key={cat.id}
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => { setMode('buy'); setCategory(cat.id); setCurrentPage(1); }}
-                    className={`p-6 rounded-2xl bg-gradient-to-br ${cat.gradient} border border-white/20 shadow-xl hover:shadow-2xl transition-all text-white text-center`}
-                  >
-                    <span className="text-4xl block mb-2">{cat.icon}</span>
-                    <span className="font-bold text-sm md:text-base">{cat.label}</span>
-                  </motion.button>
-                ))}
+            {/* Cartas em promoção */}
+            {promotionCardsMarquee.length > 0 && (
+              <div>
+                <div className="flex items-center gap-3 mb-4">
+                  <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-pink-500">
+                    🏷️ Cartas em promoção
+                  </h2>
+                  <div className="flex-1 h-px bg-gradient-to-r from-rose-400/50 to-transparent" />
+                </div>
+                <div className="rounded-2xl p-4 bg-white/5 border border-rose-500/20 space-y-2">
+                  <p className="text-sm text-gray-400">Aproveite descontos por tempo limitado</p>
+                  <div className="max-w-full -mx-2 md:mx-0">
+                    <LatestCardsMarquee
+                      cards={promotionCardsMarquee}
+                      showVerLoja={false}
+                      hideTitle
+                      onCardClick={(c) => {
+                        const full = cards.find((x) => x.id === c.id);
+                        if (full) {
+                          setCategory('cards');
+                          setMode('buy');
+                          setSelectedCard(full);
+                          setCurrentPage(1);
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Itens em destaque */}
             <div>
@@ -938,28 +973,24 @@ export default function ShopPage() {
                 <div className="flex-1 h-px bg-gradient-to-r from-yellow-400/50 to-transparent" />
               </div>
               <div className="rounded-2xl p-4 bg-white/5 border border-white/10 space-y-6">
-                {featuredCards.length > 0 && (
+                {featuredCardsMarquee.length > 0 && (
                   <div>
-                    <p className="text-sm text-gray-400 mb-2">🎴 Cartas</p>
-                    <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                      {featuredCards.map((card) => (
-                        <motion.div
-                          key={card.id}
-                          whileHover={{ scale: 1.05 }}
-                          onClick={() => { setCategory('cards'); setMode('buy'); setSelectedCard(card); setCurrentPage(1); }}
-                          className="flex-shrink-0 w-24 cursor-pointer relative"
-                        >
-                          <div className="relative w-full aspect-[2/3] rounded-lg overflow-hidden border border-white/20">
-                            <CardImage card={card} className="w-full h-full object-cover" fallback="/images/fundoCarta.webp" />
-                            {card.promotionDiscountPercent ? (
-                              <div className="absolute top-0.5 right-0.5 min-w-[22px] h-5 px-1 rounded bg-rose-500/95 text-white text-[10px] font-bold flex items-center justify-center shadow">
-                                -{card.promotionDiscountPercent}%
-                              </div>
-                            ) : null}
-                          </div>
-                          <p className="text-[10px] text-white truncate mt-1">{card.name}</p>
-                        </motion.div>
-                      ))}
+                    <p className="text-sm text-gray-400 mb-2">🎴 Últimas cartas cadastradas</p>
+                    <div className="max-w-full -mx-2 md:mx-0">
+                      <LatestCardsMarquee
+                        cards={featuredCardsMarquee}
+                        showVerLoja={false}
+                        hideTitle
+                        onCardClick={(c) => {
+                          const full = cards.find((x) => x.id === c.id);
+                          if (full) {
+                            setCategory('cards');
+                            setMode('buy');
+                            setSelectedCard(full);
+                            setCurrentPage(1);
+                          }
+                        }}
+                      />
                     </div>
                   </div>
                 )}
@@ -1026,69 +1057,10 @@ export default function ShopPage() {
                     </div>
                   </div>
                 )}
-                {featuredCards.length === 0 && featuredPlaymats.length === 0 && featuredSleeves.length === 0 && featuredTalismans.length === 0 && (
+                {featuredCardsMarquee.length === 0 && featuredPlaymats.length === 0 && featuredSleeves.length === 0 && featuredTalismans.length === 0 && (
                   <p className="text-gray-400 text-sm text-center py-4">Carregando itens em destaque...</p>
                 )}
               </div>
-            </div>
-
-            {/* Últimos itens adicionados */}
-            <div>
-              <div className="flex items-center gap-3 mb-4">
-                <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400">
-                  ✨ Últimos itens adicionados
-                </h2>
-                <div className="flex-1 h-px bg-gradient-to-r from-cyan-400/50 to-transparent" />
-              </div>
-              {newItemsMarqueeCards.length > 0 && (
-                <LatestCardsMarquee cards={newItemsMarqueeCards} showVerLoja={false} />
-              )}
-              {(latestPlaymats.length > 0 || latestSleeves.length > 0 || latestTalismans.length > 0) && (
-                <div className="mt-4 rounded-2xl p-4 bg-white/5 border border-white/10 space-y-3">
-                  {latestPlaymats.length > 0 && (
-                    <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-                      {latestPlaymats.map((pm) => {
-                        const src = pm.image ? (pm.image.startsWith('http') ? pm.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${pm.image}`) : '';
-                        return (
-                          <motion.div key={pm.id} whileHover={{ scale: 1.02 }} onClick={() => { setCategory('playmats'); setMode('buy'); setCurrentPage(1); }} className="flex-shrink-0 w-28 cursor-pointer rounded-lg overflow-hidden border border-white/20">
-                            {src ? <img src={src} alt={pm.name} className="w-full aspect-video object-cover" /> : <div className="w-full aspect-video flex items-center justify-center text-xl">🎨</div>}
-                            <p className="text-[10px] text-white truncate p-1">{pm.name}</p>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {latestSleeves.length > 0 && (
-                    <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-                      {latestSleeves.map((sl) => {
-                        const src = sl.image ? (sl.image.startsWith('http') ? sl.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${sl.image}`) : '';
-                        return (
-                          <motion.div key={sl.id} whileHover={{ scale: 1.02 }} onClick={() => { setCategory('sleeves'); setMode('buy'); setCurrentPage(1); }} className="flex-shrink-0 w-20 cursor-pointer rounded-lg overflow-hidden border border-white/20">
-                            {src ? <img src={src} alt={sl.name} className="w-full aspect-[2/3] object-cover" /> : <div className="w-full aspect-[2/3] flex items-center justify-center text-lg">🎭</div>}
-                            <p className="text-[10px] text-white truncate p-1">{sl.name}</p>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {latestTalismans.length > 0 && (
-                    <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-                      {latestTalismans.map((t) => {
-                        const src = t.image ? (t.image.startsWith('http') ? t.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${t.image}`) : '';
-                        return (
-                          <motion.div key={t.id} whileHover={{ scale: 1.02 }} onClick={() => { setCategory('talismans'); setMode('buy'); setCurrentPage(1); }} className="flex-shrink-0 w-24 cursor-pointer rounded-lg overflow-hidden border border-amber-500/30">
-                            {src ? <img src={src} alt={t.name} className="w-full aspect-square object-cover" /> : <div className="w-full aspect-square flex items-center justify-center text-xl">✨</div>}
-                            <p className="text-[10px] text-white truncate p-1">{t.name}</p>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-              {newItemsMarqueeCards.length === 0 && latestPlaymats.length === 0 && latestSleeves.length === 0 && latestTalismans.length === 0 && (
-                <p className="text-gray-400 text-sm text-center py-4">Nenhum item recente no momento.</p>
-              )}
             </div>
           </motion.div>
         ) : (

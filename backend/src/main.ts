@@ -197,6 +197,7 @@ async function bootstrap() {
   app.enableCors({
     origin: corsOrigins.length > 1 ? corsOrigins : corsOrigins[0] || 'http://localhost:5173',
     credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
 
   // Validação global

@@ -42,6 +42,7 @@ import AdminMessagesPanel from './pages/AdminMessagesPanel';
 import AdminAchievementsPanel from './pages/AdminAchievementsPanel';
 import AdminDivisionsPanel from './pages/AdminDivisionsPanel';
 import AdminCashDivisionPanel from './pages/AdminCashDivisionPanel';
+import AdminPaymentsPanel from './pages/AdminPaymentsPanel';
 import AdminRandomDuelLevelRangesPanel from './pages/AdminRandomDuelLevelRangesPanel';
 import AdminSocialMediaPanel from './pages/AdminSocialMediaPanel';
 import AdminNewAccountSettingsPanel from './pages/AdminNewAccountSettingsPanel';
@@ -653,6 +654,19 @@ function App() {
             isAuthenticated ? (
               <Layout>
                 <AdminCashDivisionPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/payments"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminPaymentsPanel />
               </Layout>
             ) : (
               <Navigate to="/login" />

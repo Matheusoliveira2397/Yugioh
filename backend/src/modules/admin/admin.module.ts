@@ -43,6 +43,8 @@ import { ShopModule } from '../shop/shop.module';
 import { PromotionsModule } from '../promotions/promotions.module';
 import { CardsModule } from '../cards/cards.module';
 import { CosmeticsModule } from '../cosmetics/cosmetics.module';
+import { CreditPaymentLog } from './entities/credit-payment-log.entity';
+import { AdminDbMigrationService } from './admin-db-migration.service';
 
 @Module({
   imports: [
@@ -52,6 +54,7 @@ import { CosmeticsModule } from '../cosmetics/cosmetics.module';
     PromotionsModule,
     CardsModule,
     TypeOrmModule.forFeature([
+      CreditPaymentLog,
       User,
       Card,
       UserCard,
@@ -87,7 +90,7 @@ import { CosmeticsModule } from '../cosmetics/cosmetics.module';
     UsersModule,
   ],
   controllers: [AdminController, PublicController],
-  providers: [AdminService, RandomDuelLevelRangesService, PublicStatsService],
+  providers: [AdminService, RandomDuelLevelRangesService, PublicStatsService, AdminDbMigrationService],
   exports: [AdminService, RandomDuelLevelRangesService],
 })
 export class AdminModule {}

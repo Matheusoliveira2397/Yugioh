@@ -229,17 +229,6 @@ export class MailService {
                 margin: 0;
                 font-size: 28px;
               }
-              .gift-box {
-                background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
-                padding: 20px;
-                border-radius: 8px;
-                text-align: center;
-                margin: 20px 0;
-              }
-              .gift-box h2 {
-                margin: 0 0 10px 0;
-                color: #fbbf24;
-              }
             </style>
           </head>
           <body>
@@ -251,12 +240,6 @@ export class MailService {
               <h2 style="text-align: center; color: #fbbf24;">Bem-vindo, ${nickname}! 🎉</h2>
               
               <p style="text-align: center;">Sua conta foi ativada com sucesso!</p>
-              
-              <div class="gift-box">
-                <h2>🎁 Bônus de Boas-Vindas</h2>
-                <p style="font-size: 24px; margin: 10px 0;">💎 500 Gemas</p>
-                <p>Use suas gemas para comprar pacotes e construir seu deck!</p>
-              </div>
               
               <div style="background: rgba(255, 255, 255, 0.05); padding: 20px; border-radius: 8px;">
                 <h3 style="color: #60a5fa;">📚 Próximos Passos:</h3>
@@ -301,24 +284,29 @@ export class MailService {
           <!DOCTYPE html>
           <html>
           <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
-              body { font-family: Arial, sans-serif; background-color: #1a1a2e; color: #fff; margin: 0; padding: 0; }
-              .container { max-width: 600px; margin: 0 auto; padding: 20px; background: linear-gradient(135deg, #16213e 0%, #0f3460 100%); border-radius: 10px; }
-              .header { text-align: center; padding: 20px; background: rgba(139, 92, 246, 0.1); border-radius: 10px; margin-bottom: 20px; }
+              body { font-family: Arial, sans-serif; background-color: #1a1a2e; margin: 0; padding: 0; }
+              .container { max-width: 600px; margin: 0 auto; padding: 24px; background: linear-gradient(135deg, #16213e 0%, #0f3460 100%); border-radius: 10px; }
+              .container p { margin: 0 0 14px 0; line-height: 1.6; font-size: 15px; color: #e2e8f0; }
+              .header { text-align: center; padding: 20px; background: rgba(139, 92, 246, 0.15); border-radius: 10px; margin-bottom: 24px; }
               h1 { color: #fbbf24; margin: 0; font-size: 24px; }
-              .button { display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 16px 0; }
+              .button { display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 16px 0; }
+              .link-fallback { word-break: break-all; font-size: 12px; color: #93c5fd; margin-top: 12px; }
+              .warning { padding: 14px 16px; background: rgba(239, 68, 68, 0.25); border: 1px solid #ef4444; border-radius: 8px; margin-top: 20px; font-size: 14px; line-height: 1.5; color: #fef2f2; }
+              .warning strong { color: #fef2f2; }
               .footer { text-align: center; color: #94a3b8; font-size: 12px; margin-top: 24px; }
-              .warning { padding: 12px; background: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; margin-top: 16px; border-radius: 4px; }
+              .footer p { margin: 0; color: #94a3b8; }
             </style>
           </head>
           <body>
             <div class="container">
               <div class="header"><h1>🎴 YuGiOh RPG: Champions Of Duels</h1></div>
-              <p>Olá, <strong>${nickname}</strong>!</p>
-              <p>Recebemos uma solicitação para redefinir a senha da sua conta.</p>
-              <p>Clique no botão abaixo para criar uma nova senha:</p>
+              <p>Olá, <strong style="color: #fbbf24;">${nickname}</strong>!</p>
+              <p>Recebemos uma solicitação para redefinir a senha da sua conta. Clique no botão abaixo para criar uma nova senha:</p>
               <p style="text-align: center;"><a href="${resetUrl}" class="button">Redefinir senha</a></p>
-              <p style="word-break: break-all; color: #60a5fa; font-size: 12px;">Ou copie o link: ${resetUrl}</p>
+              <p class="link-fallback">Ou copie o link: <a href="${resetUrl}" style="color: #93c5fd;">${resetUrl}</a></p>
               <div class="warning"><strong>⚠️</strong> Este link expira em 1 hora. Se você não pediu a redefinição, ignore este email.</div>
               <div class="footer"><p>© YuGiOh RPG: Champions Of Duels</p></div>
             </div>

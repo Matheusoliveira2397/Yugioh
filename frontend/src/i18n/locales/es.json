@@ -30,7 +30,10 @@
     "didNotReceiveEmail": "¿No recibiste el correo? Revisa spam o reenviar.",
     "emailResent": "Correo reenviado. Revisa tu bandeja.",
     "resendVerification": "Reenviar verificación",
-    "sending": "Enviando..."
+    "sending": "Enviando...",
+    "forgotHint": "Ingresa el email de tu cuenta. Te enviaremos un enlace para restablecer la contraseña.",
+    "sendLink": "Enviar enlace",
+    "forgotError": "Error al enviar. Verifica el email o intenta de nuevo."
   },
   "loginRankings": {
     "top5Duelists": "Top 5 Duelistas",

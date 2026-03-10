@@ -53,6 +53,10 @@ export default function LoginPage() {
   const [userEmail, setUserEmail] = useState('');
   const [resendingEmail, setResendingEmail] = useState(false);
   const [emailResent, setEmailResent] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotStatus, setForgotStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [forgotMessage, setForgotMessage] = useState('');
   const [shopCards, setShopCards] = useState<MarqueeCard[]>([]);
   const [topPlayersGlobal, setTopPlayersGlobal] = useState<TopPlayer[]>([]);
   const [topPlayersSeason, setTopPlayersSeason] = useState<TopPlayer[]>([]);
@@ -142,10 +146,10 @@ export default function LoginPage() {
 
   const handleResendVerificationEmail = async () => {
     if (!userEmail) return;
-    
+
     setResendingEmail(true);
     setEmailResent(false);
-    
+
     try {
       await axios.post(`${API_URL}/auth/resend-verification-email`, { email: userEmail });
       setEmailResent(true);
@@ -155,6 +159,28 @@ export default function LoginPage() {
     } finally {
       setResendingEmail(false);
     }
+  };
+
+  const handleForgotPasswordSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) return;
+    setForgotStatus('loading');
+    setForgotMessage('');
+    try {
+      const { data } = await axios.post(`${API_URL}/auth/forgot-password`, { email: forgotEmail.trim().toLowerCase() });
+      setForgotStatus('success');
+      setForgotMessage(data.message);
+    } catch (err: any) {
+      setForgotStatus('error');
+      setForgotMessage(err.response?.data?.message || t('login.forgotError'));
+    }
+  };
+
+  const openForgotPassword = () => {
+    setShowForgotPassword(true);
+    setForgotEmail('');
+    setForgotStatus('idle');
+    setForgotMessage('');
   };
 
   return (
@@ -242,9 +268,13 @@ export default function LoginPage() {
                 </form>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-sm">
-                <Link to="/forgot-password" className="text-white/70 hover:text-white transition-colors">
+                <button
+                  type="button"
+                  onClick={openForgotPassword}
+                  className="text-white/80 hover:text-white transition-colors underline underline-offset-2 font-medium"
+                >
                   {t('login.forgotPassword')}
-                </Link>
+                </button>
                 <span className="text-white/40">·</span>
                 <Link to="/register" className="text-purple-300 hover:text-white font-medium transition-colors">
                   {t('login.createAccount')}
@@ -284,6 +314,92 @@ export default function LoginPage() {
           </div>
         </div>
       </header>
+
+      {/* Modal Recuperar senha */}
+      {showForgotPassword && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => { if (forgotStatus !== 'success') setShowForgotPassword(false); }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="forgot-title"
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="rounded-xl border border-white/20 bg-slate-900/95 backdrop-blur-md p-6 w-full max-w-md shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 id="forgot-title" className="text-lg font-bold text-white">
+                {t('login.forgotPassword')}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowForgotPassword(false)}
+                className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                aria-label={t('common.close')}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <p className="text-white/70 text-sm mb-4">
+              {t('login.forgotHint')}
+            </p>
+            {forgotStatus === 'success' && (
+              <div className="mb-4 p-3 rounded-lg bg-green-500/20 border border-green-500/40 text-green-200 text-sm">
+                {forgotMessage}
+              </div>
+            )}
+            {forgotStatus === 'error' && (
+              <div className="mb-4 p-3 rounded-lg bg-red-500/20 border border-red-500/40 text-red-200 text-sm">
+                {forgotMessage}
+              </div>
+            )}
+            {forgotStatus !== 'success' && (
+              <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
+                <label htmlFor="forgot-email-modal" className="block text-sm font-medium text-white/90">
+                  Email
+                </label>
+                <input
+                  id="forgot-email-modal"
+                  type="email"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  placeholder="seu@email.com"
+                  required
+                  className="w-full py-2.5 px-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-400/60"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotPassword(false)}
+                    className="flex-1 py-2.5 rounded-lg font-medium text-white/80 bg-white/10 hover:bg-white/20 transition-colors"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={forgotStatus === 'loading'}
+                    className="flex-1 py-2.5 rounded-lg font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:opacity-60 transition-all"
+                  >
+                    {forgotStatus === 'loading' ? t('login.sending') : t('login.sendLink')}
+                  </button>
+                </div>
+              </form>
+            )}
+            {forgotStatus === 'success' && (
+              <button
+                type="button"
+                onClick={() => setShowForgotPassword(false)}
+                className="w-full py-2.5 rounded-lg font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 transition-all"
+              >
+                {t('common.close')}
+              </button>
+            )}
+          </motion.div>
+        </div>
+      )}
 
       {/* Conteúdo principal */}
       <main className="flex-1 relative z-10 pt-4 sm:pt-6 pb-8 px-4">

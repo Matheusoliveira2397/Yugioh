@@ -6,7 +6,9 @@ import ResetAllAccountsModal from '../components/admin/ResetAllAccountsModal';
 
 const STORAGE_KEY = 'admin-panel-cards-order';
 
-const defaultCards: { id: string; label: string; icon: string; description: string; route: string; bg: string; iconBg: string; accent: string }[] = [
+type AdminCard = { id: string; label: string; icon: string; description: string; route: string; bg: string; iconBg: string; accent: string };
+
+const defaultCards: AdminCard[] = [
   { id: 'create-account', label: 'Criar conta', icon: '➕', description: 'Criar conta normal ou admin', route: '/admin/create-account', bg: 'bg-emerald-900/40', iconBg: 'bg-emerald-500/30', accent: 'border-l-emerald-500' },
   { id: 'admin-control', label: 'Controle de Admins', icon: '🛡️', description: 'Definir quais abas cada admin pode ver', route: '/admin/admin-control', bg: 'bg-slate-800/90', iconBg: 'bg-slate-500/30', accent: 'border-l-slate-400' },
   { id: 'site-tabs', label: 'Gerenciar Abas', icon: '🔧', description: 'Ativar/desativar abas do site', route: '/admin/site-tabs', bg: 'bg-slate-800/90', iconBg: 'bg-amber-500/20', accent: 'border-l-amber-500' },
@@ -29,6 +31,19 @@ const defaultCards: { id: string; label: string; icon: string; description: stri
   { id: 'social-media', label: 'Redes Sociais', icon: '📱', description: 'Links das redes sociais', route: '/admin/social-media', bg: 'bg-emerald-900/40', iconBg: 'bg-emerald-500/30', accent: 'border-l-emerald-500' },
   { id: 'new-account-settings', label: 'Contas Novas', icon: '⚙️', description: 'Cash, créditos e decks iniciais', route: '/admin/new-account-settings', bg: 'bg-slate-700/80', iconBg: 'bg-slate-400/30', accent: 'border-l-emerald-500' },
   { id: 'cash-division', label: 'Divisão de Cash', icon: '💰', description: 'Divisão automática de cash dos grupos', route: '/admin/cash-division', bg: 'bg-green-900/40', iconBg: 'bg-green-500/30', accent: 'border-l-emerald-500' },
+  { id: 'payments', label: 'Pagamentos', icon: '💳', description: 'Adicionar créditos à conta e ver histórico', route: '/admin/payments', bg: 'bg-emerald-900/40', iconBg: 'bg-emerald-500/30', accent: 'border-l-emerald-500' },
+];
+
+const CATEGORIES: { key: string; label: string; ids: string[] }[] = [
+  { key: 'contas', label: 'Contas e Acesso', ids: ['create-account', 'admin-control', 'site-tabs', 'new-account-settings'] },
+  { key: 'cartas', label: 'Cartas e Decks', ids: ['cards', 'initial-decks'] },
+  { key: 'loja', label: 'Loja e Cosméticos', ids: ['playmats', 'sleeves', 'talismans', 'promotions'] },
+  { key: 'comunicacao', label: 'Notícias e Comunicação', ids: ['news', 'messages', 'social-media'] },
+  { key: 'jogadores', label: 'Jogadores', ids: ['players'] },
+  { key: 'duelos', label: 'Duelos e Arena', ids: ['arena', 'active-duels', 'random-duel-level-ranges'] },
+  { key: 'torneios', label: 'Torneios', ids: ['tournaments'] },
+  { key: 'ranking', label: 'Ranking e Temporadas', ids: ['seasons', 'divisions', 'achievements'] },
+  { key: 'economia', label: 'Economia', ids: ['cash-division', 'payments'] },
 ];
 
 function loadOrder(): string[] {
@@ -51,12 +66,17 @@ function saveOrder(order: string[]) {
   } catch (_) {}
 }
 
+function normalize(s: string): string {
+  return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+}
+
 export default function AdminPanel() {
   const { user } = useAuthStore();
   const navigate = useNavigate();
   const [showResetModal, setShowResetModal] = useState(false);
   const [order, setOrder] = useState<string[]>(() => loadOrder());
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     saveOrder(order);
@@ -64,16 +84,32 @@ export default function AdminPanel() {
 
   const orderedCards = useMemo(() => {
     const byId = new Map(defaultCards.map((c) => [c.id, c]));
-    return order.map((id) => byId.get(id)).filter(Boolean) as typeof defaultCards;
+    return order.map((id) => byId.get(id)).filter(Boolean) as AdminCard[];
   }, [order]);
 
   const visibleCards = useMemo(() => {
     if (!user) return [];
     if (user.role === 'MASTER') return orderedCards;
     const allowed = user.adminAllowedTabs;
-    if (allowed == null || allowed === undefined) return orderedCards;
+    if (allowed == null || !Array.isArray(allowed) || allowed.length === 0) return [];
     return orderedCards.filter((c) => c.id !== 'admin-control' && allowed.includes(c.id));
   }, [user, orderedCards]);
+
+  const filteredCards = useMemo(() => {
+    if (!search.trim()) return visibleCards;
+    const q = normalize(search.trim());
+    return visibleCards.filter(
+      (c) => normalize(c.label).includes(q) || normalize(c.description).includes(q)
+    );
+  }, [visibleCards, search]);
+
+  const cardsByCategory = useMemo(() => {
+    const byId = new Map(filteredCards.map((c) => [c.id, c]));
+    return CATEGORIES.map((cat) => ({
+      ...cat,
+      cards: cat.ids.map((id) => byId.get(id)).filter(Boolean) as AdminCard[],
+    })).filter((g) => g.cards.length > 0);
+  }, [filteredCards]);
 
   const handleDragStart = (index: number) => (e: React.DragEvent) => {
     setDraggedIndex(index);
@@ -110,144 +146,167 @@ export default function AdminPanel() {
   }
 
   return (
-    <div className="min-h-screen p-6 sm:p-8 relative z-10">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
+    <div className="min-h-screen p-4 sm:p-5 relative z-10">
+      <div className="max-w-4xl mx-auto">
+        {/* Header compacto */}
         <motion.div
-          initial={{ opacity: 0, y: -16 }}
+          initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-10 flex flex-wrap items-end justify-between gap-4"
+          className="mb-4 flex flex-wrap items-center justify-between gap-3"
         >
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-xl bg-white/10 flex items-center justify-center text-3xl shadow-inner">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center text-2xl">
               ⚙️
             </div>
             <div>
-              <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight">
-                Painel Administrativo
+              <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+                Painel Admin
               </h1>
-              <p className="text-slate-400 text-sm mt-0.5">
-                Gerenciamento completo do sistema
+              <p className="text-slate-500 text-xs">
+                {user.role === 'MASTER' ? 'MASTER' : 'ADMIN'}
               </p>
             </div>
           </div>
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/20">
-            <span className="text-lg">👑</span>
-            <span className="text-amber-300 font-semibold text-sm">
-              {user.role === 'MASTER' ? 'MASTER' : 'ADMIN'}
+          <div className="flex items-center gap-2">
+            <span className="text-amber-300 font-semibold text-xs px-2 py-1 rounded bg-white/5 border border-white/10">
+              {user.role === 'MASTER' ? '👑 MASTER' : 'ADMIN'}
             </span>
+            <button
+              onClick={() => navigate('/')}
+              className="px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-all"
+            >
+              ← Início
+            </button>
           </div>
         </motion.div>
 
-        {/* Lista de abas do painel */}
-        <div className="rounded-2xl bg-black/20 border border-white/5 p-4 sm:p-5">
-          {user?.role === 'MASTER' && (
-            <p className="text-slate-400 text-xs mb-4 flex items-center gap-2">
-              <span className="text-slate-500">⋮⋮</span> Arraste pelo ícone para mudar a ordem
-            </p>
-          )}
-          {visibleCards.length === 0 && user?.role === 'ADMIN' && (
-            <p className="text-amber-200/80 text-sm py-4">Nenhuma aba liberada para sua conta. Peça ao Master para definir suas permissões.</p>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-            {visibleCards.map((card) => {
-              const orderIndex = order.indexOf(card.id);
-              return (
-              <motion.div
-                key={card.id}
-                layout
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: Math.min(orderIndex * 0.02, 0.3) }}
-                className={`
-                  group relative ${card.bg} border border-white/10 rounded-xl
-                  shadow-md hover:shadow-xl hover:shadow-black/20
-                  border-l-4 ${card.accent}
-                  transition-all duration-200 overflow-hidden
-                  hover:border-white/20 hover:brightness-110
-                  ${draggedIndex === orderIndex ? 'opacity-60 ring-2 ring-white/30' : ''}
-                `}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop(orderIndex)}
-              >
-                <div className="p-5 sm:p-6 flex items-center gap-4">
-                  {user?.role === 'MASTER' ? (
-                    <div
-                      draggable
-                      onDragStart={handleDragStart(orderIndex)}
-                      onDragEnd={handleDragEnd}
-                      className="flex-shrink-0 w-10 h-14 rounded-lg flex items-center justify-center text-slate-400 hover:text-white cursor-grab active:cursor-grabbing hover:bg-white/10 transition-colors touch-none"
-                      title="Arraste para reordenar"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <span className="text-xl leading-none select-none">⋮⋮</span>
-                    </div>
-                  ) : (
-                    <div className="flex-shrink-0 w-10 h-14 rounded-lg flex items-center justify-center text-slate-500">
-                      <span className="text-xl">⋮⋮</span>
-                    </div>
-                  )}
-                  <div
-                    className="min-w-0 flex-1 cursor-pointer flex items-center gap-4"
-                    onClick={() => navigate(card.route)}
+        {/* Busca e lista de abas */}
+        <div className="rounded-xl bg-black/20 border border-white/5 p-3 sm:p-4">
+          {visibleCards.length > 0 && (
+            <div className="mb-3">
+              <label htmlFor="admin-search" className="sr-only">Buscar aba</label>
+              <div className="relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">🔍</span>
+                <input
+                  id="admin-search"
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar (ex: cartas, torneios)..."
+                  className="w-full pl-8 pr-8 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 text-sm"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 rounded text-sm"
+                    aria-label="Limpar busca"
                   >
-                    <div className={`flex-shrink-0 w-14 h-14 rounded-xl flex items-center justify-center text-2xl ${card.iconBg} ring-1 ring-white/10`}>
-                      {card.icon}
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="font-semibold text-white text-base mb-1 group-hover:text-white">
-                        {card.label}
-                      </h3>
-                      <p className="text-slate-400 text-sm leading-snug">
-                        {card.description}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="flex-shrink-0 text-slate-500 group-hover:text-white group-hover:translate-x-0.5 transition-all text-xl pointer-events-none">→</span>
-                </div>
-              </motion.div>
-            );
-            })}
-          </div>
+                    ✕
+                  </button>
+                )}
+              </div>
+              <p className="text-slate-500 text-[10px] mt-1">
+                {filteredCards.length} {filteredCards.length === 1 ? 'aba' : 'abas'} {search ? '' : 'disponível(is)'}
+              </p>
+            </div>
+          )}
+
+          {user?.role === 'MASTER' && visibleCards.length > 0 && !search && (
+            <p className="text-slate-500 text-[10px] mb-2">⋮⋮ Arraste para reordenar</p>
+          )}
+
+          {visibleCards.length === 0 && user?.role === 'ADMIN' && (
+            <p className="text-amber-200/80 text-xs py-6 text-center">Nenhuma aba liberada. Peça ao Master para definir permissões.</p>
+          )}
+
+          {visibleCards.length > 0 && filteredCards.length === 0 && (
+            <p className="text-slate-400 text-xs py-6 text-center">Nenhuma aba para &quot;{search}&quot;</p>
+          )}
+
+          {cardsByCategory.map((group) => (
+            <section key={group.key} className="mb-4 last:mb-0">
+              <h2 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
+                <span className="w-0.5 h-3 rounded-full bg-white/30" />
+                {group.label}
+              </h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                {group.cards.map((card) => {
+                  const orderIndex = order.indexOf(card.id);
+                  return (
+                    <motion.div
+                      key={card.id}
+                      layout
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: Math.min(orderIndex * 0.01, 0.2) }}
+                      className={`
+                        group relative ${card.bg} border border-white/10 rounded-lg
+                        shadow hover:shadow-md border-l-2 ${card.accent}
+                        transition-all duration-150 overflow-hidden
+                        hover:border-white/20 hover:brightness-105
+                        ${draggedIndex === orderIndex ? 'opacity-60 ring-2 ring-white/30' : ''}
+                      `}
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop(orderIndex)}
+                    >
+                      <div className="p-2.5 flex items-center gap-2 min-h-0">
+                        {user?.role === 'MASTER' ? (
+                          <div
+                            draggable
+                            onDragStart={handleDragStart(orderIndex)}
+                            onDragEnd={handleDragEnd}
+                            className="flex-shrink-0 w-6 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white cursor-grab active:cursor-grabbing hover:bg-white/10 text-xs touch-none"
+                            title="Arraste para reordenar"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            ⋮⋮
+                          </div>
+                        ) : (
+                          <div className="flex-shrink-0 w-6 h-8 rounded flex items-center justify-center text-slate-500 text-xs">⋮⋮</div>
+                        )}
+                        <div
+                          className="min-w-0 flex-1 cursor-pointer flex items-center gap-2"
+                          onClick={() => navigate(card.route)}
+                        >
+                          <div className={`flex-shrink-0 w-9 h-9 rounded-md flex items-center justify-center text-base ${card.iconBg} ring-1 ring-white/10`}>
+                            {card.icon}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="font-medium text-white text-xs block truncate group-hover:text-white" title={card.description}>
+                              {card.label}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="flex-shrink-0 text-slate-500 group-hover:text-white text-sm">→</span>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
         </div>
 
-        {/* Área de Ações Perigosas */}
+        {/* Ações perigosas + Voltar compactos */}
         {user?.role === 'MASTER' && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="mt-10 p-5 rounded-2xl bg-red-950/40 border border-red-500/30"
+            className="mt-4 p-3 rounded-xl bg-red-950/30 border border-red-500/20 flex flex-wrap items-center justify-between gap-2"
           >
-            <h3 className="text-lg font-bold text-red-300 mb-2 flex items-center gap-2">
-              <span className="text-xl">⚠️</span> Ações Perigosas
-            </h3>
-            <p className="text-red-200/90 text-sm mb-4">
-              Estas ações são irreversíveis e afetam todo o sistema.
-            </p>
+            <div>
+              <h3 className="text-sm font-bold text-red-300 flex items-center gap-1.5">⚠️ Ações Perigosas</h3>
+              <p className="text-red-200/80 text-[10px]">Irreversíveis.</p>
+            </div>
             <button
               onClick={() => setShowResetModal(true)}
-              className="px-5 py-2.5 text-sm font-semibold bg-red-600 hover:bg-red-500 text-white rounded-xl transition-colors border border-red-500/50"
+              className="px-3 py-1.5 text-xs font-semibold bg-red-600 hover:bg-red-500 text-white rounded-lg border border-red-500/50"
             >
-              🔄 Resetar Todas as Contas
+              Resetar contas
             </button>
           </motion.div>
         )}
-
-        {/* Botão Voltar */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.4 }}
-          className="mt-10 flex justify-center"
-        >
-          <button
-            onClick={() => navigate('/')}
-            className="px-6 py-2.5 text-sm font-medium text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all"
-          >
-            ← Voltar ao Início
-          </button>
-        </motion.div>
       </div>
 
       {/* Modal de Reset */}

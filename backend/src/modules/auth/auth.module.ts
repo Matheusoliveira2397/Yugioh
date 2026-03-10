@@ -2,11 +2,14 @@ import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
 import { LocalMasterStrategy } from './strategies/local-master.strategy';
+import { RefreshToken } from './entities/refresh-token.entity';
+import { AuthDbMigrationService } from './auth-db-migration.service';
 import { UsersModule } from '../users/users.module';
 import { MailModule } from '../mail/mail.module';
 import { SeasonsModule } from '../seasons/seasons.module';
@@ -17,6 +20,7 @@ import { CosmeticsModule } from '../cosmetics/cosmetics.module';
 
 @Module({
   imports: [
+    TypeOrmModule.forFeature([RefreshToken]),
     UsersModule,
     MailModule,
     SeasonsModule,
@@ -30,14 +34,14 @@ import { CosmeticsModule } from '../cosmetics/cosmetics.module';
       useFactory: (configService: ConfigService) => ({
         secret: configService.get('JWT_SECRET'),
         signOptions: {
-          expiresIn: configService.get('JWT_EXPIRES_IN', '7d'),
+          expiresIn: configService.get('JWT_ACCESS_EXPIRES_IN', '15m'),
         },
       }),
       inject: [ConfigService],
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, LocalStrategy, LocalMasterStrategy, JwtStrategy],
+  providers: [AuthService, LocalStrategy, LocalMasterStrategy, JwtStrategy, AuthDbMigrationService],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

@@ -131,8 +131,8 @@ export default function Layout({ children }: LayoutProps) {
               {/* Separador visual - Desktop */}
               <div className="hidden md:block h-8 w-px bg-gradient-to-b from-transparent via-purple-500/30 to-transparent flex-shrink-0"></div>
               
-              {/* Abas de navegação - Desktop */}
-              <div className="hidden lg:flex items-center gap-1 md:gap-1.5 flex-nowrap flex-1 min-w-0 overflow-x-auto scrollbar-hide">
+              {/* Abas de navegação - Desktop (centralizadas) */}
+              <div className="hidden lg:flex items-center justify-center gap-1 md:gap-1.5 flex-nowrap flex-1 min-w-0 overflow-x-auto scrollbar-hide">
                 {activeTabs.length > 0 ? (
                   activeTabs.map((tab) => {
                     const isActive = location.pathname === tab.route || 
@@ -202,8 +202,8 @@ export default function Layout({ children }: LayoutProps) {
                 ) : null}
               </div>
 
-              {/* Abas de navegação - Mobile (scroll horizontal, toque >= 44px) */}
-              <div className="lg:hidden flex items-center gap-1 flex-nowrap flex-1 min-w-0 overflow-x-auto scrollbar-hide -mx-2 px-2 py-1">
+              {/* Abas de navegação - Mobile (scroll horizontal, centralizadas quando couber) */}
+              <div className="lg:hidden flex items-center justify-center gap-1 flex-nowrap flex-1 min-w-0 overflow-x-auto scrollbar-hide -mx-2 px-2 py-1">
                 {activeTabs.slice(0, 4).map((tab) => {
                   const isActive = location.pathname === tab.route || 
                                   (tab.route !== '/' && location.pathname.startsWith(tab.route));

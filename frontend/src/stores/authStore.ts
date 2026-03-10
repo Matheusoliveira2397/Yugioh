@@ -38,20 +38,23 @@ interface User {
 interface AuthState {
   user: User | null;
   token: string | null;
+  refreshToken: string | null;
   isAuthenticated: boolean;
   login: (username: string, password: string) => Promise<void>;
   loginMaster: (username: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
   setUser: (user: User) => void;
+  setTokens: (token: string, refreshToken: string) => void;
   refreshUser: () => Promise<void>;
   logout: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       token: null,
+      refreshToken: null,
       isAuthenticated: false,
 
       login: async (username: string, password: string) => {
@@ -61,11 +64,12 @@ export const useAuthStore = create<AuthState>()(
             password,
           });
 
-          const { access_token, user } = response.data;
+          const { access_token, refresh_token, user } = response.data;
 
           set({
             user,
             token: access_token,
+            refreshToken: refresh_token ?? null,
             isAuthenticated: true,
           });
           useCosmeticsStore.getState().resetCosmetics();
@@ -82,11 +86,12 @@ export const useAuthStore = create<AuthState>()(
             password,
           });
 
-          const { access_token, user } = response.data;
+          const { access_token, refresh_token, user } = response.data;
 
           set({
             user,
             token: access_token,
+            refreshToken: refresh_token ?? null,
             isAuthenticated: true,
           });
           useCosmeticsStore.getState().resetCosmetics();
@@ -104,11 +109,12 @@ export const useAuthStore = create<AuthState>()(
             password,
           });
 
-          const { access_token, user } = response.data;
+          const { access_token, refresh_token, user } = response.data;
 
           set({
             user,
             token: access_token,
+            refreshToken: refresh_token ?? null,
             isAuthenticated: true,
           });
         } catch (error) {
@@ -119,6 +125,10 @@ export const useAuthStore = create<AuthState>()(
 
       setUser: (user: User) => {
         set({ user });
+      },
+
+      setTokens: (token: string, refreshToken: string) => {
+        set({ token, refreshToken });
       },
 
       refreshUser: async () => {
@@ -143,6 +153,7 @@ export const useAuthStore = create<AuthState>()(
         set({
           user: null,
           token: null,
+          refreshToken: null,
           isAuthenticated: false,
         });
       },

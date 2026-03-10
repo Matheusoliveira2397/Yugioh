@@ -19,6 +19,10 @@ interface LatestCardsMarqueeProps {
   showVerLoja?: boolean;
   /** Classe CSS extra no container */
   className?: string;
+  /** Se informado, ao clicar na carta chama isso em vez de navegar para /shop */
+  onCardClick?: (card: MarqueeCard) => void;
+  /** Ocultar título interno (ex.: quando o título já vem de fora, como na loja) */
+  hideTitle?: boolean;
 }
 
 function CardMarqueeItem({
@@ -26,14 +30,14 @@ function CardMarqueeItem({
   onClick,
 }: {
   card: MarqueeCard;
-  onClick: () => void;
+  onClick: (card: MarqueeCard) => void;
 }) {
   return (
     <div
       role="button"
       tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => e.key === 'Enter' && onClick()}
+      onClick={() => onClick(card)}
+      onKeyDown={(e) => e.key === 'Enter' && onClick(card)}
       className="flex-shrink-0 cursor-pointer group focus:outline-none focus:ring-2 focus:ring-blue-400/50 rounded-lg"
     >
       <div className="relative w-16 h-24 sm:w-20 sm:h-28 md:w-24 md:h-32 rounded-md overflow-hidden border border-blue-600/50 shadow group-hover:border-amber-500/60 group-hover:shadow-amber-500/20 group-hover:scale-105 group-hover:z-10 transition-all duration-300">
@@ -59,9 +63,15 @@ export default function LatestCardsMarquee({
   cards,
   showVerLoja = true,
   className = '',
+  onCardClick,
+  hideTitle = false,
 }: LatestCardsMarqueeProps) {
   const navigate = useNavigate();
   const { t } = useI18n();
+  const handleCardClick = (card: MarqueeCard) => {
+    if (onCardClick) onCardClick(card);
+    else navigate('/shop');
+  };
 
   if (cards.length === 0) {
     return (
@@ -96,6 +106,7 @@ export default function LatestCardsMarquee({
       transition={{ delay: 0.3 }}
       className={`rounded-lg p-2 md:p-3 border border-blue-700/30 bg-black/30 overflow-hidden max-w-2xl mx-auto ${className}`}
     >
+      {!hideTitle && (
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <h2 className="text-xs md:text-sm font-bold flex items-center gap-1.5 text-white drop-shadow-lg">
           <span className="text-sm">🎴</span>
@@ -112,6 +123,7 @@ export default function LatestCardsMarquee({
           </button>
         )}
       </div>
+      )}
       <div className="shop-cards-wrap relative">
         <div className="overflow-hidden">
           <div className="shop-marquee-track flex gap-2 md:gap-2.5 w-max py-0.5">
@@ -119,7 +131,7 @@ export default function LatestCardsMarquee({
               <CardMarqueeItem
                 key={`top-${card.id}-${index}`}
                 card={card}
-                onClick={() => navigate('/shop')}
+                onClick={handleCardClick}
               />
             ))}
           </div>

@@ -1,4 +1,4 @@
-import { Controller, Put, Param, UseGuards, Get, Query, Delete, Post, Body, UseInterceptors, UploadedFile, ParseIntPipe, Request, ForbiddenException } from '@nestjs/common';
+import { Controller, Put, Param, UseGuards, Get, Query, Delete, Post, Body, UseInterceptors, UploadedFile, ParseIntPipe, Request, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AdminService } from './admin.service';
 import { AuthService } from '../auth/auth.service';
@@ -198,6 +198,36 @@ export class AdminController {
   @Post('reset-admin-deck')
   resetAdminDeck() {
     return this.adminService.resetAdminDeck();
+  }
+
+  // Pagamentos: adicionar créditos a uma conta e histórico
+  @Post('payments/add-credits')
+  addCreditsToUser(
+    @Request() req: { user: { id: number } },
+    @Body() body: { userId: number; amount: number; note?: string },
+  ) {
+    const userId = typeof body.userId === 'number' ? body.userId : parseInt(String(body.userId), 10);
+    if (isNaN(userId)) {
+      throw new BadRequestException('userId inválido');
+    }
+    const amount = typeof body.amount === 'number' ? body.amount : parseInt(String(body.amount), 10);
+    return this.adminService.addCreditsToUser(userId, amount, req.user.id, body.note);
+  }
+
+  @Get('payments/history')
+  getCreditPaymentHistory(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('userId') userId?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 20;
+    const userIdNum = userId ? parseInt(userId, 10) : undefined;
+    return this.adminService.getCreditPaymentHistory({
+      page: isNaN(pageNum) ? 1 : pageNum,
+      limit: isNaN(limitNum) ? 20 : limitNum,
+      userId: userIdNum !== undefined && !isNaN(userIdNum) ? userIdNum : undefined,
+    });
   }
 
   // Adicionar recursos em massa

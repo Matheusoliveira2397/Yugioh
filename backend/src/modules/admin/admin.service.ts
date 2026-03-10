@@ -32,6 +32,7 @@ import { ChatGateway } from '../chat/chat.gateway';
 import { FriendsGateway } from '../friends/friends.gateway';
 import { Achievement, AchievementType } from '../users/entities/achievement.entity';
 import { UploadService } from '../upload/upload.service';
+import { CreditPaymentLog } from './entities/credit-payment-log.entity';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -39,6 +40,8 @@ export class AdminService implements OnModuleInit {
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    @InjectRepository(CreditPaymentLog)
+    private creditPaymentLogRepository: Repository<CreditPaymentLog>,
     @InjectRepository(Achievement)
     private achievementsRepository: Repository<Achievement>,
     @InjectRepository(UserCard)
@@ -658,6 +661,110 @@ export class AdminService implements OnModuleInit {
     return {
       message: 'Recursos atualizados com sucesso',
       user,
+    };
+  }
+
+  /**
+   * Adiciona créditos a um usuário (pagamento) e registra no histórico.
+   */
+  async addCreditsToUser(
+    userId: number,
+    amount: number,
+    adminId: number,
+    note?: string,
+  ): Promise<{ message: string; newBalance: number }> {
+    if (amount <= 0) {
+      throw new BadRequestException('A quantidade de créditos deve ser maior que zero.');
+    }
+    const user = await this.usersRepository.findOne({ where: { id: userId }, select: ['id', 'username', 'nickname', 'credits'] });
+    if (!user) {
+      throw new NotFoundException('Usuário não encontrado.');
+    }
+    const previousCredits = user.credits ?? 0;
+    user.credits = previousCredits + amount;
+    await this.usersRepository.save(user);
+    await this.creditPaymentLogRepository.save({
+      userId,
+      adminId,
+      amount,
+      note: note?.trim() || null,
+    });
+    return {
+      message: `${amount} créditos adicionados à conta de ${user.nickname || user.username}.`,
+      newBalance: user.credits,
+    };
+  }
+
+  /**
+   * Histórico de adição de créditos (pagamentos).
+   */
+  async getCreditPaymentHistory(options: {
+    page?: number;
+    limit?: number;
+    userId?: number;
+  }): Promise<{
+    items: Array<{
+      id: number;
+      userId: number;
+      userNickname: string;
+      userUsername: string;
+      adminId: number;
+      adminNickname: string;
+      amount: number;
+      note: string | null;
+      createdAt: string;
+    }>;
+    total: number;
+    totalPages: number;
+  }> {
+    const page = Math.max(1, options.page ?? 1);
+    const limit = Math.min(100, Math.max(1, options.limit ?? 20));
+    const skip = (page - 1) * limit;
+
+    const qb = this.creditPaymentLogRepository
+      .createQueryBuilder('log')
+      .orderBy('log.createdAt', 'DESC')
+      .skip(skip)
+      .take(limit);
+
+    if (options.userId != null) {
+      qb.where('log.userId = :userId', { userId: options.userId });
+    }
+
+    const [logs, total] = await qb.getManyAndCount();
+
+    const userIds = [...new Set(logs.map((l) => l.userId))];
+    const adminIds = [...new Set(logs.map((l) => l.adminId))];
+    const allIds = [...new Set([...userIds, ...adminIds])];
+    const users =
+      allIds.length > 0
+        ? await this.usersRepository.find({
+            where: { id: In(allIds) },
+            select: ['id', 'nickname', 'username'],
+          })
+        : [];
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    const items = logs.map((log) => {
+      const user = userMap.get(log.userId);
+      const admin = userMap.get(log.adminId);
+      return {
+        id: log.id,
+        userId: log.userId,
+        userNickname: user?.nickname ?? '—',
+        userUsername: user?.username ?? '—',
+        adminId: log.adminId,
+        adminNickname: admin?.nickname ?? admin?.username ?? '—',
+        amount: log.amount,
+        note: log.note,
+        createdAt: log.createdAt.toISOString(),
+      };
+    });
+
+    return {
+      items,
+      total,
+      totalPages: Math.ceil(total / limit),
     };
   }
 

@@ -58,6 +58,12 @@ export class AuthController {
     return this.usersService.confirmEmailChange(token);
   }
 
+  @Post('refresh')
+  async refresh(@Body() body: { refresh_token?: string }) {
+    const refreshToken = body?.refresh_token ?? '';
+    return this.authService.refreshAccessToken(refreshToken);
+  }
+
   @UseGuards(LocalAuthGuard)
   @Post('login')
   async login(@Body() loginDto: LoginDto, @Request() req: any, @Ip() ip: string) {

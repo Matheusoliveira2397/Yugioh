@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import axios from 'axios';
 
@@ -7,6 +7,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 export default function VerifyEmailPage() {
   const { token } = useParams<{ token: string }>();
+  const navigate = useNavigate();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('');
   const successHandled = useRef(false);
@@ -80,12 +81,13 @@ export default function VerifyEmailPage() {
               Email Verificado!
             </h1>
             <p className="text-gray-300 mb-8">{message}</p>
-            <Link
-              to="/login"
-              className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg transition-colors"
+            <button
+              type="button"
+              onClick={() => navigate('/login', { replace: true })}
+              className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-gray-800"
             >
               Fazer Login
-            </Link>
+            </button>
           </div>
         )}
 

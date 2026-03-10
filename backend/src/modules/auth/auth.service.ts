@@ -1,5 +1,9 @@
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import * as crypto from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { UsersService } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
@@ -9,18 +13,22 @@ import { InitialDecksService } from '../initial-decks/initial-decks.service';
 import { NewAccountSettingsService } from '../new-account-settings/new-account-settings.service';
 import { DivisionsService } from '../divisions/divisions.service';
 import { CosmeticsService } from '../cosmetics/cosmetics.service';
+import { RefreshToken } from './entities/refresh-token.entity';
 
 @Injectable()
 export class AuthService {
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
+    private configService: ConfigService,
     private mailService: MailService,
     private seasonsService: SeasonsService,
     private initialDecksService: InitialDecksService,
     private newAccountSettingsService: NewAccountSettingsService,
     private divisionsService: DivisionsService,
     private cosmeticsService: CosmeticsService,
+    @InjectRepository(RefreshToken)
+    private refreshTokenRepository: Repository<RefreshToken>,
   ) {}
 
   /**
@@ -77,14 +85,14 @@ export class AuthService {
   }
 
   async login(user: any) {
-    // Garantir que sub seja number
     const payload = { username: user.username, sub: Number(user.id), role: user.role };
-    
-    // Buscar dados completos do usuário incluindo grupo atualizado
     const fullProfile = await this.usersService.getFullProfile(user.id);
-    
-      return {
+    const refreshToken = await this.createRefreshToken(user.id);
+
+    return {
         access_token: this.jwtService.sign(payload),
+        refresh_token: refreshToken,
+        expires_in: this.getAccessTokenExpiresInSeconds(),
         user: {
           id: fullProfile.id,
           nickname: fullProfile.nickname,
@@ -113,6 +121,71 @@ export class AuthService {
           adminAllowedTabs: fullProfile.adminAllowedTabs ?? null,
         },
       };
+  }
+
+  private getAccessTokenExpiresInSeconds(): number {
+    const exp = this.configService.get('JWT_ACCESS_EXPIRES_IN', this.configService.get('JWT_EXPIRES_IN', '15m'));
+    if (typeof exp === 'number') return exp;
+    const match = String(exp).match(/^(\d+)([smhd])$/);
+    if (!match) return 15 * 60;
+    const n = parseInt(match[1], 10);
+    const u = match[2];
+    if (u === 's') return n;
+    if (u === 'm') return n * 60;
+    if (u === 'h') return n * 3600;
+    if (u === 'd') return n * 86400;
+    return 15 * 60;
+  }
+
+  private async createRefreshToken(userId: number): Promise<string> {
+    const token = crypto.randomBytes(48).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const refreshDays = this.configService.get('REFRESH_TOKEN_DAYS', '7');
+    const days = parseInt(String(refreshDays), 10) || 7;
+    const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    const lastUsedAt = new Date();
+    await this.refreshTokenRepository.save({
+      userId,
+      tokenHash,
+      expiresAt,
+      lastUsedAt,
+    });
+    return token;
+  }
+
+  async refreshAccessToken(refreshToken: string): Promise<{ access_token: string; expires_in: number }> {
+    if (!refreshToken || typeof refreshToken !== 'string' || refreshToken.trim() === '') {
+      throw new UnauthorizedException('Refresh token inválido');
+    }
+    const tokenHash = crypto.createHash('sha256').update(refreshToken.trim()).digest('hex');
+    const row = await this.refreshTokenRepository.findOne({
+      where: { tokenHash },
+      order: { id: 'DESC' },
+    });
+    if (!row) {
+      throw new UnauthorizedException('Sessão expirada. Faça login novamente.');
+    }
+    const now = new Date();
+    if (row.expiresAt < now) {
+      await this.refreshTokenRepository.delete({ id: row.id });
+      throw new UnauthorizedException('Sessão expirada. Faça login novamente.');
+    }
+    const inactivityDays = this.configService.get('REFRESH_INACTIVITY_DAYS', '7');
+    const inactivityMs = (parseInt(String(inactivityDays), 10) || 7) * 24 * 60 * 60 * 1000;
+    if (row.lastUsedAt.getTime() < now.getTime() - inactivityMs) {
+      await this.refreshTokenRepository.delete({ id: row.id });
+      throw new UnauthorizedException('Sessão encerrada por inatividade. Faça login novamente.');
+    }
+    row.lastUsedAt = now;
+    await this.refreshTokenRepository.save(row);
+    const user = await this.usersService.findById(row.userId);
+    if (!user) {
+      await this.refreshTokenRepository.delete({ id: row.id });
+      throw new UnauthorizedException('Usuário não encontrado.');
+    }
+    const payload = { username: user.username, sub: Number(user.id), role: user.role };
+    const access_token = this.jwtService.sign(payload);
+    return { access_token, expires_in: this.getAccessTokenExpiresInSeconds() };
   }
 
   async checkNickname(nickname: string) {

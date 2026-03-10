@@ -30,7 +30,10 @@
     "didNotReceiveEmail": "Didn't receive the email? Check spam or resend.",
     "emailResent": "Email resent. Check your inbox.",
     "resendVerification": "Resend verification",
-    "sending": "Sending..."
+    "sending": "Sending...",
+    "forgotHint": "Enter your account email. We'll send you a link to reset your password.",
+    "sendLink": "Send link",
+    "forgotError": "Error sending. Check the email or try again."
   },
   "loginRankings": {
     "top5Duelists": "Top 5 Duelists",

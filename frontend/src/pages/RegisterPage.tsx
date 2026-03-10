@@ -222,8 +222,8 @@ export default function RegisterPage() {
 
   if (success) {
     return (
-      <div 
-        className="min-h-screen flex items-center justify-center px-4 relative"
+      <div
+        className="min-h-screen flex items-center justify-center px-4 py-8 relative"
         style={{
           backgroundImage: 'url(/images/backgroundLogin.jpg)',
           backgroundSize: 'cover',
@@ -231,60 +231,69 @@ export default function RegisterPage() {
           backgroundRepeat: 'no-repeat',
         }}
       >
-        <div className="absolute inset-0 bg-black bg-opacity-60 z-0"></div>
+        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/70 z-0" />
         <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
+          initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="max-w-md w-full relative z-10"
+          transition={{ duration: 0.3 }}
+          className="w-full max-w-md relative z-10"
         >
-          <div className="bg-gray-800 rounded-lg shadow-2xl p-8 border border-green-500">
-            <div className="text-center mb-6">
-            <div className="text-6xl mb-4">✅</div>
-            <h1 className="text-3xl font-bold mb-4 text-green-400">
-              Cadastro Realizado!
-            </h1>
-            </div>
-            
-            {emailSent ? (
-              <>
-                <div className="bg-blue-500/20 border border-blue-500/50 rounded-lg p-4 mb-6">
-                  <p className="text-blue-200 mb-2">
-                    📧 <strong>Email de verificação enviado!</strong>
-                  </p>
-                  <p className="text-gray-300 text-sm">
-                    Verifique sua caixa de entrada (e pasta de spam) no email: <strong>{registeredEmail}</strong>
-                  </p>
+          <div className="rounded-2xl shadow-2xl overflow-hidden border border-white/10 bg-slate-900/80 backdrop-blur-xl">
+            <div className="p-8 sm:p-10">
+              <div className="text-center mb-8">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-400/40 mb-5">
+                  <span className="text-3xl">✅</span>
                 </div>
-                <p className="text-gray-300 mb-4 text-center">
-                  Clique no link no email para ativar sua conta.
-                </p>
-                <p className="text-yellow-300 mb-6 text-center text-sm">
-                  ⚠️ <strong>Importante:</strong> Você só poderá fazer login após verificar seu email!
-                </p>
-              </>
-            ) : (
-              <>
-                <div className="bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-4 mb-6">
-                  <p className="text-yellow-200 mb-2">
-                    ⚠️ <strong>Email não foi enviado automaticamente</strong>
+                <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
+                  Cadastro realizado!
+                </h1>
+                <p className="text-slate-400 text-sm">Próximo passo: verificar seu email</p>
+              </div>
+
+              {emailSent ? (
+                <div className="space-y-4 mb-8">
+                  <div className="rounded-xl bg-blue-500/10 border border-blue-400/30 p-4">
+                    <p className="text-blue-200 font-medium text-sm flex items-center gap-2">
+                      <span>📧</span> Email de verificação enviado
+                    </p>
+                    <p className="text-slate-300 text-sm mt-2">
+                      Verifique a caixa de entrada e a pasta de <strong>spam</strong> em:
+                    </p>
+                    <p className="text-amber-200/90 text-sm font-medium mt-1 break-all">{registeredEmail}</p>
+                  </div>
+                  <p className="text-slate-400 text-sm text-center">
+                    Clique no link do email para ativar sua conta.
                   </p>
-                  <p className="text-gray-300 text-sm">
-                    Verifique a pasta de spam no email <strong>{registeredEmail}</strong>. Se não receber, você pode solicitar um novo email de verificação na página de login.
-                  </p>
+                  <div className="rounded-lg bg-amber-500/10 border border-amber-400/30 px-3 py-2 text-center">
+                    <p className="text-amber-200 text-xs">
+                      ⚠️ Só é possível fazer login após verificar o email.
+                    </p>
+                  </div>
                 </div>
-                <p className="text-yellow-300 mb-6 text-center text-sm">
-                  ⚠️ <strong>Importante:</strong> Você só poderá fazer login após verificar seu email!
-                </p>
-              </>
-            )}
-            
-            <div className="text-center">
-            <Link
-              to="/login"
-              className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg transition-colors"
-            >
-              Ir para Login
-            </Link>
+              ) : (
+                <div className="space-y-4 mb-8">
+                  <div className="rounded-xl bg-amber-500/10 border border-amber-400/30 p-4">
+                    <p className="text-amber-200 font-medium text-sm flex items-center gap-2">
+                      <span>⚠️</span> Email pode não ter sido enviado
+                    </p>
+                    <p className="text-slate-300 text-sm mt-2">
+                      Confira a pasta de spam em <strong className="text-slate-200">{registeredEmail}</strong>. Se não receber, solicite um novo email de verificação na página de login.
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-amber-500/10 border border-amber-400/30 px-3 py-2 text-center">
+                    <p className="text-amber-200 text-xs">
+                      ⚠️ Só é possível fazer login após verificar o email.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <Link
+                to="/login"
+                className="block w-full text-center py-3.5 px-6 rounded-xl font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 focus:ring-2 focus:ring-blue-400/50 focus:ring-offset-2 focus:ring-offset-slate-900 transition-all"
+              >
+                Ir para Login
+              </Link>
             </div>
           </div>
         </motion.div>
@@ -292,8 +301,13 @@ export default function RegisterPage() {
     );
   }
 
+  const inputBase =
+    'w-full px-4 py-3 rounded-xl bg-white/5 border text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-500/50 transition-all';
+  const inputValid = 'border-emerald-500/50';
+  const inputInvalid = 'border-red-500/50';
+
   return (
-    <div 
+    <div
       className="min-h-screen flex items-center justify-center px-4 py-8 relative"
       style={{
         backgroundImage: 'url(/images/backgroundLogin.jpg)',
@@ -302,215 +316,230 @@ export default function RegisterPage() {
         backgroundRepeat: 'no-repeat',
       }}
     >
-      <div className="absolute inset-0 bg-black bg-opacity-60 z-0"></div>
+      <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/70 z-0" />
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full relative z-10"
+        transition={{ duration: 0.35 }}
+        className="w-full max-w-lg relative z-10"
       >
-        <div className="bg-gray-800 rounded-lg shadow-2xl p-8 border border-purple-500">
-          <h1 className="text-4xl font-bold text-center mb-2 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-            ⚔️ Criar Conta
-          </h1>
-          <p className="text-center text-gray-400 mb-8">Junte-se aos duelistas!</p>
+        <div className="rounded-2xl shadow-2xl overflow-hidden border border-white/10 bg-slate-900/80 backdrop-blur-xl">
+          {/* Header do card */}
+          <div className="px-8 pt-8 pb-6 border-b border-white/5">
+            <h1 className="text-2xl sm:text-3xl font-bold text-white text-center">
+              Criar conta
+            </h1>
+            <p className="text-slate-400 text-center text-sm mt-1">
+              Junte-se aos duelistas
+            </p>
+          </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Nickname */}
-            <div>
-              <label htmlFor="nickname" className="block text-sm font-medium mb-2 text-gray-200">
-                Nickname <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="nickname"
-                type="text"
-                value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
-                onBlur={handleNicknameBlur}
-                className={`w-full px-4 py-3 bg-gray-700 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
-                  nicknameValidation.isValid === true
-                    ? 'border-green-500'
-                    : nicknameValidation.isValid === false
-                    ? 'border-red-500'
-                    : 'border-gray-600'
-                }`}
-                placeholder="Como você quer ser chamado"
-                required
-                maxLength={30}
-              />
-              {nicknameValidation.message && (
-                <p
-                  className={`text-xs mt-1 ${
+          <form onSubmit={handleSubmit} className="p-8 space-y-6">
+            {/* Seção: Identificação */}
+            <div className="space-y-4">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Sua identidade
+              </h2>
+              <div>
+                <label htmlFor="nickname" className="block text-sm font-medium text-slate-200 mb-1.5">
+                  Nickname <span className="text-red-400">*</span>
+                </label>
+                <input
+                  id="nickname"
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  onBlur={handleNicknameBlur}
+                  className={`${inputBase} ${
                     nicknameValidation.isValid === true
-                      ? 'text-green-400'
+                      ? inputValid
                       : nicknameValidation.isValid === false
-                      ? 'text-red-400'
-                      : 'text-gray-400'
+                        ? inputInvalid
+                        : 'border-white/10'
                   }`}
-                >
-                  {nicknameValidation.checking ? '⏳ ' : nicknameValidation.isValid === true ? '✅ ' : '❌ '}
-                  {nicknameValidation.message}
-                </p>
-              )}
-            </div>
-
-            {/* Username */}
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium mb-2 text-gray-200">
-                Username <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value.toLowerCase())}
-                onBlur={handleUsernameBlur}
-                className={`w-full px-4 py-3 bg-gray-700 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
-                  usernameValidation.isValid === true
-                    ? 'border-green-500'
-                    : usernameValidation.isValid === false
-                    ? 'border-red-500'
-                    : 'border-gray-600'
-                }`}
-                placeholder="usuario_unico"
-                required
-                maxLength={20}
-                pattern="[a-zA-Z0-9_]+"
-              />
-              {usernameValidation.message && (
-                <p
-                  className={`text-xs mt-1 ${
+                  placeholder="Como você quer ser chamado"
+                  required
+                  maxLength={30}
+                />
+                {nicknameValidation.message && (
+                  <p
+                    className={`text-xs mt-1.5 ${
+                      nicknameValidation.isValid === true
+                        ? 'text-emerald-400'
+                        : nicknameValidation.isValid === false
+                          ? 'text-red-400'
+                          : 'text-slate-400'
+                    }`}
+                  >
+                    {nicknameValidation.checking ? '⏳ ' : nicknameValidation.isValid === true ? '✅ ' : '❌ '}
+                    {nicknameValidation.message}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label htmlFor="username" className="block text-sm font-medium text-slate-200 mb-1.5">
+                  Username <span className="text-red-400">*</span>
+                </label>
+                <input
+                  id="username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                  onBlur={handleUsernameBlur}
+                  className={`${inputBase} ${
                     usernameValidation.isValid === true
-                      ? 'text-green-400'
+                      ? inputValid
                       : usernameValidation.isValid === false
-                      ? 'text-red-400'
-                      : 'text-gray-400'
+                        ? inputInvalid
+                        : 'border-white/10'
                   }`}
-                >
-                  {usernameValidation.checking ? '⏳ ' : usernameValidation.isValid === true ? '✅ ' : '❌ '}
-                  {usernameValidation.message}
-                </p>
-              )}
-              <p className="text-xs text-gray-500 mt-1">Apenas letras, números e underscore</p>
+                  placeholder="usuario_unico"
+                  required
+                  maxLength={20}
+                  pattern="[a-zA-Z0-9_]+"
+                />
+                {usernameValidation.message && (
+                  <p
+                    className={`text-xs mt-1.5 ${
+                      usernameValidation.isValid === true
+                        ? 'text-emerald-400'
+                        : usernameValidation.isValid === false
+                          ? 'text-red-400'
+                          : 'text-slate-400'
+                    }`}
+                  >
+                    {usernameValidation.checking ? '⏳ ' : usernameValidation.isValid === true ? '✅ ' : '❌ '}
+                    {usernameValidation.message}
+                  </p>
+                )}
+                <p className="text-xs text-slate-500 mt-1">Apenas letras, números e _</p>
+              </div>
             </div>
 
-            {/* Email */}
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium mb-2 text-gray-200">
-                Email <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onBlur={handleEmailBlur}
-                className={`w-full px-4 py-3 bg-gray-700 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
-                  emailValidation.isValid === true
-                    ? 'border-green-500'
-                    : emailValidation.isValid === false
-                    ? 'border-red-500'
-                    : 'border-gray-600'
-                }`}
-                placeholder="seu@email.com"
-                required
-              />
-              {emailValidation.message && (
-                <p
-                  className={`text-xs mt-1 ${
+            {/* Seção: Email */}
+            <div className="space-y-4">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Email
+              </h2>
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-slate-200 mb-1.5">
+                  Email <span className="text-red-400">*</span>
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onBlur={handleEmailBlur}
+                  className={`${inputBase} ${
                     emailValidation.isValid === true
-                      ? 'text-green-400'
+                      ? inputValid
                       : emailValidation.isValid === false
-                      ? 'text-red-400'
-                      : 'text-gray-400'
+                        ? inputInvalid
+                        : 'border-white/10'
                   }`}
-                >
-                  {emailValidation.checking ? '⏳ ' : emailValidation.isValid === true ? '✅ ' : '❌ '}
-                  {emailValidation.message}
-                </p>
-              )}
+                  placeholder="seu@email.com"
+                  required
+                />
+                {emailValidation.message && (
+                  <p
+                    className={`text-xs mt-1.5 ${
+                      emailValidation.isValid === true
+                        ? 'text-emerald-400'
+                        : emailValidation.isValid === false
+                          ? 'text-red-400'
+                          : 'text-slate-400'
+                    }`}
+                  >
+                    {emailValidation.checking ? '⏳ ' : emailValidation.isValid === true ? '✅ ' : '❌ '}
+                    {emailValidation.message}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label htmlFor="confirmEmail" className="block text-sm font-medium text-slate-200 mb-1.5">
+                  Confirmar email <span className="text-red-400">*</span>
+                </label>
+                <input
+                  id="confirmEmail"
+                  type="email"
+                  value={confirmEmail}
+                  onChange={(e) => setConfirmEmail(e.target.value)}
+                  className={`${inputBase} ${
+                    confirmEmail && email && confirmEmail !== email
+                      ? inputInvalid
+                      : confirmEmail && email && confirmEmail === email
+                        ? inputValid
+                        : 'border-white/10'
+                  }`}
+                  placeholder="repita o email"
+                  required
+                />
+                {confirmEmail && email && confirmEmail !== email && (
+                  <p className="text-xs text-red-400 mt-1.5">❌ Os emails não coincidem</p>
+                )}
+                {confirmEmail && email && confirmEmail === email && (
+                  <p className="text-xs text-emerald-400 mt-1.5">✅ Emails coincidem</p>
+                )}
+              </div>
             </div>
 
-            {/* Confirmar Email */}
-            <div>
-              <label htmlFor="confirmEmail" className="block text-sm font-medium mb-2 text-gray-200">
-                Confirmar Email <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="confirmEmail"
-                type="email"
-                value={confirmEmail}
-                onChange={(e) => setConfirmEmail(e.target.value)}
-                className={`w-full px-4 py-3 bg-gray-700 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
-                  confirmEmail && email && confirmEmail !== email
-                    ? 'border-red-500'
-                    : confirmEmail && email && confirmEmail === email
-                    ? 'border-green-500'
-                    : 'border-gray-600'
-                }`}
-                placeholder="confirme@email.com"
-                required
-              />
-              {confirmEmail && email && confirmEmail !== email && (
-                <p className="text-xs text-red-400 mt-1">❌ Os emails não coincidem</p>
-              )}
-              {confirmEmail && email && confirmEmail === email && (
-                <p className="text-xs text-green-400 mt-1">✅ Emails coincidem</p>
-              )}
-            </div>
-
-            {/* Senha */}
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium mb-2 text-gray-200">
-                Senha <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Mínimo 6 caracteres"
-                required
-                minLength={6}
-              />
-              {password && password.length < 6 && (
-                <p className="text-xs text-red-400 mt-1">❌ Senha muito curta (mínimo 6 caracteres)</p>
-              )}
-            </div>
-
-            {/* Confirmar Senha */}
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium mb-2 text-gray-200">
-                Confirmar Senha <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className={`w-full px-4 py-3 bg-gray-700 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
-                  confirmPassword && password && confirmPassword !== password
-                    ? 'border-red-500'
-                    : confirmPassword && password && confirmPassword === password
-                    ? 'border-green-500'
-                    : 'border-gray-600'
-                }`}
-                placeholder="Digite a senha novamente"
-                required
-              />
-              {confirmPassword && password && confirmPassword !== password && (
-                <p className="text-xs text-red-400 mt-1">❌ As senhas não coincidem</p>
-              )}
-              {confirmPassword && password && confirmPassword === password && (
-                <p className="text-xs text-green-400 mt-1">✅ Senhas coincidem</p>
-              )}
+            {/* Seção: Senha */}
+            <div className="space-y-4">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Senha
+              </h2>
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-slate-200 mb-1.5">
+                  Senha <span className="text-red-400">*</span>
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={`${inputBase} border-white/10`}
+                  placeholder="Mínimo 6 caracteres"
+                  required
+                  minLength={6}
+                />
+                {password && password.length < 6 && (
+                  <p className="text-xs text-red-400 mt-1.5">❌ Mínimo 6 caracteres</p>
+                )}
+              </div>
+              <div>
+                <label htmlFor="confirmPassword" className="block text-sm font-medium text-slate-200 mb-1.5">
+                  Confirmar senha <span className="text-red-400">*</span>
+                </label>
+                <input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className={`${inputBase} ${
+                    confirmPassword && password && confirmPassword !== password
+                      ? inputInvalid
+                      : confirmPassword && password && confirmPassword === password
+                        ? inputValid
+                        : 'border-white/10'
+                  }`}
+                  placeholder="repita a senha"
+                  required
+                />
+                {confirmPassword && password && confirmPassword !== password && (
+                  <p className="text-xs text-red-400 mt-1.5">❌ As senhas não coincidem</p>
+                )}
+                {confirmPassword && password && confirmPassword === password && (
+                  <p className="text-xs text-emerald-400 mt-1.5">✅ Senhas coincidem</p>
+                )}
+              </div>
             </div>
 
             {error && (
               <motion.div
-                initial={{ opacity: 0, y: -10 }}
+                initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-red-500 bg-opacity-20 border border-red-500 text-red-400 px-4 py-3 rounded-lg flex items-center gap-2"
+                className="rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 px-4 py-3 flex items-center gap-2 text-sm"
               >
                 <span>❌</span>
                 <span>{error}</span>
@@ -519,26 +548,33 @@ export default function RegisterPage() {
 
             <button
               type="submit"
-              disabled={loading || nicknameValidation.isValid === false || usernameValidation.isValid === false || emailValidation.isValid === false}
-              className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              disabled={
+                loading ||
+                nicknameValidation.isValid === false ||
+                usernameValidation.isValid === false ||
+                emailValidation.isValid === false
+              }
+              className="w-full py-3.5 px-6 rounded-xl font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 focus:ring-2 focus:ring-blue-400/50 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
             >
               {loading ? (
                 <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/30 border-t-white" />
                   <span>Cadastrando...</span>
                 </>
               ) : (
-                'Criar Conta'
+                'Criar conta'
               )}
             </button>
           </form>
 
-          <p className="mt-6 text-center text-gray-400">
-            Já tem uma conta?{' '}
-            <Link to="/login" className="text-blue-400 hover:text-blue-300 font-semibold">
-              Entrar
-            </Link>
-          </p>
+          <div className="px-8 pb-8 pt-2 text-center">
+            <p className="text-slate-400 text-sm">
+              Já tem uma conta?{' '}
+              <Link to="/login" className="text-blue-400 hover:text-blue-300 font-semibold">
+                Entrar
+              </Link>
+            </p>
+          </div>
         </div>
       </motion.div>
     </div>
