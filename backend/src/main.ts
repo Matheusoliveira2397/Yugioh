@@ -104,14 +104,20 @@ async function bootstrap() {
     console.log('✅ Arquivo default.png já existe em imagens');
   }
 
-  // Servir arquivos estáticos (uploads)
+  // Servir arquivos estáticos (uploads) com cache para reduzir carga e melhorar carregamento em produção
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
     prefix: '/uploads/',
+    setHeaders: (res: any) => {
+      res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 dia
+    },
   });
 
-  // Servir avatares padrão
+  // Servir avatares padrão com cache
   app.useStaticAssets(join(__dirname, '..', 'uploads', 'avatars'), {
     prefix: '/avatars/',
+    setHeaders: (res: any) => {
+      res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 dia
+    },
   });
 
   // CRÍTICO: Servir imagens das cartas do frontend PRIMEIRO (antes de qualquer outra rota /images/)
@@ -183,12 +189,13 @@ async function bootstrap() {
     console.warn('⚠️ Diretório de cartas não encontrado. Verifique se o volume está mapeado corretamente.');
   }
 
-  // Servir imagens padrão (DEPOIS de /images/cards/ para não conflitar)
-  // IMPORTANTE: Esta rota genérica /images/ deve vir DEPOIS de /images/cards/
-  // para não interceptar requisições de cartas
+  // Servir imagens padrão (DEPOIS de /images/cards/ para não conflitar) com cache
   app.useStaticAssets(join(__dirname, '..', 'uploads', 'images'), {
     prefix: '/images/',
-    index: false, // Não servir index.html quando arquivo não for encontrado
+    index: false,
+    setHeaders: (res: any) => {
+      res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 dia
+    },
   });
 
   // Habilitar CORS (aceita várias origens separadas por vírgula: https://www.site.com,https://site.com)

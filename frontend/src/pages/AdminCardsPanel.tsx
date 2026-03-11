@@ -4,6 +4,16 @@ import api from '../api/axios';
 import { CardType, CardAttribute, CardRarity, MonsterType } from './types';
 import CardImage from '../components/CardImage';
 
+/** Em produção, imagens externas (Yugioh API) podem falhar por CORS/referrer. Usar proxy do backend. */
+function cardImageSrc(url: string | undefined | null): string {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    const base = (import.meta.env.VITE_API_URL || api.defaults.baseURL || '').toString().replace(/\/$/, '');
+    return base ? `${base}/cards/proxy-image?url=${encodeURIComponent(url)}` : url;
+  }
+  return url;
+}
+
 interface Card {
   id: string;
   name: string;
@@ -794,7 +804,7 @@ export default function AdminCardsPanel() {
                       >
                         {card.card_images?.[0]?.image_url_small && (
                           <img 
-                            src={card.card_images[0].image_url_small} 
+                            src={cardImageSrc(card.card_images[0].image_url_small)} 
                             alt={card.name}
                             className="w-12 h-16 object-contain flex-shrink-0"
                           />
@@ -846,7 +856,7 @@ export default function AdminCardsPanel() {
                               }`}
                             >
                               <img
-                                src={imageUrl}
+                                src={cardImageSrc(imageUrl)}
                                 alt={`${selectedApiCard.name} - Imagem ${index + 1}`}
                                 className="w-full h-24 object-contain rounded"
                                 onError={(e) => {
@@ -1059,7 +1069,7 @@ export default function AdminCardsPanel() {
                   {(imagePreview || formData.cardImage) && (
                     <div className="flex-shrink-0">
                       <img 
-                        src={imagePreview || formData.cardImage} 
+                        src={(imagePreview || formData.cardImage)?.startsWith('data:') ? (imagePreview || formData.cardImage) : cardImageSrc(imagePreview || formData.cardImage)} 
                         alt="Preview" 
                         className="w-24 h-32 object-contain rounded border-2 border-purple-500"
                         onError={(e) => {

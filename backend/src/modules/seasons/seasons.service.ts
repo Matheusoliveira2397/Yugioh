@@ -320,8 +320,9 @@ export class SeasonsService implements OnModuleInit {
       console.log(`✅ [updateUserRanking] Ranking criado para usuário ${userId} - divisão: ${ranking.division}`);
     }
 
-    ranking.seasonScore += scoreToAdd;
-    
+    const currentScore = Number(ranking.seasonScore) || 0;
+    ranking.seasonScore = currentScore + scoreToAdd;
+
     if (win) {
       ranking.wins++;
     } else {

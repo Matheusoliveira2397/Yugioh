@@ -16,6 +16,13 @@ import { JwtService } from '@nestjs/jwt';
 // Mapa para rastrear usuários online no chat global
 const globalChatUsers = new Map<number, { userId: number; username: string; nickname: string; clanTag?: string; socketId: string }>();
 
+/** Normaliza o nome do canal para consistência (ex.: clan:ABC e clan:abc viram o mesmo). */
+function normalizeChannel(channel: string): string {
+  if (!channel || !channel.startsWith('clan:')) return channel;
+  const tag = channel.replace(/^clan:/i, '').trim().toLowerCase();
+  return tag ? `clan:${tag}` : channel;
+}
+
 @WebSocketGateway({
   cors: {
     origin: (() => {
@@ -158,12 +165,14 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       return;
     }
 
-    client.join(data.channel);
-    console.log(`✅ [ChatGateway] Cliente ${client.id} entrou no canal ${data.channel}`);
+    const channelToJoin = data.channel.startsWith('clan:') ? normalizeChannel(data.channel) : data.channel;
+    client.join(channelToJoin);
+    console.log(`✅ [ChatGateway] Cliente ${client.id} entrou no canal ${channelToJoin}`);
 
     // Canal do clã: só membros do clã podem entrar
     if (data.channel.startsWith('clan:')) {
-      const channelClanTag = data.channel.replace(/^clan:/i, '').trim();
+      const channelKey = normalizeChannel(data.channel);
+      const channelClanTag = channelKey.replace(/^clan:/i, '').trim();
       try {
         const userProfile = await this.usersService.getFullProfile(userId);
         const userClanTag = (userProfile.clanTag || '').trim();
@@ -177,44 +186,46 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         client.emit('error', { message: 'Erro ao verificar clã.' });
         return;
       }
-      // Carregar mensagens do canal do clã
+      // Carregar mensagens do canal do clã (sempre emitir messagesLoaded para manter estado consistente)
       try {
-        const recentMessages = await this.chatService.getMessages(data.channel, 50);
-        if (recentMessages && recentMessages.length > 0) {
-          const formattedMessages = await Promise.all(
-            recentMessages.reverse().map(async (msg: any) => {
-              let username = msg.username || 'Usuário';
-              let clanTag: string | undefined;
-              let profileImage: string | null = null;
-              try {
-                const msgUserId = typeof msg.userId === 'string'
-                  ? (msg.userId.match(/^\d+$/) ? parseInt(msg.userId, 10) : null)
-                  : (typeof msg.userId === 'number' ? msg.userId : null);
-                if (msgUserId !== null && !isNaN(msgUserId)) {
-                  const userProfile = await this.usersService.getFullProfile(msgUserId);
-                  username = userProfile.nickname || userProfile.username || username;
-                  clanTag = userProfile.clanTag || undefined;
-                  profileImage = userProfile.profileImage || null;
-                }
-              } catch {
-                // usar dados da mensagem
-              }
-              return {
-                id: msg._id?.toString() || msg.id || Date.now().toString(),
-                userId: msg.userId?.toString() || String(msg.userId),
-                username,
-                clanTag,
-                profileImage,
-                content: msg.content,
-                timestamp: msg.createdAt || new Date(),
-                createdAt: msg.createdAt || new Date(),
-              };
-            })
-          );
-          client.emit('messagesLoaded', { messages: formattedMessages });
-        }
+        const recentMessages = await this.chatService.getMessages(channelKey, 50);
+        const formattedMessages =
+          recentMessages && recentMessages.length > 0
+            ? await Promise.all(
+                recentMessages.reverse().map(async (msg: any) => {
+                  let username = msg.username || 'Usuário';
+                  let clanTag: string | undefined;
+                  let profileImage: string | null = null;
+                  try {
+                    const msgUserId = typeof msg.userId === 'string'
+                      ? (msg.userId.match(/^\d+$/) ? parseInt(msg.userId, 10) : null)
+                      : (typeof msg.userId === 'number' ? msg.userId : null);
+                    if (msgUserId !== null && !isNaN(msgUserId)) {
+                      const userProfile = await this.usersService.getFullProfile(msgUserId);
+                      username = userProfile.nickname || userProfile.username || username;
+                      clanTag = userProfile.clanTag || undefined;
+                      profileImage = userProfile.profileImage || null;
+                    }
+                  } catch {
+                    // usar dados da mensagem
+                  }
+                  return {
+                    id: msg._id?.toString() || msg.id || Date.now().toString(),
+                    userId: msg.userId?.toString() || String(msg.userId),
+                    username,
+                    clanTag,
+                    profileImage,
+                    content: msg.content,
+                    timestamp: msg.createdAt || new Date(),
+                    createdAt: msg.createdAt || new Date(),
+                  };
+                }),
+              )
+            : [];
+        client.emit('messagesLoaded', { messages: formattedMessages });
       } catch (error) {
         console.error('❌ [ChatGateway] Erro ao carregar mensagens do canal do clã:', error);
+        client.emit('messagesLoaded', { messages: [] });
       }
       return;
     }
@@ -466,12 +477,13 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       }
     }
 
+    const channelToSave = normalizeChannel(data.channel);
     try {
       const message = await this.chatService.createMessage({
         userId: userId.toString(),
         username: nickname || data.username,
         content: data.content,
-        channel: data.channel,
+        channel: channelToSave,
       });
       
       const messageData = {
@@ -492,8 +504,9 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         content: messageData.content.substring(0, 50),
       });
       
-      this.server.to(data.channel).emit('newMessage', messageData);
-      console.log(`✅ [ChatGateway] Mensagem emitida com sucesso para canal ${data.channel}`);
+      const channelToEmit = normalizeChannel(data.channel);
+      this.server.to(channelToEmit).emit('newMessage', messageData);
+      console.log(`✅ [ChatGateway] Mensagem emitida com sucesso para canal ${channelToEmit}`);
 
       // Notificar usuários mencionados (@nick) no canal global
       if (data.channel === 'global' && data.content) {
@@ -529,8 +542,9 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         createdAt: new Date(),
       };
       
-      console.log(`📤 [ChatGateway] Emitindo newMessage (fallback) para canal ${data.channel}`);
-      this.server.to(data.channel).emit('newMessage', messageData);
+      const channelToEmitFallback = normalizeChannel(data.channel);
+      console.log(`📤 [ChatGateway] Emitindo newMessage (fallback) para canal ${channelToEmitFallback}`);
+      this.server.to(channelToEmitFallback).emit('newMessage', messageData);
       console.log(`✅ [ChatGateway] Mensagem emitida (fallback) com sucesso`);
 
       if (data.channel === 'global' && data.content) {
@@ -601,14 +615,14 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         createdAt: message.createdAt || new Date(),
       };
 
-      // Enviar para o destinatário (usando socketId se disponível)
+      // Enviar para o destinatário (evento separado do ícone de mensagens = só amigos)
       const recipientSocket = Array.from(globalChatUsers.values()).find(u => u.userId === recipientId);
       if (recipientSocket) {
-        this.server.to(recipientSocket.socketId).emit('privateMessage', messageData);
+        this.server.to(recipientSocket.socketId).emit('chatPrivateMessage', messageData);
       }
       
       // Enviar de volta para o remetente
-      client.emit('privateMessage', messageData);
+      client.emit('chatPrivateMessage', messageData);
     } catch (error) {
       console.error('Erro ao criar mensagem privada:', error);
       // Mesmo se falhar ao salvar, enviar a mensagem
@@ -625,9 +639,9 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
       const recipientSocket = Array.from(globalChatUsers.values()).find(u => u.userId === recipientId);
       if (recipientSocket) {
-        this.server.to(recipientSocket.socketId).emit('privateMessage', messageData);
+        this.server.to(recipientSocket.socketId).emit('chatPrivateMessage', messageData);
       }
-      client.emit('privateMessage', messageData);
+      client.emit('chatPrivateMessage', messageData);
     }
   }
 

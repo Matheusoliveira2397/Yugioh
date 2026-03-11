@@ -21,6 +21,22 @@ export class AchievementsService {
     });
   }
 
+  /** Conceder uma conquista/troféu a um usuário (ex.: prêmio de torneio) */
+  async createForUser(
+    userId: number,
+    data: { type: AchievementType; title: string; description?: string; icon?: string; metadata?: any },
+  ): Promise<Achievement> {
+    const achievement = this.achievementsRepository.create({
+      userId,
+      type: data.type,
+      title: data.title,
+      description: data.description ?? undefined,
+      icon: data.icon ?? undefined,
+      metadata: data.metadata ?? undefined,
+    });
+    return this.achievementsRepository.save(achievement);
+  }
+
   // Verificar e conceder conquistas baseadas em vitórias
   async checkVictoryAchievements(userId: number, totalWins: number): Promise<void> {
     const achievements = [

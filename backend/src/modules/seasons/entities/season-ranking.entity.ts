@@ -33,7 +33,7 @@ export class SeasonRanking {
   @Column({ type: 'int' })
   userId: number;
 
-  @Column({ type: 'int', default: 0 })
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
   seasonScore: number;
 
   @Column({ type: 'int', default: 0 })

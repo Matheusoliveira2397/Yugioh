@@ -139,20 +139,19 @@ export default function GroupsPage() {
       setFormError('Nome deve ter pelo menos 3 caracteres');
       return;
     }
-    // Validação da tag: deve ter exatamente 3 caracteres (letras ou números)
+    // Validação da tag: deve ter exatamente 3 letras
     const normalizedTag = formData.tag.trim().toUpperCase();
     if (!normalizedTag || normalizedTag.length === 0) {
       setFormError('A tag do clã é obrigatória');
       return;
     }
     if (normalizedTag.length !== 3) {
-      setFormError('A tag do clã deve ter exatamente 3 letras ou números');
+      setFormError('A tag do clã deve ter exatamente 3 letras');
       return;
     }
-    // Verificar se contém apenas letras e números
-    const tagRegex = /^[A-Z0-9]{3}$/;
+    const tagRegex = /^[A-Z]{3}$/;
     if (!tagRegex.test(normalizedTag)) {
-      setFormError('A tag do clã deve conter apenas letras e números');
+      setFormError('A tag do clã deve conter apenas 3 letras (A–Z)');
       return;
     }
     if (!logoFile) {
@@ -540,21 +539,20 @@ export default function GroupsPage() {
                 />
               </div>
 
-              {/* Tag do Grupo */}
+              {/* Tag do Grupo - exatamente 3 letras */}
               <div>
                 <label className="block text-slate-300 font-semibold mb-2">
-                  Tag (2-6 caracteres)
+                  Tag (exatamente 3 letras)
                 </label>
                 <input
                   type="text"
                   value={formData.tag}
                   onChange={(e) => {
-                    // Limitar a 3 caracteres e permitir apenas letras e números
-                    const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
+                    const value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
                     setFormData({ ...formData, tag: value });
                   }}
-                  maxLength={6}
-                  placeholder="Ex: DRAG"
+                  maxLength={3}
+                  placeholder="Ex: ABC"
                   className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white uppercase focus:border-purple-500 focus:outline-none"
                   required
                 />

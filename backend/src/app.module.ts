@@ -55,7 +55,7 @@ import { ActivityInterceptor } from './common/interceptors/activity.interceptor'
           min: process.env.NODE_ENV === 'production' ? 50 : 20,
           idleTimeoutMillis: 30000,
           connectionTimeoutMillis: 10000,
-          statement_timeout: 5000,
+          statement_timeout: 15000,
           maxUses: 7500,
           keepAlive: true,
           keepAliveInitialDelayMillis: 5000,

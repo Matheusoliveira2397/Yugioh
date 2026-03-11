@@ -79,12 +79,12 @@ export class AdminController {
   }
 
   @Delete('users/:id/ban')
-  banUser(@Param('id') id: string, @Body() body: { reason?: string }) {
+  banUser(@Param('id') id: string, @Body() body: { reason?: string; bannedUntil?: string | null }) {
     const userId = parseInt(id, 10);
     if (isNaN(userId)) {
       throw new Error('ID inválido');
     }
-    return this.adminService.banUser(userId, body.reason);
+    return this.adminService.banUser(userId, body.reason, body.bannedUntil);
   }
 
   @Put('users/:id/unban')

@@ -131,6 +131,18 @@ function App() {
         />
         
         <Route
+          path="/tournaments/:id"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <TournamentPage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+        <Route
           path="/tournaments"
           element={
             isAuthenticated ? (

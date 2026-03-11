@@ -156,7 +156,7 @@ export default function Layout({ children }: LayoutProps) {
                     };
 
                     const colors = getColors(tab.route);
-                    const tabIcon = tab.route === '/shop' ? '/images/Icones/Shop.png' : tab.icon;
+                    const tabIcon = tab.route === '/shop' ? '/images/Icones/Shop.png' : tab.route === '/arena' ? '/images/Icones/Arena.png' : tab.icon;
 
                     return (
                       <Link
@@ -218,7 +218,7 @@ export default function Layout({ children }: LayoutProps) {
                   };
 
                   const colors = getColors(tab.route);
-                  const tabIcon = tab.route === '/shop' ? '/images/Icones/Shop.png' : tab.icon;
+                  const tabIcon = tab.route === '/shop' ? '/images/Icones/Shop.png' : tab.route === '/arena' ? '/images/Icones/Arena.png' : tab.icon;
 
                   return (
                     <Link
@@ -279,7 +279,7 @@ export default function Layout({ children }: LayoutProps) {
                     };
 
                     const colors = getColors(tab.route);
-                    const tabIcon = tab.route === '/shop' ? '/images/Icones/Shop.png' : tab.icon;
+                    const tabIcon = tab.route === '/shop' ? '/images/Icones/Shop.png' : tab.route === '/arena' ? '/images/Icones/Arena.png' : tab.icon;
 
                     return (
                       <Link

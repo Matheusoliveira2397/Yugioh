@@ -57,6 +57,17 @@ export class CosmeticsController {
     return { imageUrl };
   }
 
+  @Post('admin/upload-trophy')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseInterceptors(FileInterceptor('image', { storage: memoryStorage() }))
+  async uploadTrophyImage(@UploadedFile() file: any, @Body('title') title?: string) {
+    if (!file?.buffer) {
+      throw new BadRequestException('Envie um arquivo de imagem (campo "image")');
+    }
+    const imageUrl = await this.uploadService.uploadAchievementImage(file, title || 'trophy');
+    return { imageUrl };
+  }
+
   // ==================== PLAYMATS - ADMIN (DEVEM VIR ANTES DAS ROTAS PÚBLICAS) ====================
   @Post('admin/playmats')
   @UseGuards(JwtAuthGuard, AdminGuard)

@@ -8,6 +8,7 @@ interface Match {
   player1Id?: number;
   player2Id?: number;
   winnerId?: number;
+  isThirdPlaceMatch?: boolean;
   status: string;
   player1?: {
     id: number;
@@ -22,6 +23,7 @@ interface Match {
   winner?: {
     id: number;
     nickname: string;
+    profileImage?: string;
   };
   player1Score?: number;
   player2Score?: number;
@@ -110,7 +112,7 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
           isFinished && (isWinner1 || isWinner2)
             ? 'border-[#00ff88] shadow-[0_0_20px_rgba(0,255,136,0.5)]'
             : isInProgress
-            ? 'border-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.5)] animate-pulse'
+            ? 'border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.5)] animate-pulse'
             : 'border-[#00ff88]/50 shadow-[0_0_10px_rgba(0,255,136,0.3)]'
         } transition-all duration-300`}
         style={{
@@ -119,7 +121,7 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
       >
         {/* Player 1 */}
         <div className={`p-3 rounded-t-lg transition-all ${
-          isWinner1 ? 'bg-[#00ff88]/20' : isFinished && !isWinner1 ? 'bg-red-500/10' : 'bg-slate-800/50'
+          isWinner1 ? 'bg-[#00ff88]/20' : isFinished && !isWinner1 ? 'bg-red-500/10' : 'bg-gray-800/50'
         }`}>
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full overflow-hidden border border-white/20 flex-shrink-0">
@@ -133,7 +135,7 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
                   }}
                 />
               ) : (
-                <div className="w-full h-full bg-slate-600 flex items-center justify-center text-white text-xs">
+                <div className="w-full h-full bg-gray-600 flex items-center justify-center text-white text-xs">
                   ?
                 </div>
               )}
@@ -147,7 +149,7 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
             </div>
             {isFinished && (
               <span className={`text-lg font-bold ${
-                isWinner1 ? 'text-[#00ff88]' : 'text-slate-400'
+                isWinner1 ? 'text-[#00ff88]' : 'text-gray-400'
               }`}>
                 {getMatchScores(match).player1Score ?? '-'}
               </span>
@@ -157,7 +159,7 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
 
         {/* Player 2 */}
         <div className={`p-3 rounded-b-lg transition-all ${
-          isWinner2 ? 'bg-[#00ff88]/20' : isFinished && !isWinner2 ? 'bg-red-500/10' : 'bg-slate-800/50'
+          isWinner2 ? 'bg-[#00ff88]/20' : isFinished && !isWinner2 ? 'bg-red-500/10' : 'bg-gray-800/50'
         }`}>
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full overflow-hidden border border-white/20 flex-shrink-0">
@@ -171,7 +173,7 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
                   }}
                 />
               ) : (
-                <div className="w-full h-full bg-slate-600 flex items-center justify-center text-white text-xs">
+                <div className="w-full h-full bg-gray-600 flex items-center justify-center text-white text-xs">
                   ?
                 </div>
               )}
@@ -185,7 +187,7 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
             </div>
             {isFinished && (
               <span className={`text-lg font-bold ${
-                isWinner2 ? 'text-[#00ff88]' : 'text-slate-400'
+                isWinner2 ? 'text-[#00ff88]' : 'text-gray-400'
               }`}>
                 {getMatchScores(match).player2Score ?? '-'}
               </span>
@@ -195,7 +197,7 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
 
         {/* Status badge */}
         {isInProgress && (
-          <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full animate-pulse">
+          <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs px-2 py-1 rounded-full animate-pulse">
             ⚔️
           </div>
         )}
@@ -223,14 +225,14 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
   return (
     <div className="relative w-full py-8 px-4 overflow-x-auto" style={{ minHeight: '800px' }}>
       {/* Background com efeito de partículas */}
-      <div className="absolute inset-0 bg-gradient-to-br from-purple-900/20 via-pink-900/20 to-blue-900/20 pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-br from-gray-900/20 via-amber-900/10 to-gray-900/20 pointer-events-none" />
       
       {/* Título do Torneio */}
       <div className="text-center mb-8 relative z-10">
         <h2 className="text-3xl md:text-4xl font-bold text-white mb-2 drop-shadow-lg">
           {bracket.tournament.name}
         </h2>
-        <p className="text-slate-400 text-sm">
+        <p className="text-gray-400 text-sm">
           {bracket.tournament.currentParticipants} Participantes
         </p>
       </div>
@@ -244,7 +246,7 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
               {leftRounds.map((round) => {
                 const matches = organizedRounds[round] || [];
                 const roundName = 
-                  round === totalRounds ? 'Final' :
+                  round === totalRounds ? (matches.some((m: Match & { isThirdPlaceMatch?: boolean }) => m.isThirdPlaceMatch) ? 'Final / 3º lugar' : 'Final') :
                   round === totalRounds - 1 ? 'Semifinal' :
                   round === totalRounds - 2 ? 'Quartas' :
                   `Rodada ${round}`;
@@ -259,6 +261,12 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
                     <div className="space-y-6">
                       {matches.map((match, matchIndex) => (
                         <div key={match.id} className="relative">
+                          {round === totalRounds && (match as Match & { isThirdPlaceMatch?: boolean }).isThirdPlaceMatch && (
+                            <p className="text-amber-400 text-sm font-semibold mb-1">3º lugar</p>
+                          )}
+                          {round === totalRounds && !(match as Match & { isThirdPlaceMatch?: boolean }).isThirdPlaceMatch && matches.some((m: Match & { isThirdPlaceMatch?: boolean }) => m.isThirdPlaceMatch) && (
+                            <p className="text-[#00ff88] text-sm font-semibold mb-1">Final</p>
+                          )}
                           {renderMatchBox(match, round, matchIndex, 'left')}
                         </div>
                       ))}
@@ -275,7 +283,7 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
               {rightRounds.map((round) => {
                 const matches = organizedRounds[round] || [];
                 const roundName = 
-                  round === totalRounds ? 'Final' :
+                  round === totalRounds ? (matches.some((m: Match & { isThirdPlaceMatch?: boolean }) => m.isThirdPlaceMatch) ? 'Final / 3º lugar' : 'Final') :
                   round === totalRounds - 1 ? 'Semifinal' :
                   round === totalRounds - 2 ? 'Quartas' :
                   `Rodada ${round}`;
@@ -290,6 +298,12 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
                     <div className="space-y-6">
                       {matches.map((match, matchIndex) => (
                         <div key={match.id} className="relative flex justify-end">
+                          {round === totalRounds && (match as Match & { isThirdPlaceMatch?: boolean }).isThirdPlaceMatch && (
+                            <p className="text-amber-400 text-sm font-semibold mb-1 mr-2">3º lugar</p>
+                          )}
+                          {round === totalRounds && !(match as Match & { isThirdPlaceMatch?: boolean }).isThirdPlaceMatch && matches.some((m: Match & { isThirdPlaceMatch?: boolean }) => m.isThirdPlaceMatch) && (
+                            <p className="text-[#00ff88] text-sm font-semibold mb-1 mr-2">Final</p>
+                          )}
                           {renderMatchBox(match, round, matchIndex, 'right')}
                         </div>
                       ))}
@@ -312,25 +326,33 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
               <h3 className="text-2xl font-bold text-[#00ff88] mb-4 drop-shadow-[0_0_10px_rgba(0,255,136,0.8)]">
                 CHAMPION
               </h3>
-              {bracket.tournament.status === 'finished' && organizedRounds[totalRounds][0]?.winner ? (
-                <div className="space-y-2">
-                  <div className="w-20 h-20 mx-auto rounded-full overflow-hidden border-4 border-[#00ff88]">
-                    <img
-                      src={getImageUrl(organizedRounds[totalRounds][0].winner.profileImage)}
-                      alt={organizedRounds[totalRounds][0].winner.nickname}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.currentTarget.src = '/images/default.png';
-                      }}
-                    />
+              {(() => {
+                const finalMatch = organizedRounds[totalRounds][0];
+                const champion = finalMatch?.winner
+                  ? { nickname: finalMatch.winner.nickname, profileImage: finalMatch.winner.profileImage }
+                  : finalMatch?.winnerId != null && (finalMatch.player1Id === finalMatch.winnerId ? finalMatch.player1 : finalMatch.player2)
+                  ? { nickname: (finalMatch.player1Id === finalMatch.winnerId ? finalMatch.player1 : finalMatch.player2)!.nickname, profileImage: (finalMatch.player1Id === finalMatch.winnerId ? finalMatch.player1 : finalMatch.player2)?.profileImage }
+                  : null;
+                return champion ? (
+                  <div className="space-y-2">
+                    <div className="w-20 h-20 mx-auto rounded-full overflow-hidden border-4 border-[#00ff88]">
+                      <img
+                        src={getImageUrl(champion.profileImage)}
+                        alt={champion.nickname}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.src = '/images/default.png';
+                        }}
+                      />
+                    </div>
+                    <p className="text-xl font-bold text-[#00ff88]">
+                      {champion.nickname}
+                    </p>
                   </div>
-                  <p className="text-xl font-bold text-[#00ff88]">
-                    {organizedRounds[totalRounds][0].winner.nickname}
-                  </p>
-                </div>
-              ) : (
-                <p className="text-slate-400 text-sm">Aguardando vencedor...</p>
-              )}
+                ) : (
+                  <p className="text-gray-400 text-sm">Aguardando vencedor...</p>
+                );
+              })()}
             </motion.div>
           </div>
         )}

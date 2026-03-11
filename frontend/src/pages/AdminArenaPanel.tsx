@@ -346,22 +346,13 @@ export default function AdminArenaPanel() {
               to="/admin/arena/schedules"
               className="bg-amber-600 hover:bg-amber-700 px-6 py-3 rounded-lg font-bold transition-all inline-block"
             >
-              ⏰ Horários de Arena
+              ⏰ Criar Horário (cria a arena automaticamente)
             </Link>
             <button
               onClick={() => setShowLevelRangesModal(true)}
               className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold transition-all"
             >
               ⚙️ Configurar Faixas de Nível
-            </button>
-            <button
-              onClick={() => {
-                resetForm();
-                setShowArenaModal(true);
-              }}
-              className="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-bold transition-all"
-            >
-              ➕ Criar Arena
             </button>
           </div>
         </div>
@@ -391,9 +382,7 @@ export default function AdminArenaPanel() {
             className="bg-gray-800 rounded-lg p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl border-2 border-purple-500/50"
           >
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold">
-                {editingArena ? '✏️ Editar Arena' : '➕ Criar Arena'}
-              </h2>
+              <h2 className="text-2xl font-bold">✏️ Editar Arena</h2>
               <button
                 onClick={() => {
                   resetForm();
@@ -606,7 +595,7 @@ export default function AdminArenaPanel() {
                   disabled={loading}
                   className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg disabled:opacity-50"
                 >
-                  {loading ? 'Salvando...' : editingArena ? '💾 Atualizar' : '✨ Criar Arena'}
+                  {loading ? 'Salvando...' : '💾 Atualizar'}
                 </button>
               </div>
             </form>
@@ -846,14 +835,14 @@ export default function AdminArenaPanel() {
           className="text-center py-20 bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border-2 border-slate-700"
         >
           <div className="text-8xl mb-6 animate-bounce">🏟️</div>
-          <p className="text-3xl font-bold text-gray-300 mb-3">Nenhuma arena fixa</p>
-          <p className="text-gray-400 mb-6">Crie uma arena para que ela abra automaticamente todo dia no horário escolhido.</p>
-          <button
-            onClick={() => { resetForm(); setShowArenaModal(true); }}
-            className="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-bold text-white"
+          <p className="text-3xl font-bold text-gray-300 mb-3">Nenhuma arena</p>
+          <p className="text-gray-400 mb-6">Crie um horário em &quot;Horários de Arena&quot; para que a arena seja criada automaticamente e abra no horário escolhido.</p>
+          <Link
+            to="/admin/arena/schedules"
+            className="inline-block bg-amber-600 hover:bg-amber-700 px-6 py-3 rounded-lg font-bold text-white"
           >
-            ➕ Criar Arena
-          </button>
+            ⏰ Criar Horário
+          </Link>
         </motion.div>
       )}
     </div>

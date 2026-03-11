@@ -1235,6 +1235,7 @@ export const ProfilePage: React.FC = () => {
                               src={getImageUrl(profileUser.profileImage)}
                               alt={profileUser?.nickname}
                               className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
+                              loading="lazy"
                               onError={(e) => {
                                 e.currentTarget.src = '/images/default.png';
                               }}
@@ -1276,6 +1277,7 @@ export const ProfilePage: React.FC = () => {
                                 src={getImageUrl(opponent.profileImage)}
                                 alt={opponent?.nickname}
                                 className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
+                                loading="lazy"
                                 onError={(e) => {
                                   e.currentTarget.src = '/images/default.png';
                                 }}
@@ -1353,6 +1355,7 @@ export const ProfilePage: React.FC = () => {
                             src={getImageUrl(friend.profileImage)}
                             alt={friend.nickname}
                             className="w-16 h-16 rounded-full border-2 border-purple-500/50 object-cover"
+                            loading="lazy"
                             onError={(e) => {
                               e.currentTarget.src = '/images/default.png';
                             }}
@@ -1433,6 +1436,7 @@ export const ProfilePage: React.FC = () => {
                             src={getImageUrl(friend.profileImage)}
                             alt={friend.nickname}
                             className="w-16 h-16 rounded-full border-2 border-purple-500/50 object-cover"
+                            loading="lazy"
                             onError={(e) => {
                               e.currentTarget.src = '/images/default.png';
                             }}

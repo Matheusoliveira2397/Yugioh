@@ -4839,8 +4839,8 @@ export class DuelsService implements OnModuleInit {
         logger.info(`✨ [processCardEffect] BrainControl ativada - requer escolha do jogador e pagamento de 800 LP`);
         logger.info(`ℹ️ [processCardEffect] BrainControl permanecerá no campo até o turno acabar ou ser destruída`);
         
-        // Verificar se o jogador tem LP suficientes (800)
-        const currentLP = isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints;
+        // Verificar se o jogador tem LP suficientes (800) — permitir quando LP >= 800
+        const currentLP = Number(isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints);
         if (currentLP < 800) {
           logger.info(`❌ [processCardEffect] BrainControl: Jogador não tem LP suficientes (${currentLP} < 800)`);
           // Mover BrainControl para o cemitério já que não pode ser usada
@@ -5341,7 +5341,7 @@ export class DuelsService implements OnModuleInit {
         const opponentField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
         
         // Verificar se o jogador tem pelo menos 1500 LPs
-        const playerLifePoints = isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints;
+        const playerLifePoints = Number(isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints);
         if (playerLifePoints < 1500) {
           logger.info(`❌ [processCardEffect] Autonomous Action Unit: Jogador não tem LPs suficientes (${playerLifePoints} < 1500)`);
           return false;
@@ -5924,8 +5924,8 @@ export class DuelsService implements OnModuleInit {
       return { success: false, message: 'O efeito do Cyber-Stein já foi usado neste turno' };
     }
 
-    // Verificar se o jogador tem pelo menos 5000 LP
-    const playerLifePoints = isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints;
+    // Verificar se o jogador tem pelo menos 5000 LP (permitir quando LP >= 5000)
+    const playerLifePoints = Number(isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints);
     if (playerLifePoints < 5000) {
       logger.info(`❌ [startCyberSteinEffect] Jogador não tem LP suficientes (${playerLifePoints} < 5000)`);
       return { success: false, message: 'Você precisa de pelo menos 5000 LP para usar este efeito' };
@@ -6035,8 +6035,8 @@ export class DuelsService implements OnModuleInit {
       return { success: false, message: 'O efeito do Cyber-Stein já foi usado neste turno' };
     }
 
-    // Verificar se o jogador tem pelo menos 5000 LP
-    const playerLifePoints = isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints;
+    // Verificar se o jogador tem pelo menos 5000 LP (permitir quando LP >= 5000)
+    const playerLifePoints = Number(isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints);
     if (playerLifePoints < 5000) {
       return { success: false, message: 'Você não tem LP suficientes (5000)' };
     }
@@ -12504,8 +12504,8 @@ export class DuelsService implements OnModuleInit {
       return { success: false, message: 'Você já usou o efeito do Chaos Emperor Dragon neste turno' };
     }
 
-    // Verificar se o jogador tem pelo menos 1000 LP
-    const playerLifePoints = isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints;
+    // Verificar se o jogador tem pelo menos 1000 LP (permitir quando LP >= 1000)
+    const playerLifePoints = Number(isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints);
     if (playerLifePoints < 1000) {
       return { success: false, message: 'Você precisa ter pelo menos 1000 LP para ativar este efeito' };
     }
@@ -14601,6 +14601,7 @@ export class DuelsService implements OnModuleInit {
         
         // Vencedor ganha vitória e score
         await this.usersRepository.increment({ id: winnerIdNum }, 'winsGeral', 1);
+        await this.usersRepository.increment({ id: winnerIdNum }, 'winsSeason', 1);
         
         // ========== ATUALIZAR SCORE DO DUELISTA E DO CLÃ (GRUPO) ==========
         // REGRA CRÍTICA: Quando o duelista ganha score, o clã recebe EXATAMENTE o mesmo score
@@ -14720,7 +14721,8 @@ export class DuelsService implements OnModuleInit {
         
         // Perdedor ganha derrota
         await this.usersRepository.increment({ id: loserId }, 'lossesGeral', 1);
-        
+        await this.usersRepository.increment({ id: loserId }, 'lossesSeason', 1);
+
         // Atualizar score da season ativa (além do score geral)
         try {
           await this.seasonsService.updateUserRanking(winnerIdNum, scoreEarned, true);

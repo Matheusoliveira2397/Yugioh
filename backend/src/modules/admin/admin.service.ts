@@ -20,6 +20,7 @@ import { DuelHistory } from '../duels/entities/duel-history.entity';
 import { Group } from '../groups/entities/group.entity';
 import { News } from '../news/news.entity';
 import { RedisService } from '../redis/redis.service';
+import { AuthService } from '../auth/auth.service';
 import { SiteTab } from './entities/site-tab.entity';
 import { Division } from './entities/division.entity';
 import { SocialMedia } from './entities/social-media.entity';
@@ -40,6 +41,7 @@ export class AdminService implements OnModuleInit {
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    private authService: AuthService,
     @InjectRepository(CreditPaymentLog)
     private creditPaymentLogRepository: Repository<CreditPaymentLog>,
     @InjectRepository(Achievement)
@@ -609,7 +611,7 @@ export class AdminService implements OnModuleInit {
     return history.map((entry: string) => JSON.parse(entry));
   }
 
-  async banUser(userId: number, reason?: string) {
+  async banUser(userId: number, reason?: string, bannedUntil?: string | null) {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     
     if (!user) {
@@ -618,10 +620,14 @@ export class AdminService implements OnModuleInit {
 
     user.isBanned = true;
     user.banReason = reason || 'Violação dos termos de uso';
+    user.bannedUntil = bannedUntil != null && bannedUntil !== ''
+      ? new Date(bannedUntil)
+      : null;
 
     await this.usersRepository.save(user);
 
-    // Desconectar usuário do Redis
+    // Deslogar: invalidar refresh tokens e sessão Redis
+    await this.authService.invalidateRefreshTokensForUser(userId);
     await this.redisService.getClient().del(`user:${userId}:session`);
 
     return {
@@ -639,6 +645,7 @@ export class AdminService implements OnModuleInit {
 
     user.isBanned = false;
     user.banReason = '';
+    user.bannedUntil = null;
 
     await this.usersRepository.save(user);
 

@@ -30,8 +30,8 @@ export class BrainControlEffect extends BaseCardEffect {
     
     const { duelId, duel, isPlayer1, zoneIndex } = context;
     
-    // Verificar se o jogador tem LP suficientes (800)
-    const currentLP = isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints;
+    // Verificar se o jogador tem LP suficientes (800) — permitir quando LP >= 800
+    const currentLP = Number(isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints);
     if (currentLP < 800) {
       this.logInfo(`Jogador não tem LP suficientes (${currentLP} < 800)`);
       // Mover Brain Control para o cemitério já que não pode ser usada

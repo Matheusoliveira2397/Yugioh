@@ -131,7 +131,7 @@ export class GroupsService implements OnModuleInit {
       throw new BadRequestException('A logo do clã é obrigatória');
     }
 
-    // Validação da tag: deve ser obrigatória e ter exatamente 3 caracteres (letras ou números)
+    // Validação da tag: deve ser obrigatória e ter exatamente 3 letras
     if (!tag || tag.trim().length === 0) {
       throw new BadRequestException('A tag do clã é obrigatória');
     }
@@ -139,24 +139,34 @@ export class GroupsService implements OnModuleInit {
     // Remover espaços e converter para maiúsculas
     const normalizedTag = tag.trim().toUpperCase();
 
-    // Verificar se tem exatamente 3 caracteres
+    // Verificar se tem exatamente 3 letras
     if (normalizedTag.length !== 3) {
-      throw new BadRequestException('A tag do clã deve ter exatamente 3 letras ou números');
+      throw new BadRequestException('A tag do clã deve ter exatamente 3 letras');
     }
 
-    // Verificar se contém apenas letras e números
-    const tagRegex = /^[A-Z0-9]{3}$/;
+    // Verificar se contém apenas letras (A–Z)
+    const tagRegex = /^[A-Z]{3}$/;
     if (!tagRegex.test(normalizedTag)) {
-      throw new BadRequestException('A tag do clã deve conter apenas letras e números');
+      throw new BadRequestException('A tag do clã deve conter apenas 3 letras (A–Z)');
     }
 
-    // Verifica se usuário já tem grupo
+    // Verifica se usuário já tem grupo ativo (membrosia em grupo com isActive = true)
     const existingMembership = await this.memberRepository.findOne({
-      where: { userId, isActive: true }
+      where: { userId, isActive: true },
+      relations: ['group']
     });
 
     if (existingMembership) {
-      throw new BadRequestException('Você já pertence a um grupo');
+      const group = existingMembership.group ?? await this.groupRepository.findOne({ where: { id: existingMembership.groupId } });
+      if (group?.isActive) {
+        throw new BadRequestException('Você já pertence a um grupo');
+      }
+      // Grupo desativado: limpar membresia antiga para permitir criar novo
+      await this.memberRepository.update(
+        { userId, isActive: true },
+        { isActive: false }
+      );
+      await this.userRepository.update(userId, { clanTag: null as any });
     }
 
     // Verifica se nome ou tag já existem
@@ -170,7 +180,7 @@ export class GroupsService implements OnModuleInit {
 
     const group = new Group();
     group.name = name;
-    group.tag = tag ?? null;
+    group.tag = normalizedTag;
     group.description = description ?? null;
     group.logo = logo; // Obrigatório
     group.banner = banner ?? null;
@@ -251,12 +261,22 @@ export class GroupsService implements OnModuleInit {
 
     // Verifica se usuário já está em outro grupo ativo
     const existingActiveMembership = await this.memberRepository.findOne({
-      where: { userId, isActive: true }
+      where: { userId, isActive: true },
+      relations: ['group']
     });
 
     if (existingActiveMembership) {
-      this.logger.warn(`⚠️ [joinGroup] Usuário ${userId} já pertence ao grupo ${existingActiveMembership.groupId}`);
-      throw new BadRequestException('Você já pertence a um grupo');
+      const group = existingActiveMembership.group ?? await this.groupRepository.findOne({ where: { id: existingActiveMembership.groupId } });
+      if (group?.isActive) {
+        this.logger.warn(`⚠️ [joinGroup] Usuário ${userId} já pertence ao grupo ${existingActiveMembership.groupId}`);
+        throw new BadRequestException('Você já pertence a um grupo');
+      }
+      // Grupo desativado: limpar membresia antiga para permitir entrar em outro
+      await this.memberRepository.update(
+        { userId, isActive: true },
+        { isActive: false }
+      );
+      await this.userRepository.update(userId, { clanTag: null as any });
     }
 
     // Se o grupo for privado, criar solicitação
@@ -1842,9 +1862,17 @@ export class GroupsService implements OnModuleInit {
       }
     }
     
-    if (updateData.tag) {
+    let normalizedTag: string | undefined;
+    if (updateData.tag !== undefined) {
+      normalizedTag = String(updateData.tag).trim().toUpperCase();
+      if (!normalizedTag || normalizedTag.length !== 3) {
+        throw new BadRequestException('A tag do clã deve ter exatamente 3 letras');
+      }
+      if (!/^[A-Z]{3}$/.test(normalizedTag)) {
+        throw new BadRequestException('A tag do clã deve conter apenas 3 letras (A–Z)');
+      }
       const existingGroup = await this.groupRepository.findOne({
-        where: { tag: updateData.tag }
+        where: { tag: normalizedTag }
       });
       if (existingGroup && existingGroup.id !== groupId) {
         throw new BadRequestException('Tag do grupo já existe');
@@ -1853,8 +1881,8 @@ export class GroupsService implements OnModuleInit {
 
     // Atualizar campos
     if (updateData.name !== undefined) group.name = updateData.name;
-    if (updateData.tag !== undefined) {
-      group.tag = updateData.tag;
+    if (updateData.tag !== undefined && normalizedTag) {
+      group.tag = normalizedTag;
       // Atualizar clanTag de todos os membros se a tag mudou
       const members = await this.memberRepository.find({
         where: { groupId, isActive: true }
@@ -1863,7 +1891,7 @@ export class GroupsService implements OnModuleInit {
         const userIds = members.map(m => m.userId);
         await this.userRepository.update(
           { id: In(userIds) },
-          { clanTag: updateData.tag }
+          { clanTag: normalizedTag }
         );
       }
     }

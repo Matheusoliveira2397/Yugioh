@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, MoreThan, Between } from 'typeorm';
+import { Repository, LessThan, LessThanOrEqual, MoreThan, Between, IsNull } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Tournament, TournamentStatus, TournamentFormat } from './entities/tournament.entity';
 import { TournamentParticipant, ParticipantStatus } from './entities/tournament-participant.entity';
@@ -8,6 +8,9 @@ import { TournamentMatch, MatchStatus } from './entities/tournament-match.entity
 import { DuelsService } from '../duels/duels.service';
 import { DuelOrigin, DuelResult } from '../duels/entities/duel.entity';
 import { UsersService } from '../users/users.service';
+import { AchievementsService } from '../users/achievements.service';
+import { ShopService } from '../shop/shop.service';
+import { AchievementType } from '../users/entities/achievement.entity';
 
 @Injectable()
 export class TournamentsService {
@@ -23,6 +26,8 @@ export class TournamentsService {
     @Inject(forwardRef(() => DuelsService))
     private duelsService: DuelsService,
     private usersService: UsersService,
+    private achievementsService: AchievementsService,
+    private shopService: ShopService,
   ) {}
 
   // ========== CRON JOBS - AUTOMAÇÃO ========== //
@@ -57,7 +62,7 @@ export class TournamentsService {
     const tournamentsToOpen = await this.tournamentRepository.find({
       where: {
         status: TournamentStatus.SCHEDULED,
-        registrationOpenAt: LessThan(now),
+        registrationOpenAt: LessThanOrEqual(now),
       },
     });
 
@@ -75,7 +80,7 @@ export class TournamentsService {
     const tournamentsToClose = await this.tournamentRepository.find({
       where: {
         status: TournamentStatus.REGISTRATION_OPEN,
-        registrationCloseAt: LessThan(now),
+        registrationCloseAt: LessThanOrEqual(now),
       },
       relations: ['participants'],
     });
@@ -112,7 +117,7 @@ export class TournamentsService {
     const tournamentsToStart = await this.tournamentRepository.find({
       where: {
         status: TournamentStatus.REGISTRATION_CLOSED,
-        startAt: LessThan(now),
+        startAt: LessThanOrEqual(now),
       },
       relations: ['participants', 'participants.user'],
     });
@@ -153,13 +158,13 @@ export class TournamentsService {
 
     for (const tournament of tournamentsInProgress) {
       // Buscar todas as partidas da rodada atual que estão prontas para começar
-      const matchesToStart = await this.matchRepository.find({
-        where: {
-          tournamentId: tournament.id,
-          round: tournament.currentRound,
-          status: MatchStatus.READY,
-          scheduledAt: LessThan(now),
-        },
+const matchesToStart = await this.matchRepository.find({
+      where: {
+        tournamentId: tournament.id,
+        round: tournament.currentRound,
+        status: MatchStatus.READY,
+        scheduledAt: LessThanOrEqual(now),
+      },
         relations: ['player1', 'player2', 'tournament'],
       });
 
@@ -170,6 +175,15 @@ export class TournamentsService {
         try {
           if (!match.player1Id || !match.player2Id) {
             this.logger.warn(`Partida ${match.id} não tem ambos jogadores`);
+            continue;
+          }
+
+          if (match.player1Id === match.player2Id) {
+            this.logger.warn(`Partida ${match.id} tem o mesmo jogador nos dois lados (${match.player1Id}). Marcando como W.O. e não criando duelo.`);
+            match.winnerId = match.player1Id;
+            match.status = MatchStatus.WALKOVER;
+            match.finishedAt = new Date();
+            await this.matchRepository.save(match);
             continue;
           }
 
@@ -207,7 +221,7 @@ export class TournamentsService {
     const otherMatchesToStart = await this.matchRepository.find({
       where: {
         status: MatchStatus.READY,
-        scheduledAt: LessThan(now),
+        scheduledAt: LessThanOrEqual(now),
       },
       relations: ['player1', 'player2', 'tournament'],
     });
@@ -221,6 +235,15 @@ export class TournamentsService {
     for (const match of otherMatches) {
       try {
         if (!match.player1Id || !match.player2Id || match.duelId) {
+          continue;
+        }
+
+        if (match.player1Id === match.player2Id) {
+          this.logger.warn(`Partida ${match.id} tem o mesmo jogador nos dois lados (${match.player1Id}). Marcando como W.O.`);
+          match.winnerId = match.player1Id;
+          match.status = MatchStatus.WALKOVER;
+          match.finishedAt = new Date();
+          await this.matchRepository.save(match);
           continue;
         }
 
@@ -281,12 +304,26 @@ export class TournamentsService {
 
   // ========== MÉTODOS PRINCIPAIS ========== //
 
+  private static readonly VALID_MAX_PARTICIPANTS = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
+
   /**
-   * Cria um novo torneio
+   * Cria um novo torneio. Vagas devem ser potência de 2 para chave mata-mata correta.
    */
   async create(userId: number, tournamentData: Partial<Tournament>) {
+    const max = tournamentData.maxParticipants ?? 16;
+    if (!TournamentsService.VALID_MAX_PARTICIPANTS.includes(max)) {
+      throw new BadRequestException(
+        `Vagas devem ser uma potência de 2: ${TournamentsService.VALID_MAX_PARTICIPANTS.join(', ')}`,
+      );
+    }
     const tournament = this.tournamentRepository.create({
       ...tournamentData,
+      format: TournamentFormat.SINGLE_ELIMINATION,
+      maxParticipants: max,
+      minLevel: tournamentData.minLevel ?? 1,
+      maxLevel: tournamentData.maxLevel ?? null,
+      entryFeeType: (tournamentData as any).entryFeeType === 'cash' ? 'cash' : 'credit',
+      tournamentTypeId: (tournamentData as any).tournamentTypeId ?? null,
       createdBy: userId,
       currentParticipants: 0,
     });
@@ -317,22 +354,41 @@ export class TournamentsService {
 
     // Verificar se já está inscrito
     const existing = await this.participantRepository.findOne({
-      where: { tournamentId, userId },
+      where: { tournament: { id: tournamentId }, userId },
     });
 
     if (existing) {
       throw new BadRequestException('Você já está inscrito neste torneio');
     }
 
-    // Cobrar taxa de inscrição (usando credits agora)
+    const user = await this.usersService.findById(userId);
+    const minLevel = tournament.minLevel ?? 1;
+    if ((user?.level ?? 1) < minLevel) {
+      throw new BadRequestException(`Nível mínimo para este torneio: ${minLevel}`);
+    }
+    const maxLevel = tournament.maxLevel;
+    if (maxLevel != null && (user?.level ?? 1) > maxLevel) {
+      throw new BadRequestException(`Nível máximo para este torneio: ${maxLevel}`);
+    }
+
+    // Cobrar taxa de inscrição (crédito ou cash)
+    const feeType = (tournament as any).entryFeeType === 'cash' ? 'cash' : 'credit';
     if (tournament.entryFee > 0) {
-      const user = await this.usersService.findById(userId);
-      if ((user.credits || 0) < tournament.entryFee) {
-        throw new BadRequestException('Créditos insuficientes');
+      if (feeType === 'cash') {
+        if ((user.cash ?? 0) < tournament.entryFee) {
+          throw new BadRequestException('Cash insuficiente para a taxa de inscrição');
+        }
+        await this.usersService.update(userId, {
+          cash: (user.cash ?? 0) - tournament.entryFee,
+        });
+      } else {
+        if ((user.credits || 0) < tournament.entryFee) {
+          throw new BadRequestException('Créditos insuficientes');
+        }
+        await this.usersService.update(userId, {
+          credits: (user.credits || 0) - tournament.entryFee,
+        });
       }
-      await this.usersService.update(userId, {
-        credits: (user.credits || 0) - tournament.entryFee
-      });
     }
 
     // Garantir que tournamentId está definido
@@ -351,106 +407,51 @@ export class TournamentsService {
 
     this.logger.log(`📝 Registrando usuário ${userIdValue} no torneio ${tournamentIdValue}`);
 
-    // Usar insert direto via query builder com valores explícitos
     try {
-      const insertResult = await this.participantRepository
-        .createQueryBuilder()
-        .insert()
-        .into(TournamentParticipant)
-        .values({
-          tournamentId: tournamentIdValue,
-          userId: userIdValue,
-          status: ParticipantStatus.REGISTERED,
-          wins: 0,
-          losses: 0,
-          draws: 0,
-        })
-        .execute();
-
-      this.logger.log(`✅ Participante inserido com sucesso. Insert result:`, insertResult);
-
-      // Buscar o participante criado para retornar
-      const participant = await this.participantRepository.findOne({
-        where: { 
-          tournamentId: tournamentIdValue, 
-          userId: userIdValue 
-        },
-        relations: ['user', 'tournament'],
+      const existingAgain = await this.participantRepository.findOne({
+        where: { tournament: { id: tournamentIdValue }, userId: userIdValue },
       });
-
-      if (!participant) {
-        this.logger.error(`❌ Participante não encontrado após inserção. TournamentId: ${tournamentIdValue}, UserId: ${userIdValue}`);
-        throw new BadRequestException('Erro ao criar participante: não foi encontrado após inserção');
+      if (existingAgain) {
+        throw new BadRequestException('Você já está inscrito neste torneio');
       }
 
-      if (!participant.tournamentId || participant.tournamentId !== tournamentIdValue) {
-        this.logger.error(`❌ TournamentId não foi salvo corretamente. Esperado: ${tournamentIdValue}, Recebido: ${participant.tournamentId}`);
-        throw new BadRequestException('Erro ao criar participante: tournamentId não foi salvo corretamente');
-      }
+      const participant = this.participantRepository.create({
+        tournament,
+        userId: userIdValue,
+        status: ParticipantStatus.REGISTERED,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+      });
+      await this.participantRepository.save(participant);
+      this.logger.log(`✅ Participante inserido com sucesso.`);
 
-      // Atualizar contador
       tournament.currentParticipants++;
       await this.tournamentRepository.save(tournament);
 
-      // Se atingiu o máximo, fechar inscrições
       if (tournament.currentParticipants >= tournament.maxParticipants) {
         tournament.status = TournamentStatus.REGISTRATION_CLOSED;
         await this.tournamentRepository.save(tournament);
         this.logger.log(`🔒 Torneio ${tournament.name} atingiu capacidade máxima`);
       }
 
-      return participant;
+      const saved = await this.participantRepository.findOne({
+        where: { id: participant.id },
+        relations: ['user', 'tournament'],
+      });
+      if (!saved) {
+        throw new BadRequestException('Inscrição feita, mas não foi possível carregar o registro.');
+      }
+      return saved;
     } catch (error: any) {
       this.logger.error(`❌ Erro ao registrar participante:`, error);
-      
-      // Se já existe, verificar se é o mesmo usuário
-      if (error.code === '23505') { // Unique constraint violation
+      if (error.code === '23505') {
         throw new BadRequestException('Você já está inscrito neste torneio');
       }
-      
-      // Se for erro de null constraint, tentar método alternativo com raw SQL
-      if (error.message && (error.message.includes('null value in column "tournamentId"') || error.message.includes('tournamentId'))) {
-        this.logger.warn(`⚠️ Erro de tournamentId, tentando método alternativo com raw SQL`);
-        
-        try {
-          // Usar raw SQL para garantir que o valor seja inserido
-          await this.participantRepository.query(
-            `INSERT INTO tournament_participants ("tournamentId", "userId", status, wins, losses, draws, "registeredAt")
-             VALUES ($1, $2, $3, $4, $5, $6, NOW())
-             ON CONFLICT DO NOTHING`,
-            [tournamentIdValue, userIdValue, ParticipantStatus.REGISTERED, 0, 0, 0]
-          );
-
-          // Buscar o participante criado
-          const participant = await this.participantRepository.findOne({
-            where: { 
-              tournamentId: tournamentIdValue, 
-              userId: userIdValue 
-            },
-            relations: ['user', 'tournament'],
-          });
-
-          if (!participant) {
-            throw new BadRequestException('Erro ao criar participante após tentativa alternativa');
-          }
-
-          // Atualizar contador
-          tournament.currentParticipants++;
-          await this.tournamentRepository.save(tournament);
-
-          if (tournament.currentParticipants >= tournament.maxParticipants) {
-            tournament.status = TournamentStatus.REGISTRATION_CLOSED;
-            await this.tournamentRepository.save(tournament);
-          }
-
-          return participant;
-        } catch (rawError: any) {
-          this.logger.error(`❌ Erro no método alternativo:`, rawError);
-          throw new BadRequestException(`Erro ao se inscrever no torneio: ${rawError.message || 'Erro desconhecido'}`);
-        }
+      if (error.code === '23503') {
+        throw new BadRequestException('Torneio ou usuário inválido.');
       }
-      
-      throw error;
+      throw new BadRequestException(error.message || 'Erro ao se inscrever no torneio');
     }
   }
 
@@ -528,15 +529,30 @@ export class TournamentsService {
           round,
           matchNumber: i + 1,
           status: MatchStatus.SCHEDULED,
-          scheduledAt: new Date(tournament.startAt.getTime() + (round - 1) * 60 * 60 * 1000), // 1h por rodada
+          scheduledAt: new Date(tournament.startAt.getTime() + (round - 1) * 60 * 60 * 1000),
+          isThirdPlaceMatch: false,
         });
-
         nextRoundMatches.push(match);
       }
 
       const savedMatches = await this.matchRepository.save(nextRoundMatches);
 
-      // Conectar partidas anteriores com próximas
+      // Disputa de 3º lugar: sempre criar partida entre perdedores das semi (quando há pelo menos 4 participantes)
+      if (round === totalRounds && totalRounds >= 2 && previousMatches.length === 2) {
+        const thirdPlaceMatch = this.matchRepository.create({
+          tournamentId: tournament.id,
+          round: totalRounds,
+          matchNumber: savedMatches.length + 1,
+          status: MatchStatus.SCHEDULED,
+          scheduledAt: new Date(tournament.startAt.getTime() + (round - 1) * 60 * 60 * 1000),
+          isThirdPlaceMatch: true,
+        });
+        const [savedThird] = await this.matchRepository.save([thirdPlaceMatch]);
+        for (let i = 0; i < previousMatches.length; i++) {
+          previousMatches[i].nextConsolationMatchId = savedThird.id;
+        }
+      }
+
       for (let i = 0; i < previousMatches.length; i++) {
         const nextMatchIndex = Math.floor(i / 2);
         previousMatches[i].nextMatchId = savedMatches[nextMatchIndex].id;
@@ -575,10 +591,37 @@ export class TournamentsService {
     match.finishedAt = new Date();
     await this.matchRepository.save(match);
 
+    const loserId = match.player1Id === winnerId ? match.player2Id : match.player1Id;
+
+    // Mata-mata: marcar perdedor como eliminado e atualizar vitórias/derrotas
+    if (loserId) {
+      const loserParticipant = await this.participantRepository.findOne({
+        where: { tournament: { id: match.tournamentId }, userId: loserId },
+      });
+      if (loserParticipant) {
+        loserParticipant.status = ParticipantStatus.ELIMINATED;
+        loserParticipant.losses = (loserParticipant.losses || 0) + 1;
+        await this.participantRepository.save(loserParticipant);
+        this.logger.log(`🚫 [updateTournamentMatchFromDuel] Jogador ${loserId} eliminado (mata-mata).`);
+      }
+    }
+    const winnerParticipant = await this.participantRepository.findOne({
+      where: { tournament: { id: match.tournamentId }, userId: winnerId },
+    });
+    if (winnerParticipant) {
+      winnerParticipant.wins = (winnerParticipant.wins || 0) + 1;
+      await this.participantRepository.save(winnerParticipant);
+    }
+
     this.logger.log(`✅ [updateTournamentMatchFromDuel] Partida ${match.id} (Rodada ${match.round}) finalizada. Vencedor: ${winnerId}`);
 
     // Avançar vencedor para próxima fase
     if (match.nextMatchId) {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(String(match.nextMatchId).trim())) {
+        this.logger.error(`❌ [updateTournamentMatchFromDuel] nextMatchId inválido (não é UUID): ${match.nextMatchId}`);
+        return;
+      }
       const nextMatch = await this.matchRepository.findOne({
         where: { id: match.nextMatchId },
       });
@@ -618,8 +661,16 @@ export class TournamentsService {
           if (nextMatch.player2Id && nextMatch.player2Id !== winnerId) {
             this.logger.warn(`⚠️ [updateTournamentMatchFromDuel] player2Id já está ocupado (${nextMatch.player2Id}), mas vencedor ${winnerId} também precisa ir para lá. Substituindo...`);
           }
-          nextMatch.player2Id = winnerId;
-          this.logger.log(`✅ [updateTournamentMatchFromDuel] Vencedor ${winnerId} atribuído ao player2Id da próxima partida (Match ${nextMatch.matchNumber} - Round ${nextMatch.round})`);
+          // Evitar colocar o mesmo jogador nos dois lados (ex.: bye mal preenchido)
+          if (nextMatch.player1Id === winnerId) {
+            this.logger.warn(`⚠️ [updateTournamentMatchFromDuel] Vencedor ${winnerId} já está em player1Id da próxima partida. Marcando partida como W.O.`);
+            nextMatch.winnerId = winnerId;
+            nextMatch.status = MatchStatus.WALKOVER;
+            nextMatch.finishedAt = new Date();
+          } else {
+            nextMatch.player2Id = winnerId;
+            this.logger.log(`✅ [updateTournamentMatchFromDuel] Vencedor ${winnerId} atribuído ao player2Id da próxima partida (Match ${nextMatch.matchNumber} - Round ${nextMatch.round})`);
+          }
         }
 
         // Se ambos os jogadores estão definidos, marcar como READY
@@ -637,6 +688,51 @@ export class TournamentsService {
       }
     } else {
       this.logger.log(`ℹ️ [updateTournamentMatchFromDuel] Partida ${match.id} não tem próxima partida (final do torneio)`);
+    }
+
+    // Avançar perdedor para disputa de 3º lugar (quando existir)
+    if (loserId && match.nextConsolationMatchId) {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidRegex.test(String(match.nextConsolationMatchId).trim())) {
+        const thirdPlaceMatch = await this.matchRepository.findOne({
+          where: { id: match.nextConsolationMatchId },
+        });
+        if (thirdPlaceMatch) {
+          const matchesLeadingToThird = await this.matchRepository.find({
+            where: {
+              tournamentId: match.tournamentId,
+              round: match.round,
+              nextConsolationMatchId: thirdPlaceMatch.id,
+            },
+            order: { matchNumber: 'ASC' },
+          });
+          const idx = matchesLeadingToThird.findIndex(m => m.id === match.id);
+          if (idx === 0) {
+            thirdPlaceMatch.player1Id = loserId;
+            this.logger.log(`✅ [updateTournamentMatchFromDuel] Perdedor ${loserId} -> 3º lugar (player1)`);
+          } else if (idx === 1) {
+            thirdPlaceMatch.player2Id = loserId;
+            this.logger.log(`✅ [updateTournamentMatchFromDuel] Perdedor ${loserId} -> 3º lugar (player2)`);
+          }
+          if (thirdPlaceMatch.player1Id && thirdPlaceMatch.player2Id) {
+            thirdPlaceMatch.status = MatchStatus.READY;
+          }
+          await this.matchRepository.save(thirdPlaceMatch);
+        }
+      }
+    }
+
+    // Se esta partida é a disputa de 3º lugar: definir finalPosition 3 e 4
+    if (match.isThirdPlaceMatch && loserId) {
+      await this.participantRepository.update(
+        { tournament: { id: match.tournamentId }, userId: winnerId },
+        { finalPosition: 3 },
+      );
+      await this.participantRepository.update(
+        { tournament: { id: match.tournamentId }, userId: loserId },
+        { finalPosition: 4 },
+      );
+      this.logger.log(`🏅 [updateTournamentMatchFromDuel] 3º lugar: ${winnerId}, 4º lugar: ${loserId}`);
     }
 
     // Verificar se todas as partidas da rodada atual terminaram para avançar fase
@@ -724,6 +820,14 @@ export class TournamentsService {
         // Iniciar todas as partidas da próxima rodada que estão prontas
         for (const nextMatch of readyMatches) {
           if (nextMatch.player1Id && nextMatch.player2Id && !nextMatch.duelId) {
+            if (nextMatch.player1Id === nextMatch.player2Id) {
+              this.logger.warn(`⚠️ [checkAndAdvanceRound] Partida ${nextMatch.matchNumber} tem o mesmo jogador nos dois lados (${nextMatch.player1Id}). Marcando como W.O.`);
+              nextMatch.winnerId = nextMatch.player1Id;
+              nextMatch.status = MatchStatus.WALKOVER;
+              nextMatch.finishedAt = new Date();
+              await this.matchRepository.save(nextMatch);
+              continue;
+            }
             try {
               this.logger.log(`⚔️ [checkAndAdvanceRound] Iniciando duelo para partida ${nextMatch.matchNumber}: ${nextMatch.player1Id} vs ${nextMatch.player2Id}`);
               
@@ -779,33 +883,81 @@ export class TournamentsService {
   }
 
   /**
-   * Finaliza torneio
+   * Finaliza torneio. Quem vencer a final é o campeão (winnerId).
    */
   private async finishTournament(tournamentId: string) {
     const tournament = await this.tournamentRepository.findOne({
       where: { id: tournamentId },
-      relations: ['matches'],
     });
 
     if (!tournament) {
       throw new Error('Tournament not found');
     }
 
-    const finalMatch = tournament.matches.find(
-      (m) => m.nextMatchId === null && m.status === MatchStatus.FINISHED,
-    );
+    const finalMatch = await this.matchRepository.findOne({
+      where: {
+        tournamentId,
+        status: MatchStatus.FINISHED,
+        nextMatchId: IsNull(),
+        isThirdPlaceMatch: false,
+      },
+    });
 
     if (finalMatch?.winnerId) {
       tournament.winnerId = finalMatch.winnerId;
       tournament.status = TournamentStatus.FINISHED;
       tournament.finishedAt = new Date();
 
-      // Distribuir prêmios
-      await this.distributePrizes(tournament);
+      const loserId = finalMatch.player1Id === finalMatch.winnerId ? finalMatch.player2Id : finalMatch.player1Id;
+      await this.participantRepository.update(
+        { tournament: { id: tournamentId }, userId: finalMatch.winnerId },
+        { finalPosition: 1 },
+      );
+      if (loserId) {
+        await this.participantRepository.update(
+          { tournament: { id: tournamentId }, userId: loserId },
+          { finalPosition: 2 },
+        );
+      }
 
       await this.tournamentRepository.save(tournament);
 
+      // Distribuir prêmios
+      await this.distributePrizes(tournament);
+
+      // Atribuir pontos de torneio (ranking Obelisco/Rá/Slifer)
+      await this.awardTournamentPoints(tournamentId);
+
       this.logger.log(`🏆 Torneio ${tournament.name} finalizado!`);
+    }
+  }
+
+  /** Pontos por posição final (1º, 2º, 3º, 4º) para o ranking de torneios */
+  private static readonly POINTS_BY_PLACE: Record<number, number> = {
+    1: 100,
+    2: 50,
+    3: 25,
+    4: 10,
+  };
+
+  private async awardTournamentPoints(tournamentId: string) {
+    const full = await this.tournamentRepository.findOne({
+      where: { id: tournamentId },
+      relations: ['participants'],
+    });
+    if (!full?.participants?.length) return;
+    for (const p of full.participants) {
+      const place = p.finalPosition;
+      const points = TournamentsService.POINTS_BY_PLACE[place];
+      if (points == null || points === 0) continue;
+      try {
+        const user = await this.usersService.findById(p.userId);
+        const current = (user as any).tournamentPoints ?? 0;
+        await this.usersService.update(p.userId, { tournamentPoints: current + points });
+        this.logger.log(`📊 Pontos de torneio: +${points} (${place}º) -> userId ${p.userId} (total: ${current + points})`);
+      } catch (err) {
+        this.logger.error(`Erro ao atribuir pontos de torneio para userId ${p.userId}:`, err);
+      }
     }
   }
 
@@ -813,14 +965,57 @@ export class TournamentsService {
    * Distribui prêmios
    */
   private async distributePrizes(tournament: Tournament) {
-    if (tournament.winnerId && tournament.prizeFirst > 0) {
-      const user = await this.usersService.findById(tournament.winnerId);
-      await this.usersService.update(tournament.winnerId, {
-        credits: (user.credits || 0) + tournament.prizeFirst
-      });
-      this.logger.log(`💰 Prêmio de ${tournament.prizeFirst} créditos entregue ao vencedor`);
+    const fullTournament = await this.tournamentRepository.findOne({
+      where: { id: tournament.id },
+      relations: ['participants', 'participants.user'],
+    });
+    if (!fullTournament) return;
+
+    const details = fullTournament.prizeDetails;
+    const places = [1, 2, 3, 4] as const;
+
+    for (const place of places) {
+      const participants = fullTournament.participants?.filter((p) => p.finalPosition === place) ?? [];
+      const prize = details?.[place];
+      const creditLegacy = place === 1 ? fullTournament.prizeFirst : place === 2 ? fullTournament.prizeSecond : place === 3 ? fullTournament.prizeThird : 0;
+      const credit = prize?.credit ?? (place <= 3 ? creditLegacy : 0);
+      const cash = prize?.cash ?? 0;
+      const cardIds = prize?.cardIds ?? [];
+      const trophyTitle = prize?.trophyTitle;
+      const trophyIcon = prize?.trophyIcon;
+
+      for (const p of participants) {
+        const userId = p.userId;
+        try {
+          if (credit > 0) {
+            const user = await this.usersService.findById(userId);
+            await this.usersService.update(userId, { credits: (user.credits || 0) + credit });
+            this.logger.log(`💰 Prêmio ${place}º: ${credit} créditos -> userId ${userId}`);
+          }
+          if (cash > 0) {
+            const user = await this.usersService.findById(userId);
+            await this.usersService.update(userId, { cash: (user.cash || 0) + cash });
+            this.logger.log(`💵 Prêmio ${place}º: ${cash} cash -> userId ${userId}`);
+          }
+          for (const cardId of cardIds) {
+            await this.shopService.addCardToUserInventory(userId, cardId, 'REWARD', 1);
+            this.logger.log(`🃏 Prêmio ${place}º: carta ${cardId} -> userId ${userId}`);
+          }
+          if (trophyTitle) {
+            await this.achievementsService.createForUser(userId, {
+              type: AchievementType.TOURNAMENT_WINNER,
+              title: trophyTitle,
+              description: `${fullTournament.name} - ${place}º lugar`,
+              icon: trophyIcon ?? undefined,
+              metadata: { tournamentId: fullTournament.id, place, tournamentName: fullTournament.name },
+            });
+            this.logger.log(`🏆 Troféu ${place}º: ${trophyTitle} -> userId ${userId}`);
+          }
+        } catch (err) {
+          this.logger.error(`Erro ao distribuir prêmio ${place}º para userId ${userId}:`, err);
+        }
+      }
     }
-    // TODO: Implementar prêmios para 2º e 3º lugares
   }
 
   /**
@@ -867,13 +1062,22 @@ export class TournamentsService {
    * Atualizar torneio
    */
   async update(id: string, tournamentData: Partial<Tournament>) {
-    const tournament = await this.tournamentRepository.findOne({ where: { id } });
+    const tournamentId = typeof id === 'string' ? id.trim() : id;
+    const tournament = await this.tournamentRepository.findOne({ where: { id: tournamentId } });
 
     if (!tournament) {
       throw new NotFoundException('Torneio não encontrado');
     }
 
-    Object.assign(tournament, tournamentData);
+    if (tournamentData.maxParticipants != null && !TournamentsService.VALID_MAX_PARTICIPANTS.includes(tournamentData.maxParticipants)) {
+      throw new BadRequestException(
+        `Vagas devem ser uma potência de 2: ${TournamentsService.VALID_MAX_PARTICIPANTS.join(', ')}`,
+      );
+    }
+
+    const { id: _id, createdAt, createdBy, ...safeData } = tournamentData as Partial<Tournament> & { id?: string; createdAt?: Date; createdBy?: number };
+    const data = { ...safeData, format: TournamentFormat.SINGLE_ELIMINATION };
+    Object.assign(tournament, data);
     return await this.tournamentRepository.save(tournament);
   }
 
@@ -881,7 +1085,8 @@ export class TournamentsService {
    * Excluir torneio
    */
   async remove(id: string) {
-    const tournament = await this.tournamentRepository.findOne({ where: { id } });
+    const tournamentId = typeof id === 'string' ? id.trim() : id;
+    const tournament = await this.tournamentRepository.findOne({ where: { id: tournamentId } });
 
     if (!tournament) {
       throw new NotFoundException('Torneio não encontrado');

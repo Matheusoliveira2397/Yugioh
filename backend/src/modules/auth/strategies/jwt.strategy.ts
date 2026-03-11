@@ -28,12 +28,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       console.log('❌ JWT Strategy - userId é NaN!');
       throw new UnauthorizedException('Invalid user ID');
     }
-    const user = await this.usersService.findById(userId);
+    const user = await this.usersService.findByIdForAuth(userId);
     if (!user) {
       console.log('❌ JWT Strategy - usuário não encontrado com ID:', userId);
       throw new UnauthorizedException();
     }
-    // Garantir que id seja sempre number
+    await this.usersService.clearExpiredBan(userId);
+    const fresh = await this.usersService.findByIdForAuth(userId);
+    if (fresh && this.usersService.isCurrentlyBanned(fresh)) {
+      const until = fresh.bannedUntil;
+      const reason = (fresh as any).banReason || 'Violação dos termos de uso';
+      const msg = until
+        ? `Conta suspensa até ${new Date(until).toLocaleDateString('pt-BR')}. Motivo: ${reason}`
+        : `Conta banida. Motivo: ${reason}`;
+      throw new UnauthorizedException(msg);
+    }
     const userObj = { id: Number(user.id), username: user.username, email: user.email, role: user.role };
     console.log('🔍 JWT Strategy validate - retornando user:', userObj);
     return userObj;

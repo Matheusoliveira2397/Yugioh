@@ -6,7 +6,33 @@ import { UploadService } from '../../upload/upload.service';
 export class YugiohApiService {
   private readonly API_BASE_URL = 'https://db.ygoprodeck.com/api/v7';
 
+  /** Domínios permitidos para proxy de imagem (evitar abuso) */
+  private readonly ALLOWED_IMAGE_HOSTS = ['images.ygoprodeck.com', 'storage.googleapis.com', 'db.ygoprodeck.com'];
+
   constructor(private readonly uploadService: UploadService) {}
+
+  /**
+   * Busca uma imagem por URL e retorna o buffer + content-type.
+   * Usado pelo endpoint proxy para exibir imagens externas em produção (evita CORS/referrer).
+   */
+  async fetchImageByUrl(imageUrl: string): Promise<{ buffer: Buffer; contentType: string }> {
+    if (!imageUrl || typeof imageUrl !== 'string') {
+      throw new Error('URL da imagem é obrigatória');
+    }
+    const parsed = new URL(imageUrl);
+    if (!this.ALLOWED_IMAGE_HOSTS.some((h) => parsed.hostname === h || parsed.hostname.endsWith('.' + h))) {
+      throw new Error('Domínio da imagem não permitido para proxy');
+    }
+    const response = await axios.get(imageUrl, {
+      responseType: 'arraybuffer',
+      timeout: 15000,
+      headers: { Accept: 'image/*' },
+      maxRedirects: 3,
+      validateStatus: (status) => status === 200,
+    });
+    const contentType = response.headers['content-type']?.split(';')[0]?.trim() || 'image/jpeg';
+    return { buffer: Buffer.from(response.data), contentType };
+  }
 
   /**
    * Traduz texto de inglês para português usando API gratuita

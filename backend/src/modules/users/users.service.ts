@@ -140,6 +140,32 @@ export class UsersService implements OnModuleInit {
     return this.usersRepository.save(user);
   }
 
+  /** Consulta mínima para validação JWT (evita timeout em carga alta). */
+  async findByIdForAuth(id: number): Promise<(Pick<User, 'id' | 'username' | 'email' | 'role' | 'isBanned'> & { bannedUntil?: Date | null; banReason?: string | null }) | null> {
+    return this.usersRepository.findOne({
+      where: { id },
+      select: ['id', 'username', 'email', 'role', 'isBanned', 'bannedUntil', 'banReason'],
+    });
+  }
+
+  /** Verifica se o usuário está banido (considera bannedUntil: null = permanente, data passada = ban expirado). */
+  isCurrentlyBanned(user: { isBanned: boolean; bannedUntil?: Date | null }): boolean {
+    if (!user.isBanned) return false;
+    const until = user.bannedUntil;
+    if (until == null) return true;
+    return new Date(until) > new Date();
+  }
+
+  /** Se o ban expirou (bannedUntil no passado), limpa isBanned/banReason/bannedUntil. */
+  async clearExpiredBan(userId: number): Promise<void> {
+    const user = await this.usersRepository.findOne({ where: { id: userId }, select: ['id', 'isBanned', 'bannedUntil'] });
+    if (!user || !user.isBanned) return;
+    const until = user.bannedUntil;
+    if (until != null && new Date(until) <= new Date()) {
+      await this.usersRepository.update(userId, { isBanned: false, banReason: null, bannedUntil: null });
+    }
+  }
+
   async findById(id: number): Promise<User> {
     try {
       const user = await this.usersRepository.findOne({ 
@@ -159,6 +185,7 @@ export class UsersService implements OnModuleInit {
           'cash',
           'level',
           'totalScore',
+          'tournamentPoints',
           'profileImage',
           'isOnline',
           'isBanned',

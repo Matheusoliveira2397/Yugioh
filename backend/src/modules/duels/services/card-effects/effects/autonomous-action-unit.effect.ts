@@ -32,7 +32,7 @@ export class AutonomousActionUnitEffect extends BaseCardEffect {
     const opponentField = this.getOpponentField(context);
     
     // Verificar se o jogador tem pelo menos 1500 LPs
-    const playerLifePoints = isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints;
+    const playerLifePoints = Number(isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints);
     if (playerLifePoints < 1500) {
       this.logInfo(`Jogador não tem LPs suficientes (${playerLifePoints} < 1500)`);
       return {

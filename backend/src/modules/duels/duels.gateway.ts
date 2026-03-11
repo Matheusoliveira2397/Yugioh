@@ -4854,7 +4854,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             if (isPrematureBurial) {
               // Premature Burial: paga 800 LP, seleciona 1 monstro do SEU cemitério, invoca em ataque e equipa esta carta ao monstro; se um for destruído, ambos vão ao cemitério
               console.log(`✨ [handleDuelAction] Premature Burial detectada - pagar 800 LP e escolher monstro do próprio cemitério`);
-              const currentLP = isPlayer1Check ? (updatedDuel as any).player1LifePoints : (updatedDuel as any).player2LifePoints;
+              const currentLP = Number(isPlayer1Check ? (updatedDuel as any).player1LifePoints : (updatedDuel as any).player2LifePoints);
               if (currentLP < 800) {
                 client.emit('duelError', { message: 'Premature Burial: você precisa de pelo menos 800 LP para ativar.' });
                 return;
@@ -4922,7 +4922,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
                   updatedDuel = await this.duelsService.goToPhase(duelId, TurnPhase.MAIN1);
                 }
               }
-              const currentLP = isPlayer1Check ? (updatedDuel as any).player1LifePoints : (updatedDuel as any).player2LifePoints;
+              const currentLP = Number(isPlayer1Check ? (updatedDuel as any).player1LifePoints : (updatedDuel as any).player2LifePoints);
               if (currentLP < 1500) {
                 client.emit('duelError', { message: 'Autonomous Action Unit: você precisa de pelo menos 1500 LP para ativar.' });
                 return;

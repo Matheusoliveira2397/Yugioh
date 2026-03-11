@@ -14,6 +14,11 @@ export class AuthDbMigrationService implements OnModuleInit {
     } catch (error) {
       this.logger.error('Erro ao executar migração de refresh_tokens:', error);
     }
+    try {
+      await this.ensureBannedUntilColumn();
+    } catch (error) {
+      this.logger.error('Erro ao executar migração bannedUntil:', error);
+    }
   }
 
   private async ensureRefreshTokensTable() {
@@ -45,6 +50,33 @@ export class AuthDbMigrationService implements OnModuleInit {
       }
     } catch (error: any) {
       if (error?.code !== '42P07' && !error?.message?.includes('already exists')) {
+        throw error;
+      }
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  private async ensureBannedUntilColumn() {
+    const queryRunner = this.dataSource.createQueryRunner();
+    try {
+      await queryRunner.connect();
+      const result = await queryRunner.query(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+        AND table_name = 'users'
+        AND column_name = 'bannedUntil'
+      `);
+      if (result.length === 0) {
+        await queryRunner.query(`
+          ALTER TABLE "users"
+          ADD COLUMN "bannedUntil" TIMESTAMP NULL
+        `);
+        this.logger.log('Coluna users.bannedUntil criada com sucesso.');
+      }
+    } catch (error: any) {
+      if (error?.code !== '42701' && !error?.message?.includes('already exists')) {
         throw error;
       }
     } finally {

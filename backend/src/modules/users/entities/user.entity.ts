@@ -65,6 +65,10 @@ export class User {
   @Column({ type: 'decimal', precision: 10, scale: 1, default: 0, name: 'total_score' })
   totalScore: number; // Score geral acumulado de todas as seasons
 
+  /** Pontos de torneios: usados no ranking de classes (Obelisco, Rá, Slifer) */
+  @Column({ type: 'int', default: 0, name: 'tournament_points' })
+  tournamentPoints: number;
+
   @Column({ default: '/images/default.png', name: 'profileImage' })
   profileImage: string;
 
@@ -77,6 +81,10 @@ export class User {
 
   @Column({ type: 'text', nullable: true })
   banReason: string | null;
+
+  /** Fim do banimento (null = permanente). Após esta data o usuário pode fazer login. */
+  @Column({ type: 'timestamp', nullable: true })
+  bannedUntil: Date | null;
 
   @Column({ type: 'timestamp', nullable: true })
   lastLogin: Date;

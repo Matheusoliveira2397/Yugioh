@@ -76,6 +76,18 @@ export class AuthService {
       throw error;
     }
 
+    // Banimento: limpar se expirado e bloquear login se ainda banido
+    await this.usersService.clearExpiredBan(user.id);
+    const forAuth = await this.usersService.findByIdForAuth(user.id);
+    if (forAuth && this.usersService.isCurrentlyBanned(forAuth)) {
+      const until = forAuth.bannedUntil;
+      const reason = (forAuth as any).banReason || 'Violação dos termos de uso';
+      const msg = until
+        ? `Conta suspensa até ${new Date(until).toLocaleDateString('pt-BR')}. Motivo: ${reason}`
+        : `Conta banida. Motivo: ${reason}`;
+      throw new UnauthorizedException(msg);
+    }
+
     if (await bcrypt.compare(password, user.password)) {
       const { password: _, ...result } = user;
       return result;
@@ -121,6 +133,11 @@ export class AuthService {
           adminAllowedTabs: fullProfile.adminAllowedTabs ?? null,
         },
       };
+  }
+
+  /** Invalida todos os refresh tokens do usuário (ex.: ao banir). */
+  async invalidateRefreshTokensForUser(userId: number): Promise<void> {
+    await this.refreshTokenRepository.delete({ userId });
   }
 
   private getAccessTokenExpiresInSeconds(): number {
@@ -183,6 +200,12 @@ export class AuthService {
     if (!user) {
       await this.refreshTokenRepository.delete({ id: row.id });
       throw new UnauthorizedException('Usuário não encontrado.');
+    }
+    await this.usersService.clearExpiredBan(user.id);
+    const forAuth = await this.usersService.findByIdForAuth(user.id);
+    if (forAuth && this.usersService.isCurrentlyBanned(forAuth)) {
+      await this.refreshTokenRepository.delete({ id: row.id });
+      throw new UnauthorizedException('Conta suspensa ou banida. Não é possível renovar o acesso.');
     }
     const payload = { username: user.username, sub: Number(user.id), role: user.role };
     const access_token = this.jwtService.sign(payload);

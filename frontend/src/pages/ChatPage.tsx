@@ -43,11 +43,18 @@ export default function ChatPage() {
   const { connect, emit, on, isConnected, getSocket } = useSocketStore();
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageInput, setMessageInput] = useState('');
-  const [channelTab, setChannelTab] = useState<'global' | 'clan'>('global');
+  // Aba selecionada: 'global' | 'clan' | userId (chat privado = uma aba por conversa)
+  const [selectedTab, setSelectedTab] = useState<'global' | 'clan' | string>('global');
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
-  const currentChannel = channelTab === 'global' ? 'global' : (user?.clanTag ? `clan:${user.clanTag}` : 'global');
+  // Canal normalizado (clan em minúsculo) para bater com o backend e persistência
+  const currentChannel = selectedTab === 'global'
+    ? 'global'
+    : selectedTab === 'clan' && user?.clanTag
+      ? `clan:${String(user.clanTag).trim().toLowerCase()}`
+      : 'global';
   const [privateChats, setPrivateChats] = useState<Map<string, PrivateChat>>(new Map());
-  const [activePrivateChat, setActivePrivateChat] = useState<string | null>(null);
+  const isPrivateTab = selectedTab !== 'global' && selectedTab !== 'clan';
+  const activePrivateChat = isPrivateTab ? selectedTab : null;
   const [privateMessageInput, setPrivateMessageInput] = useState<Map<string, string>>(new Map());
   const [pendingChallenges, setPendingChallenges] = useState<Map<string, {
     challengerId: string;
@@ -88,7 +95,7 @@ export default function ChatPage() {
       return;
     }
 
-    setActivePrivateChat(targetUserId);
+    setSelectedTab(targetUserId);
     setPrivateChats((prev) => {
       const newChats = new Map(prev);
       if (newChats.has(targetUserId) && targetLevel !== undefined) {
@@ -123,8 +130,8 @@ export default function ChatPage() {
     const socket = getSocket();
     if (!socket) return;
 
-    // Canal a entrar: global ou clan:TAG (só se tiver clã). Aba clã sem clã = não entra em nenhum
-    const channelToJoin = channelTab === 'global' ? 'global' : (user?.clanTag ? `clan:${user.clanTag}` : null);
+    // Canal a entrar: global ou clan (só quando a aba selecionada for global/clan; em aba privada não muda canal)
+    const channelToJoin = selectedTab === 'global' ? 'global' : (selectedTab === 'clan' && user?.clanTag ? `clan:${user.clanTag}` : null);
 
     const setupChat = () => {
       if (!socket.connected || !user) {
@@ -202,38 +209,38 @@ export default function ChatPage() {
       });
 
       // Escutar mensagens privadas
-      socket.on('privateMessage', (data: Message) => {
-        const senderId = data.userId;
+      // Mensagens privadas do chat global (não aparecem no ícone de mensagens; ícone = só amigos)
+      socket.on('chatPrivateMessage', (data: Message) => {
+        const senderId = String(data.userId ?? '');
+        const currentUserId = user?.id ? String(user.id) : null;
+        if (senderId === currentUserId) return;
         setPrivateChats((prev) => {
           const newChats = new Map(prev);
           const chat = newChats.get(senderId) || {
             userId: senderId,
-            username: data.username,
+            username: data.username ?? '',
             clanTag: data.clanTag,
             messages: [],
           };
-          // Adicionar nova mensagem e filtrar
           const now = new Date();
           const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
           const allMessages = [...chat.messages, data];
-          
-          // Filtrar mensagens com mais de 24 horas e manter apenas as últimas 20
           const filteredMessages = allMessages
             .filter(msg => {
-              const msgDate = new Date(msg.timestamp || msg.createdAt || now);
+              const msgDate = new Date(msg.timestamp || (msg as any).createdAt || now);
               return msgDate >= twentyFourHoursAgo;
             })
             .slice(-20);
-          
           chat.messages = filteredMessages;
           newChats.set(senderId, chat);
           return newChats;
         });
+        setSelectedTab(senderId);
       });
 
       // Escutar comando Master: chat global limpo (só limpa se estiver no global)
       socket.on('chatCleared', () => {
-        if (channelTab === 'global') setMessages([]);
+        if (selectedTab === 'global') setMessages([]);
       });
 
       // Escutar quando alguém te menciona no chat (@nick)
@@ -253,7 +260,7 @@ export default function ChatPage() {
         // Abrir chat privado com o desafiante se não estiver aberto
         const currentUserId = user?.id ? (typeof user.id === 'string' ? user.id : user.id.toString()) : null;
         if (data.challengerId !== currentUserId) {
-          setActivePrivateChat(data.challengerId);
+          setSelectedTab(data.challengerId);
           
           // Adicionar desafio pendente
           setPendingChallenges((prev) => {
@@ -324,7 +331,7 @@ export default function ChatPage() {
         socket.off('onlineUsers');
         socket.off('userJoined');
         socket.off('userLeft');
-        socket.off('privateMessage');
+        socket.off('chatPrivateMessage');
         socket.off('duelChallenge');
         socket.off('chatCleared');
         socket.off('mention');
@@ -332,7 +339,7 @@ export default function ChatPage() {
         if (user?.clanTag) socket.emit('leaveChannel', { channel: `clan:${user.clanTag}` });
       }
     };
-  }, [user, user?.clanTag, channelTab, getSocket, connect]);
+  }, [user, user?.clanTag, selectedTab, getSocket, connect]);
 
   // Ctrl+L: Master limpa o chat global
   useEffect(() => {
@@ -391,17 +398,35 @@ export default function ChatPage() {
       return;
     }
 
+    const content = input.trim();
     socket.emit('sendPrivateMessage', {
       userId: user.id.toString(),
       username: user.nickname || user.username,
       recipientId: targetUserId,
-      content: input.trim(),
+      content,
     });
 
     setPrivateMessageInput((prev) => {
       const newMap = new Map(prev);
       newMap.set(targetUserId, '');
       return newMap;
+    });
+
+    setPrivateChats((prev) => {
+      const newChats = new Map(prev);
+      const chat = newChats.get(targetUserId) || { userId: targetUserId, username: '', clanTag: undefined, messages: [] };
+      chat.messages = [...chat.messages, {
+        id: `sent-${Date.now()}`,
+        userId: user.id.toString(),
+        username: user.nickname || user.username || '',
+        clanTag: user.clanTag,
+        profileImage: user.profileImage ?? null,
+        content,
+        timestamp: new Date(),
+        createdAt: new Date(),
+      }];
+      newChats.set(targetUserId, chat);
+      return newChats;
     });
   };
 
@@ -599,18 +624,55 @@ export default function ChatPage() {
               <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
-                  onClick={() => setChannelTab('global')}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${channelTab === 'global' ? 'bg-white/20 text-white ring-2 ring-white/50' : 'text-white/80 hover:bg-white/10'}`}
+                  onClick={() => setSelectedTab('global')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedTab === 'global' ? 'bg-white/20 text-white ring-2 ring-white/50' : 'text-white/80 hover:bg-white/10'}`}
                 >
                   💬 Global
                 </button>
                 <button
                   type="button"
-                  onClick={() => setChannelTab('clan')}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${channelTab === 'clan' ? 'bg-white/20 text-white ring-2 ring-white/50' : 'text-white/80 hover:bg-white/10'}`}
+                  onClick={() => setSelectedTab('clan')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedTab === 'clan' ? 'bg-white/20 text-white ring-2 ring-white/50' : 'text-white/80 hover:bg-white/10'}`}
                 >
-                  🏴 Chat do clã {user?.clanTag ? `|${user.clanTag}|` : ''}
+                  🏴 {user?.clanTag ? `|${user.clanTag}|` : 'Clã'}
                 </button>
+                {Array.from(privateChats.entries()).map(([userId, chat]) => (
+                  <div
+                    key={userId}
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                      selectedTab === userId ? 'bg-purple-600/80 text-white ring-2 ring-purple-400' : 'text-white/80 hover:bg-white/10 bg-white/5'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTab(userId)}
+                      className="truncate max-w-[120px]"
+                    >
+                      💬 {chat.clanTag ? `|${chat.clanTag}| ` : ''}{chat.username}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPrivateChats((prev) => {
+                          const next = new Map(prev);
+                          next.delete(userId);
+                          return next;
+                        });
+                        setPrivateMessageInput((prev) => {
+                          const next = new Map(prev);
+                          next.delete(userId);
+                          return next;
+                        });
+                        setSelectedTab(selectedTab === userId ? 'global' : selectedTab);
+                      }}
+                      className="text-white/70 hover:text-white ml-0.5"
+                      title="Fechar aba"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
               </div>
               <div className="flex items-center gap-2">
                 {isConnected ? (
@@ -620,9 +682,12 @@ export default function ChatPage() {
                 )}
               </div>
             </div>
-            <span className="text-sm sm:text-base font-bold whitespace-nowrap">
-              👥 Online ({onlineUsers.length})
-            </span>
+            <div className="hidden lg:flex w-80 flex-shrink-0 flex-col items-center justify-center">
+              <span className="text-sm sm:text-base font-bold text-white whitespace-nowrap">
+                👥 Online ({onlineUsers.length})
+              </span>
+              <span className="text-xs text-white/70">Duelistas no chat</span>
+            </div>
           </div>
 
           {/* Container principal com chat e online lado a lado */}
@@ -653,12 +718,93 @@ export default function ChatPage() {
                 </motion.div>
               )}
 
-              {/* Mensagens — scroll bonito e sempre no final (mais recentes) */}
+              {/* Conteúdo: canal (global/clan) ou chat privado em aba */}
+              {isPrivateTab ? (
+                (() => {
+                  const chat = privateChats.get(selectedTab);
+                  if (!chat) return null;
+                  const input = privateMessageInput.get(selectedTab) || '';
+                  return (
+                    <>
+                      <div className="p-3 border-b border-white/20 flex items-center justify-between flex-wrap gap-2">
+                        <span className="text-sm font-bold text-purple-200">
+                          💬 {chat.clanTag ? `|${chat.clanTag}| ` : ''}{chat.username}
+                          {(chat.level ?? 0) > 0 && <span className="text-yellow-300/90 text-xs ml-1">Nível {chat.level}</span>}
+                        </span>
+                        {selectedTab !== (user?.id ? String(user.id) : '') && (
+                          <button
+                            onClick={() => handleChallengePlayer(selectedTab, chat.username, chat.clanTag)}
+                            className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-1.5 px-3 rounded text-xs"
+                          >
+                            ⚔️ Desafiar
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex-1 overflow-y-auto p-2 sm:p-4 custom-scrollbar space-y-2">
+                        {chat.messages.length === 0 ? (
+                          <div className="text-center text-gray-500 py-8">
+                            <p className="text-2xl mb-2">💭</p>
+                            <p className="text-sm">Nenhuma mensagem ainda. Comece a conversar!</p>
+                          </div>
+                        ) : (
+                          chat.messages.map((msg, idx) => {
+                            const currentUserId = user?.id ? String(user.id) : null;
+                            const isMyMessage = msg.userId === currentUserId;
+                            const timeString = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+                            const isChallenge = msg.isChallenge && !isMyMessage;
+                            const challenge = isChallenge ? pendingChallenges.get(selectedTab) : null;
+                            return (
+                              <div key={idx} className={`flex gap-2 ${isMyMessage ? 'flex-row-reverse' : 'flex-row'} max-w-[85%] ${isMyMessage ? 'ml-auto' : 'mr-auto'}`}>
+                                <div className={`p-2 rounded-lg border text-sm ${isMyMessage ? 'border-blue-500/50 bg-blue-900/20' : isChallenge ? 'border-yellow-500/50 bg-yellow-900/20' : 'border-white/20 bg-gray-800'}`}>
+                                  <div className="flex items-center gap-2 mb-0.5">
+                                    <img src={msg.profileImage ? getImageUrl(msg.profileImage) : '/images/default.png'} alt="" className="w-5 h-5 rounded-full object-cover" onError={(e) => { e.currentTarget.src = '/images/default.png'; }} />
+                                    <span className="font-semibold text-gray-300">{msg.clanTag ? `|${msg.clanTag}| ` : ''}{msg.username}</span>
+                                    <span className="text-xs text-gray-500">{timeString}</span>
+                                  </div>
+                                  <p className="text-white">{msg.content}</p>
+                                  {isChallenge && challenge && (
+                                    <div className="flex gap-2 mt-2">
+                                      <button onClick={() => handleAcceptChallenge(challenge.challengerId)} className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-1.5 rounded text-xs">✅ Aceitar</button>
+                                      <button onClick={() => handleRejectChallenge(challenge.challengerId)} className="flex-1 border border-white/20 text-white py-1.5 rounded text-xs">❌ Recusar</button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                      <div className="p-4 border-t border-white/20">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={input}
+                            onChange={(e) => {
+                              setPrivateMessageInput((prev) => {
+                                const next = new Map(prev);
+                                next.set(selectedTab, e.target.value);
+                                return next;
+                              });
+                            }}
+                            onKeyPress={(e) => e.key === 'Enter' && handleSendPrivateMessage(selectedTab)}
+                            placeholder="Digite sua mensagem..."
+                            className="flex-1 bg-gray-800 text-white px-4 py-3 rounded-lg border border-white/20 focus:ring-2 focus:ring-purple-500"
+                            disabled={!isConnected}
+                          />
+                          <button onClick={() => handleSendPrivateMessage(selectedTab)} disabled={!isConnected || !input.trim()} className="btn-primary px-6">Enviar</button>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()
+              ) : (
+                <>
+              {/* Mensagens — scroll (global ou clã) */}
               <div
                 ref={messagesContainerRef}
                 className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 custom-scrollbar scroll-smooth"
               >
-          {channelTab === 'clan' && !user?.clanTag ? (
+          {selectedTab === 'clan' && !user?.clanTag ? (
             <div className="text-center text-gray-400 py-8 sm:py-16 px-4">
               <p className="text-4xl mb-4">🏴</p>
               <p className="text-base font-medium text-white/90 mb-2">Chat do clã</p>
@@ -668,7 +814,7 @@ export default function ChatPage() {
             <div className="text-center text-gray-500 py-8 sm:py-16">
               <p className="text-2xl sm:text-4xl mb-2 sm:mb-4">💭</p>
               <p className="text-sm sm:text-base">
-                {channelTab === 'clan' ? 'Nenhuma mensagem no chat do clã. Seja o primeiro!' : 'Nenhuma mensagem ainda. Seja o primeiro a falar!'}
+                {selectedTab === 'clan' ? 'Nenhuma mensagem no chat do clã. Seja o primeiro!' : 'Nenhuma mensagem ainda. Seja o primeiro a falar!'}
               </p>
             </div>
           ) : (
@@ -694,13 +840,14 @@ export default function ChatPage() {
                       <img
                         src={
                           msg.profileImage
-                            ? getImageUrl(msg.profileImage) + (msg.profileImage ? `?t=${Date.now()}` : '')
+                            ? getImageUrl(msg.profileImage)
                             : `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMyMessage ? '3b82f6' : 'ef4444'}&color=fff&size=48`
                         }
                         alt={msg.username}
                         className="w-8 h-8 rounded-full object-cover border border-gray-600"
+                        loading="lazy"
                         onError={(e) => {
-                          e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMyMessage ? '3b82f6' : 'ef4444'}&color=fff&size=48`;
+                          e.currentTarget.src = '/images/default.png';
                         }}
                       />
                     </div>
@@ -757,198 +904,33 @@ export default function ChatPage() {
                     value={messageInput}
                     onChange={(e) => setMessageInput(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder={channelTab === 'clan' && !user?.clanTag ? 'Entre em um clã para enviar mensagens' : 'Digite sua mensagem... (@nick para mencionar)'}
+                    placeholder={selectedTab === 'clan' && !user?.clanTag ? 'Entre em um clã para enviar mensagens' : 'Digite sua mensagem... (@nick para mencionar)'}
                     className="flex-1 bg-gray-800 text-white placeholder-gray-400 px-4 py-3 rounded-lg border border-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    disabled={!isConnected || (channelTab === 'clan' && !user?.clanTag)}
+                    disabled={!isConnected || (selectedTab === 'clan' && !user?.clanTag)}
                   />
                   <button
                     onClick={handleSendMessage}
-                    disabled={!isConnected || !messageInput.trim() || (channelTab === 'clan' && !user?.clanTag)}
+                    disabled={!isConnected || !messageInput.trim() || (selectedTab === 'clan' && !user?.clanTag)}
                     className="btn-primary px-6"
                   >
                     Enviar
                   </button>
                 </div>
                 <p className="text-xs text-gray-500 mt-1.5">
-                  {channelTab === 'global' && '@nick para mencionar alguém'}
-                  {channelTab === 'global' && user?.role === 'MASTER' && ' · Ctrl+L limpa o chat (Master)'}
-                  {channelTab === 'clan' && user?.clanTag && `Chat visível apenas para membros do clã |${user.clanTag}|`}
+                  {selectedTab === 'global' && '@nick para mencionar alguém'}
+                  {selectedTab === 'global' && user?.role === 'MASTER' && ' · Ctrl+L limpa o chat (Master)'}
+                  {selectedTab === 'clan' && user?.clanTag && `Chat visível apenas para membros do clã |${user.clanTag}|`}
                 </p>
               </div>
+                </>
+              )}
             </div>
 
             {/* Separador vertical */}
-            {!activePrivateChat && <div className="w-px bg-white/20"></div>}
-
-            {/* Painel de Chat Privado */}
-            {activePrivateChat && (() => {
-              const chat = privateChats.get(activePrivateChat);
-              if (!chat) return null;
-              const input = privateMessageInput.get(activePrivateChat) || '';
-
-              return (
-                <>
-                  <div className="w-px bg-white/20"></div>
-                  <motion.div
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="w-full lg:w-80 flex-shrink-0 flex flex-col border-t lg:border-l border-white/20"
-                  >
-                    {/* Header do Chat Privado */}
-                    <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-4 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-lg font-bold">
-                          💬 {chat.clanTag ? `|${chat.clanTag}| ` : ''}{chat.username}
-                          {(chat.level ?? 0) > 0 && (
-                            <span className="text-yellow-300/90 text-sm font-semibold ml-1" title="Nível do duelista">
-                              {chat.level}
-                            </span>
-                          )}
-                        </h2>
-                      </div>
-                      <button
-                        onClick={() => setActivePrivateChat(null)}
-                        className="text-white hover:text-gray-200 text-xl font-bold transition-colors"
-                        title="Fechar chat privado"
-                      >
-                        ×
-                      </button>
-                    </div>
-
-                    {/* Botão de Desafiar */}
-                    {(() => {
-                      const currentUserId = user?.id ? (typeof user.id === 'string' ? user.id : user.id.toString()) : null;
-                      const isSelf = activePrivateChat === currentUserId;
-                      
-                      if (isSelf) {
-                        return null; // Não mostrar botão se for o próprio usuário
-                      }
-                      
-                      return (
-                        <div className="p-3 border-b border-white/20">
-                          <button
-                            onClick={() => handleChallengePlayer(activePrivateChat, chat.username, chat.clanTag)}
-                            className="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded transition-colors flex items-center justify-center gap-2"
-                          >
-                            ⚔️ Desafiar para Duelo
-                          </button>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Mensagens Privadas */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-900">
-                      {chat.messages.length === 0 ? (
-                        <div className="text-center text-gray-500 py-8">
-                          <p className="text-2xl mb-2">💭</p>
-                          <p className="text-sm">Nenhuma mensagem ainda. Comece a conversar!</p>
-                        </div>
-                      ) : (
-                        chat.messages.map((msg, index) => {
-                          const currentUserId = user?.id ? (typeof user.id === 'string' ? user.id : user.id.toString()) : null;
-                          const isMyMessage = msg.userId === currentUserId;
-                          const messageDate = msg.timestamp ? new Date(msg.timestamp) : new Date();
-                          const timeString = messageDate.toLocaleTimeString('pt-BR', { 
-                            hour: '2-digit', 
-                            minute: '2-digit' 
-                          });
-
-                          const isChallenge = msg.isChallenge && !isMyMessage;
-                          const challenge = isChallenge ? pendingChallenges.get(activePrivateChat) : null;
-
-                          return (
-                            <div
-                              key={index}
-                              className={`flex gap-2 ${isMyMessage ? 'flex-row-reverse' : 'flex-row'} max-w-[85%] ${isMyMessage ? 'ml-auto' : 'mr-auto'}`}
-                            >
-                              <div className={`p-3 rounded-lg border bg-gray-800 ${isMyMessage ? 'border-blue-500/50 bg-blue-900/20' : isChallenge ? 'border-yellow-500/50 bg-yellow-900/20' : 'border-white/20'}`}>
-                                <div className="flex items-center gap-2 mb-1">
-                                  {/* Imagem do perfil */}
-                                  <img
-                                    src={
-                                      msg.profileImage
-                                        ? getImageUrl(msg.profileImage) + (msg.profileImage ? `?t=${Date.now()}` : '')
-                                        : `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMyMessage ? '3b82f6' : 'ef4444'}&color=fff&size=32`
-                                    }
-                                    alt={msg.username}
-                                    className="w-5 h-5 rounded-full object-cover border border-gray-600 flex-shrink-0"
-                                    onError={(e) => {
-                                      e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMyMessage ? '3b82f6' : 'ef4444'}&color=fff&size=32`;
-                                    }}
-                                  />
-                                  <span className="text-xs font-semibold text-gray-300">
-                                    {msg.clanTag ? `|${msg.clanTag}| ${msg.username}` : msg.username}
-                                  </span>
-                                  <span className="text-xs text-gray-500">{timeString}</span>
-                                </div>
-                                <p className="text-white text-sm">{msg.content}</p>
-                                
-                                {/* Botões de Aceitar/Recusar para desafios */}
-                                {isChallenge && challenge && (
-                                  <div className="flex gap-2 mt-3">
-                                    <button
-                                      onClick={() => handleAcceptChallenge(challenge.challengerId)}
-                                      className="flex-1 bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-700 hover:to-yellow-600 text-white font-bold py-2 px-3 rounded transition-all transform hover:scale-105 text-xs"
-                                    >
-                                      ✅ Aceitar
-                                    </button>
-                                    <button
-                                      onClick={() => handleRejectChallenge(challenge.challengerId)}
-                                      className="flex-1 hover:bg-white/10 border border-white/20 text-white font-bold py-2 px-3 rounded transition-colors text-xs"
-                                    >
-                                      ❌ Recusar
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-
-                    {/* Input de Mensagem Privada */}
-                    <div className="p-4 border-t border-white/20 bg-gray-900">
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={input}
-                          onChange={(e) => {
-                            setPrivateMessageInput((prev) => {
-                              const newMap = new Map(prev);
-                              newMap.set(activePrivateChat, e.target.value);
-                              return newMap;
-                            });
-                          }}
-                          onKeyPress={(e) => e.key === 'Enter' && handleSendPrivateMessage(activePrivateChat)}
-                          placeholder="Digite sua mensagem..."
-                          className="flex-1 bg-gray-800 text-white placeholder-gray-400 px-4 py-2 rounded-lg border border-white/20 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm"
-                          disabled={!isConnected}
-                        />
-                        <button
-                          onClick={() => handleSendPrivateMessage(activePrivateChat)}
-                          disabled={!isConnected || !input.trim()}
-                          className="btn-primary px-4 py-2 text-sm"
-                        >
-                          Enviar
-                        </button>
-                      </div>
-                    </div>
-                  </motion.div>
-                </>
-              );
-            })()}
-
-            {/* Separador vertical (se não houver chat privado) */}
-            {!activePrivateChat && <div className="w-px bg-white/20"></div>}
+            <div className="w-px bg-white/20"></div>
 
             {/* Lista de Usuários Online */}
             <div className="hidden lg:flex w-80 flex-shrink-0 flex-col border-l border-white/20">
-              <div className="bg-gradient-to-r from-green-600 to-emerald-600 p-3 sm:p-4">
-                <h2 className="text-lg sm:text-xl font-bold flex items-center gap-2">
-                  👥 Online ({onlineUsers.length})
-                </h2>
-              </div>
               <div className="flex-1 overflow-y-auto p-2 sm:p-3">
                 {onlineUsers.length === 0 ? (
                   <div className="text-center text-gray-500 py-3">
@@ -977,13 +959,14 @@ export default function ChatPage() {
                             <img
                               src={
                                 onlineUser.profileImage
-                                  ? getImageUrl(onlineUser.profileImage) + (onlineUser.profileImage ? `?t=${Date.now()}` : '')
+                                  ? getImageUrl(onlineUser.profileImage)
                                   : `https://ui-avatars.com/api/?name=${encodeURIComponent(onlineUser.username)}&background=6366f1&color=fff&size=48`
                               }
                               alt={onlineUser.username}
                               className="w-10 h-10 rounded-full object-cover border border-gray-600"
+                              loading="lazy"
                               onError={(e) => {
-                                e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(onlineUser.username)}&background=6366f1&color=fff&size=48`;
+                                e.currentTarget.src = '/images/default.png';
                               }}
                             />
                             {(onlineUser.level ?? 0) > 0 && (

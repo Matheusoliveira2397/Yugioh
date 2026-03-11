@@ -25,9 +25,6 @@ export class TournamentParticipant {
   @JoinColumn({ name: 'tournamentId' })
   tournament: Tournament;
 
-  @Column()
-  tournamentId: string;
-
   @ManyToOne(() => User)
   @JoinColumn({ name: 'userId' })
   user: User;

@@ -3385,7 +3385,7 @@ const DuelArena: React.FC = () => {
                   isWinner ? 'bg-yellow-500' : 'bg-red-500'
                 }`}></div>
                 <img
-                  src={getImageUrl(myPlayer?.profileImage) + (myPlayer?.profileImage ? `?t=${Date.now()}` : '')}
+                  src={getImageUrl(myPlayer?.profileImage)}
                   alt={myPlayer?.nickname}
                   className="relative w-32 h-32 rounded-full border-4 border-white shadow-lg object-cover mx-auto"
                   onError={(e) => {

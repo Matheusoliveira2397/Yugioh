@@ -86,6 +86,14 @@ export class TournamentMatch {
   @Column({ nullable: true })
   nextMatchId: string;
 
+  /** Partida de disputa de 3º lugar: perdedores das semi vão para aqui */
+  @Column({ nullable: true })
+  nextConsolationMatchId: string;
+
+  /** True = disputa de 3º lugar (não é a final) */
+  @Column({ type: 'boolean', default: false })
+  isThirdPlaceMatch: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

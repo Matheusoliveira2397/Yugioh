@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Put, Delete, Query, Param, Body, UseGuards, UploadedFile, UseInterceptors, Request, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Query, Param, Body, UseGuards, UploadedFile, UseInterceptors, Request, BadRequestException, Res } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
 import { CardsService } from './cards.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
@@ -226,6 +227,28 @@ export class CardsController {
   }
 
   // ==================== YUGIOH API ====================
+
+  /**
+   * Proxy de imagem: busca imagem externa (ex.: Yugioh API) e devolve no nosso domínio.
+   * Usado no admin ao "puxar" a carta para que a prévia carregue em produção (evita CORS/referrer).
+   * Público porque <img src="..."> não envia Authorization.
+   */
+  @Get('proxy-image')
+  @Public()
+  async proxyCardImage(@Query('url') url: string, @Res() res: Response) {
+    if (!url || typeof url !== 'string') {
+      throw new BadRequestException('Parâmetro url é obrigatório');
+    }
+    try {
+      const decoded = decodeURIComponent(url.trim());
+      const { buffer, contentType } = await this.yugiohApiService.fetchImageByUrl(decoded);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.send(buffer);
+    } catch (err: any) {
+      throw new BadRequestException(err.message || 'Não foi possível carregar a imagem');
+    }
+  }
 
   @Get('yugioh-api/search')
   @UseGuards(AdminGuard)

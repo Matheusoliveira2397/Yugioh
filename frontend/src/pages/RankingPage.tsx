@@ -614,6 +614,7 @@ export default function RankingPage() {
                               src={getImageUrl(player.profileImage)}
                               alt={player.nickname}
                               className="w-10 h-10 lg:w-14 lg:h-14 rounded-xl object-cover border-2 border-purple-500"
+                              loading="lazy"
                               onError={(e) => {
                                 e.currentTarget.src = '/images/default.png';
                               }}
@@ -725,6 +726,7 @@ export default function RankingPage() {
                           src={getImageUrl(player.profileImage)}
                           alt={player.nickname}
                           className="w-12 h-12 rounded-xl object-cover border-2 border-purple-500 flex-shrink-0"
+                          loading="lazy"
                           onError={(e) => {
                             e.currentTarget.src = '/images/default.png';
                           }}

@@ -590,7 +590,7 @@ export default function ArenaPage() {
                             </div>
                             <div className="flex items-center gap-2 min-w-0 overflow-hidden">
                               <img
-                                src={getImageUrl(player.profileImage) + (player.profileImage ? `?t=${Date.now()}` : '')}
+                                src={getImageUrl(player.profileImage)}
                                 alt={player.nickname}
                                 className="w-9 h-9 rounded-full border-2 border-slate-500 object-cover flex-shrink-0 shadow"
                                 onError={(e) => {
@@ -764,7 +764,7 @@ export default function ArenaPage() {
                             {player.rank}°
                           </div>
                           <img
-                            src={getImageUrl(player.profileImage) + (player.profileImage ? `?t=${Date.now()}` : '')}
+                            src={getImageUrl(player.profileImage)}
                             alt={player.nickname}
                             className="w-7 h-7 sm:w-9 sm:h-9 rounded-full border-2 border-slate-500 object-cover flex-shrink-0"
                             onError={(e) => { e.currentTarget.src = '/images/default.png'; }}

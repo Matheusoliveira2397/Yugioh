@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
 import { TournamentsService } from './tournaments.service';
+import { TournamentRankingService } from './tournament-ranking.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { Tournament, TournamentStatus } from './entities/tournament.entity';
@@ -7,7 +8,10 @@ import { Tournament, TournamentStatus } from './entities/tournament.entity';
 @Controller('tournaments')
 @UseGuards(JwtAuthGuard)
 export class TournamentsController {
-  constructor(private readonly tournamentsService: TournamentsService) {}
+  constructor(
+    private readonly tournamentsService: TournamentsService,
+    private readonly tournamentRankingService: TournamentRankingService,
+  ) {}
 
   /**
    * Listar todos os torneios
@@ -15,6 +19,23 @@ export class TournamentsController {
   @Get()
   findAll(@Query('status') status?: TournamentStatus) {
     return this.tournamentsService.findAll(status);
+  }
+
+  /**
+   * Ranking de torneios (classes Obelisco, Rá, Slifer)
+   */
+  @Get('ranking/list')
+  getRanking(@Query('limit') limit?: string) {
+    const n = limit ? parseInt(limit, 10) : undefined;
+    return this.tournamentRankingService.getRanking(Number.isFinite(n) ? n : undefined);
+  }
+
+  /**
+   * Configuração das classes (minPoints, maxPlayers)
+   */
+  @Get('ranking/classes')
+  getRankingClasses() {
+    return this.tournamentRankingService.getClasses();
   }
 
   /**
