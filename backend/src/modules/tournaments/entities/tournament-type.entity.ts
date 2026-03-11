@@ -21,7 +21,7 @@ export class TournamentType {
   name: string;
 
   @Column({ type: 'text', nullable: true })
-  description: string;
+  description: string | null;
 
   /** Banlist padrão (IDs de cartas) */
   @Column({ type: 'json', nullable: true })

@@ -28,8 +28,8 @@ export class TournamentTypesService {
       throw new BadRequestException('Nome do tipo é obrigatório');
     }
     const type = this.typeRepository.create({
-      name: data.name.trim(),
-      description: data.description?.trim() || null,
+      name: data.name!.trim(),
+      description: data.description?.trim() ?? null,
       defaultBanlist: data.defaultBanlist ?? null,
       defaultEntryFee: data.defaultEntryFee ?? 0,
       defaultEntryFeeType: data.defaultEntryFeeType === 'cash' ? 'cash' : 'credit',
@@ -37,14 +37,14 @@ export class TournamentTypesService {
       defaultMinLevel: data.defaultMinLevel ?? 1,
       defaultMaxLevel: data.defaultMaxLevel ?? null,
       defaultPrizeDetails: data.defaultPrizeDetails ?? null,
-    });
-    return this.typeRepository.save(type);
+    } as Partial<TournamentType>);
+    return this.typeRepository.save(type) as Promise<TournamentType>;
   }
 
   async update(id: string, data: Partial<TournamentType>): Promise<TournamentType> {
     const type = await this.findOne(id);
     if (data.name != null) type.name = data.name.trim();
-    if (data.description !== undefined) type.description = data.description?.trim() || null;
+    if (data.description !== undefined) type.description = data.description?.trim() ?? null;
     if (data.defaultBanlist !== undefined) type.defaultBanlist = data.defaultBanlist;
     if (data.defaultEntryFee != null) type.defaultEntryFee = data.defaultEntryFee;
     if (data.defaultEntryFeeType != null) type.defaultEntryFeeType = data.defaultEntryFeeType === 'cash' ? 'cash' : 'credit';
