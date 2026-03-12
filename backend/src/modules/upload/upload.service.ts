@@ -232,8 +232,10 @@ export class UploadService {
       // Salvar APENAS no frontend (public/images/cards) - único local de salvamento
       const frontendFilePath = path.join(this.frontendCardsPath, fileName);
       console.log(`💾 Tentando salvar no frontend: ${frontendFilePath}`);
-      console.log(`💾 Pasta existe? ${fs.existsSync(this.frontendCardsPath)}`);
-      
+      if (!fs.existsSync(this.frontendCardsPath)) {
+        fs.mkdirSync(this.frontendCardsPath, { recursive: true });
+        console.log(`📁 Pasta de cartas criada: ${this.frontendCardsPath}`);
+      }
       try {
         fs.writeFileSync(frontendFilePath, imageBuffer);
         console.log(`✅ Imagem salva no frontend: ${frontendFilePath}`);

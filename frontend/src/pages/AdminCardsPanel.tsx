@@ -384,6 +384,31 @@ export default function AdminCardsPanel() {
       if (!imagePath && formData.cardImage) {
         imagePath = formData.cardImage;
       }
+
+      // Se a imagem é URL externa (ex.: Yugioh API), baixar e salvar no servidor antes de criar/editar
+      // Assim a carta fica com path /images/cards/XXX.jpg e a imagem carrega em produção
+      if (imagePath && (imagePath.startsWith('http://') || imagePath.startsWith('https://'))) {
+        let idCartaForImage = formData.idCarta?.trim();
+        if (!idCartaForImage) {
+          const baseName = formData.name ? formData.name.replace(/[^a-zA-Z0-9]/g, '') : 'card';
+          idCartaForImage = `${baseName}_${Date.now()}`;
+          if (!editingCard) formData.idCarta = idCartaForImage;
+        }
+        try {
+          const downloadRes = await api.post('/cards/yugioh-api/download-image', {
+            imageUrl: imagePath,
+            cardName: formData.name || idCartaForImage,
+            cardId: idCartaForImage,
+          });
+          imagePath = downloadRes.data.imagePath;
+          console.log('✅ Imagem baixada e salva no servidor:', imagePath);
+        } catch (e: any) {
+          const msg = e.response?.data?.message || e.message || 'Não foi possível baixar e salvar a imagem.';
+          setMessage({ type: 'error', text: `❌ ${msg}` });
+          setLoading(false);
+          return;
+        }
+      }
       
       console.log('📸 imagePath final:', imagePath);
 

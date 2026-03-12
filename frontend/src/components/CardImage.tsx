@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { getCardImage, getAllCardImagePaths } from '../utils/cardImage';
+import { getImageUrl } from '../utils/imageUrl';
 
 interface CardImageProps {
   card: any;
@@ -189,12 +190,15 @@ export default function CardImage({ card, className = '', style = {}, fallback =
     );
   }
 
+  // Em produção, /images/cards/ é servido pelo backend; usar base da API para carregar
+  const displaySrc = imageSrc && imageSrc.startsWith('/images/cards') ? getImageUrl(imageSrc) : imageSrc;
+
   // Usar div com backgroundImage e img invisível para detectar erro
   return (
     <div
       className={className}
       style={{
-        backgroundImage: `url(${imageSrc})`,
+        backgroundImage: `url(${displaySrc})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         position: 'relative',
@@ -204,7 +208,7 @@ export default function CardImage({ card, className = '', style = {}, fallback =
       {/* Imagem invisível para detectar erro de carregamento */}
       {/* IMPORTANTE: width e height mínimos são necessários para o onError funcionar */}
       <img
-        src={imageSrc}
+        src={displaySrc}
         alt=""
         style={{
           position: 'absolute',
@@ -217,11 +221,11 @@ export default function CardImage({ card, className = '', style = {}, fallback =
         onError={async (e) => {
           // Verificar se a resposta é HTML (index.html do SPA)
           try {
-            const response = await fetch(imageSrc || '', { method: 'HEAD' });
+            const response = await fetch(displaySrc || '', { method: 'HEAD' });
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('text/html')) {
               // Servidor retornou HTML em vez de imagem - tentar fallback
-              console.warn(`[CardImage] ⚠️ Servidor retornou HTML para "${card?.name}":`, imageSrc);
+              console.warn(`[CardImage] ⚠️ Servidor retornou HTML para "${card?.name}":`, displaySrc);
               handleImageError();
               return;
             }
