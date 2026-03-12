@@ -1,0 +1,20 @@
+# Workflow para criar o volume de imagens das cartas no Fly.io (rodar uma vez).
+name: Create Fly volume (run once)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-volume:
+    name: Criar volume yugioh_cards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Criar volume no app yugioh
+        run: |
+          flyctl volumes create yugioh_cards --app yugioh --region iad --size 1 --yes
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
