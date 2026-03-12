@@ -505,7 +505,7 @@ export const useSocket = () => {
       socket.on('turnChanged', turnChangedListener);
       listenersRef.current.set('turnChanged', turnChangedListener);
       
-      // Função para remover cardImage
+      // Remover apenas base64 de cartas (manter path/URL para exibir imagem no duelo)
       const removeBase64FromCards = (field: any) => {
         if (!field) return field;
         const clean = { ...field };
@@ -513,7 +513,7 @@ export const useSocket = () => {
         const cleanCard = (card: any) => {
           if (!card) return card;
           const cleaned = { ...card };
-          if (cleaned.cardImage) {
+          if (cleaned.cardImage && typeof cleaned.cardImage === 'string' && cleaned.cardImage.startsWith('data:image')) {
             delete cleaned.cardImage;
           }
           return cleaned;

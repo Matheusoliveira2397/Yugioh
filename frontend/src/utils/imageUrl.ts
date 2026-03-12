@@ -43,6 +43,25 @@ export function getCosmeticImageUrl(url: string | null | undefined): string | un
   return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
+/**
+ * URL para exibir imagem de carta no duelo/loja.
+ * - /images/cards/* → mesmo origin do app (frontend public ou nginx), para não pegar da API
+ * - /uploads/cards/* → base da API (backend)
+ * - URL absoluta (ex.: Supabase) → retorna como está
+ */
+export function getCardImageDisplayUrl(url: string | null | undefined): string {
+  if (!url || (typeof url === 'string' && url.trim() === '')) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  // Imagens estáticas em public/images/cards são servidas pelo mesmo origin do app (Vite em dev, nginx em prod)
+  if (url.startsWith('/images/cards')) {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    return `${origin}${url.startsWith('/') ? '' : '/'}${url}`;
+  }
+  // Uploads ficam no backend
+  const base = getImageBaseUrl();
+  return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
 /** Path da imagem da sleeve padrão ("Default" / SkinDefault). Usado quando a sleeve equipada não carrega. */
 export const DEFAULT_SKIN_CARD_IMAGE_PATH = '/uploads/cards/card_default_1764393525708.webp';
 

@@ -216,11 +216,12 @@ export const getAllCardImagePaths = (card: any): string[] => {
   }
 
   if (cardId) {
-    for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
-      paths.push(`/uploads/cards/${cardId}${ext}`);
-    }
+    // Priorizar /images/cards (frontend public) — no duelo as imagens costumam estar aí
     for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
       paths.push(`/images/cards/${cardId}${ext}`);
+    }
+    for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
+      paths.push(`/uploads/cards/${cardId}${ext}`);
     }
   }
 

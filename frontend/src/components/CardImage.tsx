@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { getCardImage, getAllCardImagePaths } from '../utils/cardImage';
-import { getImageUrl } from '../utils/imageUrl';
+import { getCardImageDisplayUrl } from '../utils/imageUrl';
 
 interface CardImageProps {
   card: any;
@@ -192,9 +192,8 @@ export default function CardImage({ card, className = '', style = {}, fallback =
     );
   }
 
-  // Paths relativos: servidos pelo backend (usar base da API). URL absoluta (ex.: Supabase) usar direto
-  const isRelativePath = imageSrc && (imageSrc.startsWith('/images/cards') || imageSrc.startsWith('/uploads/cards'));
-  let displaySrc = isRelativePath ? getImageUrl(imageSrc) : imageSrc;
+  // /images/cards → mesmo origin do app; /uploads/cards → API; URL absoluta → direto
+  let displaySrc = imageSrc ? getCardImageDisplayUrl(imageSrc) : '';
   if (displaySrc && cacheBuster != null) {
     displaySrc += (displaySrc.includes('?') ? '&' : '?') + `t=${cacheBuster}`;
   }

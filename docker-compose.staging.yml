@@ -1,0 +1,159 @@
+# Ambiente LOCAL com as MESMAS características de PRODUÇÃO
+# - Builds de produção (Dockerfile, não Dockerfile.dev)
+# - NODE_ENV=production
+# - Mesmas variáveis de ambiente que produção
+# - Portas expostas para você acessar tudo localmente (DBs, API, frontend)
+#
+# Uso:
+#   1. Copie .env.staging.example para .env e preencha (ou use os valores de exemplo)
+#   2. PROJECT_PATH=D:/Yugioh  (obrigatório no Windows se o projeto não estiver em C:)
+#   3. docker compose -f docker-compose.staging.yml up --build
+#   4. Acesse: http://localhost (nginx) ou http://localhost:3000 (API) e http://localhost:80 (frontend)
+#
+# Para parar: docker compose -f docker-compose.staging.yml down
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: yugioh-postgres-staging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-yugioh_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yugioh_password_2024}
+      POSTGRES_DB: ${POSTGRES_DB:-yugioh_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_staging:/var/lib/postgresql/data
+    networks:
+      - yugioh-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-yugioh_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c effective_cache_size=512MB
+      -c maintenance_work_mem=64MB
+
+  mongodb:
+    image: mongo:7.0
+    container_name: yugioh-mongodb-staging
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-yugioh_mongo}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-yugioh_mongo_password}
+      MONGO_INITDB_DATABASE: yugioh_chat
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data_staging:/data/db
+    networks:
+      - yugioh-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: yugioh-redis-staging
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
+      --save 300 100
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_staging:/data
+    networks:
+      - yugioh-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ${PROJECT_PATH:-.}/backend
+      dockerfile: Dockerfile
+    container_name: yugioh-backend-staging
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-yugioh_user}:${POSTGRES_PASSWORD:-yugioh_password_2024}@postgres:5432/${POSTGRES_DB:-yugioh_db}
+      MONGODB_URI: mongodb://${MONGO_USER:-yugioh_mongo}:${MONGO_PASSWORD:-yugioh_mongo_password}@mongodb:27017/yugioh_chat?authSource=admin
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-yugioh_staging_secret_change_me}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost,http://localhost:80}
+    ports:
+      - "3000:3000"
+    volumes:
+      - uploads_data_staging:/app/uploads
+      - ${PROJECT_PATH:-.}/frontend/public/images/cards:/app/frontend-cards
+    networks:
+      - yugioh-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ${PROJECT_PATH:-.}/frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+        VITE_WS_URL: ${VITE_WS_URL:-http://localhost:3000}
+    container_name: yugioh-frontend-staging
+    ports:
+      - "8080:80"
+    networks:
+      - yugioh-network
+    depends_on:
+      - backend
+
+  nginx:
+    image: nginx:alpine
+    container_name: yugioh-nginx-staging
+    ports:
+      - "80:80"
+    volumes:
+      - ${PROJECT_PATH:-.}/nginx/nginx.staging.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - yugioh-network
+
+  adminer:
+    image: adminer:latest
+    container_name: yugioh-adminer-staging
+    ports:
+      - "8081:8080"
+    networks:
+      - yugioh-network
+    depends_on:
+      - postgres
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    profiles:
+      - tools
+
+networks:
+  yugioh-network:
+    driver: bridge
+
+volumes:
+  postgres_data_staging:
+  mongodb_data_staging:
+  redis_data_staging:
+  uploads_data_staging:

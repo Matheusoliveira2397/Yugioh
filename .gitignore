@@ -9,6 +9,9 @@ yarn-error.log*
 .env.local
 .env.production
 
+# GitHub workflows (local copies - need workflow scope to push)
+.github/workflows/*.local
+
 # Build outputs
 dist/
 build/

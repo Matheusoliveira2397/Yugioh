@@ -15,7 +15,11 @@ RUN npm ci
 # Copiar código fonte
 COPY . .
 
-# Build da aplicação
+# Build da aplicação (em staging/prod defina VITE_API_URL e VITE_WS_URL no build)
+ARG VITE_API_URL
+ARG VITE_WS_URL
+ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_WS_URL=$VITE_WS_URL
 RUN npm run build
 
 # Production stage

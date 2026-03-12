@@ -87,8 +87,7 @@ services:
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER:-yugioh_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-yugioh_db}
       MONGODB_URI: mongodb://${MONGO_USER:-yugioh_mongo}:${MONGO_PASSWORD}@mongodb:27017/yugioh_chat?authSource=admin
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
     volumes:

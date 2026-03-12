@@ -21,7 +21,7 @@ export default function DuelPage() {
       return;
     }
 
-    // Função para remover cardImage completamente dos campos de player (proteção no frontend)
+    // Remover apenas base64 de cartas (manter path/URL para exibir imagem no duelo)
     const removeBase64FromCards = (field: any) => {
       if (!field) return field;
       const clean = { ...field };
@@ -29,8 +29,7 @@ export default function DuelPage() {
       const cleanCard = (card: any) => {
         if (!card) return card;
         const cleaned = { ...card };
-        // Remover cardImage completamente - não precisa enviar para os campos do player
-        if (cleaned.cardImage) {
+        if (cleaned.cardImage && typeof cleaned.cardImage === 'string' && cleaned.cardImage.startsWith('data:image')) {
           delete cleaned.cardImage;
         }
         return cleaned;
