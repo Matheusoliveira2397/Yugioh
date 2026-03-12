@@ -53,6 +53,9 @@ export default function AdminCardsPanel() {
   const [selectedImageIndex, setSelectedImageIndex] = useState<number>(0);
   const [availableImages, setAvailableImages] = useState<any[]>([]);
 
+  // Cache-bust: quando salvamos uma carta, forçar a imagem a recarregar na lista
+  const [imageJustSavedAt, setImageJustSavedAt] = useState<Record<string, number>>({});
+
   // Estados para sistema de skins
   const [originalCardSearch, setOriginalCardSearch] = useState('');
   const [originalCardResults, setOriginalCardResults] = useState<Card[]>([]);
@@ -494,6 +497,10 @@ export default function AdminCardsPanel() {
         console.log('📤 Dados enviados (limpos e validados):', cleanedFormData);
         const response = await api.put(`/cards/${editingCard.id}`, cleanedFormData);
         console.log('✅ Resposta do servidor:', response.data);
+        const updated = response.data;
+        setCards(prev => prev.map(c => c.id === updated.id ? { ...c, ...updated } : c));
+        setSelectedCard(prev => prev && prev.id === updated.id ? { ...prev, ...updated } : prev);
+        setImageJustSavedAt(prev => ({ ...prev, [updated.id]: Date.now() }));
         setMessage({ type: 'success', text: '✅ Carta atualizada com sucesso!' });
       } else {
         // CRIAR
@@ -540,6 +547,9 @@ export default function AdminCardsPanel() {
         console.log('📤 Dados enviados (limpos):', cleanedFormData);
         const response = await api.post('/cards', cleanedFormData);
         console.log('✅ Resposta do servidor:', response.data);
+        const created = response.data;
+        setCards(prev => [...prev, created]);
+        setImageJustSavedAt(prev => ({ ...prev, [created.id]: Date.now() }));
         setMessage({ type: 'success', text: '✅ Carta criada com sucesso!' });
       }
 
@@ -1500,6 +1510,7 @@ export default function AdminCardsPanel() {
               <div className="relative flex items-center justify-center p-2">
                 <div className="relative w-full aspect-[2/3]">
                   <CardImage
+                    key={`${card.id}-${imageJustSavedAt[card.id] ?? 0}`}
                     card={card}
                     className="w-full h-full object-cover rounded transition-transform duration-200 group-hover:scale-110"
                     fallback="/images/fundoCarta.webp"
@@ -1543,6 +1554,7 @@ export default function AdminCardsPanel() {
               <div className="flex justify-center items-start">
                 <div className="relative w-full max-w-[400px] aspect-[2/3]">
                   <CardImage
+                    key={`modal-${selectedCard.id}-${imageJustSavedAt[selectedCard.id] ?? 0}`}
                     card={selectedCard}
                     className="w-full h-full object-contain rounded-lg shadow-2xl"
                     fallback="/images/fundoCarta.webp"
