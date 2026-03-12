@@ -498,10 +498,14 @@ export default function AdminCardsPanel() {
         const response = await api.put(`/cards/${editingCard.id}`, cleanedFormData);
         console.log('✅ Resposta do servidor:', response.data);
         const updated = response.data;
-        setCards(prev => prev.map(c => c.id === updated.id ? { ...c, ...updated } : c));
-        setSelectedCard(prev => prev && prev.id === updated.id ? { ...prev, ...updated } : prev);
+        const savedImagePath = cleanedFormData.cardImage;
+        const merged = { ...updated, ...(savedImagePath && { cardImage: savedImagePath }) };
+        setCards(prev => prev.map(c => c.id === updated.id ? { ...c, ...merged } : c));
+        setSelectedCard(prev => prev && prev.id === updated.id ? { ...prev, ...merged } : prev);
         setImageJustSavedAt(prev => ({ ...prev, [updated.id]: Date.now() }));
         setMessage({ type: 'success', text: '✅ Carta atualizada com sucesso!' });
+        // Não chamar loadCards() aqui: a lista já foi atualizada com response.data acima.
+        // Assim a nova imagem aparece na hora (evita redeploy/refresh).
       } else {
         // CRIAR
         console.log('➕ Criando nova carta');
@@ -554,7 +558,7 @@ export default function AdminCardsPanel() {
       }
 
       resetForm();
-      loadCards();
+      if (!editingCard) loadCards();
       setShowForm(false);
       setSelectedImageFile(null);
       setImagePreview('');

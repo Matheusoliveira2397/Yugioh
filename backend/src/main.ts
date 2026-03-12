@@ -165,13 +165,17 @@ async function bootstrap() {
   }
 
   if (cardsPath) {
-    // CRÍTICO: Servir imagens das cartas ANTES de qualquer outra rota
-    // Usar express.static diretamente para ter mais controle
+    // Middleware: quando a URL tem query (?t=...) é cache-buster do admin; não cachear
     const express = require('express');
+    app.use('/images/cards', (req: any, res: any, next: any) => {
+      if (req.url && req.url.includes('?')) {
+        (res as any)._cardImageNoCache = true;
+      }
+      next();
+    });
     app.use('/images/cards', express.static(cardsPath, {
-      index: false, // Não servir index.html quando arquivo não for encontrado
+      index: false,
       setHeaders: (res: any, path: string) => {
-        // Definir Content-Type correto baseado na extensão do arquivo
         if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
           res.setHeader('Content-Type', 'image/jpeg');
         } else if (path.endsWith('.png')) {
@@ -179,8 +183,11 @@ async function bootstrap() {
         } else if (path.endsWith('.webp')) {
           res.setHeader('Content-Type', 'image/webp');
         }
-        // Cache headers
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        if ((res as any)._cardImageNoCache) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        } else {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
       },
     }));
     
