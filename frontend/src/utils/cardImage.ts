@@ -176,9 +176,13 @@ const getCardNameBasedPaths = (cardName: string): string[] => {
  * Retorna o caminho da imagem local se disponível, ou null para usar fallback
  * AGORA: Todas as imagens são salvas com idCarta como nome do arquivo
  */
-/** Path de imagem de carta válido (backend: uploads/cards como avatares, ou legado /images/cards) */
+/** Path ou URL de imagem de carta válido (backend uploads/cards, legado /images/cards, ou Supabase) */
 function isCardImagePath(p: string): boolean {
-  return p.startsWith('/images/cards/') || p.startsWith('/uploads/cards/');
+  return (
+    p.startsWith('/images/cards/') ||
+    p.startsWith('/uploads/cards/') ||
+    (p.startsWith('https://') && p.includes('supabase.co/storage'))
+  );
 }
 
 export const getCardImage = (card: any): string | null => {

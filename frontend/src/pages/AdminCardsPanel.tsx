@@ -404,13 +404,12 @@ export default function AdminCardsPanel() {
             cardId: idCartaForImage,
           });
           const newPath = downloadRes.data?.imagePath;
-          const validPath = typeof newPath === 'string' && (newPath.startsWith('/images/') || newPath.startsWith('/uploads/'));
-          if (!validPath) {
+          if (typeof newPath !== 'string' || newPath.trim() === '') {
             setMessage({ type: 'error', text: '❌ Resposta inválida ao baixar imagem. Tente novamente.' });
             setLoading(false);
             return;
           }
-          imagePath = newPath;
+          imagePath = newPath.trim();
           console.log('✅ Imagem baixada e salva no servidor:', imagePath);
         } catch (e: any) {
           const msg = e.response?.data?.message || e.message || 'Não foi possível baixar e salvar a imagem.';
@@ -420,8 +419,9 @@ export default function AdminCardsPanel() {
         }
       }
 
-      // Nunca enviar URL no cardImage: só path (/images/... ou /uploads/...) ou vazio.
-      if (imagePath && (imagePath.startsWith('http://') || imagePath.startsWith('https://'))) {
+      // URL externa (não do nosso storage) não pode ser cardImage; Supabase URL é aceita
+      const isOurStorageUrl = imagePath && typeof imagePath === 'string' && imagePath.startsWith('https://') && imagePath.includes('supabase.co/storage');
+      if (imagePath && (imagePath.startsWith('http://') || imagePath.startsWith('https://')) && !isOurStorageUrl) {
         if (editingCard?.cardImage) {
           imagePath = editingCard.cardImage;
         } else {
@@ -447,9 +447,11 @@ export default function AdminCardsPanel() {
         if (formData.type) cleanedFormData.type = formData.type;
         if (formData.rarity) cleanedFormData.rarity = formData.rarity;
         
-        // cardImage: só path (/images/... ou /uploads/...) para persistir; nunca URL
-        const pathOnly = (v: string) => typeof v === 'string' && (v.startsWith('/images/') || v.startsWith('/uploads/'));
-        const cardImageToSend = pathOnly(imagePath) ? imagePath : (pathOnly(formData.cardImage) ? formData.cardImage : (editingCard?.cardImage ?? ''));
+        // cardImage: path (/images/, /uploads/) ou URL do nosso storage (Supabase)
+        const validCardImage = (v: string) => typeof v === 'string' && (
+          v.startsWith('/images/') || v.startsWith('/uploads/') || (v.startsWith('https://') && v.includes('supabase.co/storage'))
+        );
+        const cardImageToSend = validCardImage(imagePath) ? imagePath : (validCardImage(formData.cardImage) ? formData.cardImage : (editingCard?.cardImage ?? ''));
         if (cardImageToSend !== undefined && cardImageToSend !== null) {
           cleanedFormData.cardImage = cardImageToSend;
         }

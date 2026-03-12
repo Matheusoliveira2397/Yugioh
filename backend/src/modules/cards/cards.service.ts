@@ -168,10 +168,12 @@ export class CardsService implements OnModuleInit {
             console.warn(`⚠️ Base64 detectado em cardImage. Removendo. Use upload de arquivo.`);
             continue;
           }
-          // Nunca persistir URL externa; só path /images/... (evita salvamento inconsistente)
+          // Permitir URL do nosso storage (Supabase); rejeitar só URL externa
           if (typeof val === 'string' && (val.startsWith('http://') || val.startsWith('https://'))) {
-            console.warn(`⚠️ URL em cardImage ignorada. Use path /images/cards/...`);
-            continue;
+            if (!val.includes('supabase.co/storage')) {
+              console.warn(`⚠️ URL externa em cardImage ignorada. Use path ou Supabase.`);
+              continue;
+            }
           }
           cleaned[key] = cardData[key];
           console.log(`📸 [cleanCardData] cardImage incluído: ${typeof cardData[key] === 'string' ? cardData[key].substring(0, 50) + '...' : cardData[key]}`);
@@ -496,8 +498,8 @@ export class CardsService implements OnModuleInit {
         if (cardData.cardImage.startsWith('data:image')) {
           console.warn(`⚠️ [CardsService] Base64 detectado em cardImage ao atualizar carta. Rejeitando. Use upload de arquivo.`);
           delete cardData.cardImage;
-        } else if (cardData.cardImage.startsWith('http://') || cardData.cardImage.startsWith('https://')) {
-          console.warn(`⚠️ [CardsService] URL em cardImage ao atualizar. Ignorando. Use path /images/cards/...`);
+        } else if ((cardData.cardImage.startsWith('http://') || cardData.cardImage.startsWith('https://')) && !cardData.cardImage.includes('supabase.co/storage')) {
+          console.warn(`⚠️ [CardsService] URL externa em cardImage ao atualizar. Ignorando.`);
           delete cardData.cardImage;
         }
       }
@@ -678,8 +680,8 @@ export class CardsService implements OnModuleInit {
           if (updateData.cardImage.startsWith('data:image')) {
             console.warn(`⚠️ [CardsService] Base64 detectado em cardImage ao atualizar. Rejeitando.`);
             delete updateData.cardImage;
-          } else if (updateData.cardImage.startsWith('http://') || updateData.cardImage.startsWith('https://')) {
-            console.warn(`⚠️ [CardsService] URL em cardImage ao atualizar. Ignorando.`);
+          } else if ((updateData.cardImage.startsWith('http://') || updateData.cardImage.startsWith('https://')) && !updateData.cardImage.includes('supabase.co/storage')) {
+            console.warn(`⚠️ [CardsService] URL externa em cardImage ao atualizar. Ignorando.`);
             delete updateData.cardImage;
           }
         }
