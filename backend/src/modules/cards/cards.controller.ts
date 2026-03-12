@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Query, Param, Body, UseGuards, UploadedFile, UseInterceptors, Request, BadRequestException, Res } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Query, Param, Body, UseGuards, UploadedFile, UseInterceptors, Request, BadRequestException, Res, Header } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { CardsService } from './cards.service';
@@ -260,6 +260,7 @@ export class CardsController {
 
   @Get('yugioh-api/card')
   @UseGuards(AdminGuard)
+  @Header('Cache-Control', 'no-store')
   async getYugiohCard(
     @Query('name') name: string, 
     @Query('downloadImage') downloadImage?: string,
