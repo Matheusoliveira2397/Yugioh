@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-const BUCKETS = ['avatars', 'groups', 'achievements', 'cosmetics'] as const;
+const BUCKETS = ['avatars', 'groups', 'achievements', 'cosmetics', 'cards'] as const;
 
 /** Tipo mínimo do cliente Supabase usado aqui (evita import do pacote em build). */
 type SupabaseClient = {

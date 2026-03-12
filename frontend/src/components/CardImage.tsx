@@ -192,8 +192,9 @@ export default function CardImage({ card, className = '', style = {}, fallback =
     );
   }
 
-  // Em produção, /images/cards/ é servido pelo backend; usar base da API para carregar
-  let displaySrc = imageSrc && imageSrc.startsWith('/images/cards') ? getImageUrl(imageSrc) : imageSrc;
+  // Em produção, /images/cards/ e /uploads/cards/ são servidos pelo backend; usar base da API
+  const isBackendPath = imageSrc && (imageSrc.startsWith('/images/cards') || imageSrc.startsWith('/uploads/cards'));
+  let displaySrc = isBackendPath ? getImageUrl(imageSrc) : imageSrc;
   if (displaySrc && cacheBuster != null) {
     displaySrc += (displaySrc.includes('?') ? '&' : '?') + `t=${cacheBuster}`;
   }

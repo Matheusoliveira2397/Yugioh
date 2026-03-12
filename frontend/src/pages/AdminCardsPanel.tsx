@@ -403,11 +403,29 @@ export default function AdminCardsPanel() {
             cardName: formData.name || idCartaForImage,
             cardId: idCartaForImage,
           });
-          imagePath = downloadRes.data.imagePath;
+          const newPath = downloadRes.data?.imagePath;
+          const validPath = typeof newPath === 'string' && (newPath.startsWith('/images/') || newPath.startsWith('/uploads/'));
+          if (!validPath) {
+            setMessage({ type: 'error', text: '❌ Resposta inválida ao baixar imagem. Tente novamente.' });
+            setLoading(false);
+            return;
+          }
+          imagePath = newPath;
           console.log('✅ Imagem baixada e salva no servidor:', imagePath);
         } catch (e: any) {
           const msg = e.response?.data?.message || e.message || 'Não foi possível baixar e salvar a imagem.';
           setMessage({ type: 'error', text: `❌ ${msg}` });
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Nunca enviar URL no cardImage: só path (/images/... ou /uploads/...) ou vazio.
+      if (imagePath && (imagePath.startsWith('http://') || imagePath.startsWith('https://'))) {
+        if (editingCard?.cardImage) {
+          imagePath = editingCard.cardImage;
+        } else {
+          setMessage({ type: 'error', text: '❌ Selecione uma imagem e use "Baixar Imagem" antes de salvar.' });
           setLoading(false);
           return;
         }
@@ -429,8 +447,9 @@ export default function AdminCardsPanel() {
         if (formData.type) cleanedFormData.type = formData.type;
         if (formData.rarity) cleanedFormData.rarity = formData.rarity;
         
-        // cardImage: ao editar, SEMPRE enviar o path atual (imagePath já vem do download ou do form)
-        const cardImageToSend = imagePath ?? formData.cardImage ?? '';
+        // cardImage: só path (/images/... ou /uploads/...) para persistir; nunca URL
+        const pathOnly = (v: string) => typeof v === 'string' && (v.startsWith('/images/') || v.startsWith('/uploads/'));
+        const cardImageToSend = pathOnly(imagePath) ? imagePath : (pathOnly(formData.cardImage) ? formData.cardImage : (editingCard?.cardImage ?? ''));
         if (cardImageToSend !== undefined && cardImageToSend !== null) {
           cleanedFormData.cardImage = cardImageToSend;
         }

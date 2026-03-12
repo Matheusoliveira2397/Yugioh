@@ -11,36 +11,12 @@ export class UploadService {
   private readonly groupsPath = '/app/uploads/groups';
   private readonly achievementsPath = '/app/uploads/achievements';
 
-  // Caminho para salvar no frontend (public/images/cards)
-  // Em Docker: usa o volume mapeado /app/frontend-cards
-  // Em desenvolvimento local: tenta acessar via caminho relativo
-  private readonly frontendCardsPath = (() => {
-    // Se tiver variável de ambiente, usar ela
-    if (process.env.FRONTEND_CARDS_PATH) {
-      return process.env.FRONTEND_CARDS_PATH;
-    }
-
-    // Se estiver em Docker (volume mapeado)
-    if (fs.existsSync('/app/frontend-cards')) {
-      return '/app/frontend-cards';
-    }
-
-    // Tentar encontrar o diretório raiz do projeto
-    // __dirname em desenvolvimento: backend/src/modules/upload
-    // __dirname em produção: backend/dist/modules/upload
-    let projectRoot = __dirname;
-
-    // Subir até encontrar a pasta raiz (que contém backend e frontend)
-    while (projectRoot !== path.dirname(projectRoot)) {
-      const frontendPath = path.join(projectRoot, '..', 'frontend', 'public', 'images', 'cards');
-      if (fs.existsSync(path.join(projectRoot, '..', 'frontend'))) {
-        return frontendPath;
-      }
-      projectRoot = path.dirname(projectRoot);
-    }
-
-    // Fallback: caminho relativo padrão
-    return path.join(__dirname, '..', '..', '..', '..', 'frontend', 'public', 'images', 'cards');
+  // Imagens de cartas: mesmo padrão dos avatares (uploads no backend ou Supabase)
+  private readonly cardsPath = (() => {
+    if (process.env.CARDS_UPLOAD_PATH) return process.env.CARDS_UPLOAD_PATH;
+    if (fs.existsSync('/app/uploads/cards')) return '/app/uploads/cards';
+    // Em build: __dirname = dist/modules/upload → sobe para backend/uploads/cards
+    return path.join(__dirname, '..', '..', '..', 'uploads', 'cards');
   })();
 
   constructor(private readonly supabaseStorage: SupabaseStorageService) {
@@ -58,17 +34,9 @@ export class UploadService {
       console.log('📁 Pasta de conquistas criada:', this.achievementsPath);
     }
     
-    // Criar pasta de cartas no frontend se não existir
-    console.log('🔍 Caminho do frontend para cartas:', this.frontendCardsPath);
-    if (!fs.existsSync(this.frontendCardsPath)) {
-      try {
-        fs.mkdirSync(this.frontendCardsPath, { recursive: true });
-        console.log('📁 Pasta de cartas no frontend criada:', this.frontendCardsPath);
-      } catch (error: any) {
-        console.warn('⚠️ Não foi possível criar pasta no frontend (pode não estar mapeada):', this.frontendCardsPath, error.message);
-      }
-    } else {
-      console.log('✅ Pasta de cartas no frontend já existe:', this.frontendCardsPath);
+    if (!fs.existsSync(this.cardsPath)) {
+      fs.mkdirSync(this.cardsPath, { recursive: true });
+      console.log('📁 Pasta de cartas (uploads) criada:', this.cardsPath);
     }
   }
 
@@ -121,54 +89,48 @@ export class UploadService {
     }
   }
 
-  async uploadCardImage(file: any, cardName: string): Promise<string> {
-    // Validações
+  async uploadCardImage(file: any, cardName: string, cardId?: string): Promise<string> {
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
     if (!allowedMimeTypes.includes(file.mimetype)) {
       throw new Error('Formato de imagem inválido. Use PNG, JPG ou WEBP.');
     }
-
-    // Limite de tamanho: 10MB (cartas podem ser maiores)
     if (file.size > 10 * 1024 * 1024) {
       throw new Error('Imagem muito grande. Tamanho máximo: 10MB.');
     }
 
-    // Gera nome único para o arquivo
     const fileExtension = path.extname(file.originalname);
-    const sanitizedName = cardName.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    const fileName = `card_${sanitizedName}_${Date.now()}${fileExtension}`;
-    
-    // Salvar APENAS no frontend (public/images/cards) - único local de salvamento
-    const frontendFilePath = path.join(this.frontendCardsPath, fileName);
-    try {
-      fs.writeFileSync(frontendFilePath, file.buffer);
-      console.log('✅ Carta salva no frontend:', frontendFilePath);
-    } catch (error: any) {
-      console.error('❌ Erro ao salvar carta no frontend:', error.message);
-      throw new Error(`Erro ao salvar imagem: ${error.message}`);
+    const baseName = cardId || `card_${cardName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`;
+    const fileName = `${baseName}${fileExtension}`;
+
+    if (this.supabaseStorage.isEnabled()) {
+      const publicUrl = await this.supabaseStorage.upload(
+        'cards',
+        fileName,
+        file.buffer,
+        file.mimetype,
+      );
+      console.log('✅ Imagem da carta salva no Supabase:', fileName);
+      return publicUrl;
     }
 
-    // Retorna o caminho do frontend (acesso direto, sem chamar API)
-    return `/images/cards/${fileName}`;
+    const filePath = path.join(this.cardsPath, fileName);
+    fs.writeFileSync(filePath, file.buffer);
+    console.log('✅ Imagem da carta salva (local):', fileName);
+    return `/uploads/cards/${fileName}`;
   }
 
   async deleteCardImage(imageUrl: string): Promise<void> {
     try {
-      // Extrai o nome do arquivo da URL (pode ser /images/cards/ ou /uploads/cards/)
-      let fileName = path.basename(imageUrl);
-      
-      // Se for caminho completo, extrair apenas o nome do arquivo
-      if (imageUrl.includes('/')) {
-        fileName = imageUrl.split('/').pop() || fileName;
+      if (!imageUrl || imageUrl.trim() === '') return;
+      if (this.supabaseStorage.isSupabaseUrl(imageUrl)) {
+        await this.supabaseStorage.deleteByPublicUrl(imageUrl);
+        return;
       }
-      
-      // Deletar APENAS do frontend (public/images/cards)
-      const frontendFilePath = path.join(this.frontendCardsPath, fileName);
-      if (fs.existsSync(frontendFilePath)) {
-        fs.unlinkSync(frontendFilePath);
-        console.log('✅ Imagem da carta deletada do frontend:', fileName);
-      } else {
-        console.warn('⚠️ Arquivo não encontrado para deletar:', frontendFilePath);
+      const fileName = path.basename(imageUrl.split('?')[0]);
+      const filePath = path.join(this.cardsPath, fileName);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log('✅ Imagem da carta deletada:', fileName);
       }
     } catch (error) {
       console.error('❌ Erro ao deletar imagem da carta:', error);
@@ -220,35 +182,30 @@ export class UploadService {
       else if (imageUrl.includes('.png')) fileExtension = '.png';
       else if (imageUrl.includes('.webp')) fileExtension = '.webp';
 
-      // CRÍTICO: Sempre usar cardId (idCarta) como nome do arquivo
-      // Se não tiver cardId, lançar erro porque é obrigatório
       if (!cardId) {
         throw new Error('cardId (idCarta) é obrigatório para salvar a imagem');
       }
-      
-      // Usar cardId diretamente como nome do arquivo (ex: YGOPRO_56747793.jpg)
+
       const fileName = `${cardId}${fileExtension}`;
-      
-      // Salvar APENAS no frontend (public/images/cards) - único local de salvamento
-      const frontendFilePath = path.join(this.frontendCardsPath, fileName);
-      console.log(`💾 Tentando salvar no frontend: ${frontendFilePath}`);
-      if (!fs.existsSync(this.frontendCardsPath)) {
-        fs.mkdirSync(this.frontendCardsPath, { recursive: true });
-        console.log(`📁 Pasta de cartas criada: ${this.frontendCardsPath}`);
-      }
-      try {
-        fs.writeFileSync(frontendFilePath, imageBuffer);
-        console.log(`✅ Imagem salva no frontend: ${frontendFilePath}`);
-        console.log(`✅ Arquivo existe após salvar? ${fs.existsSync(frontendFilePath)}`);
-      } catch (error: any) {
-        console.error('❌ Erro ao salvar imagem no frontend:', error.message);
-        throw new Error(`Erro ao salvar imagem: ${error.message}`);
+
+      if (this.supabaseStorage.isEnabled()) {
+        const publicUrl = await this.supabaseStorage.upload(
+          'cards',
+          fileName,
+          imageBuffer,
+          contentType,
+        );
+        console.log('✅ Imagem da carta salva no Supabase:', fileName);
+        return publicUrl;
       }
 
-      // Retorna o caminho do frontend (acesso direto, sem chamar API)
-      const imagePath = `/images/cards/${fileName}`;
-      console.log(`📝 Retornando caminho da imagem: ${imagePath}`);
-      return imagePath;
+      if (!fs.existsSync(this.cardsPath)) {
+        fs.mkdirSync(this.cardsPath, { recursive: true });
+      }
+      const filePath = path.join(this.cardsPath, fileName);
+      fs.writeFileSync(filePath, imageBuffer);
+      console.log('✅ Imagem da carta salva (local):', filePath);
+      return `/uploads/cards/${fileName}`;
     } catch (error: any) {
       console.error('❌ Erro ao baixar imagem:', error.message);
       throw new Error(`Erro ao baixar imagem: ${error.message}`);
@@ -273,7 +230,7 @@ export class UploadService {
         oldFileName = oldPath;
       }
       
-      const oldFilePath = path.join(this.frontendCardsPath, oldFileName);
+      const oldFilePath = path.join(this.cardsPath, oldFileName);
       
       // Verificar se arquivo existe
       if (!fs.existsSync(oldFilePath)) {
@@ -290,7 +247,7 @@ export class UploadService {
       
       // Novo nome do arquivo usando idCarta
       const newFileName = `${idCarta}${fileExtension}`;
-      const newFilePath = path.join(this.frontendCardsPath, newFileName);
+      const newFilePath = path.join(this.cardsPath, newFileName);
       
       // Se o arquivo novo já existe e é o mesmo arquivo (mesmo tamanho), não renomear
       if (fs.existsSync(newFilePath)) {
@@ -300,7 +257,7 @@ export class UploadService {
           console.log(`ℹ️ Arquivo já existe com idCarta e mesmo tamanho: ${newFileName}, deletando original`);
           // Deletar arquivo antigo se o novo já existe
           fs.unlinkSync(oldFilePath);
-          return `/images/cards/${newFileName}`;
+          return `/uploads/cards/${newFileName}`;
         } else {
           console.warn(`⚠️ Arquivo já existe com idCarta mas tamanho diferente: ${newFileName}, mantendo ambos`);
           return null;
@@ -309,7 +266,7 @@ export class UploadService {
       
       // Renomear arquivo físico
       fs.renameSync(oldFilePath, newFilePath);
-      console.log(`✅ Arquivo FÍSICO renomeado: ${oldFileName} -> ${newFileName} em ${this.frontendCardsPath}`);
+      console.log(`✅ Arquivo FÍSICO renomeado: ${oldFileName} -> ${newFileName} em ${this.cardsPath}`);
       
       // Verificar se renomeação foi bem-sucedida
       if (!fs.existsSync(newFilePath)) {
@@ -317,7 +274,7 @@ export class UploadService {
         return null;
       }
       
-      return `/images/cards/${newFileName}`;
+      return `/uploads/cards/${newFileName}`;
     } catch (error: any) {
       console.error(`❌ Erro ao renomear arquivo físico:`, error.message);
       console.error(`❌ Stack:`, error.stack);
@@ -338,12 +295,12 @@ export class UploadService {
       const prefix = `card_${sanitizedName}_`;
       
       // Listar arquivos no diretório
-      if (!fs.existsSync(this.frontendCardsPath)) {
-        console.warn(`⚠️ Diretório de cartas não existe: ${this.frontendCardsPath}`);
+      if (!fs.existsSync(this.cardsPath)) {
+        console.warn(`⚠️ Diretório de cartas não existe: ${this.cardsPath}`);
         return null;
       }
       
-      const files = fs.readdirSync(this.frontendCardsPath);
+      const files = fs.readdirSync(this.cardsPath);
       
       // Buscar arquivo que começa com o prefixo
       const matchingFile = files.find(file => 
@@ -352,7 +309,7 @@ export class UploadService {
       );
       
       if (matchingFile) {
-        const imagePath = `/images/cards/${matchingFile}`;
+        const imagePath = `/uploads/cards/${matchingFile}`;
         console.log(`✅ Arquivo encontrado para "${cardName}": ${imagePath}`);
         return imagePath;
       }

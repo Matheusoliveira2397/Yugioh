@@ -176,25 +176,25 @@ const getCardNameBasedPaths = (cardName: string): string[] => {
  * Retorna o caminho da imagem local se disponível, ou null para usar fallback
  * AGORA: Todas as imagens são salvas com idCarta como nome do arquivo
  */
+/** Path de imagem de carta válido (backend: uploads/cards como avatares, ou legado /images/cards) */
+function isCardImagePath(p: string): boolean {
+  return p.startsWith('/images/cards/') || p.startsWith('/uploads/cards/');
+}
+
 export const getCardImage = (card: any): string | null => {
-  // PRIORIDADE 1: Se cardImage existir e começar com /images/, usar diretamente
   const cardImage = card?.cardImage;
-  if (cardImage && typeof cardImage === 'string' && cardImage.trim() !== '' && cardImage.startsWith('/images/')) {
+  if (cardImage && typeof cardImage === 'string' && cardImage.trim() !== '' && isCardImagePath(cardImage)) {
     return cardImage;
   }
-  
-  // PRIORIDADE 2: Se não tiver cardImage, usar idCarta diretamente (todas as imagens agora são salvas com idCarta)
+
   const cardId = card?.idCarta || card?.id || card?.cardId;
   if (cardId) {
-    // Tentar diferentes extensões
     const extensions = ['.jpg', '.jpeg', '.png', '.webp'];
     for (const ext of extensions) {
-      const path = `/images/cards/${cardId}${ext}`;
-      // Retornar o primeiro caminho (o componente CardImage vai tentar os outros se falhar)
-      return path;
+      return `/uploads/cards/${cardId}${ext}`;
     }
   }
-  
+
   return null;
 };
 
@@ -206,21 +206,20 @@ export const getAllCardImagePaths = (card: any): string[] => {
   const paths: string[] = [];
   const cardImage = card?.cardImage;
   const cardId = card?.idCarta || card?.id || card?.cardId;
-  
-  // PRIORIDADE 1: Se cardImage existir e começar com /images/, usar diretamente
-  if (cardImage && typeof cardImage === 'string' && cardImage.trim() !== '' && cardImage.startsWith('/images/')) {
+
+  if (cardImage && typeof cardImage === 'string' && cardImage.trim() !== '' && isCardImagePath(cardImage)) {
     paths.push(cardImage);
   }
-  
-  // PRIORIDADE 2: Caminhos baseados no idCarta (todas as imagens agora são salvas com idCarta)
+
   if (cardId) {
-    const extensions = ['.jpg', '.jpeg', '.png', '.webp'];
-    for (const ext of extensions) {
+    for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
+      paths.push(`/uploads/cards/${cardId}${ext}`);
+    }
+    for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
       paths.push(`/images/cards/${cardId}${ext}`);
     }
   }
-  
-  // Remover duplicatas mantendo a ordem
+
   return Array.from(new Set(paths));
 };
 

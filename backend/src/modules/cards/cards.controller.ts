@@ -242,8 +242,12 @@ export class CardsController {
   @Post('upload-image')
   @UseGuards(AdminGuard)
   @UseInterceptors(FileInterceptor('cardImage'))
-  async uploadCardImage(@UploadedFile() file: any, @Body('cardName') cardName: string) {
-    const imagePath = await this.uploadService.uploadCardImage(file, cardName);
+  async uploadCardImage(
+    @UploadedFile() file: any,
+    @Body('cardName') cardName: string,
+    @Body('cardId') cardId?: string,
+  ) {
+    const imagePath = await this.uploadService.uploadCardImage(file, cardName, cardId);
     return { imagePath };
   }
 

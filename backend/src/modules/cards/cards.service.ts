@@ -163,12 +163,16 @@ export class CardsService implements OnModuleInit {
       // cardImage deve ser incluído mesmo se for string vazia (para permitir limpar a imagem)
       if (key === 'cardImage') {
         if (cardData[key] !== undefined) {
-          // CRÍTICO: Se for cardImage e for base64, NÃO incluir
-          if (typeof cardData[key] === 'string' && cardData[key].startsWith('data:image')) {
+          const val = cardData[key];
+          if (typeof val === 'string' && val.startsWith('data:image')) {
             console.warn(`⚠️ Base64 detectado em cardImage. Removendo. Use upload de arquivo.`);
-            continue; // Não incluir base64
+            continue;
           }
-          // Incluir cardImage mesmo se for string vazia (permite limpar a imagem)
+          // Nunca persistir URL externa; só path /images/... (evita salvamento inconsistente)
+          if (typeof val === 'string' && (val.startsWith('http://') || val.startsWith('https://'))) {
+            console.warn(`⚠️ URL em cardImage ignorada. Use path /images/cards/...`);
+            continue;
+          }
           cleaned[key] = cardData[key];
           console.log(`📸 [cleanCardData] cardImage incluído: ${typeof cardData[key] === 'string' ? cardData[key].substring(0, 50) + '...' : cardData[key]}`);
         }
@@ -491,9 +495,10 @@ export class CardsService implements OnModuleInit {
       if (cardData.cardImage && typeof cardData.cardImage === 'string') {
         if (cardData.cardImage.startsWith('data:image')) {
           console.warn(`⚠️ [CardsService] Base64 detectado em cardImage ao atualizar carta. Rejeitando. Use upload de arquivo.`);
-          // Remover base64 e não salvar
           delete cardData.cardImage;
-          console.log('✅ [CardsService] Base64 removido. Use o endpoint /cards/upload-image para fazer upload.');
+        } else if (cardData.cardImage.startsWith('http://') || cardData.cardImage.startsWith('https://')) {
+          console.warn(`⚠️ [CardsService] URL em cardImage ao atualizar. Ignorando. Use path /images/cards/...`);
+          delete cardData.cardImage;
         }
       }
 
@@ -671,10 +676,11 @@ export class CardsService implements OnModuleInit {
         // Se receber base64, rejeitar e pedir para usar upload de arquivo
         if (updateData.cardImage && typeof updateData.cardImage === 'string') {
           if (updateData.cardImage.startsWith('data:image')) {
-            console.warn(`⚠️ [CardsService] Base64 detectado em cardImage ao atualizar. Rejeitando. Use upload de arquivo.`);
-            // Remover base64 e não salvar
+            console.warn(`⚠️ [CardsService] Base64 detectado em cardImage ao atualizar. Rejeitando.`);
             delete updateData.cardImage;
-            console.log('✅ [CardsService] Base64 removido. Use o endpoint /cards/upload-image para fazer upload.');
+          } else if (updateData.cardImage.startsWith('http://') || updateData.cardImage.startsWith('https://')) {
+            console.warn(`⚠️ [CardsService] URL em cardImage ao atualizar. Ignorando.`);
+            delete updateData.cardImage;
           }
         }
 

@@ -71,6 +71,11 @@ async function bootstrap() {
     fs.mkdirSync(imagesDir, { recursive: true });
     console.log('📁 Diretório de imagens criado:', imagesDir);
   }
+  const cardsUploadDir = join(uploadsDir, 'cards');
+  if (!fs.existsSync(cardsUploadDir)) {
+    fs.mkdirSync(cardsUploadDir, { recursive: true });
+    console.log('📁 Diretório de cartas (uploads) criado:', cardsUploadDir);
+  }
 
   // Copiar default.png se não existir
   // Tenta copiar do frontend (desenvolvimento local) ou usar arquivo já existente no volume (Docker)
