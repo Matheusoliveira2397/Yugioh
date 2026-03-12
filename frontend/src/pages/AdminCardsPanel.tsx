@@ -249,7 +249,7 @@ export default function AdminCardsPanel() {
       
       setMessage({ 
         type: 'success', 
-        text: `✅ Carta "${cardData.name}" carregada da API! ${images.length > 1 ? `${images.length} imagens disponíveis. Selecione uma e clique em "Baixar Imagem".` : 'Clique em "Baixar Imagem" para salvar.'}` 
+        text: `✅ Carta "${cardData.name}" carregada! Selecione uma imagem e clique em "Salvar" — a imagem será baixada e salva automaticamente.` 
       });
     } catch (error: any) {
       console.error('Erro ao carregar carta:', error);
@@ -323,7 +323,7 @@ export default function AdminCardsPanel() {
       
       setMessage({ 
         type: 'success', 
-        text: `✅ Imagem ${selectedImageIndex + 1} de ${availableImages.length} baixada e salva no servidor!` 
+        text: `✅ Imagem baixada no servidor! Agora clique em "Salvar" abaixo para gravar a carta (e a imagem) no banco.` 
       });
     } catch (error: any) {
       console.error('Erro ao baixar imagem:', error);
@@ -426,12 +426,10 @@ export default function AdminCardsPanel() {
         if (formData.type) cleanedFormData.type = formData.type;
         if (formData.rarity) cleanedFormData.rarity = formData.rarity;
         
-        // Campos opcionais - cardImage sempre incluir se tiver valor (mesmo que seja string vazia para limpar)
-        if (imagePath !== undefined && imagePath !== null) {
-          cleanedFormData.cardImage = imagePath;
-        } else if (formData.cardImage !== undefined && formData.cardImage !== null) {
-          // Se imagePath não foi definido mas formData.cardImage existe, usar ele
-          cleanedFormData.cardImage = formData.cardImage;
+        // cardImage: ao editar, SEMPRE enviar o path atual (imagePath já vem do download ou do form)
+        const cardImageToSend = imagePath ?? formData.cardImage ?? '';
+        if (cardImageToSend !== undefined && cardImageToSend !== null) {
+          cleanedFormData.cardImage = cardImageToSend;
         }
         
         // Campos específicos de Monster
