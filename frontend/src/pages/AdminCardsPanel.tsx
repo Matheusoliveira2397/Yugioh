@@ -1512,6 +1512,7 @@ export default function AdminCardsPanel() {
                   <CardImage
                     key={`${card.id}-${imageJustSavedAt[card.id] ?? 0}`}
                     card={card}
+                    cacheBuster={imageJustSavedAt[card.id]}
                     className="w-full h-full object-cover rounded transition-transform duration-200 group-hover:scale-110"
                     fallback="/images/fundoCarta.webp"
                   />
@@ -1556,6 +1557,7 @@ export default function AdminCardsPanel() {
                   <CardImage
                     key={`modal-${selectedCard.id}-${imageJustSavedAt[selectedCard.id] ?? 0}`}
                     card={selectedCard}
+                    cacheBuster={imageJustSavedAt[selectedCard.id]}
                     className="w-full h-full object-contain rounded-lg shadow-2xl"
                     fallback="/images/fundoCarta.webp"
                   />

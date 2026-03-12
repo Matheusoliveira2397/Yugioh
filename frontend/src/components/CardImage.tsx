@@ -8,12 +8,14 @@ interface CardImageProps {
   style?: React.CSSProperties;
   fallback?: string;
   onError?: () => void;
+  /** Timestamp para forçar recarregar a imagem (evita cache após atualizar no admin) */
+  cacheBuster?: number;
 }
 
 /**
  * Componente que exibe a imagem de uma carta, tentando diferentes extensões automaticamente
  */
-export default function CardImage({ card, className = '', style = {}, fallback = '/images/fundoCarta.webp', onError }: CardImageProps) {
+export default function CardImage({ card, className = '', style = {}, fallback = '/images/fundoCarta.webp', onError, cacheBuster }: CardImageProps) {
   // Memoizar o cardId para evitar recálculos desnecessários
   const cardId = useMemo(() => {
     return card?.idCarta || card?.id || card?.cardId;
@@ -191,7 +193,10 @@ export default function CardImage({ card, className = '', style = {}, fallback =
   }
 
   // Em produção, /images/cards/ é servido pelo backend; usar base da API para carregar
-  const displaySrc = imageSrc && imageSrc.startsWith('/images/cards') ? getImageUrl(imageSrc) : imageSrc;
+  let displaySrc = imageSrc && imageSrc.startsWith('/images/cards') ? getImageUrl(imageSrc) : imageSrc;
+  if (displaySrc && cacheBuster != null) {
+    displaySrc += (displaySrc.includes('?') ? '&' : '?') + `t=${cacheBuster}`;
+  }
 
   // Usar div com backgroundImage e img invisível para detectar erro
   return (
