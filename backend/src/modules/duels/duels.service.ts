@@ -15536,11 +15536,9 @@ export class DuelsService implements OnModuleInit {
           )
         ]).catch((error) => {
           logger.error(`❌ [createDuel] Erro:`, error);
-          // Se o erro for sobre deck não equipado, relançar o erro
-          if (error instanceof Error && error.message.includes('deck equipado')) {
-            throw error;
-          }
-          return null;
+          // Propagar o erro para o cliente receber a mensagem real (ex.: deck vazio, timeout)
+          const err = error instanceof Error ? error : new Error(String(error));
+          throw err;
         });
         
         if (duel && duel.id) {
@@ -15555,16 +15553,13 @@ export class DuelsService implements OnModuleInit {
           logger.error(`❌ [createDuel] Duelo retornou null ou sem ID`);
           logger.error(`❌ [createDuel] Duel:`, duel);
           logger.error(`❌ [createDuel] ==========================================`);
+          throw new Error('Falha ao criar duelo. Verifique se ambos os decks têm pelo menos 40 cartas e tente novamente.');
         }
       
         return duel;
       } catch (error) {
         logger.error(`❌ [createDuel] Erro ao criar duelo:`, error);
-        // Se o erro for sobre deck não equipado, relançar o erro
-        if (error instanceof Error && error.message.includes('deck equipado')) {
-          throw error;
-        }
-        return null;
+        throw error instanceof Error ? error : new Error(String(error));
       }
     })();
     
@@ -16195,8 +16190,8 @@ export class DuelsService implements OnModuleInit {
       // Remover do Map de criação em andamento em caso de erro
       const duelKey = `${Math.min(player1Id, player2Id)}_${Math.max(player1Id, player2Id)}`;
       this.creatingDuels.delete(duelKey);
-      
-      return null;
+      // Relançar para o cliente receber a mensagem real (ex.: deck vazio, deck não encontrado)
+      throw error instanceof Error ? error : new Error(String(error));
     }
   }
 
