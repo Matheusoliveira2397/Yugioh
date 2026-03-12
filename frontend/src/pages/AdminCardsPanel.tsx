@@ -1105,6 +1105,9 @@ export default function AdminCardsPanel() {
                           (e.target as HTMLImageElement).style.display = 'none';
                         }}
                       />
+                      {(imagePreview || formData.cardImage) && typeof (imagePreview || formData.cardImage) === 'string' && ((imagePreview || formData.cardImage) as string).startsWith('http') && (
+                        <p className="text-xs text-emerald-400 mt-1">Ao salvar, a imagem será baixada da API e salva no servidor automaticamente.</p>
+                      )}
                     </div>
                   )}
                 </div>
