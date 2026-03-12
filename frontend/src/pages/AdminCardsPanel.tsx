@@ -78,6 +78,7 @@ export default function AdminCardsPanel() {
     priceCredits: 0,
     priceCash: 0,
     isForSale: true,
+    isActive: true,
     cardImage: '',
     archetype: '',
     isBanned: false,
@@ -187,6 +188,7 @@ export default function AdminCardsPanel() {
       priceCredits: 0,
       priceCash: 0,
       isForSale: true,
+      isActive: (originalCard as any).isActive ?? true,
     });
     
     setMessage({ 
@@ -564,6 +566,7 @@ export default function AdminCardsPanel() {
       priceCredits: card.priceCredits ?? 0,
       priceCash: card.priceCash ?? 0,
       isForSale: card.isForSale ?? true,
+      isActive: (card as any).isActive ?? true,
       cardImage: card.cardImage || '',
       archetype: (card as any).archetype || '',
       isBanned: (card as any).isBanned ?? false,
@@ -678,6 +681,7 @@ export default function AdminCardsPanel() {
       priceCredits: 0,
       priceCash: 0,
       isForSale: true,
+      isActive: true,
       cardImage: '',
       archetype: '',
       isBanned: false,
@@ -1345,6 +1349,15 @@ export default function AdminCardsPanel() {
 
               {/* Checkboxes */}
               <div className="flex flex-wrap gap-3 mb-3">
+                <label className="flex items-center gap-2 bg-gray-800/50 px-3 py-2 rounded cursor-pointer hover:bg-gray-800 transition-colors border border-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={formData.isActive}
+                    onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                    className="w-4 h-4 accent-emerald-500"
+                  />
+                  <span className="text-xs font-bold text-emerald-400">✓ Carta ativa</span>
+                </label>
                 <label className="flex items-center gap-2 bg-gray-800/50 px-3 py-2 rounded cursor-pointer hover:bg-gray-800 transition-colors border border-gray-700">
                   <input
                     type="checkbox"

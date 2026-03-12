@@ -33,6 +33,27 @@ export class CardsController {
     return this.cardsService.getAllAdmin();
   }
 
+  /**
+   * Proxy de imagem: busca imagem externa (ex.: Yugioh API) e devolve no nosso domínio.
+   * Deve ficar ANTES de @Get(':id') para não ser capturado como id.
+   */
+  @Get('proxy-image')
+  @Public()
+  async proxyCardImage(@Query('url') url: string, @Res() res: Response) {
+    if (!url || typeof url !== 'string') {
+      throw new BadRequestException('Parâmetro url é obrigatório');
+    }
+    try {
+      const decoded = decodeURIComponent(url.trim());
+      const { buffer, contentType } = await this.yugiohApiService.fetchImageByUrl(decoded);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.send(buffer);
+    } catch (err: any) {
+      throw new BadRequestException(err.message || 'Não foi possível carregar a imagem');
+    }
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     // Aceita tanto UUID quanto idCarta
@@ -227,28 +248,6 @@ export class CardsController {
   }
 
   // ==================== YUGIOH API ====================
-
-  /**
-   * Proxy de imagem: busca imagem externa (ex.: Yugioh API) e devolve no nosso domínio.
-   * Usado no admin ao "puxar" a carta para que a prévia carregue em produção (evita CORS/referrer).
-   * Público porque <img src="..."> não envia Authorization.
-   */
-  @Get('proxy-image')
-  @Public()
-  async proxyCardImage(@Query('url') url: string, @Res() res: Response) {
-    if (!url || typeof url !== 'string') {
-      throw new BadRequestException('Parâmetro url é obrigatório');
-    }
-    try {
-      const decoded = decodeURIComponent(url.trim());
-      const { buffer, contentType } = await this.yugiohApiService.fetchImageByUrl(decoded);
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-      res.send(buffer);
-    } catch (err: any) {
-      throw new BadRequestException(err.message || 'Não foi possível carregar a imagem');
-    }
-  }
 
   @Get('yugioh-api/search')
   @UseGuards(AdminGuard)
