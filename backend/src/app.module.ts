@@ -1,6 +1,33 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import * as path from 'path';
+
+/** Ajusta URL do pooler Supabase para Transaction mode (6543) quando solicitado via env. */
+function applySupabaseTransactionPooler(databaseUrl: string): string {
+  if (!databaseUrl) return databaseUrl;
+  const enabled =
+    process.env.SUPABASE_TRANSACTION_POOLER === '1' ||
+    process.env.SUPABASE_TRANSACTION_POOLER === 'true';
+  if (!enabled) return databaseUrl;
+  if (!databaseUrl.includes('pooler.supabase')) return databaseUrl;
+  let out = databaseUrl;
+  if (out.includes(':5432/')) {
+    out = out.replace(':5432/', ':6543/');
+  } else if (out.includes(':5432?')) {
+    out = out.replace(':5432?', ':6543?');
+  } else {
+    return databaseUrl;
+  }
+  const joiner = out.includes('?') ? '&' : '?';
+  if (!/([?&])pgbouncer=true\b/.test(out)) {
+    out += `${joiner}pgbouncer=true`;
+  }
+  console.warn(
+    '✅ DATABASE_URL ajustada para Transaction pooler (6543 + pgbouncer). ' +
+      'Remova SUPABASE_TRANSACTION_POOLER se quiser voltar ao Session mode (5432).',
+  );
+  return out;
+}
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -45,15 +72,40 @@ import { ActivityInterceptor } from './common/interceptors/activity.interceptor'
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
-        const databaseUrl = configService.get<string>('DATABASE_URL') || '';
+        const rawUrl = configService.get<string>('DATABASE_URL') || '';
+        const databaseUrl = applySupabaseTransactionPooler(rawUrl);
         const isSupabase = typeof databaseUrl === 'string' && (
           databaseUrl.includes('supabase.co') || databaseUrl.includes('pooler.supabase')
         );
+        if (
+          isSupabase &&
+          rawUrl.includes('pooler.supabase') &&
+          (rawUrl.includes(':5432/') || rawUrl.includes(':5432?')) &&
+          databaseUrl === rawUrl
+        ) {
+          console.warn(
+            '⚠️ Supabase Session mode (porta 5432): limite baixo de conexões. Se aparecer "MaxClientsInSessionMode", ' +
+              'defina SUPABASE_TRANSACTION_POOLER=true no .env para usar a porta 6543 (Transaction pooler), ' +
+              'ou reduza DATABASE_POOL_MAX (ex.: 3).',
+          );
+        }
         // Supabase (Session mode 5432) limita conexões por pool_size (~15–20) e pode estourar com pools grandes.
         // Para evitar erro "MaxClientsInSessionMode...", mantemos o pool bem pequeno no Supabase.
         // Se você estiver usando Transaction mode (6543), também funciona (só perde um pouco de performance).
-        const poolMax = isSupabase ? 5 : (process.env.NODE_ENV === 'production' ? 500 : 100);
-        const poolMin = isSupabase ? 1 : (process.env.NODE_ENV === 'production' ? 50 : 20);
+        const poolMaxOverride = configService.get<string>('DATABASE_POOL_MAX');
+        const parsedPoolMax =
+          poolMaxOverride !== undefined && poolMaxOverride !== ''
+            ? parseInt(poolMaxOverride, 10)
+            : NaN;
+        const poolMax =
+          Number.isFinite(parsedPoolMax) && parsedPoolMax >= 1
+            ? parsedPoolMax
+            : isSupabase
+              ? 5
+              : process.env.NODE_ENV === 'production'
+                ? 500
+                : 100;
+        const poolMin = isSupabase ? 1 : process.env.NODE_ENV === 'production' ? 50 : 20;
         return {
           type: 'postgres',
           url: databaseUrl,

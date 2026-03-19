@@ -10,22 +10,45 @@ function isSupabaseDatabase(): boolean {
   return typeof url === 'string' && (url.includes('supabase.co') || url.includes('pooler.supabase'));
 }
 
+/** Mensagem única quando o banco é Supabase mas o Storage não está configurado. */
+const SUPABASE_STORAGE_REQUIRED_MSG =
+  'Banco Supabase em uso: configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env do backend. ' +
+  'Assim avatares, cartas, logos de grupos e outros uploads vão para o Storage e aparecem igual no local e em produção.';
+
+function ensureSupabaseStorageIfNeeded(supabaseStorage: SupabaseStorageService): void {
+  if (isSupabaseDatabase() && !supabaseStorage.isEnabled()) {
+    throw new Error(SUPABASE_STORAGE_REQUIRED_MSG);
+  }
+}
+
+/** Raiz `backend/uploads`: Docker (/app/uploads) ou pasta do projeto (Windows/mac/Linux). */
+function resolveUploadsRoot(): string {
+  if (process.env.UPLOADS_ROOT && process.env.UPLOADS_ROOT.trim()) {
+    return path.normalize(process.env.UPLOADS_ROOT.trim());
+  }
+  if (fs.existsSync('/app/uploads')) {
+    return '/app/uploads';
+  }
+  return path.join(__dirname, '..', '..', '..', 'uploads');
+}
+
 @Injectable()
 export class UploadService {
-  // Caminho absoluto dentro do container - mesmo em produção compilada
-  private readonly uploadPath = '/app/uploads/avatars';
-  private readonly groupsPath = '/app/uploads/groups';
-  private readonly achievementsPath = '/app/uploads/achievements';
-
-  // Imagens de cartas: mesmo padrão dos avatares (uploads no backend ou Supabase)
-  private readonly cardsPath = (() => {
-    if (process.env.CARDS_UPLOAD_PATH) return process.env.CARDS_UPLOAD_PATH;
-    if (fs.existsSync('/app/uploads/cards')) return '/app/uploads/cards';
-    // Em build: __dirname = dist/modules/upload → sobe para backend/uploads/cards
-    return path.join(__dirname, '..', '..', '..', 'uploads', 'cards');
-  })();
+  private readonly uploadsRoot: string;
+  private readonly uploadPath: string;
+  private readonly groupsPath: string;
+  private readonly achievementsPath: string;
+  private readonly cardsPath: string;
 
   constructor(private readonly supabaseStorage: SupabaseStorageService) {
+    this.uploadsRoot = resolveUploadsRoot();
+    this.uploadPath = path.join(this.uploadsRoot, 'avatars');
+    this.groupsPath = path.join(this.uploadsRoot, 'groups');
+    this.achievementsPath = path.join(this.uploadsRoot, 'achievements');
+    this.cardsPath = process.env.CARDS_UPLOAD_PATH?.trim()
+      ? path.normalize(process.env.CARDS_UPLOAD_PATH.trim())
+      : path.join(this.uploadsRoot, 'cards');
+
     // Cria a pasta de uploads se não existir
     if (!fs.existsSync(this.uploadPath)) {
       fs.mkdirSync(this.uploadPath, { recursive: true });
@@ -39,7 +62,7 @@ export class UploadService {
       fs.mkdirSync(this.achievementsPath, { recursive: true });
       console.log('📁 Pasta de conquistas criada:', this.achievementsPath);
     }
-    
+
     if (!fs.existsSync(this.cardsPath)) {
       fs.mkdirSync(this.cardsPath, { recursive: true });
       console.log('📁 Pasta de cartas (uploads) criada:', this.cardsPath);
@@ -54,6 +77,8 @@ export class UploadService {
     if (file.size > 5 * 1024 * 1024) {
       throw new Error('Imagem muito grande. Tamanho máximo: 5MB.');
     }
+
+    ensureSupabaseStorageIfNeeded(this.supabaseStorage);
 
     const fileExtension = path.extname(file.originalname);
     const fileName = `user_${userId}_${Date.now()}${fileExtension}`;
@@ -104,13 +129,7 @@ export class UploadService {
       throw new Error('Imagem muito grande. Tamanho máximo: 10MB.');
     }
 
-    // Com banco Supabase: imagens devem ir para o Storage para ficar igual no local e em produção
-    if (isSupabaseDatabase() && !this.supabaseStorage.isEnabled()) {
-      throw new Error(
-        'Banco Supabase em uso: configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env do backend. ' +
-        'Assim as imagens das cartas são salvas no Storage e aparecem igual no local e em produção.',
-      );
-    }
+    ensureSupabaseStorageIfNeeded(this.supabaseStorage);
 
     const fileExtension = path.extname(file.originalname);
     const baseName = cardId || `card_${cardName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`;
@@ -159,13 +178,7 @@ export class UploadService {
    */
   async downloadAndSaveCardImage(imageUrl: string, cardName: string, cardId?: string): Promise<string> {
     try {
-      // Com banco Supabase: imagens devem ir para o Storage para ficar igual no local e em produção
-      if (isSupabaseDatabase() && !this.supabaseStorage.isEnabled()) {
-        throw new Error(
-          'Banco Supabase em uso: configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env do backend. ' +
-          'Assim as imagens das cartas são salvas no Storage e aparecem igual no local e em produção.',
-        );
-      }
+      ensureSupabaseStorageIfNeeded(this.supabaseStorage);
 
       // Validar URL
       if (!imageUrl || (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://'))) {
@@ -353,6 +366,8 @@ export class UploadService {
       throw new Error('Imagem muito grande. Tamanho máximo: 5MB.');
     }
 
+    ensureSupabaseStorageIfNeeded(this.supabaseStorage);
+
     const fileExtension = path.extname(file.originalname);
     const fileName = `group_${groupId}_logo_${Date.now()}${fileExtension}`;
 
@@ -381,6 +396,8 @@ export class UploadService {
     if (file.size > 10 * 1024 * 1024) {
       throw new Error('Imagem muito grande. Tamanho máximo: 10MB.');
     }
+
+    ensureSupabaseStorageIfNeeded(this.supabaseStorage);
 
     const fileExtension = path.extname(file.originalname);
     const fileName = `group_${groupId}_banner_${Date.now()}${fileExtension}`;
@@ -418,6 +435,9 @@ export class UploadService {
     if (file.size > 5 * 1024 * 1024) {
       throw new Error('Imagem muito grande. Tamanho máximo: 5MB.');
     }
+
+    ensureSupabaseStorageIfNeeded(this.supabaseStorage);
+
     const dirName = type === 'sleeve' ? 'sleeves' : type === 'talisman' ? 'talismans' : 'playmats';
     const prefix = type === 'sleeve' ? 'sleeve' : type === 'talisman' ? 'talisman' : 'playmat';
     const fileExtension = path.extname(file.originalname);
@@ -454,6 +474,8 @@ export class UploadService {
     if (file.size > 5 * 1024 * 1024) {
       throw new Error('Imagem muito grande. Tamanho máximo: 5MB.');
     }
+
+    ensureSupabaseStorageIfNeeded(this.supabaseStorage);
 
     const fileExtension = path.extname(file.originalname);
     const sanitizedName = achievementTitle.toLowerCase().replace(/[^a-z0-9]/g, '_');

@@ -86,6 +86,9 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql://yugioh_user:yugioh_password_2024@postgres:5432/yugioh_db}
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      # Opcional: evita MaxClientsInSessionMode mantendo URI em 5432 no .env
+      SUPABASE_TRANSACTION_POOLER: ${SUPABASE_TRANSACTION_POOLER:-}
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-}
       MONGODB_URI: mongodb://yugioh_mongo:yugioh_mongo_password@mongodb:27017/yugioh_chat?authSource=admin
       REDIS_URL: redis://redis:6379
       JWT_SECRET: yugioh_super_secret_key_2024_change_in_production
