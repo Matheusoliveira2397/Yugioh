@@ -4,6 +4,12 @@ import * as path from 'path';
 import axios from 'axios';
 import { SupabaseStorageService } from './supabase-storage.service';
 
+/** Retorna true se DATABASE_URL aponta para Supabase (comportamento igual local/produção). */
+function isSupabaseDatabase(): boolean {
+  const url = process.env.DATABASE_URL || '';
+  return typeof url === 'string' && (url.includes('supabase.co') || url.includes('pooler.supabase'));
+}
+
 @Injectable()
 export class UploadService {
   // Caminho absoluto dentro do container - mesmo em produção compilada
@@ -98,6 +104,14 @@ export class UploadService {
       throw new Error('Imagem muito grande. Tamanho máximo: 10MB.');
     }
 
+    // Com banco Supabase: imagens devem ir para o Storage para ficar igual no local e em produção
+    if (isSupabaseDatabase() && !this.supabaseStorage.isEnabled()) {
+      throw new Error(
+        'Banco Supabase em uso: configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env do backend. ' +
+        'Assim as imagens das cartas são salvas no Storage e aparecem igual no local e em produção.',
+      );
+    }
+
     const fileExtension = path.extname(file.originalname);
     const baseName = cardId || `card_${cardName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`;
     const fileName = `${baseName}${fileExtension}`;
@@ -145,6 +159,14 @@ export class UploadService {
    */
   async downloadAndSaveCardImage(imageUrl: string, cardName: string, cardId?: string): Promise<string> {
     try {
+      // Com banco Supabase: imagens devem ir para o Storage para ficar igual no local e em produção
+      if (isSupabaseDatabase() && !this.supabaseStorage.isEnabled()) {
+        throw new Error(
+          'Banco Supabase em uso: configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env do backend. ' +
+          'Assim as imagens das cartas são salvas no Storage e aparecem igual no local e em produção.',
+        );
+      }
+
       // Validar URL
       if (!imageUrl || (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://'))) {
         throw new Error('URL de imagem inválida');
