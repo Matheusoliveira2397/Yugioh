@@ -44,26 +44,35 @@ import { ActivityInterceptor } from './common/interceptors/activity.interceptor'
     // PostgreSQL - Dados principais
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        type: 'postgres',
-        url: configService.get('DATABASE_URL'),
-        autoLoadEntities: true,
-        synchronize: false,
-        logging: false,
-        extra: {
-          // Connection pool otimizado para produção
-          // Para milhares de players: aumentar max para 500
-          max: process.env.NODE_ENV === 'production' ? 500 : 100,
-          min: process.env.NODE_ENV === 'production' ? 50 : 20,
-          idleTimeoutMillis: 30000,
-          connectionTimeoutMillis: 10000,
-          statement_timeout: 15000,
-          maxUses: 7500,
-          keepAlive: true,
-          keepAliveInitialDelayMillis: 5000,
-          allowExitOnIdle: false,
-        },
-      }),
+      useFactory: (configService: ConfigService) => {
+        const databaseUrl = configService.get<string>('DATABASE_URL') || '';
+        const isSupabase = typeof databaseUrl === 'string' && (
+          databaseUrl.includes('supabase.co') || databaseUrl.includes('pooler.supabase')
+        );
+        // Supabase (Session mode 5432) limita conexões por pool_size (~15–20) e pode estourar com pools grandes.
+        // Para evitar erro "MaxClientsInSessionMode...", mantemos o pool bem pequeno no Supabase.
+        // Se você estiver usando Transaction mode (6543), também funciona (só perde um pouco de performance).
+        const poolMax = isSupabase ? 5 : (process.env.NODE_ENV === 'production' ? 500 : 100);
+        const poolMin = isSupabase ? 1 : (process.env.NODE_ENV === 'production' ? 50 : 20);
+        return {
+          type: 'postgres',
+          url: databaseUrl,
+          autoLoadEntities: true,
+          synchronize: false,
+          logging: false,
+          extra: {
+            max: poolMax,
+            min: poolMin,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 10000,
+            statement_timeout: 15000,
+            maxUses: isSupabase ? 1000 : 7500,
+            keepAlive: true,
+            keepAliveInitialDelayMillis: 5000,
+            allowExitOnIdle: false,
+          },
+        };
+      },
       inject: [ConfigService],
     }),
 
