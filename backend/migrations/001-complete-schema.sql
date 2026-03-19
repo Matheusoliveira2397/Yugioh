@@ -98,7 +98,7 @@ END $$;
 
 -- DuelOrigin
 DO $$ BEGIN
-    CREATE TYPE "DuelOrigin" AS ENUM ('RANDOM', 'CHAT', 'TOURNAMENT', 'ARENA', 'OTHER');
+    CREATE TYPE "DuelOrigin" AS ENUM ('RANDOM', 'RANDOM_ANIME', 'CHAT', 'TOURNAMENT', 'ARENA', 'OTHER');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;

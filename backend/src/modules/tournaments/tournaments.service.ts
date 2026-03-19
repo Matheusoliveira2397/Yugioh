@@ -306,19 +306,34 @@ const matchesToStart = await this.matchRepository.find({
 
   private static readonly VALID_MAX_PARTICIPANTS = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
 
+  /** Formatos que usam chave eliminatória (vagas = potência de 2). */
+  private static readonly ELIMINATION_FORMATS = [
+    TournamentFormat.SINGLE_ELIMINATION,
+    TournamentFormat.DOUBLE_ELIMINATION,
+  ];
+
   /**
-   * Cria um novo torneio. Vagas devem ser potência de 2 para chave mata-mata correta.
+   * Cria um novo torneio. Mata-mata exige vagas em potência de 2; pontos corridos aceita 2 a 128.
    */
   async create(userId: number, tournamentData: Partial<Tournament>) {
     const max = tournamentData.maxParticipants ?? 16;
-    if (!TournamentsService.VALID_MAX_PARTICIPANTS.includes(max)) {
-      throw new BadRequestException(
-        `Vagas devem ser uma potência de 2: ${TournamentsService.VALID_MAX_PARTICIPANTS.join(', ')}`,
-      );
+    const format = this.normalizeFormat((tournamentData as any).format);
+
+    if (TournamentsService.ELIMINATION_FORMATS.includes(format)) {
+      if (!TournamentsService.VALID_MAX_PARTICIPANTS.includes(max)) {
+        throw new BadRequestException(
+          `Para mata-mata, vagas devem ser potência de 2: ${TournamentsService.VALID_MAX_PARTICIPANTS.join(', ')}`,
+        );
+      }
+    } else {
+      if (max < 2 || max > 128) {
+        throw new BadRequestException('Para pontos corridos, vagas devem ser entre 2 e 128.');
+      }
     }
+
     const tournament = this.tournamentRepository.create({
       ...tournamentData,
-      format: TournamentFormat.SINGLE_ELIMINATION,
+      format,
       maxParticipants: max,
       minLevel: tournamentData.minLevel ?? 1,
       maxLevel: tournamentData.maxLevel ?? null,
@@ -329,6 +344,13 @@ const matchesToStart = await this.matchRepository.find({
     });
 
     return await this.tournamentRepository.save(tournament);
+  }
+
+  private normalizeFormat(value: unknown): TournamentFormat {
+    if (value === TournamentFormat.ROUND_ROBIN || value === 'round_robin') return TournamentFormat.ROUND_ROBIN;
+    if (value === TournamentFormat.SWISS || value === 'swiss') return TournamentFormat.SWISS;
+    if (value === TournamentFormat.DOUBLE_ELIMINATION || value === 'double_elimination') return TournamentFormat.DOUBLE_ELIMINATION;
+    return TournamentFormat.SINGLE_ELIMINATION;
   }
 
   /**
@@ -456,7 +478,7 @@ const matchesToStart = await this.matchRepository.find({
   }
 
   /**
-   * Gera chave do torneio (bracket)
+   * Gera chave do torneio (bracket): mata-mata ou pontos corridos (round-robin).
    */
   async generateBracket(tournamentId: string) {
     const tournament = await this.tournamentRepository.findOne({
@@ -476,21 +498,21 @@ const matchesToStart = await this.matchRepository.find({
       throw new BadRequestException('Torneio precisa de pelo menos 2 participantes');
     }
 
-    // Embaralhar participantes (sorteio aleatório)
     const shuffled = this.shuffleArray([...participants]);
-
-    // Atribuir seeds
     shuffled.forEach((participant, index) => {
       participant.seed = index + 1;
       participant.status = ParticipantStatus.ACTIVE;
     });
-
     await this.participantRepository.save(shuffled);
 
-    // Criar partidas da primeira rodada
-    const matchesFirstRound: Partial<TournamentMatch>[] = [];
     const startTime = new Date(tournament.startAt);
 
+    if (tournament.format === TournamentFormat.ROUND_ROBIN) {
+      return await this.generateRoundRobinBracket(tournament, shuffled, startTime);
+    }
+
+    // Mata-mata: primeira rodada + estrutura das próximas
+    const matchesFirstRound: Partial<TournamentMatch>[] = [];
     for (let i = 0; i < shuffled.length; i += 2) {
       if (i + 1 < shuffled.length) {
         matchesFirstRound.push({
@@ -500,17 +522,52 @@ const matchesToStart = await this.matchRepository.find({
           player1Id: shuffled[i].userId,
           player2Id: shuffled[i + 1].userId,
           status: MatchStatus.READY,
-          scheduledAt: startTime, // Todas as partidas da primeira rodada começam no mesmo horário
+          scheduledAt: startTime,
         });
       }
     }
 
     const createdMatches = await this.matchRepository.save(matchesFirstRound);
-
-    // Criar estrutura das próximas rodadas
     await this.createNextRoundStructure(tournament, createdMatches);
-
     return createdMatches;
+  }
+
+  /**
+   * Gera partidas do torneio de pontos corridos (todos contra todos). Método do círculo.
+   */
+  private async generateRoundRobinBracket(
+    tournament: Tournament,
+    participants: TournamentParticipant[],
+    startTime: Date,
+  ): Promise<TournamentMatch[]> {
+    const N = participants.length;
+    const rounds = N % 2 === 0 ? N - 1 : N;
+    const matchesToCreate: Partial<TournamentMatch>[] = [];
+    let matchNumber = 0;
+    const mod = Math.max(N - 1, 1);
+
+    for (let r = 0; r < rounds; r++) {
+      const opponent0 = (1 + r) % mod + 1;
+      const rest = Array.from({ length: N - 1 }, (_, i) => i + 1).filter((x) => x !== opponent0);
+      const roundPairs: Array<[number, number]> = [[0, opponent0]];
+      for (let i = 0; i < Math.floor(rest.length / 2); i++) {
+        roundPairs.push([rest[i], rest[rest.length - 1 - i]]);
+      }
+      roundPairs.forEach(([pi, pj]) => {
+        matchNumber++;
+        matchesToCreate.push({
+          tournamentId: tournament.id,
+          round: r + 1,
+          matchNumber,
+          player1Id: participants[pi].userId,
+          player2Id: participants[pj].userId,
+          status: MatchStatus.READY,
+          scheduledAt: new Date(startTime.getTime() + r * 60 * 60 * 1000),
+        });
+      });
+    }
+
+    return await this.matchRepository.save(matchesToCreate);
   }
 
   /**
@@ -574,7 +631,6 @@ const matchesToStart = await this.matchRepository.find({
       return;
     }
     
-    // Buscar partida do torneio pelo duelId
     const match = await this.matchRepository.findOne({
       where: { duelId },
       relations: ['tournament'],
@@ -585,7 +641,9 @@ const matchesToStart = await this.matchRepository.find({
       return;
     }
 
-    // Atualizar partida com vencedor
+    const tournament = match.tournament;
+    const isRoundRobin = tournament?.format === TournamentFormat.ROUND_ROBIN;
+
     match.winnerId = winnerId;
     match.status = MatchStatus.FINISHED;
     match.finishedAt = new Date();
@@ -593,16 +651,17 @@ const matchesToStart = await this.matchRepository.find({
 
     const loserId = match.player1Id === winnerId ? match.player2Id : match.player1Id;
 
-    // Mata-mata: marcar perdedor como eliminado e atualizar vitórias/derrotas
     if (loserId) {
       const loserParticipant = await this.participantRepository.findOne({
         where: { tournament: { id: match.tournamentId }, userId: loserId },
       });
       if (loserParticipant) {
-        loserParticipant.status = ParticipantStatus.ELIMINATED;
         loserParticipant.losses = (loserParticipant.losses || 0) + 1;
+        if (!isRoundRobin) {
+          loserParticipant.status = ParticipantStatus.ELIMINATED;
+          this.logger.log(`🚫 [updateTournamentMatchFromDuel] Jogador ${loserId} eliminado (mata-mata).`);
+        }
         await this.participantRepository.save(loserParticipant);
-        this.logger.log(`🚫 [updateTournamentMatchFromDuel] Jogador ${loserId} eliminado (mata-mata).`);
       }
     }
     const winnerParticipant = await this.participantRepository.findOne({
@@ -615,7 +674,12 @@ const matchesToStart = await this.matchRepository.find({
 
     this.logger.log(`✅ [updateTournamentMatchFromDuel] Partida ${match.id} (Rodada ${match.round}) finalizada. Vencedor: ${winnerId}`);
 
-    // Avançar vencedor para próxima fase
+    if (isRoundRobin) {
+      await this.checkRoundRobinTournamentFinished(match.tournamentId);
+      return;
+    }
+
+    // Mata-mata: avançar vencedor para próxima fase
     if (match.nextMatchId) {
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(String(match.nextMatchId).trim())) {
@@ -883,6 +947,51 @@ const matchesToStart = await this.matchRepository.find({
   }
 
   /**
+   * Pontos corridos: verifica se todas as partidas terminaram e finaliza o torneio (ranking por vitórias).
+   */
+  private async checkRoundRobinTournamentFinished(tournamentId: string): Promise<void> {
+    const [tournament, allMatches, participants] = await Promise.all([
+      this.tournamentRepository.findOne({ where: { id: tournamentId } }),
+      this.matchRepository.find({ where: { tournamentId } }),
+      this.participantRepository.find({
+        where: { tournament: { id: tournamentId } },
+        order: { seed: 'ASC' },
+      }),
+    ]);
+
+    if (!tournament || tournament.status === TournamentStatus.FINISHED) return;
+    const total = allMatches.length;
+    const finished = allMatches.filter(
+      (m) => m.status === MatchStatus.FINISHED || m.status === MatchStatus.WALKOVER,
+    ).length;
+    if (total === 0 || finished < total) return;
+
+    const sorted = [...participants].sort((a, b) => {
+      const winsA = a.wins ?? 0;
+      const winsB = b.wins ?? 0;
+      if (winsB !== winsA) return winsB - winsA;
+      return (a.losses ?? 0) - (b.losses ?? 0);
+    });
+
+    const places = [1, 2, 3, 4] as const;
+    for (let i = 0; i < Math.min(sorted.length, 4); i++) {
+      await this.participantRepository.update(
+        { tournament: { id: tournamentId }, userId: sorted[i].userId },
+        { finalPosition: places[i] },
+      );
+    }
+
+    tournament.winnerId = sorted[0]?.userId ?? null;
+    tournament.status = TournamentStatus.FINISHED;
+    tournament.finishedAt = new Date();
+    await this.tournamentRepository.save(tournament);
+
+    await this.distributePrizes(tournament);
+    await this.awardTournamentPoints(tournamentId);
+    this.logger.log(`🏆 Torneio pontos corridos ${tournament.name} finalizado! Campeão: ${tournament.winnerId}`);
+  }
+
+  /**
    * Finaliza torneio. Quem vencer a final é o campeão (winnerId).
    */
   private async finishTournament(tournamentId: string) {
@@ -983,10 +1092,17 @@ const matchesToStart = await this.matchRepository.find({
       const cardIds = prize?.cardIds ?? [];
       const trophyTitle = prize?.trophyTitle;
       const trophyIcon = prize?.trophyIcon;
+      const stars = Math.max(0, prize?.stars ?? 0);
 
       for (const p of participants) {
         const userId = p.userId;
         try {
+          if (stars > 0) {
+            const user = await this.usersService.findById(userId);
+            const currentStars = (user as any).stars ?? 0;
+            await this.usersService.update(userId, { stars: currentStars + stars });
+            this.logger.log(`⭐ Prêmio ${place}º: ${stars} estrela(s) -> userId ${userId}`);
+          }
           if (credit > 0) {
             const user = await this.usersService.findById(userId);
             await this.usersService.update(userId, { credits: (user.credits || 0) + credit });
@@ -1069,14 +1185,28 @@ const matchesToStart = await this.matchRepository.find({
       throw new NotFoundException('Torneio não encontrado');
     }
 
-    if (tournamentData.maxParticipants != null && !TournamentsService.VALID_MAX_PARTICIPANTS.includes(tournamentData.maxParticipants)) {
-      throw new BadRequestException(
-        `Vagas devem ser uma potência de 2: ${TournamentsService.VALID_MAX_PARTICIPANTS.join(', ')}`,
-      );
+    const format = tournamentData.format != null
+      ? this.normalizeFormat((tournamentData as any).format)
+      : tournament.format;
+    const max = tournamentData.maxParticipants ?? tournament.maxParticipants;
+
+    if (TournamentsService.ELIMINATION_FORMATS.includes(format)) {
+      if (max != null && !TournamentsService.VALID_MAX_PARTICIPANTS.includes(max)) {
+        throw new BadRequestException(
+          `Para mata-mata, vagas devem ser potência de 2: ${TournamentsService.VALID_MAX_PARTICIPANTS.join(', ')}`,
+        );
+      }
+    } else {
+      if (max != null && (max < 2 || max > 128)) {
+        throw new BadRequestException('Para pontos corridos, vagas devem ser entre 2 e 128.');
+      }
     }
 
     const { id: _id, createdAt, createdBy, ...safeData } = tournamentData as Partial<Tournament> & { id?: string; createdAt?: Date; createdBy?: number };
-    const data = { ...safeData, format: TournamentFormat.SINGLE_ELIMINATION };
+    const data = {
+      ...safeData,
+      format: format ?? tournament.format,
+    };
     Object.assign(tournament, data);
     return await this.tournamentRepository.save(tournament);
   }
@@ -1097,12 +1227,12 @@ const matchesToStart = await this.matchRepository.find({
   }
 
   /**
-   * Obter top 3 do torneio
+   * Obter top 3 do torneio (mata-mata: pela final; pontos corridos: por finalPosition).
    */
   async getTop3(tournamentId: string) {
     const tournament = await this.tournamentRepository.findOne({
       where: { id: tournamentId },
-      relations: ['matches'],
+      relations: ['matches', 'participants', 'participants.user'],
     });
 
     if (!tournament) {
@@ -1113,16 +1243,35 @@ const matchesToStart = await this.matchRepository.find({
       throw new BadRequestException('Torneio ainda não foi finalizado');
     }
 
-    // Buscar todas as partidas finalizadas
+    const top3: Array<{ position: number; user: any; prize: number }> = [];
+    const prizeByPlace: Record<number, number> = {
+      1: tournament.prizeFirst,
+      2: tournament.prizeSecond,
+      3: tournament.prizeThird,
+    };
+
+    if (tournament.format === TournamentFormat.ROUND_ROBIN) {
+      const byPosition = (tournament.participants ?? [])
+        .filter((p) => p.finalPosition != null && p.finalPosition >= 1 && p.finalPosition <= 3)
+        .sort((a, b) => (a.finalPosition ?? 99) - (b.finalPosition ?? 99));
+      for (const p of byPosition.slice(0, 3)) {
+        const u = p.user ?? (await this.usersService.findById(p.userId));
+        if (u) {
+          top3.push({
+            position: p.finalPosition!,
+            user: { id: u.id, nickname: u.nickname, profileImage: u.profileImage },
+            prize: prizeByPlace[p.finalPosition!] ?? 0,
+          });
+        }
+      }
+      return top3;
+    }
+
     const allMatches = await this.matchRepository.find({
       where: { tournamentId, status: MatchStatus.FINISHED },
       relations: ['player1', 'player2', 'winner'],
     });
-
-    // Buscar partida final (sem nextMatchId)
-    const finalMatch = allMatches.find(m => !m.nextMatchId);
-
-    const top3: Array<{ position: number; user: any; prize: number }> = [];
+    const finalMatch = allMatches.find(m => !m.nextMatchId && !m.isThirdPlaceMatch);
 
     // 1º lugar (vencedor da final)
     if (finalMatch?.winnerId) {

@@ -25,8 +25,12 @@ interface User {
   globalRank?: number;
   division?: string;
   adminAllowedTabs?: string[] | null;
-  /** Nome do deck atualmente equipado para duelos */
+  /** ID do deck equipado (identifica o deck mesmo com nomes repetidos) */
+  equippedDeckId?: string | null;
+  /** Nome do deck equipado (para exibição) */
   equippedDeckName?: string | null;
+  /** Estrelas (premiação de torneios e outras recompensas) */
+  stars?: number;
   group?: {
     id: string;
     name: string;

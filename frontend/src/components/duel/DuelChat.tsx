@@ -38,8 +38,7 @@ const DuelChat: React.FC<DuelChatProps> = ({ messages, onSendMessage, hideHeader
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-transparent backdrop-blur-sm rounded-xl border border-slate-700/30 shadow-lg overflow-hidden flex flex-col"
-      style={{ height: '400px' }}
+      className="bg-transparent backdrop-blur-sm rounded-xl border border-slate-700/30 shadow-lg overflow-hidden flex flex-col flex-1 min-h-0"
     >
       {!hideHeader && (
         <div className="bg-slate-900/20 backdrop-blur-sm px-4 py-3 border-b border-slate-700/30 flex items-center justify-between">
@@ -57,7 +56,7 @@ const DuelChat: React.FC<DuelChatProps> = ({ messages, onSendMessage, hideHeader
 
       <div className="flex flex-col flex-1 overflow-hidden">
             {/* Mensagens */}
-            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto space-y-2 p-3 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
+            <div ref={messagesContainerRef} className="flex-1 min-h-0 overflow-hidden flex flex-col justify-end gap-2 p-3">
               {messages.length === 0 ? (
                 <div className="text-center py-8 text-slate-400 text-xs">
                   <p>Nenhuma mensagem ainda</p>

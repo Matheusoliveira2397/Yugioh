@@ -19,6 +19,16 @@ export class AuthDbMigrationService implements OnModuleInit {
     } catch (error) {
       this.logger.error('Erro ao executar migração bannedUntil:', error);
     }
+    try {
+      await this.ensureEquippedDeckIdColumn();
+    } catch (error) {
+      this.logger.error('Erro ao executar migração equipped_deck_id:', error);
+    }
+    try {
+      await this.ensureStarsColumn();
+    } catch (error) {
+      this.logger.error('Erro ao executar migração stars:', error);
+    }
   }
 
   private async ensureRefreshTokensTable() {
@@ -74,6 +84,70 @@ export class AuthDbMigrationService implements OnModuleInit {
           ADD COLUMN "bannedUntil" TIMESTAMP NULL
         `);
         this.logger.log('Coluna users.bannedUntil criada com sucesso.');
+      }
+    } catch (error: any) {
+      if (error?.code !== '42701' && !error?.message?.includes('already exists')) {
+        throw error;
+      }
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  private async ensureEquippedDeckIdColumn() {
+    const queryRunner = this.dataSource.createQueryRunner();
+    try {
+      await queryRunner.connect();
+      const result = await queryRunner.query(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+        AND table_name = 'users'
+        AND column_name = 'equipped_deck_id'
+      `);
+      if (result.length === 0) {
+        await queryRunner.query(`
+          ALTER TABLE "users"
+          ADD COLUMN IF NOT EXISTS "equipped_deck_id" uuid NULL
+        `);
+        this.logger.log('Coluna users.equipped_deck_id criada com sucesso.');
+        const fillResult = await queryRunner.query(`
+          UPDATE "users" u
+          SET "equipped_deck_id" = (
+            SELECT d.id FROM "decks" d
+            WHERE d."userId" = u.id AND d.name = u."equippedDeckName"
+            LIMIT 1
+          )
+          WHERE u."equippedDeckName" IS NOT NULL AND u."equippedDeckName" <> ''
+        `);
+        this.logger.log('Preenchido equipped_deck_id para usuários com deck equipado por nome.');
+      }
+    } catch (error: any) {
+      if (error?.code !== '42701' && !error?.message?.includes('already exists')) {
+        throw error;
+      }
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  private async ensureStarsColumn() {
+    const queryRunner = this.dataSource.createQueryRunner();
+    try {
+      await queryRunner.connect();
+      const result = await queryRunner.query(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+        AND table_name = 'users'
+        AND column_name = 'stars'
+      `);
+      if (result.length === 0) {
+        await queryRunner.query(`
+          ALTER TABLE "users"
+          ADD COLUMN "stars" integer NOT NULL DEFAULT 0
+        `);
+        this.logger.log('Coluna users.stars criada com sucesso (premiação torneios/outros).');
       }
     } catch (error: any) {
       if (error?.code !== '42701' && !error?.message?.includes('already exists')) {

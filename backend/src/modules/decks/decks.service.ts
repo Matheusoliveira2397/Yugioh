@@ -89,7 +89,7 @@ export class DecksService implements OnModuleInit {
   async findAll(userId: number): Promise<Deck[]> {
     return this.decksRepository.find({
       where: { userId },
-      relations: ['cards', 'cards.card'],
+      relations: ['cards', 'cards.card', 'coverCard'],
     });
   }
 
@@ -97,7 +97,7 @@ export class DecksService implements OnModuleInit {
     console.log('🔍 [findOne] Buscando deck com id:', id);
     const deck = await this.decksRepository.findOne({
       where: { id },
-      relations: ['cards', 'cards.card'],
+      relations: ['cards', 'cards.card', 'coverCard'],
     });
     console.log('🔍 [findOne] Deck encontrado:', {
       id: deck?.id,
@@ -128,13 +128,13 @@ export class DecksService implements OnModuleInit {
       throw new BadRequestException('You can only delete your own decks');
     }
 
-    // Não permitir deletar o deck equipado
+    // Não permitir deletar o deck equipado (por ID ou por nome)
     const user = await this.usersRepository.findOne({
       where: { id: userId },
-      select: ['id', 'equippedDeckName'],
+      select: ['id', 'equippedDeckId', 'equippedDeckName'],
     });
 
-    if (user && user.equippedDeckName && user.equippedDeckName === deck.name) {
+    if (user && ((user as any).equippedDeckId === deck.id || ((user as any).equippedDeckName && (user as any).equippedDeckName === deck.name))) {
       throw new BadRequestException('Você não pode deletar o deck equipado. Equipe outro deck primeiro.');
     }
 
@@ -229,6 +229,12 @@ export class DecksService implements OnModuleInit {
       });
       deck = await this.decksRepository.save(deck);
       logger.debug('✅ [saveCurrentDeck] Novo deck criado:', deck.id);
+    }
+
+    // Atualizar imagem do deck (carta de capa)
+    if (saveDeckDto.coverCardId !== undefined) {
+      deck.coverCardId = saveDeckDto.coverCardId || null;
+      await this.decksRepository.save(deck);
     }
 
     // Remover todas as cartas antigas do deck
@@ -511,9 +517,10 @@ export class DecksService implements OnModuleInit {
     });
     logger.debug('🔍 [saveCurrentDeck] Verificação direta do banco:', allDeckCards.length, 'DeckCards encontrados');
     
-    // Buscar o deck base
+    // Buscar o deck base (com coverCard para resposta)
     let updatedDeck = await this.decksRepository.findOne({
       where: { id: deck.id },
+      relations: ['coverCard'],
     });
     
     if (!updatedDeck) {
@@ -554,6 +561,12 @@ export class DecksService implements OnModuleInit {
     // Serializar manualmente para garantir que tudo seja incluído
     const deckToReturn = {
       ...updatedDeck,
+      coverCard: updatedDeck.coverCard ? {
+        id: updatedDeck.coverCard.id,
+        idCarta: updatedDeck.coverCard.idCarta,
+        name: updatedDeck.coverCard.name,
+        cardImage: updatedDeck.coverCard.cardImage,
+      } : null,
       cards: updatedDeck.cards.map(dc => ({
         id: dc.id,
         deckId: dc.deckId,
@@ -821,6 +834,7 @@ export class DecksService implements OnModuleInit {
         .createQueryBuilder('deck')
         .leftJoinAndSelect('deck.cards', 'deckCard')
         .leftJoinAndSelect('deckCard.card', 'card')
+        .leftJoinAndSelect('deck.coverCard', 'coverCard')
         .where('deck.userId = :userId', { userId })
         .andWhere('deck.name = :deckName', { deckName: cleanDeckName })
         .getOne();
@@ -844,7 +858,7 @@ export class DecksService implements OnModuleInit {
         logger.debug('⚠️ [getCurrentDeck] Deck não encontrado com query builder, tentando findOne...');
         deck = await this.decksRepository.findOne({
           where: { userId, name: cleanDeckName },
-          relations: ['cards', 'cards.card'],
+          relations: ['cards', 'cards.card', 'coverCard'],
         });
         
         if (deck) {
@@ -870,14 +884,15 @@ export class DecksService implements OnModuleInit {
             .createQueryBuilder('deck')
             .leftJoinAndSelect('deck.cards', 'deckCard')
             .leftJoinAndSelect('deckCard.card', 'card')
+            .leftJoinAndSelect('deck.coverCard', 'coverCard')
             .where('deck.id = :deckId', { deckId: caseInsensitiveDeck.id })
             .getOne();
-          
+
           // Se não encontrou com query builder, tentar findOne normal
           if (!deck) {
             deck = await this.decksRepository.findOne({
               where: { id: caseInsensitiveDeck.id },
-              relations: ['cards', 'cards.card'],
+              relations: ['cards', 'cards.card', 'coverCard'],
             });
           }
         }
@@ -957,6 +972,31 @@ export class DecksService implements OnModuleInit {
       return deck;
     } catch (error: any) {
       logger.error('❌ [getCurrentDeck] Erro ao buscar deck:', error);
+      return null;
+    }
+  }
+
+  /** Carrega deck por ID (do usuário). Usado quando o equipado é identificado por equippedDeckId. */
+  async getDeckByIdForUser(userId: number, deckId: string): Promise<Deck | null> {
+    if (!deckId?.trim()) return null;
+    try {
+      const deck = await this.decksRepository
+        .createQueryBuilder('deck')
+        .leftJoinAndSelect('deck.cards', 'deckCard')
+        .leftJoinAndSelect('deckCard.card', 'card')
+        .leftJoinAndSelect('deck.coverCard', 'coverCard')
+        .where('deck.userId = :userId', { userId })
+        .andWhere('deck.id = :deckId', { deckId: deckId.trim() })
+        .getOne();
+      if (deck && (!deck.cards || deck.cards.length === 0)) {
+        const directCards = await this.deckCardsRepository.find({
+          where: { deckId: deck.id },
+          relations: ['card'],
+        });
+        (deck as any).cards = directCards;
+      }
+      return deck;
+    } catch {
       return null;
     }
   }

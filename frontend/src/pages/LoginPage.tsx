@@ -7,6 +7,7 @@ import axios from 'axios';
 import LatestCardsMarquee, { type MarqueeCard } from '../components/LatestCardsMarquee';
 import LanguageSelector from '../components/LanguageSelector';
 import { getImageUrl } from '../utils/imageUrl';
+import { formatScore } from '../utils/formatScore';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -431,7 +432,7 @@ export default function LoginPage() {
                           <img src={getImageUrl(p.profileImage)} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
                           <div className="min-w-0 flex-1">
                             <span className="text-white text-xs font-medium truncate block">{p.clanTag ? `[${p.clanTag}] ` : ''}{p.nickname || p.username || '—'}</span>
-                            <span className="text-amber-300/90 text-[10px]">{p.score ?? 0} {t('common.pts')}</span>
+                            <span className="text-amber-300/90 text-[10px]">{formatScore(p.score)} {t('common.pts')}</span>
                           </div>
                         </li>
                       ))}
@@ -450,7 +451,7 @@ export default function LoginPage() {
                           <img src={getImageUrl(p.profileImage)} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
                           <div className="min-w-0 flex-1">
                             <span className="text-white text-xs font-medium truncate block">{p.clanTag ? `[${p.clanTag}] ` : ''}{p.nickname || p.username || '—'}</span>
-                            <span className="text-purple-300/90 text-[10px]">{p.score ?? 0} {t('common.pts')}</span>
+                            <span className="text-purple-300/90 text-[10px]">{formatScore(p.score)} {t('common.pts')}</span>
                           </div>
                         </li>
                       ))}
@@ -485,7 +486,7 @@ export default function LoginPage() {
                           <img src={getImageUrl(c.logo)} alt="" className="w-7 h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
                           <div className="min-w-0 flex-1">
                             <span className="text-white text-xs font-medium truncate block">[{c.tag}] {c.name}</span>
-                            <span className="text-amber-300/90 text-[10px]">{c.totalScore ?? 0} {t('common.pts')}</span>
+                            <span className="text-amber-300/90 text-[10px]">{formatScore(c.totalScore)} {t('common.pts')}</span>
                           </div>
                         </li>
                       ))}
@@ -504,7 +505,7 @@ export default function LoginPage() {
                           <img src={getImageUrl(c.logo)} alt="" className="w-7 h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
                           <div className="min-w-0 flex-1">
                             <span className="text-white text-xs font-medium truncate block">[{c.tag}] {c.name}</span>
-                            <span className="text-purple-300/90 text-[10px]">{c.totalScore ?? 0} {t('common.pts')}</span>
+                            <span className="text-purple-300/90 text-[10px]">{formatScore(c.totalScore)} {t('common.pts')}</span>
                           </div>
                         </li>
                       ))}

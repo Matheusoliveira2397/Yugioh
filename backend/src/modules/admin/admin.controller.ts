@@ -158,6 +158,32 @@ export class AdminController {
     return this.adminService.getSystemStats();
   }
 
+  /** Quantas pessoas possuem cada carta (apenas cartas com pelo menos 1 dono). */
+  @Get('cards/ownership-stats')
+  getCardOwnershipStats() {
+    return this.adminService.getCardOwnershipStats();
+  }
+
+  /** Lista de duelistas que possuem uma carta (por cardId). */
+  @Get('cards/:cardId/owners')
+  getCardOwners(@Param('cardId') cardId: string) {
+    return this.adminService.getCardOwners(cardId);
+  }
+
+  /** Score por vitória por tipo de duelo (para painel admin). */
+  @Get('duel-score-settings')
+  getDuelScoreSettings() {
+    return this.adminService.getDuelScoreSettingsForAdmin();
+  }
+
+  /** Atualizar score por tipo de duelo. */
+  @Put('duel-score-settings')
+  updateDuelScoreSettings(
+    @Body() body: { scoreRandom?: number; scoreChat?: number; scoreTournament?: number; scoreArena?: number; scoreOther?: number },
+  ) {
+    return this.adminService.updateDuelScoreSettings(body);
+  }
+
   // Excluir Usuário
   @Delete('users/:id')
   deleteUser(@Param('id') id: string) {

@@ -1,12 +1,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { motion } from 'framer-motion';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import axios from 'axios';
 import { logger } from '../utils/logger';
 import LatestCardsMarquee from '../components/LatestCardsMarquee';
 
 import { getImageUrl } from '../utils/imageUrl';
+import { formatScore } from '../utils/formatScore';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -68,6 +69,7 @@ export default function HomePage() {
   const [news, setNews] = useState<News[]>([]);
   const [shopCards, setShopCards] = useState<Card[]>([]);
   const [viewedNewsIds, setViewedNewsIds] = useState<string[]>([]);
+  const [selectedNewsModal, setSelectedNewsModal] = useState<News | null>(null);
   const [nextArena, setNextArena] = useState<{ name: string; startTime: string } | null>(null);
   const [timeUntilNextArena, setTimeUntilNextArena] = useState<number>(0);
   
@@ -170,6 +172,16 @@ export default function HomePage() {
     }, 1000);
     return () => clearInterval(timer);
   }, [nextArena, timeUntilNextArena]);
+
+  // Fechar modal da notícia com Escape
+  useEffect(() => {
+    if (!selectedNewsModal) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedNewsModal(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedNewsModal]);
 
   const fetchData = async () => {
     try {
@@ -396,11 +408,13 @@ export default function HomePage() {
                     {topPlayers.map((p, i) => (
                       <li key={p.id} className="flex items-center gap-1.5 sm:gap-2">
                         <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
-                        <img src={getImageUrl(p.profileImage)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
-                        <div className="min-w-0 flex-1">
-                          <span className="text-white text-[10px] sm:text-xs font-medium truncate block">{p.clanTag ? `|${p.clanTag}| ` : ''}{p.nickname || '—'}</span>
-                          <span className="text-amber-300/90 text-[9px] sm:text-[10px]">{p.score ?? 0} pts</span>
-                        </div>
+                        <Link to={`/profile/${p.id}`} className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 rounded-md p-0.5 -m-0.5 hover:bg-white/10 transition-colors cursor-pointer">
+                          <img src={getImageUrl(p.profileImage)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                          <div className="min-w-0 flex-1">
+                            <span className="text-white text-[10px] sm:text-xs font-medium truncate block hover:text-amber-200">{p.clanTag ? `|${p.clanTag}| ` : ''}{p.nickname || '—'}</span>
+                            <span className="text-amber-300/90 text-[9px] sm:text-[10px]">{formatScore(p.score)} pts</span>
+                          </div>
+                        </Link>
                       </li>
                     ))}
                   </ul>
@@ -416,11 +430,13 @@ export default function HomePage() {
                     {topSeasonPlayers.map((p, i) => (
                       <li key={p.id} className="flex items-center gap-1.5 sm:gap-2">
                         <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
-                        <img src={getImageUrl(p.profileImage)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
-                        <div className="min-w-0 flex-1">
-                          <span className="text-white text-[10px] sm:text-xs font-medium truncate block">{p.clanTag ? `|${p.clanTag}| ` : ''}{p.nickname || '—'}</span>
-                          <span className="text-purple-300/90 text-[9px] sm:text-[10px]">{p.score ?? 0} pts</span>
-                        </div>
+                        <Link to={`/profile/${p.id}`} className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 rounded-md p-0.5 -m-0.5 hover:bg-white/10 transition-colors cursor-pointer">
+                          <img src={getImageUrl(p.profileImage)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                          <div className="min-w-0 flex-1">
+                            <span className="text-white text-[10px] sm:text-xs font-medium truncate block hover:text-purple-200">{p.clanTag ? `|${p.clanTag}| ` : ''}{p.nickname || '—'}</span>
+                            <span className="text-purple-300/90 text-[9px] sm:text-[10px]">{formatScore(p.score)} pts</span>
+                          </div>
+                        </Link>
                       </li>
                     ))}
                   </ul>
@@ -464,7 +480,7 @@ export default function HomePage() {
                         <img src={getImageUrl(c.logo)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
                         <div className="min-w-0 flex-1">
                           <span className="text-white text-[10px] sm:text-xs font-medium truncate block">[{c.tag}] {c.name || '—'}</span>
-                          <span className="text-amber-300/90 text-[9px] sm:text-[10px]">{c.totalScore ?? 0} pts</span>
+                          <span className="text-amber-300/90 text-[9px] sm:text-[10px]">{formatScore(c.totalScore)} pts</span>
                         </div>
                       </li>
                     ))}
@@ -487,7 +503,7 @@ export default function HomePage() {
                         <img src={getImageUrl(c.logo)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
                         <div className="min-w-0 flex-1">
                           <span className="text-white text-[10px] sm:text-xs font-medium truncate block">[{c.tag}] {c.name || '—'}</span>
-                          <span className="text-purple-300/90 text-[9px] sm:text-[10px]">{c.totalScore ?? 0} pts</span>
+                          <span className="text-purple-300/90 text-[9px] sm:text-[10px]">{formatScore(c.totalScore)} pts</span>
                         </div>
                       </li>
                     ))}
@@ -530,7 +546,7 @@ export default function HomePage() {
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       whileHover={{ scale: 1.01, x: 4 }}
-                      onClick={() => navigate(`/news/${item.id}`)}
+                      onClick={() => setSelectedNewsModal(item)}
                       className={`rounded-lg p-2 sm:p-3 border-l-4 transition-all duration-200 cursor-pointer ${
                         item.isPinned
                           ? 'bg-transparent border-blue-500/30 shadow-md'
@@ -550,7 +566,7 @@ export default function HomePage() {
                         <span className="text-[10px] sm:text-xs text-white/60 truncate max-w-[60%]">
                           {item.author?.clanTag ? `|${item.author.clanTag}| ` : ''}{item.author?.nickname || 'Admin'}
                         </span>
-                        <span className="text-[10px] sm:text-xs text-blue-400 hover:text-blue-300 transition-colors shrink-0">Ler mais →</span>
+                        <span className="text-[10px] sm:text-xs text-blue-400 hover:text-blue-300 transition-colors shrink-0">Abrir →</span>
                       </div>
                     </motion.div>
                   );
@@ -566,6 +582,69 @@ export default function HomePage() {
           <LatestCardsMarquee cards={shopCards} showVerLoja />
         </div>
       </div>
+
+      {/* Modal da notícia */}
+      {selectedNewsModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+          onClick={() => setSelectedNewsModal(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="news-modal-title"
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="relative w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-xl border border-blue-600/40 bg-gradient-to-b from-slate-900/95 to-slate-800/95 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="overflow-y-auto max-h-[90vh] custom-scrollbar p-4 sm:p-6">
+              <div className="flex items-start justify-between gap-2 mb-3">
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                  {selectedNewsModal.isPinned && (
+                    <span className="text-white text-xs font-bold shrink-0">📌 FIXADO</span>
+                  )}
+                  {selectedNewsModal.isNew && (
+                    <span className="px-2 py-0.5 bg-red-600/80 text-white text-xs font-bold rounded animate-pulse shrink-0">NEW</span>
+                  )}
+                  <span className="text-white/60 text-xs shrink-0">
+                    {new Date(selectedNewsModal.createdAt).toLocaleDateString('pt-BR', { dateStyle: 'medium' })}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedNewsModal(null)}
+                  className="shrink-0 p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+                  aria-label="Fechar"
+                >
+                  <span className="text-xl leading-none">×</span>
+                </button>
+              </div>
+              <h2 id="news-modal-title" className="text-lg sm:text-xl md:text-2xl font-bold text-white mb-2 pr-8">
+                {selectedNewsModal.title}
+              </h2>
+              <p className="text-white/70 text-xs sm:text-sm mb-4">
+                {selectedNewsModal.author?.clanTag ? `|${selectedNewsModal.author.clanTag}| ` : ''}
+                {selectedNewsModal.author?.nickname || 'Admin'}
+              </p>
+              {selectedNewsModal.image && (
+                <div className="rounded-lg overflow-hidden mb-4 border border-white/10">
+                  <img
+                    src={getImageUrl(selectedNewsModal.image)}
+                    alt=""
+                    className="w-full h-auto object-cover max-h-[320px]"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                </div>
+              )}
+              <div className="text-white/90 text-sm sm:text-base leading-relaxed whitespace-pre-wrap">
+                {selectedNewsModal.content}
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

@@ -25,6 +25,7 @@ import { ProfilePage } from './pages/ProfilePage';
 import AdminPanel from './pages/AdminPanel';
 import AdminCreateAccountPanel from './pages/AdminCreateAccountPanel';
 import AdminCardsPanel from './pages/AdminCardsPanel';
+import AdminCardOwnershipPanel from './pages/AdminCardOwnershipPanel';
 import AdminPlayersPanel from './pages/AdminPlayersPanel';
 import AdminNewsPanel from './pages/AdminNewsPanel';
 import AdminPlaymatsPanel from './pages/AdminPlaymatsPanel';
@@ -33,23 +34,27 @@ import AdminTalismansPanel from './pages/AdminTalismansPanel';
 import AdminPromotionsPanel from './pages/AdminPromotionsPanel';
 import AdminControlPanel from './pages/AdminControlPanel';
 import AdminInitialDecksPanel from './pages/AdminInitialDecksPanel';
+import AdminAnimeDecksPanel from './pages/AdminAnimeDecksPanel';
 import AdminTournamentsPanel from './pages/AdminTournamentsPanel';
 import AdminArenaPanel from './pages/AdminArenaPanel';
 import AdminArenaSchedulesPanel from './pages/AdminArenaSchedulesPanel';
 import AdminSeasonsPanel from './pages/AdminSeasonsPanel';
 import AdminSiteTabsPanel from './pages/AdminSiteTabsPanel';
 import AdminMessagesPanel from './pages/AdminMessagesPanel';
+import AdminFeedbackPanel from './pages/AdminFeedbackPanel';
 import AdminAchievementsPanel from './pages/AdminAchievementsPanel';
 import AdminDivisionsPanel from './pages/AdminDivisionsPanel';
 import AdminCashDivisionPanel from './pages/AdminCashDivisionPanel';
 import AdminPaymentsPanel from './pages/AdminPaymentsPanel';
 import AdminRandomDuelLevelRangesPanel from './pages/AdminRandomDuelLevelRangesPanel';
+import AdminDuelScoreSettingsPanel from './pages/AdminDuelScoreSettingsPanel';
 import AdminSocialMediaPanel from './pages/AdminSocialMediaPanel';
 import AdminNewAccountSettingsPanel from './pages/AdminNewAccountSettingsPanel';
 import AdminWatchDuelPage from './pages/AdminWatchDuelPage';
 import AdminActiveDuelsPanel from './pages/AdminActiveDuelsPanel';
 import CreditPage from './pages/CreditPage';
 import HelpPage from './pages/HelpPage';
+import FeedbackPage from './pages/FeedbackPage';
 import MissionsPage from './pages/MissionsPage';
 import DropsPage from './pages/DropsPage';
 import DuelArena from './pages/DuelArena';
@@ -390,6 +395,19 @@ function App() {
         />
 
         <Route
+          path="/admin/card-ownership"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminCardOwnershipPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
           path="/admin/players"
           element={
             isAuthenticated ? (
@@ -486,6 +504,19 @@ function App() {
             isAuthenticated ? (
               <Layout>
                 <AdminInitialDecksPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/anime-decks"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminAnimeDecksPanel />
               </Layout>
             ) : (
               <Navigate to="/login" />
@@ -597,6 +628,18 @@ function App() {
           }
         />
         <Route
+          path="/admin/feedback"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminFeedbackPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+        <Route
           path="/admin/achievements"
           element={
             isAuthenticated ? (
@@ -627,6 +670,19 @@ function App() {
             isAuthenticated ? (
               <Layout>
                 <AdminRandomDuelLevelRangesPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/duel-score-settings"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminDuelScoreSettingsPanel />
               </Layout>
             ) : (
               <Navigate to="/login" />
@@ -705,6 +761,19 @@ function App() {
             isAuthenticated ? (
               <Layout>
                 <HelpPage />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/feedback"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <FeedbackPage />
               </Layout>
             ) : (
               <Navigate to="/login" />

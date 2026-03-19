@@ -69,6 +69,10 @@ export class User {
   @Column({ type: 'int', default: 0, name: 'tournament_points' })
   tournamentPoints: number;
 
+  /** Estrelas: premiação de torneios, arena e outras recompensas */
+  @Column({ type: 'int', default: 0 })
+  stars: number;
+
   @Column({ default: '/images/default.png', name: 'profileImage' })
   profileImage: string;
 
@@ -153,7 +157,10 @@ export class User {
   @Column({ type: 'varchar', length: 255, nullable: true })
   equippedSkinImage: string | null;
 
-  // Deck equipado (deck que será usado no duelo)
+  // Deck equipado (deck que será usado no duelo). ID identifica o deck mesmo com nomes repetidos.
+  @Column({ type: 'uuid', nullable: true, name: 'equipped_deck_id' })
+  equippedDeckId: string | null;
+
   @Column({ type: 'varchar', length: 100, nullable: true })
   equippedDeckName: string | null;
 

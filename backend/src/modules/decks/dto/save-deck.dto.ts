@@ -21,5 +21,10 @@ export class SaveDeckDto {
   @IsString({ each: true })
   @IsNotEmpty({ each: true })
   extraDeckCardIds?: string[]; // Array de cardIds do Extra Deck (máximo 15, apenas Fusion)
+
+  /** ID da carta usada como imagem do deck (opcional) */
+  @IsOptional()
+  @IsString()
+  coverCardId?: string | null;
 }
 

@@ -55,7 +55,7 @@ const TributeSelectionModal: React.FC<TributeSelectionModalProps> = ({
   };
 
   const positionText = position === 'attack' ? 'Ataque' : position === 'set' ? 'Set (face-down)' : 'Defesa';
-  const tributeText = requiredTributes === 1 ? '1 tributo' : '2 tributos';
+  const tributeText = requiredTributes === 1 ? '1 tributo' : requiredTributes === 3 ? '3 tributos' : '2 tributos';
 
   return (
     <AnimatePresence>

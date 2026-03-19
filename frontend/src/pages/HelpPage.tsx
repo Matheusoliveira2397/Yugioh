@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 interface HelpSection {
   id: string;
@@ -196,10 +197,16 @@ export default function HelpPage() {
         >
           <h2 className="text-2xl font-bold text-white mb-4">📧 Precisa de Mais Ajuda?</h2>
           <p className="text-gray-300 mb-4">
-            Se você não encontrou a resposta que procurava, entre em contato conosco através das redes sociais ou pelo chat do jogo.
+            Se você não encontrou a resposta que procurava, envie sua dúvida, opinião ou sugestão. Apenas a equipe (Master/Admin) poderá ver suas mensagens.
           </p>
-          <p className="text-gray-400 text-sm">
-            Nossa equipe de suporte está sempre pronta para ajudar!
+          <Link
+            to="/feedback"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-lg transition-colors"
+          >
+            📬 Enviar dúvida ou opinião
+          </Link>
+          <p className="text-gray-400 text-sm mt-4">
+            Você também pode entrar em contato pelas redes sociais ou pelo chat do jogo.
           </p>
         </motion.div>
       </motion.div>

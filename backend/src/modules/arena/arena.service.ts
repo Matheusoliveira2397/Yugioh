@@ -31,7 +31,9 @@ export class ArenaService implements OnModuleInit {
     private shopService: ShopService,
     @Inject(forwardRef(() => DuelsGateway))
     private duelsGateway: DuelsGateway,
+    @Inject(forwardRef(() => GroupsService))
     private groupsService: GroupsService,
+    @Inject(forwardRef(() => SeasonsService))
     private seasonsService: SeasonsService,
   ) {}
 

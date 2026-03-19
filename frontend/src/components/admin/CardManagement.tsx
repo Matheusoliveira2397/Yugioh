@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import api from '../../api/axios';
 import { CardType, CardAttribute, CardRarity, MonsterType } from '../../pages/types';
 import CardImage from '../CardImage';
+import { getCardDescription } from '../../utils/cardDescription';
 
 interface Card {
   id: string;
@@ -764,7 +765,7 @@ export default function AdminCardsPanel() {
                   </span>
                 </div>
 
-                <p className="text-gray-400 text-sm mb-3 line-clamp-2">{card.description}</p>
+                <p className="text-gray-400 text-sm mb-3 line-clamp-2">{getCardDescription(card)}</p>
 
                 {/* Stats */}
                 {card.type === 'Monster' && (

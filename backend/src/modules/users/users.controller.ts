@@ -40,6 +40,13 @@ export class UsersController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('me/notifications')
+  async getMyNotifications(@Request() req: any, @Query('limit') limit?: string) {
+    const limitNum = limit ? Math.min(parseInt(limit, 10) || 50, 100) : 50;
+    return this.usersService.getSystemNotifications(req.user.id, limitNum);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('me')
   async getProfile(@Request() req: any) {
     // CRÍTICO: Timeout agressivo para garantir que HTTP sempre responda
@@ -81,7 +88,9 @@ export class UsersController {
           equippedPlaymatImage: fullProfile.equippedPlaymatImage || null,
           equippedSkinId: fullProfile.equippedSkinId || null,
           equippedSkinImage: fullProfile.equippedSkinImage || null,
+          equippedDeckId: fullProfile.equippedDeckId || null,
           equippedDeckName: fullProfile.equippedDeckName || null,
+          stars: fullProfile.stars ?? 0,
           adminAllowedTabs: fullProfile.adminAllowedTabs ?? null,
         };
       })(),
@@ -112,7 +121,9 @@ export class UsersController {
         globalRank: null,
         seasonScore: 0,
         division: 'Bronze',
+        equippedDeckId: (req.user as any).equippedDeckId ?? null,
         equippedDeckName: (req.user as any).equippedDeckName ?? null,
+        stars: 0,
       };
     });
   }

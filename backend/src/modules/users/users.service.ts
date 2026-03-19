@@ -12,6 +12,7 @@ import { MailService } from '../mail/mail.service';
 import { RedisService } from '../redis/redis.service';
 import { Deck } from '../decks/entities/deck.entity';
 import { DeckCard } from '../decks/entities/deck-card.entity';
+import { UserSystemNotification } from './entities/user-system-notification.entity';
 
 @Injectable()
 export class UsersService implements OnModuleInit {
@@ -30,6 +31,8 @@ export class UsersService implements OnModuleInit {
     private decksRepository: Repository<Deck>,
     @InjectRepository(DeckCard)
     private deckCardsRepository: Repository<DeckCard>,
+    @InjectRepository(UserSystemNotification)
+    private systemNotificationRepository: Repository<UserSystemNotification>,
     private levelsService: LevelsService,
     private mailService: MailService,
     private redisService: RedisService,
@@ -201,6 +204,7 @@ export class UsersService implements OnModuleInit {
           'equippedPlaymatImage',
           'equippedSkinId',
           'equippedSkinImage',
+          'equippedDeckId',
           'equippedDeckName',
           'createdAt',
           'updatedAt',
@@ -287,7 +291,8 @@ export class UsersService implements OnModuleInit {
         'equippedPlaymatImage',
         'equippedSkinId',
         'equippedSkinImage',
-        'equippedDeckName',
+        'equippedDeckId',
+          'equippedDeckName',
         'createdAt',
         'updatedAt',
       ]
@@ -327,7 +332,8 @@ export class UsersService implements OnModuleInit {
         'equippedPlaymatImage',
         'equippedSkinId',
         'equippedSkinImage',
-        'equippedDeckName',
+        'equippedDeckId',
+          'equippedDeckName',
         'createdAt',
         'updatedAt',
       ]
@@ -435,11 +441,24 @@ export class UsersService implements OnModuleInit {
 
   async update(userId: number, stats: Partial<User>): Promise<void> {
     await this.usersRepository.update(userId, stats);
-    
+
     // Se totalScore foi atualizado, recalcular nível
     if (stats.totalScore !== undefined) {
       await this.updateUserLevel(userId, stats.totalScore);
     }
+  }
+
+  /**
+   * Adiciona estrelas ao usuário (premiação de torneios, arena e outras recompensas).
+   */
+  async addStars(userId: number, amount: number): Promise<number> {
+    if (amount <= 0) return (await this.usersRepository.findOne({ where: { id: userId }, select: ['stars'] }))?.stars ?? 0;
+    const user = await this.usersRepository.findOne({ where: { id: userId }, select: ['id', 'stars'] });
+    if (!user) return 0;
+    const current = (user as any).stars ?? 0;
+    const newTotal = current + amount;
+    await this.usersRepository.update(userId, { stars: newTotal });
+    return newTotal;
   }
 
   /**
@@ -532,6 +551,21 @@ export class UsersService implements OnModuleInit {
 
   async getUserById(userId: number): Promise<User | null> {
     return this.usersRepository.findOne({ where: { id: userId } });
+  }
+
+  /** Notificações do sistema (ex.: cash semanal do clã) para o usuário ver ao abrir o app. */
+  async getSystemNotifications(userId: number, limit = 50): Promise<{ id: string; type: string; content: string; createdAt: string }[]> {
+    const list = await this.systemNotificationRepository.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+    return list.map((n) => ({
+      id: n.id,
+      type: n.type,
+      content: n.content,
+      createdAt: n.createdAt instanceof Date ? n.createdAt.toISOString() : (n.createdAt as string),
+    }));
   }
 
   /**
@@ -724,6 +758,11 @@ export class UsersService implements OnModuleInit {
       return [];
     }
 
+    // Raw do PostgreSQL pode retornar chaves em minúsculas (ex.: seasonscore em vez de seasonScore)
+    const rawScore = (r: any) => Number(r?.seasonScore ?? r?.seasonscore ?? 0);
+    const rawWins = (r: any) => Number(r?.wins ?? 0);
+    const rawLosses = (r: any) => Number(r?.losses ?? 0);
+
     // Mapear usuários (query builder com alias retorna campos pelo nome do alias)
     const userMap = new Map(users.map(u => [u.id, {
       id: u.id,
@@ -769,11 +808,11 @@ export class UsersService implements OnModuleInit {
           totalScore: user.totalScore,
           level: user.level,
         },
-        seasonScore: sr.seasonScore || 0,
-        wins: sr.wins || 0,
-        losses: sr.losses || 0,
+        seasonScore: rawScore(sr),
+        wins: rawWins(sr),
+        losses: rawLosses(sr),
         division: division, // Usar divisão do usuário diretamente, igual ao ranking geral
-        rank: sr.rank || 0,
+        rank: Number(sr?.rank ?? 0),
       };
     }).filter(r => r !== null);
 
@@ -905,8 +944,8 @@ export class UsersService implements OnModuleInit {
         const activeSeasonRaw = await this.seasonRepository
           .createQueryBuilder('s')
           .select('s.id', 'id')
-          .select('s.name', 'name')
-          .select('s.isActive', 'isActive')
+          .addSelect('s.name', 'name')
+          .addSelect('s.isActive', 'isActive')
           .where('s.isActive = :isActive', { isActive: true })
           .getRawOne();
         
@@ -922,8 +961,8 @@ export class UsersService implements OnModuleInit {
         const latestSeasonRaw = await this.seasonRepository
           .createQueryBuilder('s')
           .select('s.id', 'id')
-          .select('s.name', 'name')
-          .select('s.isActive', 'isActive')
+          .addSelect('s.name', 'name')
+          .addSelect('s.isActive', 'isActive')
           .orderBy('s.createdAt', 'DESC')
           .limit(1)
           .getRawOne();
@@ -1454,8 +1493,8 @@ export class UsersService implements OnModuleInit {
     const activeSeasonRaw = await this.seasonRepository
       .createQueryBuilder('s')
       .select('s.id', 'id')
-      .select('s.name', 'name')
-      .select('s.isActive', 'isActive')
+      .addSelect('s.name', 'name')
+      .addSelect('s.isActive', 'isActive')
       .where('s.isActive = :isActive', { isActive: true })
       .getRawOne();
     
@@ -1731,7 +1770,10 @@ export class UsersService implements OnModuleInit {
         'equippedPlaymatImage',
         'equippedSkinId',
         'equippedSkinImage',
+        'equippedDeckId',
         'equippedDeckName',
+        'stars',
+        'tournamentPoints',
         'createdAt',
         'updatedAt',
         'adminAllowedTabs',
@@ -2158,6 +2200,7 @@ export class UsersService implements OnModuleInit {
       equippedPlaymatImage?: string | null;
       equippedSkinId?: string | null;
       equippedSkinImage?: string | null;
+      equippedDeckId?: string | null;
       equippedDeckName?: string | null;
     },
   ): Promise<User> {
@@ -2184,7 +2227,34 @@ export class UsersService implements OnModuleInit {
       updates.equippedSkinImage = cosmetics.equippedSkinImage;
     }
 
-    if (cosmetics.equippedDeckName !== undefined) {
+    // Só pode haver 1 deck equipado por vez. Usar equippedDeckId (identifica o deck mesmo com nomes repetidos).
+    if (cosmetics.equippedDeckId !== undefined) {
+      const deckId = (cosmetics.equippedDeckId as string)?.trim() || null;
+      if (deckId) {
+        const deck = await this.decksRepository.findOne({
+          where: { id: deckId, userId },
+        });
+        if (!deck) {
+          throw new BadRequestException('Deck não encontrado.');
+        }
+        const mainDeckCount = await this.deckCardsRepository.count({
+          where: { deckId: deck.id, isExtraDeck: false },
+        });
+        if (mainDeckCount < 40) {
+          throw new BadRequestException(
+            'Não é possível equipar um deck com menos de 40 cartas no deck principal. Adicione pelo menos ' +
+              (40 - mainDeckCount) +
+              ' carta(s) ao deck principal.',
+          );
+        }
+        updates.equippedDeckId = deck.id;
+        updates.equippedDeckName = deck.name;
+      } else {
+        updates.equippedDeckId = null;
+        updates.equippedDeckName = null;
+      }
+    } else if (cosmetics.equippedDeckName !== undefined) {
+      // Retrocompat: quando o cliente envia só o nome, buscar por nome (primeiro deck com esse nome)
       const deckName = cosmetics.equippedDeckName?.trim() || null;
       if (deckName) {
         const deck = await this.decksRepository.findOne({
@@ -2203,9 +2273,12 @@ export class UsersService implements OnModuleInit {
               ' carta(s) ao deck principal.',
           );
         }
+        updates.equippedDeckId = deck.id;
+        updates.equippedDeckName = deck.name;
+      } else {
+        updates.equippedDeckId = null;
+        updates.equippedDeckName = null;
       }
-      console.log(`🔍 [updateCosmetics] Atualizando equippedDeckName para: "${cosmetics.equippedDeckName}"`);
-      updates.equippedDeckName = cosmetics.equippedDeckName;
     }
 
     if (Object.keys(updates).length === 0) {
@@ -2215,7 +2288,7 @@ export class UsersService implements OnModuleInit {
     console.log(`🔍 [updateCosmetics] Atualizando usuário ${userId} com:`, JSON.stringify(updates, null, 2));
     await this.usersRepository.update(userId, updates);
     const updatedUser = await this.findById(userId);
-    console.log(`🔍 [updateCosmetics] Usuário atualizado. equippedDeckName agora é: "${(updatedUser as any).equippedDeckName || 'null/undefined'}"`);
+    console.log(`🔍 [updateCosmetics] Usuário atualizado. equippedDeckId: ${(updatedUser as any).equippedDeckId ?? 'null'}, equippedDeckName: ${(updatedUser as any).equippedDeckName ?? 'null'}`);
     return updatedUser;
   }
 

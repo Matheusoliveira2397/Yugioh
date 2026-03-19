@@ -74,8 +74,7 @@ const DuelLogs: React.FC<DuelLogsProps> = ({ logs, hideHeader, currentUserId }) 
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-gradient-to-br from-slate-800/20 to-slate-900/20 backdrop-blur-md rounded-xl border border-slate-700/30 shadow-2xl overflow-hidden flex flex-col"
-      style={{ height: '400px' }}
+      className="bg-gradient-to-br from-slate-800/20 to-slate-900/20 backdrop-blur-md rounded-xl border border-slate-700/30 shadow-2xl overflow-hidden flex flex-col flex-1 min-h-0"
     >
       {!hideHeader && (
         <div className="bg-gradient-to-r from-slate-700/20 to-slate-800/20 px-4 py-3 border-b border-slate-700/30 flex items-center justify-between">
@@ -91,7 +90,7 @@ const DuelLogs: React.FC<DuelLogsProps> = ({ logs, hideHeader, currentUserId }) 
         </div>
       )}
 
-      <div ref={logsContainerRef} className="flex-1 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
+      <div ref={logsContainerRef} className="flex-1 min-h-0 overflow-hidden flex flex-col justify-end p-3">
             {logs.length === 0 ? (
               <div className="text-center py-8 text-slate-400 text-xs">
                 <p>Nenhuma ação registrada</p>

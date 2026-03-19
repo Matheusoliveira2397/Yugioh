@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import axios from 'axios';
 import { getImageUrl } from '../utils/imageUrl';
 import { getDivisionDisplayName, getDivisionImagePath } from '../utils/divisionDisplay';
+import { formatScore } from '../utils/formatScore';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -62,26 +63,64 @@ interface Division {
   isAvailable?: boolean;
 }
 
+/** Entrada do ranking de classes (Obelisco, Rá, Slifer) — pontos de torneio */
+interface ClassRankingEntry {
+  rank: number;
+  userId: number;
+  nickname: string;
+  profileImage: string | null;
+  clanTag: string | null;
+  tournamentPoints: number;
+  className: string;
+  classOrder: number;
+}
+
 export default function RankingPage() {
   const [players, setPlayers] = useState<RankedPlayer[]>([]);
   const [allPlayers, setAllPlayers] = useState<RankedPlayer[]>([]); // Todos os players (sem filtro)
   const [groups, setGroups] = useState<RankedGroup[]>([]);
-  const [rankingType, setRankingType] = useState<'duelista' | 'clan'>('duelista'); // Por padrão, mostrar duelista
+  const [rankingType, setRankingType] = useState<'duelista' | 'clan' | 'classe'>('duelista');
   const [activeTab, setActiveTab] = useState<'season' | 'general'>('season');
   const [selectedDivision, setSelectedDivision] = useState<string | null>('Legendary');
   const [loading, setLoading] = useState(true);
+  const [classRanking, setClassRanking] = useState<ClassRankingEntry[]>([]);
+  const [classRankingLoading, setClassRankingLoading] = useState(false);
   const [availableDivisions, setAvailableDivisions] = useState<Division[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
-  const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null); // null = season atual
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
   const { token, user } = useAuthStore();
 
   useEffect(() => {
+    if (rankingType === 'classe') return;
     fetchAvailableDivisions();
     fetchRanking();
     if (activeTab === 'season' && selectedDivision === null && rankingType === 'duelista') {
       setSelectedDivision('Legendary');
     }
   }, [activeTab, rankingType]);
+
+  const fetchClassRanking = useCallback(async () => {
+    setClassRankingLoading(true);
+    try {
+      const response = await axios.get<{ classes?: unknown[]; ranking: ClassRankingEntry[] }>(
+        `${API_URL}/tournaments/ranking/list`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {}, params: { limit: 500 } }
+      );
+      const data = response.data;
+      setClassRanking(Array.isArray(data?.ranking) ? data.ranking : []);
+    } catch (error) {
+      console.error('Erro ao buscar ranking de classes:', error);
+      setClassRanking([]);
+    } finally {
+      setClassRankingLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (rankingType === 'classe') {
+      fetchClassRanking();
+    }
+  }, [rankingType, fetchClassRanking]);
 
   useEffect(() => {
     if (activeTab === 'season') {
@@ -381,7 +420,9 @@ export default function RankingPage() {
             <span className="sm:hidden">Ranking</span>
           </h1>
           <p className="text-slate-400 text-sm md:text-lg">
-            {rankingType === 'duelista' ? 'Veja os melhores duelistas do jogo' : 'Veja os melhores clãs do jogo'}
+            {rankingType === 'duelista' && 'Veja os melhores duelistas do jogo'}
+            {rankingType === 'clan' && 'Veja os melhores clãs do jogo'}
+            {rankingType === 'classe' && 'Ranking por classes Obelisco, Rá e Slifer (pontos de torneio)'}
           </p>
         </motion.div>
 
@@ -416,9 +457,24 @@ export default function RankingPage() {
             <span className="hidden sm:inline">🏰 Clã</span>
             <span className="sm:hidden">🏰 Clã</span>
           </button>
+          <button
+            onClick={() => {
+              setRankingType('classe');
+              setSelectedDivision(null);
+            }}
+            className={`flex-1 sm:flex-none px-4 sm:px-8 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 text-sm sm:text-lg ${
+              rankingType === 'classe'
+                ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-yellow-600 text-white shadow-lg shadow-amber-500/50 scale-105'
+                : 'text-slate-400 hover:bg-white/10 hover:text-white hover:scale-105 border border-white/20'
+            }`}
+          >
+            <span className="hidden sm:inline">🏅 Classe</span>
+            <span className="sm:hidden">🏅 Classe</span>
+          </button>
         </div>
 
-        {/* Tabs Season/Geral */}
+        {/* Tabs Season/Geral - ocultar quando for ranking por Classe */}
+        {rankingType !== 'classe' && (
         <div className="flex gap-2 md:gap-4 mb-4 md:mb-8 justify-center">
           <button
             onClick={() => {
@@ -454,6 +510,14 @@ export default function RankingPage() {
             <span className="sm:hidden">⭐ Geral</span>
           </button>
         </div>
+        )}
+
+        {/* Descrição do ranking por Classe */}
+        {rankingType === 'classe' && (
+          <p className="text-slate-400 text-sm md:text-base text-center mb-4 md:mb-6 max-w-2xl mx-auto">
+            Ranking por pontos de torneio. As classes Obelisco, Rá e Slifer são definidas pelos melhores colocados.
+          </p>
+        )}
 
         {/* Filtro de Season - Apenas para Ranking da Season (Duelista) */}
         {rankingType === 'duelista' && activeTab === 'season' && (
@@ -550,7 +614,138 @@ export default function RankingPage() {
         )}
 
         {/* Ranking - Desktop Table / Mobile Cards */}
-        {rankingType === 'duelista' ? (
+        {rankingType === 'classe' ? (
+          /* Ranking por Classe (Obelisco, Rá, Slifer) */
+          <div className="rounded-2xl border border-amber-500/30 overflow-hidden mx-auto max-w-6xl bg-slate-900/40">
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-amber-300 font-bold text-sm lg:text-lg">#</th>
+                    <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-amber-300 font-bold text-sm lg:text-lg">Duelista</th>
+                    <th className="px-4 lg:px-6 py-3 lg:py-4 text-center text-amber-300 font-bold text-sm lg:text-lg">Classe</th>
+                    <th className="px-4 lg:px-6 py-3 lg:py-4 text-right text-amber-300 font-bold text-sm lg:text-lg">Pontos</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {classRankingLoading ? (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-12 text-center text-slate-400 text-xl">Carregando ranking...</td>
+                    </tr>
+                  ) : classRanking.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-12 text-center text-slate-400">Nenhum duelista com pontos de torneio ainda.</td>
+                    </tr>
+                  ) : (
+                    classRanking.map((row, index) => {
+                      const isCurrentUser = String(row.userId) === String(user?.id);
+                      return (
+                        <motion.tr
+                          key={row.userId}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: index * 0.03 }}
+                          className={`border-t border-white/20 hover:bg-white/10 transition-all duration-300 ${isCurrentUser ? 'border-amber-500/50' : ''}`}
+                        >
+                          <td className="px-4 lg:px-6 py-3 lg:py-5">
+                            <span className={`text-xl lg:text-3xl font-bold ${getRankColor(row.rank)}`}>
+                              {row.rank === 1 && '🥇'}
+                              {row.rank === 2 && '🥈'}
+                              {row.rank === 3 && '🥉'}
+                              {row.rank > 3 && `${row.rank}°`}
+                            </span>
+                          </td>
+                          <td className="px-4 lg:px-6 py-3 lg:py-5">
+                            <Link
+                              to={`/profile/${row.userId}`}
+                              className="flex items-center gap-2 lg:gap-4 hover:opacity-80 transition-opacity"
+                            >
+                              <img
+                                src={getImageUrl(row.profileImage)}
+                                alt={row.nickname}
+                                className="w-10 h-10 lg:w-14 lg:h-14 rounded-xl object-cover border-2 border-amber-500"
+                                loading="lazy"
+                                onError={(e) => { e.currentTarget.src = '/images/default.png'; }}
+                              />
+                              <div>
+                                <p className="text-white font-bold text-sm lg:text-lg flex items-center gap-1 lg:gap-2">
+                                  <span className="truncate max-w-[120px] lg:max-w-none">
+                                    {row.clanTag ? `|${row.clanTag}| ${row.nickname}` : row.nickname}
+                                  </span>
+                                  {isCurrentUser && <span className="text-xs bg-amber-600 px-1.5 lg:px-2 py-0.5 rounded">VOCÊ</span>}
+                                </p>
+                              </div>
+                            </Link>
+                          </td>
+                          <td className="px-4 lg:px-6 py-3 lg:py-5 text-center">
+                            <span className="px-2 py-1 rounded-lg text-sm font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                              {row.className}
+                            </span>
+                          </td>
+                          <td className="px-4 lg:px-6 py-3 lg:py-5 text-right">
+                            <span className="text-lg lg:text-2xl font-bold text-amber-400">{row.tournamentPoints}</span>
+                          </td>
+                        </motion.tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="md:hidden p-2 space-y-2">
+              {classRankingLoading ? (
+                <div className="text-center py-12 text-slate-400 text-lg">Carregando ranking...</div>
+              ) : classRanking.length === 0 ? (
+                <div className="text-center py-12 text-slate-400">Nenhum duelista com pontos de torneio ainda.</div>
+              ) : (
+                classRanking.map((row, index) => {
+                  const isCurrentUser = String(row.userId) === String(user?.id);
+                  return (
+                    <motion.div
+                      key={row.userId}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.03 }}
+                      className={`rounded-xl p-3 border shadow-lg ${
+                        isCurrentUser ? 'border-amber-500/60 shadow-amber-500/20' : 'border-white/20'
+                      } hover:scale-[1.02] transition-all duration-200`}
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className={`text-2xl font-bold ${getRankColor(row.rank)}`}>
+                          {row.rank === 1 && '🥇'}
+                          {row.rank === 2 && '🥈'}
+                          {row.rank === 3 && '🥉'}
+                          {row.rank > 3 && `${row.rank}°`}
+                        </span>
+                        <Link to={`/profile/${row.userId}`} className="flex items-center gap-2 flex-1 min-w-0">
+                          <img
+                            src={getImageUrl(row.profileImage)}
+                            alt={row.nickname}
+                            className="w-12 h-12 rounded-xl object-cover border-2 border-amber-500 flex-shrink-0"
+                            onError={(e) => { e.currentTarget.src = '/images/default.png'; }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white font-bold text-sm flex items-center gap-1">
+                              <span className="truncate">{row.clanTag ? `|${row.clanTag}| ${row.nickname}` : row.nickname}</span>
+                              {isCurrentUser && <span className="text-xs bg-amber-600 px-1.5 py-0.5 rounded">VOCÊ</span>}
+                            </p>
+                            <span className="px-2 py-0.5 rounded text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                              {row.className}
+                            </span>
+                          </div>
+                        </Link>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-slate-400 text-xs">Pontos: </span>
+                        <span className="text-amber-400 font-bold">{row.tournamentPoints}</span>
+                      </div>
+                    </motion.div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        ) : rankingType === 'duelista' ? (
           <div className="rounded-2xl border border-white/20 overflow-hidden mx-auto max-w-6xl">
             {/* Desktop Table */}
             <div className="hidden md:block overflow-x-auto">
@@ -660,9 +855,7 @@ export default function RankingPage() {
                         )}
                         <td className="px-4 lg:px-6 py-3 lg:py-5 text-right">
                           <span className="text-lg lg:text-2xl font-bold text-yellow-400">
-                            {activeTab === 'general' 
-                              ? (typeof score === 'number' ? score.toFixed(1) : Number(score || 0).toFixed(1))
-                              : (typeof score === 'number' ? score.toLocaleString() : Number(score || 0).toLocaleString())}
+                            {formatScore(score)}
                           </span>
                         </td>
                         <td className="px-4 lg:px-6 py-3 lg:py-5 text-center">
@@ -751,9 +944,7 @@ export default function RankingPage() {
                       <div>
                         <span className="text-slate-400">Score: </span>
                         <span className="text-yellow-400 font-bold">
-                          {activeTab === 'general' 
-                            ? (typeof score === 'number' ? score.toFixed(1) : Number(score || 0).toFixed(1))
-                            : (typeof score === 'number' ? score.toLocaleString() : Number(score || 0).toLocaleString())}
+                          {formatScore(score)}
                         </span>
                       </div>
                       <div>
@@ -889,7 +1080,7 @@ export default function RankingPage() {
                           </td>
                           <td className="px-4 lg:px-6 py-3 lg:py-5 text-right">
                             <span className="text-lg lg:text-2xl font-bold text-yellow-400">
-                              {typeof score === 'number' ? score.toLocaleString() : Number(score || 0).toLocaleString()}
+                              {formatScore(score)}
                             </span>
                           </td>
                           <td className="px-4 lg:px-6 py-3 lg:py-5 text-center">
@@ -967,7 +1158,7 @@ export default function RankingPage() {
                         <div>
                           <span className="text-slate-400">Score: </span>
                           <span className="text-yellow-400 font-bold">
-                            {typeof score === 'number' ? score.toLocaleString() : Number(score || 0).toLocaleString()}
+                            {formatScore(score)}
                           </span>
                         </div>
                         <div>

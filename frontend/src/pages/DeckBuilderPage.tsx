@@ -21,6 +21,8 @@ interface DeckSummary {
   id: string;
   name: string;
   cards?: DeckCardSummary[];
+  coverCardId?: string | null;
+  coverCard?: { id: string; name: string; cardImage?: string; idCarta?: string } | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -86,6 +88,9 @@ export default function DeckBuilderPage() {
                 <h2 className="text-xl sm:text-2xl font-bold text-white mb-2 sm:mb-3 flex items-center gap-2">
                   <span>📚</span> Meus Decks
                 </h2>
+                <p className="text-sm text-gray-400 mb-3">
+                  Só pode haver <strong className="text-white">1 deck equipado</strong> por vez. Equipar outro desequipa o atual.
+                </p>
                 {user?.equippedDeckName && (
                   <p className="text-sm text-purple-300 mb-3 flex items-center gap-2">
                     <span className="font-semibold text-purple-200">Deck equipado:</span>
@@ -108,7 +113,9 @@ export default function DeckBuilderPage() {
                         ? deck.cards[deck.cards.length - 1]
                         : undefined;
                     const lastCard = lastDeckCard?.card;
-                    const isEquipped = user?.equippedDeckName === deck.name;
+                    const coverCard = deck.coverCard ?? null;
+                    const displayCard = coverCard || lastCard;
+                    const isEquipped = user?.equippedDeckId === deck.id;
                     return (
                       <motion.div
                         key={deck.id}
@@ -134,11 +141,11 @@ export default function DeckBuilderPage() {
                           </span>
                         </div>
 
-                        {/* Imagem do deck (última carta) - levemente menor */}
+                        {/* Imagem do deck (carta de capa ou última carta) */}
                         <div className="w-full max-w-[96px] mx-auto aspect-[2/3] rounded-lg overflow-hidden border border-white/20 mb-3">
-                          {lastCard ? (
+                          {displayCard ? (
                             <CardImage
-                              card={lastCard}
+                              card={displayCard}
                               className="w-full h-full object-cover"
                               fallback="/images/fundoCarta.webp"
                             />
@@ -163,72 +170,78 @@ export default function DeckBuilderPage() {
                             </span>
                           )}
                         </div>
-                        <div className="flex gap-2 items-center">
+                        <div className="flex flex-col gap-2">
+                          {/* Abrir/Editar: clique no card ou botão principal */}
                           <button
-                            className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-3 rounded-lg transition-colors text-sm"
+                            className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-3 rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
                             onClick={() =>
                               navigate('/deck-edit', {
                                 state: { deckName: deck.name },
                               })
                             }
-                            title="Editar Deck"
+                            title="Abrir e editar deck"
                           >
-                            ⚙️
+                            ✏️ Abrir deck
                           </button>
-                          <button
-                            className={`flex-1 ${isEquipped ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-600 hover:bg-blue-700'} text-white font-semibold py-2 px-3 rounded-lg transition-colors text-xs disabled:opacity-60 disabled:cursor-not-allowed`}
-                            disabled={isEquipped || mainDeckCount < 40}
-                            title={!isEquipped && mainDeckCount < 40 ? 'O deck principal precisa ter pelo menos 40 cartas para equipar' : undefined}
-                            onClick={async () => {
-                              try {
+                          {/* Equipar e excluir só aparecem quando o deck NÃO está equipado */}
+                          {!isEquipped && (
+                            <div className="flex gap-2 items-center">
+                              <button
+                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-3 rounded-lg transition-colors text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                                disabled={mainDeckCount < 40}
+                                title={mainDeckCount < 40 ? 'O deck principal precisa ter pelo menos 40 cartas para equipar' : undefined}
+                                onClick={async () => {
+                                  try {
                                 await api.patch('/me/cosmetics', {
-                                  equippedDeckName: deck.name,
+                                  equippedDeckId: deck.id,
                                 });
                                 if (user) {
                                   useAuthStore.getState().setUser({
                                     ...user,
+                                    equippedDeckId: deck.id,
                                     equippedDeckName: deck.name,
                                   } as any);
                                 }
-                                alert(`✅ Deck "${deck.name}" equipado!`);
-                              } catch (error: any) {
-                                console.error('❌ Erro ao equipar deck:', error);
-                                alert(
-                                  `❌ Erro ao equipar deck: ${
-                                    error.response?.data?.message ||
-                                    error.message ||
-                                    'Erro desconhecido'
-                                  }`,
-                                );
-                              }
-                            }}
-                          >
-                            {isEquipped ? 'Equipado' : 'Equipar'}
-                          </button>
-                          <button
-                            className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-3 rounded-lg transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-                            disabled={isEquipped}
-                            onClick={async () => {
-                              if (!confirm(`Tem certeza que deseja deletar o deck "${deck.name}"?`)) {
-                                return;
-                              }
-                              try {
-                                await api.delete(`/decks/${deck.id}`);
-                                setDecks((prev) => prev.filter((d) => d.id !== deck.id));
-                                alert('✅ Deck deletado com sucesso.');
-                              } catch (error: any) {
-                                console.error('❌ Erro ao deletar deck:', error);
-                                alert(
-                                  `❌ Erro ao deletar deck: ${
-                                    error.response?.data?.message || error.message || 'Erro desconhecido'
-                                  }`,
-                                );
-                              }
-                            }}
-                            title="Deletar Deck"
-                          >
-                            🗑️
-                          </button>
+                                    alert(`✅ Deck "${deck.name}" equipado!`);
+                                  } catch (error: any) {
+                                    console.error('❌ Erro ao equipar deck:', error);
+                                    alert(
+                                      `❌ Erro ao equipar deck: ${
+                                        error.response?.data?.message ||
+                                        error.message ||
+                                        'Erro desconhecido'
+                                      }`,
+                                    );
+                                  }
+                                }}
+                              >
+                                Equipar
+                              </button>
+                              <button
+                                className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-3 rounded-lg transition-colors text-sm"
+                                onClick={async () => {
+                                  if (!confirm(`Tem certeza que deseja deletar o deck "${deck.name}"?`)) {
+                                    return;
+                                  }
+                                  try {
+                                    await api.delete(`/decks/${deck.id}`);
+                                    setDecks((prev) => prev.filter((d) => d.id !== deck.id));
+                                    alert('✅ Deck deletado com sucesso.');
+                                  } catch (error: any) {
+                                    console.error('❌ Erro ao deletar deck:', error);
+                                    alert(
+                                      `❌ Erro ao deletar deck: ${
+                                        error.response?.data?.message || error.message || 'Erro desconhecido'
+                                      }`,
+                                    );
+                                  }
+                                }}
+                                title="Deletar deck"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </motion.div>
                     );

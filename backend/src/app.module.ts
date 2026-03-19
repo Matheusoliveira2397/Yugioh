@@ -22,7 +22,9 @@ import { NewsModule } from './modules/news/news.module';
 import { ArenaModule } from './modules/arena/arena.module';
 import { CosmeticsModule } from './modules/cosmetics/cosmetics.module';
 import { InitialDecksModule } from './modules/initial-decks/initial-decks.module';
+import { AnimeDecksModule } from './modules/anime-decks/anime-decks.module';
 import { LevelsModule } from './modules/levels/levels.module';
+import { FeedbackModule } from './modules/feedback/feedback.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ActivityInterceptor } from './common/interceptors/activity.interceptor';
 
@@ -97,7 +99,9 @@ import { ActivityInterceptor } from './common/interceptors/activity.interceptor'
     ArenaModule,
     CosmeticsModule,
     InitialDecksModule,
+    AnimeDecksModule,
     LevelsModule,
+    FeedbackModule,
   ],
   providers: [
     {

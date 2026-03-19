@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, OnModuleInit, Logger, Optional, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Group } from './entities/group.entity';
@@ -6,8 +6,12 @@ import { GroupMember, GroupRole } from './entities/group-member.entity';
 import { GroupRequest, GroupRequestStatus } from './entities/group-request.entity';
 import { User } from '../users/entities/user.entity';
 import { Achievement } from '../users/entities/achievement.entity';
+import { UserSystemNotification } from '../users/entities/user-system-notification.entity';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import * as bcrypt from 'bcryptjs';
+import { SeasonsService } from '../seasons/seasons.service';
+import { DuelsGateway } from '../duels/duels.gateway';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class GroupsService implements OnModuleInit {
@@ -24,6 +28,12 @@ export class GroupsService implements OnModuleInit {
     private userRepository: Repository<User>,
     @InjectRepository(Achievement)
     private achievementRepository: Repository<Achievement>,
+    @InjectRepository(UserSystemNotification)
+    private systemNotificationRepository: Repository<UserSystemNotification>,
+    private seasonsService: SeasonsService,
+    @Optional()
+    @Inject(forwardRef(() => DuelsGateway))
+    private duelsGateway: DuelsGateway | null,
   ) {}
 
   async onModuleInit() {
@@ -604,25 +614,26 @@ export class GroupsService implements OnModuleInit {
     this.logger.log(`✅ [updateMemberScore] Membro encontrado - userId: ${userId}, groupId: ${member.groupId}, isActive: ${member.isActive}`);
     this.logger.log(`📊 [updateMemberScore] Scores atuais - totalScore: ${member.totalScore}, weeklyScore: ${member.weeklyScore}, seasonScore: ${member.seasonScore}`);
 
+    // Só contar score da season no ranking do grupo quando houver season ativa
+    const activeSeason = await this.seasonsService.getActiveSeasonOrNull();
+    const hasActiveSeason = !!activeSeason;
+    if (hasActiveSeason) {
+      this.logger.log(`📊 [updateMemberScore] Season ativa: ${activeSeason.name} - score será contado no seasonScore do membro e do grupo`);
+    } else {
+      this.logger.log(`📊 [updateMemberScore] Nenhuma season ativa - score só será adicionado a totalScore e weeklyScore (não ao seasonScore)`);
+    }
+
     // Atualizar scores semanais, de season e total
     // REGRA: Quando o duelista ganha score, o clã recebe EXATAMENTE o mesmo score
-    // 1. O scoreToAdd é adicionado ao member.totalScore usando query direta (garante precisão)
-    // 2. O recalculateGroupStats (chamado no final) soma todos os member.totalScore
-    // 3. O group.totalScore é atualizado com a soma de todos os member.totalScore
-    // Resultado: O clã recebe exatamente o mesmo score que o duelista ganhou
-    
+    // seasonScore (membro e grupo) só é incrementado quando há season ativa
     const oldTotalScore = member.totalScore ? parseFloat(String(member.totalScore)) : 0;
     const oldWeeklyScore = member.weeklyScore ? parseFloat(String(member.weeklyScore)) : 0;
     const oldSeasonScore = member.seasonScore ? parseFloat(String(member.seasonScore)) : 0;
     
-    // Atualizar weeklyScore, seasonScore e totalScore usando queries SQL diretas para garantir precisão com NUMERIC
-    // Isso garante que o score seja adicionado corretamente mesmo com decimais
     try {
-      this.logger.log(`🔄 [updateMemberScore] Executando UPDATE SQL - memberId: ${member.id}, scoreToAdd: ${scoreToAdd}`);
+      this.logger.log(`🔄 [updateMemberScore] Executando UPDATE SQL - memberId: ${member.id}, scoreToAdd: ${scoreToAdd}, hasActiveSeason: ${hasActiveSeason}`);
       this.logger.log(`🔄 [updateMemberScore] Scores atuais do membro - totalScore: ${oldTotalScore}, weeklyScore: ${oldWeeklyScore}, seasonScore: ${oldSeasonScore}`);
-      this.logger.log(`🔄 [updateMemberScore] Score a adicionar: ${scoreToAdd} (tipo: ${typeof scoreToAdd})`);
       
-      // Primeiro, verificar os scores atuais no banco
       const beforeCheck = await this.memberRepository.query(
         `SELECT "totalScore", "weeklyScore", "seasonScore" FROM group_members WHERE id = $1`,
         [member.id]
@@ -634,16 +645,24 @@ export class GroupsService implements OnModuleInit {
         this.logger.log(`🔄 [updateMemberScore] Scores ANTES do UPDATE (do banco): total=${beforeTotal}, weekly=${beforeWeekly}, season=${beforeSeason}`);
       }
       
-      // Executar UPDATE para todos os scores de uma vez
-      const updateResult = await this.memberRepository.query(
-        `UPDATE group_members SET 
-          "totalScore" = COALESCE("totalScore", 0)::numeric + $1::numeric,
-          "weeklyScore" = COALESCE("weeklyScore", 0)::numeric + $1::numeric,
-          "seasonScore" = COALESCE("seasonScore", 0)::numeric + $1::numeric
-        WHERE id = $2 
-        RETURNING "totalScore", "weeklyScore", "seasonScore"`,
-        [scoreToAdd, member.id]
-      );
+      const updateResult = hasActiveSeason
+        ? await this.memberRepository.query(
+            `UPDATE group_members SET 
+              "totalScore" = COALESCE("totalScore", 0)::numeric + $1::numeric,
+              "weeklyScore" = COALESCE("weeklyScore", 0)::numeric + $1::numeric,
+              "seasonScore" = COALESCE("seasonScore", 0)::numeric + $1::numeric
+            WHERE id = $2 
+            RETURNING "totalScore", "weeklyScore", "seasonScore"`,
+            [scoreToAdd, member.id]
+          )
+        : await this.memberRepository.query(
+            `UPDATE group_members SET 
+              "totalScore" = COALESCE("totalScore", 0)::numeric + $1::numeric,
+              "weeklyScore" = COALESCE("weeklyScore", 0)::numeric + $1::numeric
+            WHERE id = $2 
+            RETURNING "totalScore", "weeklyScore", "seasonScore"`,
+            [scoreToAdd, member.id]
+          );
       
       this.logger.log(`🔄 [updateMemberScore] Resultado do UPDATE:`, JSON.stringify(updateResult));
       
@@ -654,7 +673,7 @@ export class GroupsService implements OnModuleInit {
         this.logger.log(`✅ [updateMemberScore] Scores atualizados via SQL:`);
         this.logger.log(`   - totalScore: ${oldTotalScore} -> ${newTotalScore} (+${scoreToAdd})`);
         this.logger.log(`   - weeklyScore: ${oldWeeklyScore} -> ${newWeeklyScore} (+${scoreToAdd})`);
-        this.logger.log(`   - seasonScore: ${oldSeasonScore} -> ${newSeasonScore} (+${scoreToAdd})`);
+        this.logger.log(hasActiveSeason ? `   - seasonScore: ${oldSeasonScore} -> ${newSeasonScore} (+${scoreToAdd})` : `   - seasonScore: ${oldSeasonScore} (sem season ativa, não alterado)`);
         
         // Aguardar um pouco para garantir que a transação foi commitada
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -724,21 +743,31 @@ export class GroupsService implements OnModuleInit {
         this.logger.log(`📊 [updateMemberScore] Score do grupo ANTES: totalScore=${groupTotalScoreBefore.toFixed(2)}, seasonScore=${groupSeasonScoreBefore.toFixed(2)}`);
       }
       
-      // Atualizar score do grupo diretamente - somar o score ganho
-      const updateGroupResult = await this.groupRepository.query(
-        `UPDATE groups SET 
-          "totalScore" = COALESCE("totalScore", 0)::numeric + $1::numeric,
-          "seasonScore" = COALESCE("seasonScore", 0)::numeric + $1::numeric
-        WHERE id = $2
-        RETURNING "totalScore", "seasonScore"`,
-        [scoreToAdd, member.groupId]
-      );
+      // Atualizar score do grupo: totalScore sempre; seasonScore só quando há season ativa
+      const updateGroupResult = hasActiveSeason
+        ? await this.groupRepository.query(
+            `UPDATE groups SET 
+              "totalScore" = COALESCE("totalScore", 0)::numeric + $1::numeric,
+              "seasonScore" = COALESCE("seasonScore", 0)::numeric + $1::numeric
+            WHERE id = $2
+            RETURNING "totalScore", "seasonScore"`,
+            [scoreToAdd, member.groupId]
+          )
+        : await this.groupRepository.query(
+            `UPDATE groups SET 
+              "totalScore" = COALESCE("totalScore", 0)::numeric + $1::numeric
+            WHERE id = $2
+            RETURNING "totalScore", "seasonScore"`,
+            [scoreToAdd, member.groupId]
+          );
       
       if (updateGroupResult && updateGroupResult.length > 0) {
         const newGroupTotalScore = parseFloat(updateGroupResult[0].totalScore || 0);
         const newGroupSeasonScore = parseFloat(updateGroupResult[0].seasonScore || 0);
         this.logger.log(`✅ [updateMemberScore] Score do grupo atualizado: totalScore=${groupTotalScoreBefore.toFixed(2)} -> ${newGroupTotalScore.toFixed(2)} (+${scoreToAdd})`);
-        this.logger.log(`✅ [updateMemberScore] Season score do grupo atualizado: ${groupSeasonScoreBefore.toFixed(2)} -> ${newGroupSeasonScore.toFixed(2)} (+${scoreToAdd})`);
+        if (hasActiveSeason) {
+          this.logger.log(`✅ [updateMemberScore] Season score do grupo atualizado: ${groupSeasonScoreBefore.toFixed(2)} -> ${newGroupSeasonScore.toFixed(2)} (+${scoreToAdd})`);
+        }
       } else {
         this.logger.error(`❌ [updateMemberScore] Falha ao atualizar score do grupo - nenhum resultado retornado`);
       }
@@ -1422,11 +1451,47 @@ export class GroupsService implements OnModuleInit {
               await this.userRepository.save(user);
               distributedCount++;
               this.logger.debug(`  ✅ Membro ${user.nickname || user.username} recebeu ${cashPerMember} cash (total agora: ${user.cash})`);
+              const notificationContent = `O cash semanal do clã [${fullGroup.tag}] foi dividido. Você recebeu ${cashPerMember} de cash. O score semanal do clã foi zerado e a contagem recomeça agora.`;
+              const notificationId = uuidv4();
+              const createdAt = new Date().toISOString();
+              // Persistir notificação para o jogador ver quando abrir o app (mesmo offline no momento da divisão)
+              try {
+                await this.systemNotificationRepository.save({
+                  id: notificationId,
+                  userId: Number(member.userId),
+                  type: 'CLAN_CASH_DIVISION',
+                  content: notificationContent,
+                } as UserSystemNotification);
+              } catch (persistErr: any) {
+                this.logger.warn(`⚠️ [checkAndExecuteCashDivision] Falha ao salvar notificação para usuário ${member.userId}: ${persistErr?.message}`);
+              }
+              // Notificar em tempo real se estiver conectado
+              if (this.duelsGateway) {
+                try {
+                  this.duelsGateway.emitSystemMessageToUser(Number(member.userId), {
+                    id: notificationId,
+                    type: 'CLAN_CASH_DIVISION',
+                    content: notificationContent,
+                    createdAt,
+                  });
+                } catch (notifErr: any) {
+                  this.logger.warn(`⚠️ [checkAndExecuteCashDivision] Falha ao notificar em tempo real usuário ${member.userId}: ${notifErr?.message}`);
+                }
+              } else {
+                this.logger.debug(`⚠️ [checkAndExecuteCashDivision] DuelsGateway não disponível; notificação persistida para usuário ${member.userId}.`);
+              }
             }
           } catch (error: any) {
             this.logger.error(`❌ [checkAndExecuteCashDivision] Erro ao distribuir cash para membro ${member.userId}: ${error.message}`);
           }
         }
+
+        // Zerar o score semanal de todos os membros ativos do clã (a contagem recomeça a partir deste momento)
+        await this.memberRepository.query(
+          `UPDATE group_members SET "weeklyScore" = 0, "weeklyScoreResetAt" = NOW() WHERE "groupId" = $1 AND "isActive" = true`,
+          [fullGroup.id]
+        );
+        this.logger.log(`📊 [checkAndExecuteCashDivision] Grupo ${fullGroup.name}: score semanal dos membros zerado.`);
 
         // Atualizar cash do grupo (subtrair o que foi distribuído)
         fullGroup.totalCash = remainingCash;

@@ -40,6 +40,7 @@ import { UsersModule } from '../users/users.module';
 import { SeasonsModule } from '../seasons/seasons.module';
 import { LevelsModule } from '../levels/levels.module';
 import { AdminModule } from '../admin/admin.module';
+import { AnimeDecksModule } from '../anime-decks/anime-decks.module';
 import { EconomyModule } from '../economy/economy.module';
 import { ShopModule } from '../shop/shop.module';
 
@@ -48,6 +49,7 @@ import { ShopModule } from '../shop/shop.module';
     TypeOrmModule.forFeature([Duel, DuelLog, DuelHistory, User]),
     ShopModule,
     DecksModule,
+    AnimeDecksModule,
     forwardRef(() => ArenaModule),
     forwardRef(() => GroupsModule),
     forwardRef(() => CardsModule),

@@ -58,6 +58,13 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     private arenaMatchmakingProcessorService: ArenaMatchmakingProcessorService,
   ) {}
 
+  /** Obelisk the Tormentor não pode ser alvo de efeitos de carta (em campo). */
+  private isObeliskTheTormentor(monster: any): boolean {
+    if (!monster) return false;
+    const name = (monster.name || monster.cardName || '').toString().toLowerCase();
+    return /obelisk\s*the\s*tormentor/.test(name);
+  }
+
   /** Emite notificação do sistema para um usuário (ex.: premiação da arena). O frontend escuta 'systemMessage'. */
   emitSystemMessageToUser(userId: number, data: { id: string; type: string; content: string; createdAt: string }) {
     this.server.to(`user_${userId}`).emit('systemMessage', data);
@@ -348,11 +355,10 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
   @SubscribeMessage('searchDuel')
   async handleSearchDuel(
-    @MessageBody() data: { userId: number },
+    @MessageBody() data: { userId?: number; animeDeckId?: string },
     @ConnectedSocket() client: Socket,
   ) {
     try {
-      // Segurança: usar APENAS o userId do JWT (client.data.userId). Nunca confiar em data.userId do cliente.
       const userId = client.data.userId;
       if (!userId) {
         console.error(`❌ [handleSearchDuel] ID de usuário inválido`);
@@ -360,17 +366,20 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         return;
       }
 
-      // Verificar se o jogador tem deck equipado antes de procurar duelo
-      const hasDeck = await this.duelsService.hasEquippedDeck(userId);
-      if (!hasDeck) {
-        console.error(`❌ [handleSearchDuel] Usuário ${userId} não tem deck equipado`);
-        client.emit('duelError', { 
-          message: 'Você não tem deck equipado. Por favor, equipe um deck antes de procurar duelo.' 
-        });
-        return;
+      const animeDeckId = data.animeDeckId && String(data.animeDeckId).trim() ? String(data.animeDeckId).trim() : undefined;
+
+      // Modo Anime Deck: não exige deck equipado; modo normal exige
+      if (!animeDeckId) {
+        const hasDeck = await this.duelsService.hasEquippedDeck(userId);
+        if (!hasDeck) {
+          console.error(`❌ [handleSearchDuel] Usuário ${userId} não tem deck equipado`);
+          client.emit('duelError', { 
+            message: 'Você não tem deck equipado. Por favor, equipe um deck antes de procurar duelo.' 
+          });
+          return;
+        }
       }
       
-      // Verificar se o jogador já tem um duelo ativo
       const activeDuel = await this.duelsService.getActiveDuelForUser(userId);
       if (activeDuel) {
         console.error(`❌ [handleSearchDuel] Usuário ${userId} já tem duelo ativo (ID: ${activeDuel.id})`);
@@ -381,17 +390,15 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         return;
       }
 
-      // Verificar se o jogador está na fila da arena e remover se estiver
-      // (garantir que não está em ambas as filas)
       if (this.arenaMatchmakingService.isInArenaQueue(userId)) {
-        console.log(`🔄 [handleSearchDuel] Removendo usuário ${userId} da fila da arena antes de adicionar à fila normal`);
+        console.log(`🔄 [handleSearchDuel] Removendo usuário ${userId} da fila da arena antes de adicionar à fila`);
         this.arenaMatchmakingService.removeFromArenaQueue(userId);
       }
       
-      console.log(`🔍 [handleSearchDuel] Usuário ${userId} procurando duelo (Socket: ${client.id})`);
-      this.matchmakingService.addToQueue(userId, client.id);
+      console.log(`🔍 [handleSearchDuel] Usuário ${userId} procurando duelo ${animeDeckId ? '(Anime Deck)' : ''} (Socket: ${client.id})`);
+      this.matchmakingService.addToQueue(userId, client.id, animeDeckId);
       client.join(`user_${userId}`);
-      client.emit('searchingDuel', { message: 'Procurando oponente...' });
+      client.emit('searchingDuel', { message: animeDeckId ? 'Procurando oponente (Anime Deck)...' : 'Procurando oponente...' });
     } catch (error) {
       console.error(`❌ [handleSearchDuel] Erro:`, error);
       const errorMessage = error instanceof Error ? error.message : 'Erro ao processar busca';
@@ -2112,6 +2119,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
                                       actionType === 'FORCEFUL_SENTRY_CHOICE' ||
                                       actionType === 'UNITED_WE_STAND_CHOICE' ||
                                       actionType === 'MAGE_POWER_CHOICE' ||
+                                      actionType === 'OBELISK_EFFECT' ||
                                       actionType === 'MYSTICAL_SPACE_TYPHOON_CHOICE' ||
                                       actionType === 'SOUL_TAKER_CHOICE' ||
                                       actionType === 'LIGHTNING_STORM_CHOICE' ||
@@ -4442,13 +4450,12 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
               const playerField = isPlayer1Check ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
               const opponentField = isPlayer1Check ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
               
-              // Coletar apenas monstros FACE-UP do campo do oponente (attack ou defense, não set)
+              // Coletar apenas monstros FACE-UP do campo do oponente (attack ou defense, não set); Obelisk não pode ser alvo
               const opponentMonstersWithIndices: Array<{ monster: any; zoneIndex: number }> = [];
               (opponentField?.monsters || []).forEach((m: any, index: number) => {
                 if (m && m !== null && m !== undefined) {
                   const position = m.position || 'attack';
-                  // Só pode destruir monstros face-up (attack ou defense, não set)
-                  if (position === 'attack' || position === 'defense') {
+                  if ((position === 'attack' || position === 'defense') && !this.isObeliskTheTormentor(m)) {
                     opponentMonstersWithIndices.push({ monster: m, zoneIndex: index });
                   }
                 }
@@ -4588,19 +4595,16 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
               const playerField = isPlayer1Check ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
               const opponentField = isPlayer1Check ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
               
-              // Coletar monstros do campo do oponente (qualquer posição, exceto Mataza The Zapper face-up)
+              // Coletar monstros do campo do oponente (qualquer posição, exceto Mataza face-up e Obelisk)
               const opponentMonstersWithIndices: Array<{ monster: any; zoneIndex: number }> = [];
               (opponentField?.monsters || []).forEach((m: any, index: number) => {
-                if (m && m !== null && m !== undefined) {
-                  // Pode controlar monstros em qualquer posição (attack, defense ou set)
-                  // EXCETO Mataza The Zapper quando está face-up
+                if (m && m !== null && m !== undefined && !this.isObeliskTheTormentor(m)) {
                   const cardIdMonster = m.idCarta || m.id || m.cardId;
                   const cardNameMonster = (m.name || m.cardName || '').toLowerCase();
                   const isMatazaFaceUp = (cardIdMonster === 'MatazaTheZapper' || 
                                           cardIdMonster === 'matazathezapper' ||
                                           cardNameMonster.includes('mataza the zapper')) &&
                                          (m.position === 'attack' || m.position === 'defense');
-                  
                   if (!isMatazaFaceUp) {
                     opponentMonstersWithIndices.push({ monster: m, zoneIndex: index });
                   }
@@ -4684,13 +4688,11 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
               const playerField = isPlayer1Check ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
               const opponentField = isPlayer1Check ? (updatedDuel as any).player2Field : (updatedDuel as any).player1Field;
               
-              // Coletar apenas monstros FACE-UP do campo do oponente (attack ou defense, não set)
-              // EXCETO Mataza The Zapper face-up (não pode ser controlada)
+              // Coletar apenas monstros FACE-UP do campo do oponente (attack ou defense, não set); excluir Mataza e Obelisk
               const opponentMonstersWithIndices: Array<{ monster: any; zoneIndex: number }> = [];
               (opponentField?.monsters || []).forEach((m: any, index: number) => {
-                if (m && m !== null && m !== undefined) {
+                if (m && m !== null && m !== undefined && !this.isObeliskTheTormentor(m)) {
                   const position = m.position || 'attack';
-                  // Só pode controlar monstros face-up (attack ou defense, não set)
                   if (position === 'attack' || position === 'defense') {
                     const cardIdMonster = m.idCarta || m.id || m.cardId;
                     const cardNameMonster = (m.name || m.cardName || '').toLowerCase();
@@ -5788,8 +5790,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
                 (playerField?.monsters || []).forEach((m: any, index: number) => {
                   if (m && m !== null && m !== undefined) {
                     const position = m.position || 'attack';
-                    // Só pode equipar monstros face-up (attack ou defense, não set)
-                    if (position === 'attack' || position === 'defense') {
+                    // Só pode equipar monstros face-up (attack ou defense, não set); Obelisk não pode ser alvo
+                    if ((position === 'attack' || position === 'defense') && !this.isObeliskTheTormentor(m)) {
                       availableMonstersWithIndices.push({ monster: m, zoneIndex: index });
                     }
                   }
@@ -5854,8 +5856,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
                 (playerField?.monsters || []).forEach((m: any, index: number) => {
                   if (m && m !== null && m !== undefined) {
                     const position = m.position || 'attack';
-                    // Só pode equipar monstros face-up (attack ou defense, não set)
-                    if (position === 'attack' || position === 'defense') {
+                    // Só pode equipar monstros face-up (attack ou defense, não set); Obelisk não pode ser alvo
+                    if ((position === 'attack' || position === 'defense') && !this.isObeliskTheTormentor(m)) {
                       availableMonstersWithIndices.push({ monster: m, zoneIndex: index });
                     }
                   }
@@ -7149,6 +7151,49 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         };
 
         console.log(`✅ [MAGE_POWER_CHOICE] Emitindo duelUpdate - id: ${duelData.id}, player1Field: ${!!duelData.player1Field}, player2Field: ${!!duelData.player2Field}, pendingChoice: ${duelData.pendingChoice}`);
+        this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
+      } else if (actionType === 'OBELISK_EFFECT') {
+        const sacrificeZoneIndices = actionData?.sacrificeZoneIndices;
+        if (!Array.isArray(sacrificeZoneIndices) || sacrificeZoneIndices.length !== 2) {
+          client.emit('duelError', { message: 'Escolha 2 monstros do seu campo' });
+          return;
+        }
+        const z1 = typeof sacrificeZoneIndices[0] === 'number' ? sacrificeZoneIndices[0] : parseInt(String(sacrificeZoneIndices[0]), 10);
+        const z2 = typeof sacrificeZoneIndices[1] === 'number' ? sacrificeZoneIndices[1] : parseInt(String(sacrificeZoneIndices[1]), 10);
+        const result = await this.duelsService.processObeliskEffect(duelId, userId, [z1, z2]);
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro ao usar efeito do Obelisk' });
+          return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const updatedDuelAfterObelisk = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+        if (!updatedDuelAfterObelisk) {
+          client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
+          return;
+        }
+        const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuelAfterObelisk);
+        const duelData = {
+          id: updatedDuelAfterObelisk.id,
+          player1Id: updatedDuelAfterObelisk.player1Id,
+          player2Id: updatedDuelAfterObelisk.player2Id,
+          player1: (updatedDuelAfterObelisk as any).player1 || null,
+          player2: (updatedDuelAfterObelisk as any).player2 || null,
+          player1LifePoints: updatedDuelAfterObelisk.player1LifePoints,
+          player2LifePoints: updatedDuelAfterObelisk.player2LifePoints,
+          currentTurn: updatedDuelAfterObelisk.currentTurn,
+          currentPhase: updatedDuelAfterObelisk.currentPhase,
+          status: updatedDuelAfterObelisk.status,
+          turnCounter: updatedDuelAfterObelisk.turnCounter || 1,
+          duelTime: (updatedDuelAfterObelisk as any).duelTime || 0,
+          turnTime: (updatedDuelAfterObelisk as any).turnTime || 90,
+          turnTimeRemaining,
+          turnStartedAt: (updatedDuelAfterObelisk as any).turnStartedAt,
+          player1Field: (updatedDuelAfterObelisk as any).player1Field,
+          player2Field: (updatedDuelAfterObelisk as any).player2Field,
+          pendingChoice: null,
+          createdAt: updatedDuelAfterObelisk.createdAt,
+          updatedAt: updatedDuelAfterObelisk.updatedAt,
+        };
         this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
       } else if (actionType === 'MYSTICAL_SPACE_TYPHOON_CHOICE') {
         // Processar escolha do alvo para Mystical Space Typhoon

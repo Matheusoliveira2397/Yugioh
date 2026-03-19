@@ -4,6 +4,7 @@ import { useSocketStore } from '../stores/socketStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { formatScore } from '../utils/formatScore';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -124,7 +125,7 @@ export default function HomePage() {
               </div>
               <div>
                 <span className="text-gray-400">Score:</span>{' '}
-                <span className="text-yellow-400 font-bold">{user?.totalScore?.toFixed(1) || 0}</span>
+                <span className="text-yellow-400 font-bold">{formatScore(user?.totalScore)}</span>
               </div>
               <div>
                 <span className="text-gray-400">Créditos:</span>{' '}

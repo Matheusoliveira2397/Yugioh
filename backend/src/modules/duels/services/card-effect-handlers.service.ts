@@ -462,7 +462,9 @@ export class CardEffectHandlersService {
         return { success: true };
       }
     }
-    
+    // Slifer the Sky Dragon: oponente do controlador invocou em ataque → -2000 ATK; se ATK ≤ 0, destruir
+    await this.duelsService.applySliferEffectOnOpponentSummon(duelId, duel, isPlayer1, emptyZoneIndex);
+
     // Salvar e recalcular United We Stand (monstro face-up entrou no campo)
     await this.duelsService.updateDuelInDatabase(duelId, {
       player1Field: (duel as any).player1Field,
@@ -563,6 +565,7 @@ export class CardEffectHandlersService {
     playerField.monsters[emptyZoneIndex] = revivedMonster;
     spellTrap[spellTrapZoneIndex].equippedToMonsterZoneIndex = emptyZoneIndex;
     logger.info(`✅ [CardEffectHandlersService] Premature Burial: monstro ${monsterToRevive.name || monsterToRevive.cardName} revivido e equipado na zona ${emptyZoneIndex}`);
+    await this.duelsService.applySliferEffectOnOpponentSummon(duelId, duel, isPlayer1, emptyZoneIndex);
     const p1Field = JSON.parse(JSON.stringify((duel as any).player1Field));
     const p2Field = JSON.parse(JSON.stringify((duel as any).player2Field));
     await this.duelsService.updateDuelInDatabase(duelId, {
@@ -665,6 +668,9 @@ export class CardEffectHandlersService {
     
     logger.info(`✅ [CardEffectHandlersService] Last Will: Monstro "${cardToSummon.name || cardToSummon.cardName}" invocado por invocação especial do deck do jogador ${isPlayer1 ? 1 : 2} na zona ${targetZoneIndex}`);
     
+    // Slifer the Sky Dragon: oponente do controlador invocou em ataque → -2000 ATK; se ATK ≤ 0, destruir
+    await this.duelsService.applySliferEffectOnOpponentSummon(duelId, duel, isPlayer1, targetZoneIndex);
+
     // Embaralhar o deck após remover a carta
     playerField.deck = this.shuffleDeck(playerField.deck);
     logger.info(`✅ [CardEffectHandlersService] Last Will: Deck embaralhado após remover a carta`);

@@ -10,12 +10,41 @@ export class DuelsDbMigrationService implements OnModuleInit {
   async onModuleInit() {
     // Aguardar um pouco para garantir que a conexão está estabelecida
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
+
+    try {
+      await this.ensureDuelOriginRANDOM_ANIME();
+    } catch (error) {
+      this.logger.warn('Migração duelorigin RANDOM_ANIME:', (error as Error)?.message ?? error);
+    }
+
     try {
       await this.ensureTurnCounterColumn();
     } catch (error) {
       this.logger.error('Erro ao executar migração de turn_counter:', error);
       // Não lançar erro para não impedir o módulo de iniciar
+    }
+  }
+
+  /** Add RANDOM_ANIME to duelorigin enum so Anime Deck matchmaking works. Safe to run every startup. */
+  private async ensureDuelOriginRANDOM_ANIME() {
+    try {
+      const hasValue = await this.dataSource.query(
+        `SELECT 1 FROM pg_enum e
+         JOIN pg_type t ON e.enumtypid = t.oid
+         WHERE t.typname = 'duelorigin' AND e.enumlabel = 'RANDOM_ANIME'`,
+      );
+      if (Array.isArray(hasValue) && hasValue.length > 0) {
+        return;
+      }
+      // ALTER TYPE ADD VALUE cannot run inside a transaction block in PostgreSQL
+      await this.dataSource.query(`ALTER TYPE duelorigin ADD VALUE 'RANDOM_ANIME'`);
+      this.logger.log('✅ Enum duelorigin: valor RANDOM_ANIME adicionado.');
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes('already exists') || (error as { code?: string })?.code === '42701') {
+        return;
+      }
+      throw error;
     }
   }
 

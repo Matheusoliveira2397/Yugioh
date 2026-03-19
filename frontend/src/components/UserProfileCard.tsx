@@ -6,6 +6,7 @@ import NotificationBell from './NotificationBell';
 import MessageIcon from './MessageIcon';
 import { getImageUrl } from '../utils/imageUrl';
 import { getDivisionDisplayName, getDivisionImagePath } from '../utils/divisionDisplay';
+import { formatScore } from '../utils/formatScore';
 
 interface UserProfileCardProps {
   onLinkClick?: () => void; // Para fechar o menu mobile quando um link é clicado
@@ -98,6 +99,12 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({ onLinkClick })
         </div>
         <div className="flex justify-between items-center py-1.5 border-b border-purple-500/20">
           <span className="text-sm text-purple-200 flex items-center gap-2">
+            <span className="text-base">🌟</span> <span className="font-medium">Estrelas</span>
+          </span>
+          <span className="text-base font-bold text-amber-300/90">{(user as any)?.stars ?? 0}</span>
+        </div>
+        <div className="flex justify-between items-center py-1.5 border-b border-purple-500/20">
+          <span className="text-sm text-purple-200 flex items-center gap-2">
             <span className="text-base">🏅</span> <span className="font-medium">Divisão</span>
           </span>
           <div className="flex items-center gap-2">
@@ -127,14 +134,14 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({ onLinkClick })
           <span className="text-sm text-purple-200 flex items-center gap-2">
             <span className="text-base">📊</span> <span className="font-medium">Score Season</span>
           </span>
-          <span className="text-base font-bold text-purple-400">{user?.seasonScore?.toLocaleString() || 0}</span>
+          <span className="text-base font-bold text-purple-400">{formatScore(user?.seasonScore)}</span>
         </div>
         <div className="flex justify-between items-center py-1.5 border-b border-purple-500/20">
           <span className="text-sm text-purple-200 flex items-center gap-2">
             <span className="text-base">🏆</span> <span className="font-medium">Score Geral</span>
           </span>
           <span className="text-base font-bold text-blue-400">
-            {user?.totalScore != null ? Number(user.totalScore).toFixed(1) : '0.0'}
+            {formatScore(user?.totalScore)}
           </span>
         </div>
         <div className="flex justify-between items-center py-1.5 border-b border-purple-500/20">

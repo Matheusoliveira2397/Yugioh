@@ -13,9 +13,11 @@ import { SeasonsService } from '../seasons/seasons.service';
 import { GroupsService } from '../groups/groups.service';
 import { UsersService } from '../users/users.service';
 import { RandomDuelLevelRangesService } from '../admin/random-duel-level-ranges.service';
+import { AdminService } from '../admin/admin.service';
 import { EconomyService } from '../economy/economy.service';
 import { CurrencyType, TransactionType } from '../economy/entities/transaction.entity';
 import { ShopService } from '../shop/shop.service';
+import { AnimeDecksService } from '../anime-decks/anime-decks.service';
 import { logger } from '../../common/utils/logger.util';
 import { CardEffectsService } from './services/card-effects.service';
 import { DuelUtilsService } from './services/duel-utils.service';
@@ -57,6 +59,9 @@ export class DuelsService implements OnModuleInit {
     @Inject(forwardRef(() => CardEffectHandlersService))
     private cardEffectHandlersService: CardEffectHandlersService,
     private shopService: ShopService,
+    @Inject(forwardRef(() => AdminService))
+    private adminService: AdminService,
+    private animeDecksService: AnimeDecksService,
   ) {}
 
   /**
@@ -320,15 +325,16 @@ export class DuelsService implements OnModuleInit {
     try {
       const user = await this.usersRepository.findOne({
         where: { id: userId },
-        select: ['id', 'equippedDeckName'],
+        select: ['id', 'equippedDeckId', 'equippedDeckName'],
       });
 
       if (!user) {
         return false;
       }
 
+      const equippedDeckId = (user as any).equippedDeckId;
       const equippedDeckName = (user as any).equippedDeckName;
-      return !!(equippedDeckName && equippedDeckName.trim() !== '');
+      return !!((equippedDeckId && String(equippedDeckId).trim() !== '') || (equippedDeckName && equippedDeckName.trim() !== ''));
     } catch (error) {
       logger.error(`❌ [hasEquippedDeck] Erro ao verificar deck equipado para usuário ${userId}:`, error);
       return false;
@@ -430,6 +436,7 @@ export class DuelsService implements OnModuleInit {
             'player1.equippedPlaymatImage',
             'player1.equippedSkinId',
             'player1.equippedSkinImage',
+            'player1.equippedDeckId',
             'player1.equippedDeckName',
           ])
           .leftJoinAndSelect('duel.player2', 'player2', undefined, [
@@ -439,6 +446,7 @@ export class DuelsService implements OnModuleInit {
             'player2.equippedPlaymatImage',
             'player2.equippedSkinId',
             'player2.equippedSkinImage',
+            'player2.equippedDeckId',
             'player2.equippedDeckName',
           ])
           .where('duel.id = :id', { id: duelIdStr })
@@ -457,6 +465,7 @@ export class DuelsService implements OnModuleInit {
                 'equippedPlaymatImage', p1."equippedPlaymatImage",
                 'equippedSkinId', p1."equippedSkinId",
                 'equippedSkinImage', p1."equippedSkinImage",
+                'equippedDeckId', p1."equipped_deck_id",
                 'equippedDeckName', p1."equippedDeckName"
               ) as player1,
               jsonb_build_object(
@@ -466,6 +475,7 @@ export class DuelsService implements OnModuleInit {
                 'equippedPlaymatImage', p2."equippedPlaymatImage",
                 'equippedSkinId', p2."equippedSkinId",
                 'equippedSkinImage', p2."equippedSkinImage",
+                'equippedDeckId', p2."equipped_deck_id",
                 'equippedDeckName', p2."equippedDeckName"
               ) as player2
             FROM duels d
@@ -604,11 +614,11 @@ export class DuelsService implements OnModuleInit {
             const [u1, u2] = await Promise.all([
               this.usersRepository.findOne({
                 where: { id: Number(duel.player1Id) },
-                select: ['id', 'nickname', 'clanTag', 'profileImage', 'equippedPlaymatId', 'equippedPlaymatImage', 'equippedSkinId', 'equippedSkinImage', 'equippedDeckName'],
+                select: ['id', 'nickname', 'clanTag', 'profileImage', 'equippedPlaymatId', 'equippedPlaymatImage', 'equippedSkinId', 'equippedSkinImage', 'equippedDeckId', 'equippedDeckName'],
               }),
               this.usersRepository.findOne({
                 where: { id: Number(duel.player2Id) },
-                select: ['id', 'nickname', 'clanTag', 'profileImage', 'equippedPlaymatId', 'equippedPlaymatImage', 'equippedSkinId', 'equippedSkinImage', 'equippedDeckName'],
+                select: ['id', 'nickname', 'clanTag', 'profileImage', 'equippedPlaymatId', 'equippedPlaymatImage', 'equippedSkinId', 'equippedSkinImage', 'equippedDeckId', 'equippedDeckName'],
               }),
             ]);
             if (u1) {
@@ -1012,6 +1022,10 @@ export class DuelsService implements OnModuleInit {
           if (monster.spellCounterBonusAtk !== undefined && monster.spellCounterBonusAtk !== null) {
             compacted.spellCounterBonusAtk = monster.spellCounterBonusAtk;
           }
+          // Slifer the Sky Dragon: monstro invocado em ataque pelo oponente perde 2000 ATK
+          if (monster.sliferAtkDebuff !== undefined && monster.sliferAtkDebuff !== null) {
+            compacted.sliferAtkDebuff = monster.sliferAtkDebuff;
+          }
         }
         if (index < 2) {
           logger.info(`🧹 [deepCleanField] Monstro ${index}:`, {
@@ -1072,6 +1086,9 @@ export class DuelsService implements OnModuleInit {
     if (field.turnCounter !== undefined && field.turnCounter !== null) {
       clean.turnCounter = field.turnCounter;
       logger.info(`🔍 [deepCleanField] Preservando turnCounter: ${field.turnCounter}`);
+    }
+    if (field.obeliskEffectUsedTurn !== undefined && field.obeliskEffectUsedTurn !== null) {
+      clean.obeliskEffectUsedTurn = field.obeliskEffectUsedTurn;
     }
     
     // Preservar outras propriedades do campo
@@ -1707,7 +1724,10 @@ export class DuelsService implements OnModuleInit {
    */
   private async checkAndActivateTrapHole(duelId: string | number, duel: Duel, isPlayer1: boolean, monsterZoneIndex: number, monster: any): Promise<boolean> {
     const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
-    
+    if (this.isObeliskTheTormentor(monster)) {
+      logger.info(`🔒 [checkAndActivateTrapHole] Obelisk the Tormentor - invocação não pode ser negada`);
+      return false;
+    }
     // Verificar se Jinzo está no campo - se estiver, traps não podem ser ativadas
     if (this.isJinzoOnField(duel)) {
       logger.info(`🤖 [checkAndActivateTrapHole] Jinzo está no campo - Trap Hole não pode ser ativada`);
@@ -1807,7 +1827,10 @@ export class DuelsService implements OnModuleInit {
    */
   private async checkAndActivateBottomlessTrapHole(duelId: string | number, duel: Duel, isPlayer1: boolean, monsterZoneIndex: number, monster: any): Promise<boolean> {
     const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
-
+    if (this.isObeliskTheTormentor(monster)) {
+      logger.info(`🔒 [checkAndActivateBottomlessTrapHole] Obelisk the Tormentor - invocação não pode ser negada`);
+      return false;
+    }
     if (this.isJinzoOnField(duel)) {
       logger.info(`🤖 [checkAndActivateBottomlessTrapHole] Jinzo está no campo - Bottomless Trap Hole não pode ser ativada`);
       return false;
@@ -2718,6 +2741,10 @@ export class DuelsService implements OnModuleInit {
     } else if (cardLevel >= 5) {
       requiredTributes = 1;
     }
+    // Slifer the Sky Dragon / Obelisk the Tormentor: requer exatamente 3 tributos para invocação normal
+    if (this.isSliferTheSkyDragon(card) || this.isObeliskTheTormentor(card)) {
+      requiredTributes = 3;
+    }
     
     // Se pode invocar sem tributo (Swift Gaia especial), ignorar necessidade de tributos
     if (canSummonWithoutTribute) {
@@ -2935,6 +2962,11 @@ export class DuelsService implements OnModuleInit {
       }
     }
 
+    // Slifer the Sky Dragon: oponente do controlador invocou em ataque → -2000 ATK; se ATK ≤ 0, destruir
+    if (finalPosition === 'attack') {
+      await this.applySliferEffectOnOpponentSummon(duelId, duel, isPlayer1, zoneIndex);
+    }
+
     // Garantir que o duelo atualizado está no cache
     this.activeDuels.set(duelIdStr, duel);
 
@@ -3075,6 +3107,9 @@ export class DuelsService implements OnModuleInit {
         this.activeDuels.set(duelIdStr, duel);
         return { success: true };
       }
+    }
+    if (finalPosition === 'attack') {
+      await this.applySliferEffectOnOpponentSummon(duelId, duel, isPlayer1, zoneIndex);
     }
     
     logger.info(`✅ [specialSummonCyberDragon] Cyber Dragon invocado por invocação especial:`, {
@@ -3704,17 +3739,24 @@ export class DuelsService implements OnModuleInit {
       logger.info(`🔍 [placeCardOnField] Estado dos monstros após salvar:`, playerField.monsters.map((m: any, i: number) => ({ index: i, card: m?.name || 'null', position: m?.position || 'null' })));
       
       // Bottomless Trap Hole: qualquer invocação (ataque ou defesa) com 1500+ ATK. Trap Hole: só invocação NORMAL em ataque com 1000+ ATK
-      const placedMonster = playerField.monsters[zoneIndex];
+      let placedMonsterRef = playerField.monsters[zoneIndex];
       const isNormalSummonHere = isMonster && !cardIsOnField && (position === 'attack' || position === 'defense' || position === 'set');
-      if (placedMonster) {
-        const monsterAtk = placedMonster.atk || 0;
+      if (placedMonsterRef) {
+        const monsterAtk = placedMonsterRef.atk || 0;
         let bottomlessActivated = false;
         if (monsterAtk >= 1500 && (finalPosition === 'attack' || finalPosition === 'defense')) {
-          bottomlessActivated = await this.checkAndActivateBottomlessTrapHole(duelId, duel, isPlayer1, zoneIndex, placedMonster);
+          bottomlessActivated = await this.checkAndActivateBottomlessTrapHole(duelId, duel, isPlayer1, zoneIndex, placedMonsterRef);
         }
         if (!bottomlessActivated && finalPosition === 'attack' && monsterAtk >= 1000 && isNormalSummonHere) {
-          await this.checkAndActivateTrapHole(duelId, duel, isPlayer1, zoneIndex, placedMonster);
+          await this.checkAndActivateTrapHole(duelId, duel, isPlayer1, zoneIndex, placedMonsterRef);
         }
+        // Re-buscar duelo após traps (podem ter destruído o monstro)
+        const duelAfterTraps = await this.findDuelByIdFromDatabase(duelIdStr);
+        if (duelAfterTraps) duel = duelAfterTraps;
+      }
+      // Slifer the Sky Dragon: oponente invocou monstro em ataque → -2000 ATK; se ATK 0, destruir
+      if (isMonster && finalPosition === 'attack') {
+        await this.applySliferEffectOnOpponentSummon(duelId, duel, isPlayer1, zoneIndex);
       }
       
       // Garantir que o duelo atualizado está no cache
@@ -5518,9 +5560,33 @@ export class DuelsService implements OnModuleInit {
     return count * 200;
   }
 
+  /** Slifer the Sky Dragon: ganha 1000 ATK/DEF para cada carta na mão do controlador. */
+  private isSliferTheSkyDragon(monster: any): boolean {
+    if (!monster) return false;
+    const name = (monster.name || monster.cardName || '').toLowerCase();
+    return /slifer\s*the\s*sky\s*dragon/.test(name);
+  }
+
+  /** Obelisk the Tormentor: 3 tributos, invocação não negável, não pode ser alvo de efeitos. */
+  private isObeliskTheTormentor(monster: any): boolean {
+    if (!monster) return false;
+    const name = (monster.name || monster.cardName || '').toLowerCase();
+    return /obelisk\s*the\s*tormentor/.test(name);
+  }
+
+  /** Bônus de ATK/DEF do Slifer: 1000 × número de cartas na mão do controlador do monstro. */
+  private getSliferHandBonus(duel: Duel, isPlayer1Field: boolean): number {
+    const field = isPlayer1Field ? (duel as any).player1Field : (duel as any).player2Field;
+    const hand = field?.hand;
+    const count = Array.isArray(hand) ? hand.length : 0;
+    return count * 1000;
+  }
+
   /**
    * Retorna o ATK total do monstro (base + equipamentos + efeitos que aumentam ATK).
    * Usado na batalha para comparar atacante vs defensor considerando todos os bônus.
+   * Slifer the Sky Dragon: +1000 ATK por cada carta na mão do controlador.
+   * Efeito do Slifer no oponente: monstro invocado em ataque perde 2000 ATK (sliferAtkDebuff).
    */
   private getTotalMonsterAtk(monster: any, duel: Duel, isPlayer1Field: boolean, currentPhase: string | TurnPhase): number {
     if (!monster || monster === null) return 0;
@@ -5528,7 +5594,57 @@ export class DuelsService implements OnModuleInit {
     const equipment = Number(monster.equipmentBonusAtk) || 0;
     const spellCounter = Number(monster.spellCounterBonusAtk) || 0;
     const bannerOfCourage = this.getBannerOfCourageBonus(duel, isPlayer1Field, currentPhase);
-    return base + equipment + spellCounter + bannerOfCourage;
+    const sliferBonus = this.isSliferTheSkyDragon(monster) ? this.getSliferHandBonus(duel, isPlayer1Field) : 0;
+    const sliferDebuff = Number(monster.sliferAtkDebuff) || 0;
+    return Math.max(0, base + equipment + spellCounter + bannerOfCourage + sliferBonus - sliferDebuff);
+  }
+
+  /**
+   * Retorna o DEF total do monstro (base + equipamentos + efeitos que aumentam DEF).
+   * Slifer the Sky Dragon: +1000 DEF por cada carta na mão do controlador.
+   */
+  private getTotalMonsterDef(monster: any, duel: Duel, isPlayer1Field: boolean): number {
+    if (!monster || monster === null) return 0;
+    const base = Number(monster.def ?? monster.defense ?? 0) || 0;
+    const equipment = Number(monster.equipmentBonusDef) || 0;
+    const spellCounter = Number(monster.spellCounterBonusDef) || 0;
+    const sliferBonus = this.isSliferTheSkyDragon(monster) ? this.getSliferHandBonus(duel, isPlayer1Field) : 0;
+    return base + equipment + spellCounter + sliferBonus;
+  }
+
+  /**
+   * Efeito do Slifer the Sky Dragon: quando o OPONENTE do duelista que controla Slifer invoca
+   * um monstro em posição de ataque, esse monstro perde 2000 ATK. Se o ATK chegar a 0 ou menos,
+   * o monstro é destruído automaticamente.
+   * (opponentField = campo de quem tem Slifer; summonerField = campo de quem invocou = oponente do controlador.)
+   */
+  async applySliferEffectOnOpponentSummon(
+    duelId: string | number,
+    duel: Duel,
+    isPlayer1Summoner: boolean,
+    zoneIndex: number,
+  ): Promise<void> {
+    const duelIdStr = typeof duelId === 'string' ? duelId : String(duelId);
+    const summonerField = isPlayer1Summoner ? (duel as any).player1Field : (duel as any).player2Field;
+    const opponentField = isPlayer1Summoner ? (duel as any).player2Field : (duel as any).player1Field;
+    const placedMonster = summonerField?.monsters?.[zoneIndex];
+    if (!placedMonster || placedMonster.position !== 'attack') return;
+    const opponentMonsters = opponentField?.monsters || [];
+    const hasSlifer = opponentMonsters.some((m: any) => m && this.isSliferTheSkyDragon(m));
+    if (!hasSlifer) return;
+
+    placedMonster.sliferAtkDebuff = 2000;
+    const totalAtk = this.getTotalMonsterAtk(placedMonster, duel, isPlayer1Summoner, duel.currentPhase);
+    if (totalAtk <= 0) {
+      logger.info(`🐉 [Slifer] Monstro ${placedMonster.name || placedMonster.cardName} teve ATK reduzido a 0 ou menos - destruído automaticamente`);
+      if (!summonerField.graveyard) summonerField.graveyard = [];
+      summonerField.graveyard.push(placedMonster);
+      summonerField.monsters[zoneIndex] = null;
+      await this.updateDuelInDatabase(duelId, {
+        player1Field: (duel as any).player1Field,
+        player2Field: (duel as any).player2Field,
+      } as any);
+    }
   }
 
   /**
@@ -5674,6 +5790,7 @@ export class DuelsService implements OnModuleInit {
     }
     (duel as any).pendingChoice = null;
     this.activeDuels.set(duelIdStr, duel);
+    await this.applySliferEffectOnOpponentSummon(duelId, duel, isPlayer1, emptyMonsterZone);
     await this.updateDuelInDatabase(duelId, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
@@ -6108,6 +6225,8 @@ export class DuelsService implements OnModuleInit {
 
     logger.info(`✅ [processCyberSteinEffectChoice] Monstro ${removedCard.name || removedCard.cardName} invocado por invocação especial em modo de ataque`);
 
+    await this.applySliferEffectOnOpponentSummon(duelIdStr, duel, isPlayer1, emptyZoneIndex);
+
     // Atualizar no banco
     await this.updateDuelInDatabase(duelIdStr, {
       player1Field: (duel as any).player1Field,
@@ -6420,6 +6539,7 @@ export class DuelsService implements OnModuleInit {
         return { success: true };
       }
     }
+    await this.applySliferEffectOnOpponentSummon(duelId, duel, isPlayer1, zoneIndex);
 
     logger.info(`✅ [specialSummonDarkArmedDragon] Dark Armed Dragon invocado por invocação especial em modo de ataque`);
 
@@ -7434,6 +7554,9 @@ export class DuelsService implements OnModuleInit {
     if (chosenMonster.position === 'set') {
       return { success: false, message: 'Monstro deve estar face-up para equipar UnitedWeStand' };
     }
+    if (this.isObeliskTheTormentor(chosenMonster)) {
+      return { success: false, message: 'Obelisk the Tormentor não pode ser alvo de efeitos de carta' };
+    }
 
     // Contar monstros face-up no campo do jogador (incluindo o escolhido)
     const faceUpMonsters = playerField.monsters.filter((m: any) => 
@@ -7614,6 +7737,9 @@ export class DuelsService implements OnModuleInit {
     if (chosenMonster.position === 'set') {
       return { success: false, message: 'Monstro deve estar face-up para equipar MagePower' };
     }
+    if (this.isObeliskTheTormentor(chosenMonster)) {
+      return { success: false, message: 'Obelisk the Tormentor não pode ser alvo de efeitos de carta' };
+    }
 
     // Contar cartas na zona de spell/trap do jogador (incluindo a própria MagePower)
     // Incluir TODAS as cartas, independentemente de estarem face-up ou face-down (set)
@@ -7759,6 +7885,90 @@ export class DuelsService implements OnModuleInit {
     logger.info(`✅ [processMagePowerChoice] MagePower equipada com sucesso! ATK bonus: +${bonusAtk}`);
     logger.info(`🔍 [processMagePowerChoice] Monstro equipado - ATK base: ${chosenMonster.atk || 0}, ATK bonus: ${chosenMonster.equipmentBonusAtk}, ATK total: ${(chosenMonster.atk || 0) + (chosenMonster.equipmentBonusAtk || 0)}`);
 
+    return { success: true };
+  }
+
+  /**
+   * Efeito do Obelisk the Tormentor: escolher 2 monstros que você controla; destruir esses 2 e todos os monstros do oponente.
+   * Uma vez por turno, apenas no seu turno.
+   */
+  async processObeliskEffect(duelId: string | number, userId: number, sacrificeZoneIndices: [number, number]): Promise<{ success: boolean; message?: string }> {
+    const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
+    let duel = await this.findDuelByIdFromDatabase(duelIdStr);
+    if (!duel) return { success: false, message: 'Duelo não encontrado' };
+
+    const turnCounter = (duel as any).turnCounter ?? 1;
+    const isPlayer1 = Number((duel as any).player1Id) === Number(userId);
+    // currentTurn é 1 ou 2 (jogador 1 ou 2), não o ID do jogador
+    const currentTurnNum = Number((duel as any).currentTurn);
+    const isMyTurn = (isPlayer1 && currentTurnNum === 1) || (!isPlayer1 && currentTurnNum === 2);
+    if (!isMyTurn) {
+      return { success: false, message: 'Só pode usar o efeito do Obelisk no seu turno' };
+    }
+
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    const opponentField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+    if (!playerField?.monsters || !opponentField?.monsters) {
+      return { success: false, message: 'Campo inválido' };
+    }
+
+    const obeliskIndex = playerField.monsters.findIndex((m: any) => m && this.isObeliskTheTormentor(m));
+    if (obeliskIndex === -1) {
+      return { success: false, message: 'Obelisk the Tormentor não está no seu campo' };
+    }
+    if (playerField.obeliskEffectUsedTurn === turnCounter) {
+      return { success: false, message: 'O efeito do Obelisk já foi usado neste turno' };
+    }
+
+    const [z1, z2] = sacrificeZoneIndices;
+    if (z1 === z2 || z1 < 0 || z1 >= 5 || z2 < 0 || z2 >= 5) {
+      return { success: false, message: 'Escolha 2 zonas de monstros diferentes (0-4)' };
+    }
+    const m1 = playerField.monsters[z1];
+    const m2 = playerField.monsters[z2];
+    if (!m1 || !m2) {
+      return { success: false, message: 'As duas zonas devem ter um monstro' };
+    }
+
+    // 1) Destruir os 2 monstros escolhidos (do seu campo)
+    for (const zoneIndex of [z1, z2]) {
+      const monster = playerField.monsters[zoneIndex];
+      if (monster) {
+        await this.handleEquipmentDestruction(duelId, duel, isPlayer1, monster);
+        const ownerField = this.getOwnerFieldForMonster(duel, monster, isPlayer1);
+        if (!ownerField.graveyard) ownerField.graveyard = [];
+        ownerField.graveyard.push(monster);
+        playerField.monsters[zoneIndex] = null;
+      }
+    }
+
+    // 2) Destruir TODOS os monstros do oponente (obrigatório do efeito do Obelisk)
+    const opponentMonstersArray = opponentField.monsters || [];
+    let opponentDestroyedCount = 0;
+    for (let i = 0; i < opponentMonstersArray.length; i++) {
+      const monster = opponentMonstersArray[i];
+      if (monster) {
+        await this.handleEquipmentDestruction(duelId, duel, !isPlayer1, monster);
+        const ownerField = this.getOwnerFieldForMonster(duel, monster, !isPlayer1);
+        if (!ownerField.graveyard) ownerField.graveyard = [];
+        ownerField.graveyard.push(monster);
+        opponentField.monsters[i] = null;
+        opponentDestroyedCount++;
+      }
+    }
+    logger.info(`✅ [processObeliskEffect] Monstros do oponente destruídos: ${opponentDestroyedCount}`);
+
+    playerField.obeliskEffectUsedTurn = turnCounter;
+    await this.recalculateUnitedWeStandForBothPlayers(duelId, duel);
+    await this.recalculateMagePowerAtk(duelId, duel, isPlayer1);
+    await this.recalculateMagePowerAtk(duelId, duel, !isPlayer1);
+
+    await this.updateDuelInDatabase(duelId, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    } as any);
+    this.activeDuels.set(duelIdStr, duel);
+    logger.info(`✅ [processObeliskEffect] Efeito do Obelisk aplicado: 2 monstros seus + ${opponentDestroyedCount} do oponente destruídos`);
     return { success: true };
   }
 
@@ -9406,6 +9616,12 @@ export class DuelsService implements OnModuleInit {
       return { success: false, message: 'Monstro atacante inválido ou não está em posição de ataque' };
     }
 
+    // Obelisk the Tormentor: se usou o efeito neste turno, não pode atacar
+    const turnCounterForAttack = (duel as any).turnCounter ?? 1;
+    if (this.isObeliskTheTormentor(attacker) && attackerField.obeliskEffectUsedTurn === turnCounterForAttack) {
+      return { success: false, message: 'Obelisk the Tormentor não pode atacar neste turno pois usou seu efeito.' };
+    }
+
     // Verificar se ChaosSorcerer não pode atacar (efeito usado neste turno)
     if (attacker.cannotAttackThisTurn === true) {
       return { success: false, message: 'ChaosSorcerer não pode atacar no turno em que você ativar seu efeito!' };
@@ -10203,10 +10419,7 @@ export class DuelsService implements OnModuleInit {
       const attackerAtkRecalc = this.getTotalMonsterAtk(attacker, duel, isPlayer1, duel.currentPhase);
       
       // Calcular DEF total incluindo bônus de equipamentos e spells; aceitar .def ou .defense
-      const targetBaseDef = Number(target.def ?? target.defense ?? 0) || 0;
-      const targetEquipmentBonusDef = target.equipmentBonusDef || 0;
-      const targetSpellCounterBonusDef = target.spellCounterBonusDef || 0;
-      const targetDef = targetBaseDef + targetEquipmentBonusDef + targetSpellCounterBonusDef;
+      const targetDef = this.getTotalMonsterDef(target, duel, !isPlayer1);
       
       // Verificar se o ataque vai destruir o monstro do defensor (ATK > DEF)
       // IMPORTANTE: Quando ATK == DEF, o monstro em defesa NÃO é destruído e não há dano, então as traps NÃO devem ativar
@@ -10268,10 +10481,7 @@ export class DuelsService implements OnModuleInit {
         const attackerAtkForSakuretsuDef = this.getTotalMonsterAtk(attacker, duel, isPlayer1, duel.currentPhase);
         
         // Calcular DEF total incluindo bônus de equipamentos e spells; aceitar .def ou .defense
-        const targetBaseDefForSakuretsu = Number(targetBeforeSakuretsuDef.def ?? targetBeforeSakuretsuDef.defense ?? 0) || 0;
-        const targetEquipmentBonusDefForSakuretsu = targetBeforeSakuretsuDef.equipmentBonusDef || 0;
-        const targetSpellCounterBonusDefForSakuretsu = targetBeforeSakuretsuDef.spellCounterBonusDef || 0;
-        const targetDefForSakuretsu = targetBaseDefForSakuretsu + targetEquipmentBonusDefForSakuretsu + targetSpellCounterBonusDefForSakuretsu;
+        const targetDefForSakuretsu = this.getTotalMonsterDef(targetBeforeSakuretsuDef, duel, !isPlayer1);
         
         // Sakuretsu Armor ativa quando o ataque vai destruir o monstro (attackerAtk > targetDef)
         // IMPORTANTE: Quando ATK == DEF, o monstro não é destruído, então Sakuretsu Armor NÃO ativa
@@ -10344,18 +10554,11 @@ export class DuelsService implements OnModuleInit {
         // Recalcular ATK do atacante (base + equipamentos + efeitos que aumentam ATK)
         const attackerAtk3 = this.getTotalMonsterAtk(attacker, duel, isPlayer1, duel.currentPhase);
         
-        // Calcular DEF total do defensor (base + equipamentos + efeitos); aceitar .def ou .defense
-        const targetBaseDef3 = Number(targetAfterTrap2.def ?? targetAfterTrap2.defense ?? 0) || 0;
-        const targetEquipmentBonusDef3 = targetAfterTrap2.equipmentBonusDef || 0;
-        const targetSpellCounterBonusDef3 = targetAfterTrap2.spellCounterBonusDef || 0;
-        const targetDef3 = targetBaseDef3 + targetEquipmentBonusDef3 + targetSpellCounterBonusDef3;
+        const targetDef3 = this.getTotalMonsterDef(targetAfterTrap2, duel, !isPlayer1);
 
         logger.info(`⚔️ [attackMonster] Comparação ATK vs DEF:`, {
           attackerAtk: attackerAtk3,
           targetDef: targetDef3,
-          targetBaseDef: targetBaseDef3,
-          targetEquipmentBonusDef: targetEquipmentBonusDef3,
-          targetSpellCounterBonusDef: targetSpellCounterBonusDef3,
           willDestroy: attackerAtk3 > targetDef3
         });
 
@@ -10648,8 +10851,7 @@ export class DuelsService implements OnModuleInit {
           if (!targetDefender) return { success: false, message: 'Alvo não encontrado após virar' };
         }
         const atkAttacker = this.getTotalMonsterAtk(attacker, duel, isPlayer1, duel.currentPhase);
-        const baseDefDef = Number(targetDefender.def ?? targetDefender.defense ?? 0) || 0;
-        const targetDefTotal = baseDefDef + (targetDefender.equipmentBonusDef || 0) + (targetDefender.spellCounterBonusDef || 0);
+        const targetDefTotal = this.getTotalMonsterDef(targetDefender, duel, !isPlayer1);
         destroyed = false;
         logger.info(`⚔️ [attackMonster] ATK <= DEF (não destruir): atacante ATK=${atkAttacker}, defensor DEF=${targetDefTotal}`);
         if (targetDefTotal > atkAttacker) {
@@ -14470,20 +14672,15 @@ export class DuelsService implements OnModuleInit {
         })
       ]);
 
-      // Calcular score baseado na origem do duelo
-      // Regras: Random Duel = 1.7, Chat = 1.0, Torneio = 10.0
+      // Calcular score baseado na origem do duelo (configurável no admin)
       let scoreEarned = 0;
       if (result !== DuelResult.DRAW && result !== DuelResult.CANCELLED && winnerId) {
-        if (duel.origin === DuelOrigin.RANDOM) {
-          scoreEarned = 1.7; // Random Duel: 1.7 score por vitória
-        } else if (duel.origin === DuelOrigin.CHAT) {
-          scoreEarned = 1.0; // Chat: 1.0 score por vitória
-        } else if (duel.origin === DuelOrigin.TOURNAMENT) {
-          scoreEarned = 10.0; // Torneio: 10.0 score por vitória
-        } else if (duel.origin === DuelOrigin.ARENA) {
-          scoreEarned = 2.0; // Arena: 2.0 score por vitória
-        } else {
-          scoreEarned = 1.0; // Outros tipos de duelo: 1.0 score por vitória
+        try {
+          const scoreSettings = await this.adminService.getDuelScoreSettings();
+          scoreEarned = scoreSettings[duel.origin] ?? scoreSettings[DuelOrigin.OTHER] ?? 1;
+        } catch (err: any) {
+          logger.warn(`⚠️ [finishDuel] Erro ao obter configuração de score, usando 1.0: ${err?.message}`);
+          scoreEarned = 1;
         }
         logger.info(`📊 [finishDuel] Score calculado: ${scoreEarned} para origem ${duel.origin}`);
       } else {
@@ -14494,6 +14691,8 @@ export class DuelsService implements OnModuleInit {
       let historyOrigin: DuelHistoryOrigin = DuelHistoryOrigin.OTHER;
       if (duel.origin === DuelOrigin.RANDOM) {
         historyOrigin = DuelHistoryOrigin.RANDOM;
+      } else if (duel.origin === DuelOrigin.RANDOM_ANIME) {
+        historyOrigin = DuelHistoryOrigin.RANDOM_ANIME;
       } else if (duel.origin === DuelOrigin.ARENA) {
         historyOrigin = DuelHistoryOrigin.ARENA;
       } else if (duel.origin === DuelOrigin.TOURNAMENT) {
@@ -14665,6 +14864,21 @@ export class DuelsService implements OnModuleInit {
         }
         }
         
+        // Perdedor ganha derrota (antes da season e do clã para manter ordem lógica)
+        await this.usersRepository.increment({ id: loserId }, 'lossesGeral', 1);
+        await this.usersRepository.increment({ id: loserId }, 'lossesSeason', 1);
+
+        // ========== ATUALIZAR SCORE DA SEASON (ANTES DO CLÃ) ==========
+        // getActiveSeason() obtém ou cria a season ativa. Assim, quando o clã for atualizado,
+        // getActiveSeasonOrNull() já encontra a season e o score do clã conta na season ativa.
+        try {
+          await this.seasonsService.updateUserRanking(winnerIdNum, scoreEarned, true);
+          await this.seasonsService.updateUserRanking(loserId, 0, false);
+          logger.info(`📊 [finishDuel] Season score atualizado para vencedor ${winnerIdNum} (+${scoreEarned}) e perdedor ${loserId}`);
+        } catch (error: any) {
+          logger.error(`⚠️ [finishDuel] Erro ao atualizar season score:`, error.message || error);
+        }
+        
         // ========== ATUALIZAR SCORE DO CLÃ (GRUPO) IMEDIATAMENTE APÓS ==========
         // Clã recebe score apenas de duelos que não são de arena (arena não soma ao clã)
         if (duel.origin !== DuelOrigin.ARENA) {
@@ -14717,20 +14931,6 @@ export class DuelsService implements OnModuleInit {
               // IMPORTANTE: O erro não deve ser silenciado - precisa ser investigado
             }
           }
-        }
-        
-        // Perdedor ganha derrota
-        await this.usersRepository.increment({ id: loserId }, 'lossesGeral', 1);
-        await this.usersRepository.increment({ id: loserId }, 'lossesSeason', 1);
-
-        // Atualizar score da season ativa (além do score geral)
-        try {
-          await this.seasonsService.updateUserRanking(winnerIdNum, scoreEarned, true);
-          await this.seasonsService.updateUserRanking(loserId, 0, false);
-          logger.info(`📊 [finishDuel] Season score atualizado para vencedor ${winnerIdNum}`);
-        } catch (error: any) {
-          logger.error(`⚠️ [finishDuel] Erro ao atualizar season score:`, error.message || error);
-          // Não falhar o duelo se houver erro na season
         }
         
         // Atualizar estatísticas do clã do perdedor (derrotas)
@@ -14803,7 +15003,7 @@ export class DuelsService implements OnModuleInit {
         }
         
         // ========== DISTRIBUIR CASH BASEADO NA FAIXA DE NÍVEL (RANDOM DUEL) ==========
-        if (duel.origin === DuelOrigin.RANDOM) {
+        if (duel.origin === DuelOrigin.RANDOM || duel.origin === DuelOrigin.RANDOM_ANIME) {
           try {
             // Buscar nível dos jogadores para determinar a faixa
             const [winnerUser, loserUser] = await Promise.all([
@@ -15465,11 +15665,9 @@ export class DuelsService implements OnModuleInit {
 
   private activeDuelsCountCache: number = 0;
   private lastCountUpdate: number = 0;
-  private readonly COUNT_CACHE_MS = 1000; // Cache por 1 segundo
+  private readonly COUNT_CACHE_MS = 1000;
 
   getActiveDuelsCount(): number {
-    // CRÍTICO: Cache o resultado para evitar leituras excessivas do Map
-    // Isso reduz carga quando há muitas verificações simultâneas
     const now = Date.now();
     if (now - this.lastCountUpdate > this.COUNT_CACHE_MS) {
       this.activeDuelsCountCache = this.activeDuels.size;
@@ -15478,7 +15676,12 @@ export class DuelsService implements OnModuleInit {
     return this.activeDuelsCountCache;
   }
 
-  async createDuel(player1Id: number, player2Id: number, origin: DuelOrigin = DuelOrigin.OTHER): Promise<Duel | null> {
+  async createDuel(
+    player1Id: number,
+    player2Id: number,
+    origin: DuelOrigin = DuelOrigin.OTHER,
+    options?: { player1AnimeDeckId?: string; player2AnimeDeckId?: string },
+  ): Promise<Duel | null> {
     logger.info(`🎮 [createDuel] ==========================================`);
     logger.info(`🎮 [createDuel] Chamado para P1=${player1Id}, P2=${player2Id}, Origin=${origin}`);
     
@@ -15495,22 +15698,26 @@ export class DuelsService implements OnModuleInit {
       throw new Error('Você não pode criar um duelo contra si mesmo!');
     }
     
-    // Validação prévia: verificar se ambos os jogadores têm deck equipado
-    const player1HasDeck = await this.hasEquippedDeck(player1Id);
-    const player2HasDeck = await this.hasEquippedDeck(player2Id);
+    const isAnimeDuel = origin === DuelOrigin.RANDOM_ANIME && options?.player1AnimeDeckId && options?.player2AnimeDeckId;
     
-    if (!player1HasDeck) {
-      const player1 = await this.usersRepository.findOne({ where: { id: player1Id }, select: ['username'] });
-      const username = player1?.username || `ID ${player1Id}`;
-      logger.error(`❌ [createDuel] Player1 (${username}) não tem deck equipado!`);
-      throw new Error(`Jogador ${username} não tem deck equipado. Por favor, equipe um deck antes de entrar no duelo.`);
-    }
-    
-    if (!player2HasDeck) {
-      const player2 = await this.usersRepository.findOne({ where: { id: player2Id }, select: ['username'] });
-      const username = player2?.username || `ID ${player2Id}`;
-      logger.error(`❌ [createDuel] Player2 (${username}) não tem deck equipado!`);
-      throw new Error(`Jogador ${username} não tem deck equipado. Por favor, equipe um deck antes de entrar no duelo.`);
+    // Validação prévia: verificar deck equipado (exceto no modo Anime Deck, onde o deck é o pré-definido)
+    if (!isAnimeDuel) {
+      const player1HasDeck = await this.hasEquippedDeck(player1Id);
+      const player2HasDeck = await this.hasEquippedDeck(player2Id);
+      
+      if (!player1HasDeck) {
+        const player1 = await this.usersRepository.findOne({ where: { id: player1Id }, select: ['username'] });
+        const username = player1?.username || `ID ${player1Id}`;
+        logger.error(`❌ [createDuel] Player1 (${username}) não tem deck equipado!`);
+        throw new Error(`Jogador ${username} não tem deck equipado. Por favor, equipe um deck antes de entrar no duelo.`);
+      }
+      
+      if (!player2HasDeck) {
+        const player2 = await this.usersRepository.findOne({ where: { id: player2Id }, select: ['username'] });
+        const username = player2?.username || `ID ${player2Id}`;
+        logger.error(`❌ [createDuel] Player2 (${username}) não tem deck equipado!`);
+        throw new Error(`Jogador ${username} não tem deck equipado. Por favor, equipe um deck antes de entrar no duelo.`);
+      }
     }
     
     const duelKey = `${Math.min(player1Id, player2Id)}_${Math.max(player1Id, player2Id)}`;
@@ -15527,7 +15734,7 @@ export class DuelsService implements OnModuleInit {
       try {
         logger.info(`🎮 [createDuel] Promise iniciada, chamando createDuelInternal...`);
         const duel = await Promise.race([
-          this.createDuelInternal(player1Id, player2Id, origin),
+          this.createDuelInternal(player1Id, player2Id, origin, options),
           new Promise<null>((_, reject) => 
             setTimeout(() => {
               logger.error(`⏱️ [createDuel] TIMEOUT ao criar duelo após 30 segundos!`);
@@ -15596,7 +15803,12 @@ export class DuelsService implements OnModuleInit {
     }
   }
 
-  private async createDuelInternal(player1Id: number, player2Id: number, origin: DuelOrigin = DuelOrigin.OTHER): Promise<Duel | null> {
+  private async createDuelInternal(
+    player1Id: number,
+    player2Id: number,
+    origin: DuelOrigin = DuelOrigin.OTHER,
+    options?: { player1AnimeDeckId?: string; player2AnimeDeckId?: string },
+  ): Promise<Duel | null> {
     logger.info(`🚀 [createDuelInternal] ==========================================`);
     logger.info(`🚀 [createDuelInternal] INICIANDO criação de duelo`);
     logger.info(`🚀 [createDuelInternal] Player1Id: ${player1Id}, Player2Id: ${player2Id}, Origin: ${origin}`);
@@ -15623,6 +15835,7 @@ export class DuelsService implements OnModuleInit {
               'equippedPlaymatImage',
               'equippedSkinId',
               'equippedSkinImage',
+              'equippedDeckId',
               'equippedDeckName',
             ],
           }),
@@ -15639,6 +15852,7 @@ export class DuelsService implements OnModuleInit {
               'equippedPlaymatImage',
               'equippedSkinId',
               'equippedSkinImage',
+              'equippedDeckId',
               'equippedDeckName',
             ],
           }),
@@ -15657,65 +15871,81 @@ export class DuelsService implements OnModuleInit {
       logger.info(`🔍 [createDuelInternal] P1 completo:`, JSON.stringify({
         id: player1.id,
         username: player1.username,
+        equippedDeckId: (player1 as any).equippedDeckId,
         equippedDeckName: (player1 as any).equippedDeckName,
       }, null, 2));
       logger.info(`🔍 [createDuelInternal] P2 completo:`, JSON.stringify({
         id: player2.id,
         username: player2.username,
+        equippedDeckId: (player2 as any).equippedDeckId,
         equippedDeckName: (player2 as any).equippedDeckName,
       }, null, 2));
       
-      // Validar se ambos os jogadores têm deck equipado
-      const player1DeckName = (player1 as any).equippedDeckName;
-      const player2DeckName = (player2 as any).equippedDeckName;
+      const useAnimeDecks = !!(
+        options?.player1AnimeDeckId &&
+        options?.player2AnimeDeckId &&
+        origin === DuelOrigin.RANDOM_ANIME
+      );
       
-      if (!player1DeckName || player1DeckName.trim() === '') {
-        logger.error(`❌ [createDuelInternal] Player1 (${player1.username}) não tem deck equipado!`);
-        throw new Error(`Jogador ${player1.username} não tem deck equipado. Por favor, equipe um deck antes de entrar no duelo.`);
+      let player1Deck: { deck: any[]; hand: any[]; extraDeck: any[] };
+      let player2Deck: { deck: any[]; hand: any[]; extraDeck: any[] };
+      
+      if (useAnimeDecks) {
+        logger.info(`🚀 [createDuelInternal] Modo Anime Deck: P1=${options!.player1AnimeDeckId}, P2=${options!.player2AnimeDeckId}`);
+        player1Deck = await this.preparePlayerDeckFromAnimeDeck(options!.player1AnimeDeckId!);
+        player2Deck = await this.preparePlayerDeckFromAnimeDeck(options!.player2AnimeDeckId!);
+      } else {
+        // Validar se ambos os jogadores têm deck equipado (por ID ou por nome)
+        const player1DeckId = (player1 as any).equippedDeckId;
+        const player1DeckName = (player1 as any).equippedDeckName || 'Meu Deck';
+        const player2DeckId = (player2 as any).equippedDeckId;
+        const player2DeckName = (player2 as any).equippedDeckName || 'Meu Deck';
+        const p1HasEquipped = (player1DeckId && String(player1DeckId).trim() !== '') || (player1DeckName && player1DeckName.trim() !== '');
+        const p2HasEquipped = (player2DeckId && String(player2DeckId).trim() !== '') || (player2DeckName && player2DeckName.trim() !== '');
+
+        if (!p1HasEquipped) {
+          logger.error(`❌ [createDuelInternal] Player1 (${player1.username}) não tem deck equipado!`);
+          throw new Error(`Jogador ${player1.username} não tem deck equipado. Por favor, equipe um deck antes de entrar no duelo.`);
+        }
+        if (!p2HasEquipped) {
+          logger.error(`❌ [createDuelInternal] Player2 (${player2.username}) não tem deck equipado!`);
+          throw new Error(`Jogador ${player2.username} não tem deck equipado. Por favor, equipe um deck antes de entrar no duelo.`);
+        }
+
+        logger.info(`🚀 [createDuelInternal] Preparando decks... P1 deckId: ${player1DeckId ?? 'null'}, name: ${player1DeckName}; P2 deckId: ${player2DeckId ?? 'null'}, name: ${player2DeckName}`);
+        player1Deck = await this.preparePlayerDeck(player1Id, player1DeckName, player1DeckId);
+        player2Deck = await this.preparePlayerDeck(player2Id, player2DeckName, player2DeckId);
       }
       
-      if (!player2DeckName || player2DeckName.trim() === '') {
-        logger.error(`❌ [createDuelInternal] Player2 (${player2.username}) não tem deck equipado!`);
-        throw new Error(`Jogador ${player2.username} não tem deck equipado. Por favor, equipe um deck antes de entrar no duelo.`);
-      }
-      
-      logger.info(`🚀 [createDuelInternal] Preparando decks...`);
-      logger.info(`🔍 [createDuelInternal] P1 equippedDeckName: ${player1DeckName}`);
-      logger.info(`🔍 [createDuelInternal] P2 equippedDeckName: ${player2DeckName}`);
-      logger.info(`🔍 [createDuelInternal] Usando deckName P1: "${player1DeckName}"`);
-      logger.info(`🔍 [createDuelInternal] Usando deckName P2: "${player2DeckName}"`);
-      
-      const player1Deck = await this.preparePlayerDeck(player1Id, player1DeckName);
       logger.info(`✅ [createDuelInternal] Deck P1 preparado: ${player1Deck.deck.length} cartas no deck, ${player1Deck.hand.length} na mão, ${player1Deck.extraDeck.length} no extra deck`);
       
       // Validação adicional: garantir que o deck tenha cartas
       if (player1Deck.deck.length === 0 && player1Deck.hand.length === 0) {
         logger.error(`❌ [createDuelInternal] Deck P1 está vazio após preparação!`);
-        throw new Error(`Deck "${player1DeckName}" do jogador ${player1.username} está vazio. Por favor, adicione cartas ao deck.`);
+        throw new Error(`Deck do jogador 1 está vazio. Por favor, adicione cartas ao deck.`);
       }
       
       // Validar tamanho mínimo (40 cartas no total: deck + mão) - extra deck não conta
       const totalCardsP1 = player1Deck.deck.length + player1Deck.hand.length;
       if (totalCardsP1 < 40) {
         logger.error(`❌ [createDuelInternal] Deck P1 tem apenas ${totalCardsP1} cartas (mínimo: 40)`);
-        throw new Error(`Deck "${player1DeckName}" do jogador ${player1.username} tem apenas ${totalCardsP1} cartas. O mínimo é 40 cartas.`);
+        throw new Error(`Deck do jogador 1 tem apenas ${totalCardsP1} cartas. O mínimo é 40 cartas.`);
       }
       
       await new Promise(resolve => setImmediate(resolve));
-      const player2Deck = await this.preparePlayerDeck(player2Id, player2DeckName);
       logger.info(`✅ [createDuelInternal] Deck P2 preparado: ${player2Deck.deck.length} cartas no deck, ${player2Deck.hand.length} na mão, ${player2Deck.extraDeck.length} no extra deck`);
       
       // Validação adicional: garantir que o deck tenha cartas
       if (player2Deck.deck.length === 0 && player2Deck.hand.length === 0) {
         logger.error(`❌ [createDuelInternal] Deck P2 está vazio após preparação!`);
-        throw new Error(`Deck "${player2DeckName}" do jogador ${player2.username} está vazio. Por favor, adicione cartas ao deck.`);
+        throw new Error(`Deck do jogador 2 está vazio. Por favor, adicione cartas ao deck.`);
       }
       
       // Validar tamanho mínimo (40 cartas no total: deck + mão) - extra deck não conta
       const totalCardsP2 = player2Deck.deck.length + player2Deck.hand.length;
       if (totalCardsP2 < 40) {
         logger.error(`❌ [createDuelInternal] Deck P2 tem apenas ${totalCardsP2} cartas (mínimo: 40)`);
-        throw new Error(`Deck "${player2DeckName}" do jogador ${player2.username} tem apenas ${totalCardsP2} cartas. O mínimo é 40 cartas.`);
+        throw new Error(`Deck do jogador 2 tem apenas ${totalCardsP2} cartas. O mínimo é 40 cartas.`);
       }
 
       const player1Field = {
@@ -16115,6 +16345,7 @@ export class DuelsService implements OnModuleInit {
         equippedPlaymatImage: (player1 as any).equippedPlaymatImage,
         equippedSkinId: (player1 as any).equippedSkinId,
         equippedSkinImage: (player1 as any).equippedSkinImage,
+        equippedDeckId: (player1 as any).equippedDeckId,
         equippedDeckName: (player1 as any).equippedDeckName,
       };
       (savedDuel as any).player2 = {
@@ -16126,6 +16357,7 @@ export class DuelsService implements OnModuleInit {
         equippedPlaymatImage: (player2 as any).equippedPlaymatImage,
         equippedSkinId: (player2 as any).equippedSkinId,
         equippedSkinImage: (player2 as any).equippedSkinImage,
+        equippedDeckId: (player2 as any).equippedDeckId,
         equippedDeckName: (player2 as any).equippedDeckName,
       };
       let cachedDuel = { ...savedDuel } as any;
@@ -16195,17 +16427,98 @@ export class DuelsService implements OnModuleInit {
     }
   }
 
-  private async preparePlayerDeck(userId: number, deckName: string): Promise<{deck: any[], hand: any[], extraDeck: any[]}> {
+  /**
+   * Prepara deck a partir de um Anime Deck (Random Duel: Animes Deck).
+   * Retorna o mesmo formato que preparePlayerDeck: { deck, hand, extraDeck }.
+   */
+  private async preparePlayerDeckFromAnimeDeck(animeDeckId: string): Promise<{ deck: any[]; hand: any[]; extraDeck: any[] }> {
+    const animeDeck = await this.animeDecksService.findOne(animeDeckId);
+    if (!animeDeck || !animeDeck.cards || animeDeck.cards.length === 0) {
+      throw new Error(`Deck anime "${animeDeck?.name || animeDeckId}" não encontrado ou está vazio.`);
+    }
+    // Expandir cartas por quantity (mesmo formato que deck.cards no preparePlayerDeck)
+    const expandedCards: any[] = [];
+    for (const dc of animeDeck.cards) {
+      for (let q = 0; q < (dc.quantity || 1); q++) {
+        expandedCards.push({
+          id: dc.id,
+          cardId: dc.cardId,
+          isExtraDeck: !!dc.isExtraDeck,
+          card: dc.card,
+        });
+      }
+    }
+    const deck = { cards: expandedCards };
+    return this.preparePlayerDeckFromCards(deck, `Anime Deck ${animeDeck.name}`);
+  }
+
+  /**
+   * Lógica comum de extração, embaralhamento e mão a partir de um objeto deck com .cards.
+   * Usado por preparePlayerDeck (deck do usuário) e preparePlayerDeckFromAnimeDeck.
+   */
+  private preparePlayerDeckFromCards(
+    deck: { cards: any[] },
+    deckLabel: string,
+  ): { deck: any[]; hand: any[]; extraDeck: any[] } {
+    const mainDeckCards = deck.cards.filter((dc: any) => !dc.isExtraDeck || dc.isExtraDeck === false);
+    const extraDeckCards = deck.cards.filter((dc: any) => dc.isExtraDeck === true);
+
+    if (mainDeckCards.length < 40) {
+      throw new Error(`Deck principal "${deckLabel}" tem apenas ${mainDeckCards.length} cartas (mínimo: 40).`);
+    }
+
+    const extractedCards = mainDeckCards
+      .map((deckCard: any) => {
+        if (!deckCard.card) return null;
+        const card = deckCard.card;
+        const cardData = { ...card };
+        cardData.cardId = deckCard.cardId || card.id;
+        cardData.idCarta = card.idCarta || card.id;
+        cardData.cardType = card.cardType || card.type;
+        const isMonster = card.type === 'Monster' || card.type === 'MONSTER' || card.cardType === 'Monster';
+        cardData.attribute = isMonster ? (card.attribute || cardData.attribute || null) : null;
+        cardData.race = isMonster ? (card.race || cardData.race || null) : null;
+        cardData.cardImage = card.cardImage || null;
+        return cardData;
+      })
+      .filter((c: any) => c != null);
+
+    const extractedExtraDeck = extraDeckCards
+      .map((deckCard: any) => {
+        if (!deckCard.card) return null;
+        const card = deckCard.card;
+        const cardData = { ...card };
+        cardData.cardId = deckCard.cardId || card.id;
+        cardData.idCarta = card.idCarta || card.id;
+        cardData.cardType = card.cardType || card.type;
+        const isMonster = card.type === 'Monster' || card.type === 'MONSTER' || card.cardType === 'Monster';
+        cardData.attribute = isMonster ? (card.attribute || cardData.attribute || null) : null;
+        cardData.race = isMonster ? (card.race || cardData.race || null) : null;
+        cardData.cardImage = card.cardImage || null;
+        return cardData;
+      })
+      .filter((c: any) => c != null);
+
+    extractedExtraDeck.forEach((card) => this.ensureCardInstanceId(card));
+    const shuffledDeck = this.shuffleDeck(extractedCards);
+    const hand = shuffledDeck.splice(0, 5);
+    hand.forEach((card) => this.ensureCardInstanceId(card));
+    return { deck: shuffledDeck, hand, extraDeck: extractedExtraDeck };
+  }
+
+  private async preparePlayerDeck(userId: number, deckName: string, deckId?: string | null): Promise<{deck: any[], hand: any[], extraDeck: any[]}> {
     try {
-      // Timeout aumentado para dar mais tempo para buscar o deck
       const activeDuels = this.getActiveDuelsCount();
-      const timeout = activeDuels > 0 ? 5000 : 10000; // Timeout aumentado
-      
-      logger.info(`🔍 [preparePlayerDeck] Buscando deck para usuário ${userId} com nome "${deckName}" (timeout: ${timeout}ms)...`);
-      
+      const timeout = activeDuels > 0 ? 5000 : 10000;
+      const byId = deckId && String(deckId).trim() !== '';
+
+      logger.info(`🔍 [preparePlayerDeck] Buscando deck para usuário ${userId} ${byId ? `id "${deckId}"` : `nome "${deckName}"`} (timeout: ${timeout}ms)...`);
+
       const deck = await Promise.race([
-        this.decksService.getCurrentDeck(userId, deckName),
-        new Promise<null>((_, reject) => 
+        byId
+          ? this.decksService.getDeckByIdForUser(userId, deckId!)
+          : this.decksService.getCurrentDeck(userId, deckName),
+        new Promise<null>((_, reject) =>
           setTimeout(() => {
             logger.warn(`⏱️ [preparePlayerDeck] Timeout ao buscar deck para usuário ${userId} após ${timeout}ms`);
             reject(new Error('Timeout'));
@@ -16215,10 +16528,10 @@ export class DuelsService implements OnModuleInit {
         logger.error(`❌ [preparePlayerDeck] Erro ao buscar deck para usuário ${userId}:`, error);
         return null;
       });
-      
+
       if (!deck) {
-        logger.error(`❌ [preparePlayerDeck] Deck não encontrado ou timeout para usuário ${userId} com nome "${deckName}"`);
-        throw new Error(`Deck "${deckName}" não encontrado para o usuário ${userId}. Por favor, verifique se o deck existe e está equipado.`);
+        logger.error(`❌ [preparePlayerDeck] Deck não encontrado ou timeout para usuário ${userId} ${byId ? `id "${deckId}"` : `nome "${deckName}"`}`);
+        throw new Error(`Deck não encontrado para o usuário. Verifique se o deck existe e está equipado.`);
       }
       
       logger.info(`🔍 [preparePlayerDeck] Estrutura do deck recebido:`, {
@@ -16939,6 +17252,27 @@ export class DuelsService implements OnModuleInit {
       totalDuels: totalDuels,
       winRate: Math.round(winRate * 100) / 100, // Arredondar para 2 casas decimais
       recentHistory: history,
+    };
+  }
+
+  /**
+   * Estatísticas de duelos Random (RANDOM + RANDOM_ANIME) do usuário
+   */
+  async getRandomDuelStats(userId: number): Promise<{ total: number; wins: number; losses: number }> {
+    const rows = await this.duelHistoryRepository.query(
+      `SELECT
+        COUNT(*)::int AS total,
+        COALESCE(SUM(CASE WHEN result = 'WIN' THEN 1 ELSE 0 END), 0)::int AS wins,
+        COALESCE(SUM(CASE WHEN result = 'LOSS' THEN 1 ELSE 0 END), 0)::int AS losses
+       FROM duel_history
+       WHERE "playerId" = $1 AND origin IN ('RANDOM', 'RANDOM_ANIME')`,
+      [userId],
+    );
+    const row = rows?.[0];
+    return {
+      total: row?.total ?? 0,
+      wins: row?.wins ?? 0,
+      losses: row?.losses ?? 0,
     };
   }
 

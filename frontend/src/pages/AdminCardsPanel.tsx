@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import api from '../api/axios';
 import { CardType, CardAttribute, CardRarity, MonsterType } from './types';
 import CardImage from '../components/CardImage';
+import { getCardDescription } from '../utils/cardDescription';
 
 /** Em produção, imagens externas (Yugioh API) podem falhar por CORS/referrer. Usar proxy do backend. */
 function cardImageSrc(url: string | undefined | null): string {
@@ -1290,14 +1291,44 @@ export default function AdminCardsPanel() {
                     <option value="3">3</option>
                   </select>
                 </div>
-                <label className="flex items-center gap-1 cursor-pointer">
-                  <input type="checkbox" checked={formData.isActive} onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })} className="w-3.5 h-3.5 accent-emerald-500" />
-                  <span className="text-xs text-emerald-400">Ativa</span>
-                </label>
-                <label className="flex items-center gap-1 cursor-pointer">
-                  <input type="checkbox" checked={formData.isForSale} onChange={(e) => setFormData({ ...formData, isForSale: e.target.checked })} className="w-3.5 h-3.5 accent-green-500" />
-                  <span className="text-xs text-green-400">Loja</span>
-                </label>
+                {/* Ativar/Desativar: ao editar usa o botão (chama API); ao criar usa checkbox */}
+                {editingCard ? (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (formData.isActive) {
+                        if (!confirm('Deseja realmente desativar esta carta? Ela sairá da loja.')) return;
+                        try {
+                          const response = await api.delete(`/cards/${editingCard.id}`);
+                          setMessage({ type: 'success', text: response.data?.message || '✅ Carta desativada com sucesso!' });
+                          setFormData(prev => ({ ...prev, isActive: false }));
+                          setEditingCard(prev => prev ? { ...prev, isActive: false } : null);
+                          loadCards();
+                        } catch (err: any) {
+                          setMessage({ type: 'error', text: err.response?.data?.message || '❌ Erro ao desativar carta' });
+                        }
+                      } else {
+                        try {
+                          await api.post(`/cards/${editingCard.id}/activate`, {});
+                          setMessage({ type: 'success', text: '✅ Carta reativada com sucesso!' });
+                          setFormData(prev => ({ ...prev, isActive: true }));
+                          setEditingCard(prev => prev ? { ...prev, isActive: true } : null);
+                          loadCards();
+                        } catch {
+                          setMessage({ type: 'error', text: '❌ Erro ao reativar carta' });
+                        }
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded text-xs font-bold ${formData.isActive ? 'bg-orange-600 hover:bg-orange-700' : 'bg-green-600 hover:bg-green-700'} text-white transition-colors`}
+                  >
+                    {formData.isActive ? '🔒 Desativar' : '✅ Ativar'}
+                  </button>
+                ) : (
+                  <label className="flex items-center gap-1 cursor-pointer">
+                    <input type="checkbox" checked={formData.isActive} onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })} className="w-3.5 h-3.5 accent-emerald-500" />
+                    <span className="text-xs text-emerald-400">Carta ativa (aparece na loja)</span>
+                  </label>
+                )}
                 <label className="flex items-center gap-1 cursor-pointer">
                   <input type="checkbox" checked={formData.isBanned} onChange={(e) => setFormData({ ...formData, isBanned: e.target.checked })} className="w-3.5 h-3.5 accent-red-500" />
                   <span className="text-xs text-red-400">Banida</span>
@@ -1465,7 +1496,7 @@ export default function AdminCardsPanel() {
 
                 <div>
                   <p className="text-xs text-gray-400 mb-0.5">Descrição</p>
-                  <p className="text-xs text-gray-300 line-clamp-3">{selectedCard.description || 'Sem descrição'}</p>
+                  <p className="text-xs text-gray-300 line-clamp-3">{getCardDescription(selectedCard)}</p>
                 </div>
 
                 {selectedCard.type === 'Monster' && (

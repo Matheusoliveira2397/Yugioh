@@ -4,6 +4,12 @@ import api from '../api/axios';
 import CardImage from '../components/CardImage';
 
 const MAX_PARTICIPANTS_OPTIONS = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
+/** Para pontos corridos: vagas de 2 a 128 (qualquer número) */
+const MAX_PARTICIPANTS_ROUND_ROBIN = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 64, 128];
+const FORMAT_OPTIONS: { value: string; label: string }[] = [
+  { value: 'single_elimination', label: 'Mata-mata (eliminação simples)' },
+  { value: 'round_robin', label: 'Pontos corridos (todos contra todos)' },
+];
 
 interface Tournament {
   id: string;
@@ -21,7 +27,7 @@ interface Tournament {
   prizeFirst: number;
   prizeSecond: number;
   prizeThird: number;
-  prizeDetails?: Record<number, { credit?: number; cash?: number; cardIds?: string[]; trophyTitle?: string; trophyIcon?: string }> | null;
+  prizeDetails?: Record<number, { credit?: number; cash?: number; cardIds?: string[]; trophyTitle?: string; trophyIcon?: string; stars?: number }> | null;
   entryFee: number;
   entryFeeType?: 'credit' | 'cash';
   tournamentTypeId?: string | null;
@@ -30,11 +36,11 @@ interface Tournament {
   updatedAt: string;
 }
 
-const DEFAULT_PRIZE_DETAILS = (): Record<number, { credit: number; cash: number; trophyTitle: string; trophyIcon: string; cardIds: string[] }> => ({
-  1: { credit: 0, cash: 0, trophyTitle: '', trophyIcon: '', cardIds: [] },
-  2: { credit: 0, cash: 0, trophyTitle: '', trophyIcon: '', cardIds: [] },
-  3: { credit: 0, cash: 0, trophyTitle: '', trophyIcon: '', cardIds: [] },
-  4: { credit: 0, cash: 0, trophyTitle: '', trophyIcon: '', cardIds: [] },
+const DEFAULT_PRIZE_DETAILS = (): Record<number, { credit: number; cash: number; trophyTitle: string; trophyIcon: string; cardIds: string[]; stars: number }> => ({
+  1: { credit: 0, cash: 0, trophyTitle: '', trophyIcon: '', cardIds: [], stars: 0 },
+  2: { credit: 0, cash: 0, trophyTitle: '', trophyIcon: '', cardIds: [], stars: 0 },
+  3: { credit: 0, cash: 0, trophyTitle: '', trophyIcon: '', cardIds: [], stars: 0 },
+  4: { credit: 0, cash: 0, trophyTitle: '', trophyIcon: '', cardIds: [], stars: 0 },
 });
 
 interface Card {
@@ -280,8 +286,15 @@ export default function AdminTournamentsPanel() {
       return;
     }
 
-    if (!MAX_PARTICIPANTS_OPTIONS.includes(formData.maxParticipants)) {
-      setMessage({ type: 'error', text: 'Vagas devem ser potência de 2: 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024 ou 2048' });
+    const isRoundRobin = formData.format === 'round_robin';
+    if (isRoundRobin) {
+      if (formData.maxParticipants < 2 || formData.maxParticipants > 128) {
+        setMessage({ type: 'error', text: 'Para pontos corridos, vagas devem ser entre 2 e 128.' });
+        setLoading(false);
+        return;
+      }
+    } else if (!MAX_PARTICIPANTS_OPTIONS.includes(formData.maxParticipants)) {
+      setMessage({ type: 'error', text: 'Para mata-mata, vagas devem ser potência de 2: 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024 ou 2048' });
       setLoading(false);
       return;
     }
@@ -289,7 +302,7 @@ export default function AdminTournamentsPanel() {
     try {
       const prizeDetailsClean = formData.prizeDetails
         ? (() => {
-            const out: Record<number, { credit?: number; cash?: number; trophyTitle?: string; trophyIcon?: string; cardIds?: string[] }> = {};
+            const out: Record<number, { credit?: number; cash?: number; trophyTitle?: string; trophyIcon?: string; cardIds?: string[]; stars?: number }> = {};
             ([1, 2, 3, 4] as const).forEach((place) => {
               const v = formData.prizeDetails![place];
               if (!v) return;
@@ -299,6 +312,7 @@ export default function AdminTournamentsPanel() {
               if (v.trophyTitle?.trim()) entry.trophyTitle = v.trophyTitle.trim();
               if (v.trophyIcon?.trim()) entry.trophyIcon = v.trophyIcon.trim();
               if (v.cardIds?.length) entry.cardIds = v.cardIds;
+              if (v.stars != null && v.stars > 0) entry.stars = v.stars;
               if (Object.keys(entry).length > 0) out[place] = entry;
             });
             return Object.keys(out).length > 0 ? out : null;
@@ -306,7 +320,7 @@ export default function AdminTournamentsPanel() {
         : null;
       const tournamentData = {
         ...formData,
-        format: 'single_elimination',
+        format: formData.format,
         minLevel: formData.minLevel ?? 1,
         maxLevel: formData.maxLevel ?? null,
         prizeDetails: prizeDetailsClean && Object.keys(prizeDetailsClean).length > 0 ? prizeDetailsClean : null,
@@ -611,22 +625,38 @@ export default function AdminTournamentsPanel() {
                 </div>
 
                 <div>
-                  <label className="block text-white mb-2">Formato</label>
-                  <div className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600">
-                    Mata-Mata (perdeu está fora, quem ganhou passa de fase)
-                  </div>
-                  <p className="text-slate-400 text-xs mt-1">No momento só torneios mata-mata estão disponíveis.</p>
+                  <label className="block text-white mb-2">Formato *</label>
+                  <select
+                    value={formData.format}
+                    onChange={(e) => {
+                      const format = e.target.value as 'single_elimination' | 'round_robin';
+                      const max = format === 'round_robin' && formData.maxParticipants > 128
+                        ? 128
+                        : formData.maxParticipants;
+                      setFormData({ ...formData, format, maxParticipants: max });
+                    }}
+                    className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg"
+                  >
+                    {FORMAT_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                  <p className="text-slate-400 text-xs mt-1">
+                    {formData.format === 'round_robin' ? 'Todos jogam contra todos; ranking por vitórias.' : 'Perdeu está fora; quem ganha passa de fase.'}
+                  </p>
                 </div>
 
                 <div>
-                  <label className="block text-white mb-2">Vagas (potência de 2) *</label>
+                  <label className="block text-white mb-2">
+                    {formData.format === 'round_robin' ? 'Vagas (2 a 128) *' : 'Vagas (potência de 2) *'}
+                  </label>
                   <select
                     value={formData.maxParticipants}
                     onChange={(e) => setFormData({ ...formData, maxParticipants: Number(e.target.value) })}
                     className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg"
                     required
                   >
-                    {MAX_PARTICIPANTS_OPTIONS.map((n) => (
+                    {(formData.format === 'round_robin' ? MAX_PARTICIPANTS_ROUND_ROBIN : MAX_PARTICIPANTS_OPTIONS).map((n) => (
                       <option key={n} value={n}>{n}</option>
                     ))}
                   </select>
@@ -758,8 +788,8 @@ export default function AdminTournamentsPanel() {
               </div>
 
               <div className="border-t border-slate-700 pt-4">
-                <h3 className="text-lg font-bold text-white mb-3">Premiação por lugar (opcional: cash, crédito, carta, troféu)</h3>
-                <p className="text-slate-400 text-sm mb-4">Troféu vai para o perfil de conquistas do duelista.</p>
+                <h3 className="text-lg font-bold text-white mb-3">Premiação por lugar (opcional: cash, crédito, carta, troféu, estrelas)</h3>
+                <p className="text-slate-400 text-sm mb-4">Troféu vai para o perfil de conquistas. Estrelas são premiação de torneio (ex.: 1º = 3, 2º = 2, 3º = 1).</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {([1, 2, 3, 4] as const).map((place) => {
                     const pd = formData.prizeDetails?.[place] ?? DEFAULT_PRIZE_DETAILS()[place];
@@ -780,6 +810,10 @@ export default function AdminTournamentsPanel() {
                               <label className="block text-gray-400 text-xs">Cash</label>
                               <input type="number" min={0} value={pd.cash ?? 0} onChange={(e) => setFormData({ ...formData, prizeDetails: { ...formData.prizeDetails, [place]: { ...pd, cash: parseInt(e.target.value) || 0 } } })} className="w-full px-2 py-1 bg-slate-700 text-white rounded text-sm" />
                             </div>
+                          </div>
+                          <div>
+                            <label className="block text-gray-400 text-xs">⭐ Estrelas (premiação)</label>
+                            <input type="number" min={0} value={pd.stars ?? 0} onChange={(e) => setFormData({ ...formData, prizeDetails: { ...formData.prizeDetails, [place]: { ...pd, stars: Math.max(0, parseInt(e.target.value) || 0) } } })} className="w-full px-2 py-1 bg-slate-700 text-white rounded text-sm" placeholder="0" />
                           </div>
                           <div>
                             <label className="block text-gray-400 text-xs">Troféu (título na conquista)</label>

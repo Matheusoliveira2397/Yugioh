@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
 import { api } from '../api/axios';
 import CardImage from '../components/CardImage';
+import { getCardDescription } from '../utils/cardDescription';
 
 interface Card {
   id: string;
@@ -306,7 +307,7 @@ export default function ShopCardsPage() {
 
                       {/* Description */}
                       <p className="text-gray-400 text-xs mb-4 line-clamp-2 italic">
-                        {card.description}
+                        {getCardDescription(card)}
                       </p>
 
                       {/* Monster Stats */}

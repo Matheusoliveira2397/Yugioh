@@ -352,18 +352,15 @@ export default function GroupDetailPage() {
     }
   };
 
-  const handlePromoteMember = async (memberUserId: number, role: 'CO_LEADER' | 'ELDER') => {
-    // Converter para o formato que o backend espera
-    const backendRole = role === 'CO_LEADER' ? 'Co-Leader' : 'Elder';
-    
-    if (!confirm(`Tem certeza que deseja promover este membro a ${role === 'CO_LEADER' ? 'Oficial (Co-Líder)' : 'Veterano'}?`)) {
+  const handlePromoteMember = async (memberUserId: number) => {
+    if (!confirm('Tem certeza que deseja promover este membro a Oficial (Co-Líder)?')) {
       return;
     }
 
     try {
       await axios.post(
         `${API_URL}/groups/${id}/promote/${memberUserId}`,
-        { role: backendRole },
+        { role: 'Co-Leader' },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       alert('Membro promovido com sucesso!');
@@ -913,7 +910,7 @@ export default function GroupDetailPage() {
                   {members.map((member, index) => {
                     const memberId = member.user?.id ? (typeof member.user.id === 'string' ? parseInt(member.user.id, 10) : Number(member.user.id)) : null;
                     const isCurrentUser = memberId === userId;
-                    const isMemberOfficer = member.role === 'Co-Leader' || member.role === 'CO_LEADER' || member.role === 'ELDER' || member.role === 'LEADER';
+                    const isMemberOfficer = member.role === 'Co-Leader' || member.role === 'CO_LEADER' || member.role === 'LEADER';
                     const isMemberLeader = memberId === leaderId;
                     
                     // Verificar se pode remover (líder pode remover todos exceto ele mesmo, oficiais podem remover apenas membros normais)
@@ -924,10 +921,10 @@ export default function GroupDetailPage() {
                           return memId === userId && (m.role === 'Co-Leader' || m.role === 'CO_LEADER');
                         })) && !isMemberOfficer && !isMemberLeader; // Oficiais podem remover apenas membros normais
 
-                    // Verificar se pode promover (apenas membros normais, não oficiais nem líder)
-                    const canPromote = isLeader && !isMemberLeader && (member.role === 'Member' || member.role === 'MEMBER' || !isMemberOfficer);
-                    // Verificar se pode rebaixar (apenas oficiais, não líder)
-                    const canDemote = isLeader && !isMemberLeader && isMemberOfficer;
+                    // Verificar se pode promover (apenas membros normais ou ex-veterano, não co-líder nem líder)
+                    const canPromote = isLeader && !isMemberLeader && (member.role === 'Member' || member.role === 'MEMBER' || member.role === 'ELDER' || !isMemberOfficer);
+                    // Verificar se pode rebaixar (co-líder ou veterano/elder, não líder)
+                    const canDemote = isLeader && !isMemberLeader && (member.role === 'CO_LEADER' || member.role === 'Co-Leader' || member.role === 'ELDER');
 
                     return (
                       <div
@@ -971,12 +968,12 @@ export default function GroupDetailPage() {
                                   👑 Líder
                                 </span>
                               )}
-                              {!isMemberLeader && isMemberOfficer && (
+                              {!isMemberLeader && (member.role === 'CO_LEADER' || member.role === 'Co-Leader') && (
                                 <span className="px-2 py-1 bg-purple-500/20 text-purple-400 rounded text-xs font-bold">
                                   ⭐ Oficial
                                 </span>
                               )}
-                              {!isMemberLeader && !isMemberOfficer && (
+                              {!isMemberLeader && member.role !== 'CO_LEADER' && member.role !== 'Co-Leader' && (
                                 <span className="px-2 py-1 bg-slate-500/20 text-slate-400 rounded text-xs">
                                   Membro
                                 </span>
@@ -998,7 +995,7 @@ export default function GroupDetailPage() {
                           <div className="flex gap-2">
                             {canPromote && (
                               <button
-                                onClick={() => handlePromoteMember(memberId!, 'CO_LEADER')}
+                                onClick={() => handlePromoteMember(memberId!)}
                                 className="px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-semibold"
                                 title="Promover a Oficial"
                               >
@@ -1097,32 +1094,21 @@ export default function GroupDetailPage() {
                           <span className={`px-3 py-1 rounded text-sm font-semibold ${
                             member.role === 'LEADER' ? 'bg-yellow-500/20 text-yellow-400' :
                             member.role === 'CO_LEADER' ? 'bg-orange-500/20 text-orange-400' :
-                            member.role === 'ELDER' ? 'bg-purple-500/20 text-purple-400' :
                             'bg-slate-700/50 text-slate-300'
                           }`}>
                             {member.role === 'LEADER' ? '👑 Líder' :
                              member.role === 'CO_LEADER' ? '⭐ Co-Líder' :
-                             member.role === 'ELDER' ? '💎 Veterano' :
                              '👤 Membro'}
                           </span>
                           {isLeader && member.role !== 'LEADER' && (
                             <div className="flex gap-1">
                               {member.role !== 'CO_LEADER' && (
                                 <button
-                                  onClick={() => handlePromoteMember(member.user.id, 'CO_LEADER')}
+                                  onClick={() => handlePromoteMember(member.user.id)}
                                   className="px-2 py-1 bg-orange-600/20 hover:bg-orange-600/40 text-orange-400 rounded text-xs transition-colors"
                                   title="Promover a Co-Líder"
                                 >
                                   ⭐
-                                </button>
-                              )}
-                              {member.role !== 'ELDER' && member.role !== 'CO_LEADER' && (
-                                <button
-                                  onClick={() => handlePromoteMember(member.user.id, 'ELDER')}
-                                  className="px-2 py-1 bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 rounded text-xs transition-colors"
-                                  title="Promover a Veterano"
-                                >
-                                  💎
                                 </button>
                               )}
                               {(member.role === 'CO_LEADER' || member.role === 'ELDER') && (

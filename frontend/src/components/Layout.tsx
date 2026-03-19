@@ -46,15 +46,29 @@ export default function Layout({ children }: LayoutProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]); // refreshUser é estável, não precisa estar nas dependências
 
-  // Buscar abas ativas do site
+  // Buscar abas ativas do site; garantir que Ranking esteja sempre disponível no topo
   useEffect(() => {
     const fetchActiveTabs = async () => {
       try {
         const response = await axios.get(`${API_URL}/public/site-tabs/active`);
-        setActiveTabs(response.data);
+        const tabs: SiteTab[] = Array.isArray(response.data) ? response.data : [];
+        const hasRanking = tabs.some((t) => t.route === '/ranking');
+        if (!hasRanking) {
+          tabs.push({
+            key: 'ranking',
+            label: 'Ranking',
+            route: '/ranking',
+            icon: '📊',
+            order: 0,
+          });
+          tabs.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+        }
+        setActiveTabs(tabs);
       } catch (error) {
         console.error('Erro ao buscar abas ativas:', error);
-        setActiveTabs([]);
+        setActiveTabs([
+          { key: 'ranking', label: 'Ranking', route: '/ranking', icon: '📊', order: 0 },
+        ]);
       }
     };
     fetchActiveTabs();
@@ -214,6 +228,7 @@ export default function Layout({ children }: LayoutProps) {
                     if (route === '/chat') return { from: 'from-blue-600', to: 'to-cyan-600' };
                     if (route === '/random-duel') return { from: 'from-red-600', to: 'to-orange-600' };
                     if (route === '/arena') return { from: 'from-red-700', to: 'to-pink-700' };
+                    if (route === '/ranking') return { from: 'from-orange-600', to: 'to-red-600' };
                     return { from: 'from-gray-600', to: 'to-gray-500' };
                   };
 

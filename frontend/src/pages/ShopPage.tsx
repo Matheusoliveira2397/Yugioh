@@ -5,6 +5,7 @@ import api from '../api/axios';
 import CardImage from '../components/CardImage';
 import LatestCardsMarquee, { type MarqueeCard } from '../components/LatestCardsMarquee';
 import { useCosmeticsStore } from '../stores/cosmeticsStore';
+import { getCardDescription } from '../utils/cardDescription';
 
 interface Card {
   id: string;
@@ -89,6 +90,25 @@ export default function ShopPage() {
   const [purchaseItem, setPurchaseItem] = useState<{ item: Card | Playmat | Sleeve | TalismanTemplate; method: 'credits' | 'cash' } | null>(null);
   const [purchaseQuantity, setPurchaseQuantity] = useState(1);
   const [sellModal, setSellModal] = useState<{ userCard: any; quantity: number } | null>(null);
+  /** Modal de sucesso após compra ou venda (substitui alert) */
+  const [successModal, setSuccessModal] = useState<{
+    type: 'purchase';
+    itemName: string;
+    itemImage?: string;
+    quantity?: number;
+    paymentMethod: 'credits' | 'cash';
+    price: number;
+    remainingCredits?: number;
+    remainingCash?: number;
+    category: 'cards' | 'playmats' | 'sleeves' | 'talismans';
+  } | {
+    type: 'sell';
+    cardName: string;
+    cardImage?: string;
+    quantity: number;
+    creditsGained: number;
+    cashGained: number;
+  } | null>(null);
   const {
     addPlaymat,
     addSkin,
@@ -223,7 +243,8 @@ export default function ShopPage() {
     return () => {
       cancelled = true;
     };
-  }, [mode, category, user]);
+    // Só refetch quando entrar na aba venda; não quando user.credits/cash mudar (ex.: após compra)
+  }, [mode, category, user?.id]);
 
   // Buscar playmats e sleeves do backend
   useEffect(() => {
@@ -315,7 +336,7 @@ export default function ShopPage() {
     if (searchTerm) {
       filtered = filtered.filter(card =>
         card.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        card.description?.toLowerCase().includes(searchTerm.toLowerCase())
+        getCardDescription(card).toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
@@ -409,7 +430,7 @@ export default function ShopPage() {
         if (!card) return false;
         return (
           card.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          card.description?.toLowerCase().includes(searchTerm.toLowerCase())
+          getCardDescription(card).toLowerCase().includes(searchTerm.toLowerCase())
         );
       });
     }
@@ -559,12 +580,30 @@ export default function ShopPage() {
         quantity,
       });
 
-      alert(`✅ ${response.data.message}\n💰 Créditos: +${response.data.creditsGained || 0}\n💵 Cash: +${response.data.cashGained || 0}`);
+      setSuccessModal({
+        type: 'sell',
+        cardName: userCard.card.name,
+        cardImage: userCard.card.cardImage,
+        quantity,
+        creditsGained: response.data.creditsGained ?? 0,
+        cashGained: response.data.cashGained ?? 0,
+      });
 
-      const inventoryResponse = await api.get('/shop/inventory');
-      const invData = inventoryResponse.data;
-      setInventory(Array.isArray(invData) ? invData : (invData?.cards ?? []));
+      // Atualização otimista: não refetch para evitar “atualizar a tela”
+      const cardId = userCard.card.id;
+      setInventory((prev) => {
+        return prev
+          .map((uc: any) => {
+            if (uc.cardId !== cardId && uc.card?.id !== cardId) return uc;
+            const newQty = (uc.quantity ?? 0) - quantity;
+            if (newQty <= 0) return null;
+            const newSellable = Math.max(0, (uc.sellableQuantity ?? uc.quantity ?? 0) - quantity);
+            return { ...uc, quantity: newQty, sellableQuantity: newSellable };
+          })
+          .filter(Boolean);
+      });
 
+      // Atualizar só o saldo do usuário (uma chamada leve, sem refetch do inventário)
       const userResponse = await api.get('/users/me');
       if (userResponse.data) {
         useAuthStore.getState().setUser(userResponse.data);
@@ -627,8 +666,8 @@ export default function ShopPage() {
     const price = (paymentMethod === 'credits' ? priceCredits : cashNum) * qty;
 
     try {
-      setLoading(true);
       setShowPurchaseConfirm(false);
+      // Não usar setLoading aqui para evitar “atualização” da tela após compra
 
       if (category === 'cards') {
         const hasBalance =
@@ -661,13 +700,17 @@ export default function ShopPage() {
         };
         
         useAuthStore.getState().setUser(updatedUser);
-        alert(
-          `✅ Compra realizada com sucesso!\n\n🎴 ${item.name}${qty > 1 ? ` (${qty} cópias)` : ''} adicionada(s) ao seu inventário!\n${
-            paymentMethod === 'credits' ? '💰' : '💵'
-          } ${price} ${
-            paymentMethod === 'credits' ? 'Créditos' : 'Cash'
-          } foram descontados.`
-        );
+        setSuccessModal({
+          type: 'purchase',
+          itemName: item.name,
+          itemImage: (item as Card).cardImage,
+          quantity: qty,
+          paymentMethod,
+          price,
+          remainingCredits: response.data.remainingBalance?.credits,
+          remainingCash: response.data.remainingBalance?.cash,
+          category: 'cards',
+        });
       } else if (category === 'playmats') {
         const hasBalance =
           paymentMethod === 'credits'
@@ -694,7 +737,16 @@ export default function ShopPage() {
           name: item.name,
           image: (item as Playmat).image,
         });
-        alert('✅ Playmat adquirido e adicionado ao seu inventário de cosméticos!');
+        setSuccessModal({
+          type: 'purchase',
+          itemName: item.name,
+          itemImage: (item as Playmat).image,
+          paymentMethod,
+          price,
+          remainingCredits: response.data.remainingBalance?.credits,
+          remainingCash: response.data.remainingBalance?.cash,
+          category: 'playmats',
+        });
       } else if (category === 'sleeves') {
         const hasBalance =
           paymentMethod === 'credits'
@@ -721,7 +773,16 @@ export default function ShopPage() {
           name: item.name,
           image: (item as Sleeve).image,
         });
-        alert('✅ Sleeve adquirida e adicionada ao seu inventário de cosméticos!');
+        setSuccessModal({
+          type: 'purchase',
+          itemName: item.name,
+          itemImage: (item as Sleeve).image,
+          paymentMethod,
+          price,
+          remainingCredits: response.data.remainingBalance?.credits,
+          remainingCash: response.data.remainingBalance?.cash,
+          category: 'sleeves',
+        });
       } else if (category === 'talismans') {
         const hasBalance =
           paymentMethod === 'credits'
@@ -743,15 +804,22 @@ export default function ShopPage() {
           cash: response.data.remainingBalance.cash,
         };
         useAuthStore.getState().setUser(updatedUser);
-        alert('✅ Talismã adquirido! Equipe-o no inventário para ganhar bônus de Score, Cash e Arena Points na Arena.');
+        setSuccessModal({
+          type: 'purchase',
+          itemName: item.name,
+          itemImage: (item as TalismanTemplate).image ?? undefined,
+          paymentMethod,
+          price,
+          remainingCredits: response.data.remainingBalance?.credits,
+          remainingCash: response.data.remainingBalance?.cash,
+          category: 'talismans',
+        });
       }
       
       setPurchaseItem(null);
     } catch (error: any) {
       alert(`❌ Erro: ${error.response?.data?.message || error.message}`);
       setPurchaseItem(null);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -1908,7 +1976,7 @@ export default function ShopPage() {
               </div>
               
               <h3 className="text-xl font-bold text-white mb-2">{selectedCard.name}</h3>
-              <p className="text-white/80 mb-4">{selectedCard.description || 'Sem descrição'}</p>
+              <p className="text-white/80 mb-4">{getCardDescription(selectedCard)}</p>
               
               {selectedCard.type === 'Monster' && (
                 <div className="space-y-2 mb-4">
@@ -2129,6 +2197,107 @@ export default function ShopPage() {
                   Vender
                 </button>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* Modal de sucesso: Compra ou Venda realizada */}
+        {successModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-md flex items-center justify-center z-[60] p-4"
+            onClick={() => setSuccessModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', damping: 25 }}
+              className="bg-gradient-to-br from-slate-800 to-slate-900 backdrop-blur-xl rounded-2xl p-6 max-w-sm w-full border-2 border-white/20 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {successModal.type === 'purchase' ? (
+                <>
+                  <div className="flex flex-col items-center text-center mb-4">
+                    <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center text-4xl mb-3">
+                      ✅
+                    </div>
+                    <h2 className="text-xl font-bold text-white mb-1">Compra realizada!</h2>
+                    <p className="text-gray-300 text-sm">Item adicionado ao seu inventário</p>
+                  </div>
+                  {successModal.itemImage && (
+                    <div className="w-full max-w-[120px] mx-auto aspect-[2/3] rounded-lg overflow-hidden border border-white/20 mb-4">
+                      {successModal.category === 'cards' ? (
+                        <CardImage
+                          card={{ cardImage: successModal.itemImage, name: successModal.itemName }}
+                          className="w-full h-full object-cover"
+                          fallback="/images/fundoCarta.webp"
+                        />
+                      ) : (
+                        <img
+                          src={successModal.itemImage}
+                          alt={successModal.itemName}
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
+                  )}
+                  <p className="text-white font-semibold text-center mb-2">{successModal.itemName}</p>
+                  {successModal.quantity != null && successModal.quantity > 1 && (
+                    <p className="text-gray-400 text-sm text-center mb-2">{successModal.quantity} cópias</p>
+                  )}
+                  <div className="space-y-1 text-sm text-gray-300 mb-4">
+                    <p>
+                      Pago: {successModal.paymentMethod === 'credits' ? '💰' : '💵'} {successModal.price}{' '}
+                      {successModal.paymentMethod === 'credits' ? 'Créditos' : 'Cash'}
+                    </p>
+                    {(successModal.remainingCredits != null || successModal.remainingCash != null) && (
+                      <p className="text-green-300/90">
+                        Saldo: 💰 {successModal.remainingCredits ?? 0} créditos · 💵 {Number(successModal.remainingCash ?? 0).toFixed(2)} cash
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setSuccessModal(null)}
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold transition-all"
+                  >
+                    OK
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-col items-center text-center mb-4">
+                    <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center text-4xl mb-3">
+                      💰
+                    </div>
+                    <h2 className="text-xl font-bold text-white mb-1">Venda realizada!</h2>
+                    <p className="text-gray-300 text-sm">Créditos e cash creditados</p>
+                  </div>
+                  {successModal.cardImage && (
+                    <div className="w-full max-w-[120px] mx-auto aspect-[2/3] rounded-lg overflow-hidden border border-white/20 mb-4">
+                      <CardImage
+                        card={{ cardImage: successModal.cardImage, name: successModal.cardName }}
+                        className="w-full h-full object-cover"
+                        fallback="/images/fundoCarta.webp"
+                      />
+                    </div>
+                  )}
+                  <p className="text-white font-semibold text-center mb-2">{successModal.cardName}</p>
+                  {successModal.quantity > 1 && (
+                    <p className="text-gray-400 text-sm text-center mb-2">{successModal.quantity} cópias vendidas</p>
+                  )}
+                  <div className="flex gap-4 justify-center text-sm mb-4">
+                    <span className="text-yellow-300 font-semibold">💰 +{successModal.creditsGained} créditos</span>
+                    <span className="text-green-300 font-semibold">💵 +{successModal.cashGained} cash</span>
+                  </div>
+                  <button
+                    onClick={() => setSuccessModal(null)}
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-bold transition-all"
+                  >
+                    OK
+                  </button>
+                </>
+              )}
             </motion.div>
           </motion.div>
         )}

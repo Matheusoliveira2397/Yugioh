@@ -26,6 +26,7 @@ export enum TurnPhase {
 
 export enum DuelOrigin {
   RANDOM = 'RANDOM',
+  RANDOM_ANIME = 'RANDOM_ANIME',
   CHAT = 'CHAT',
   TOURNAMENT = 'TOURNAMENT',
   ARENA = 'ARENA',

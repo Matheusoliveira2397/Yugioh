@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/authStore';
 import { motion } from 'framer-motion';
 import axios from 'axios';
 import { getImageUrl } from '../utils/imageUrl';
+import { formatScore } from '../utils/formatScore';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -787,6 +788,9 @@ export const ProfilePage: React.FC = () => {
                 >
                   <span>⭐</span> Nível <span className="text-base font-bold text-white ml-1">{profileUser.level || 1}</span>
                 </span>
+                <span className="text-slate-300 flex items-center gap-1" title="Estrelas (premiação de torneios e outras recompensas)">
+                  <span>🌟</span> <span className="text-base font-bold text-amber-300/90">{(profileUser as any).stars ?? 0}</span> estrelas
+                </span>
               </div>
             </div>
           </div>
@@ -803,7 +807,7 @@ export const ProfilePage: React.FC = () => {
                       <span className="text-xs md:text-sm text-slate-400 font-medium uppercase tracking-wide flex items-center gap-1.5">
                         <span className="text-base">📊</span> Score Season
                       </span>
-                      <span className="text-lg md:text-xl font-bold text-cyan-400 drop-shadow-lg">{seasonScore || 0}</span>
+                      <span className="text-lg md:text-xl font-bold text-cyan-400 drop-shadow-lg">{formatScore(seasonScore)}</span>
                     </div>
                     <div className="flex items-center justify-between pt-2 border-t border-slate-700/30">
                       <span className="text-xs text-slate-500 font-medium">⚡ V/D</span>
@@ -819,7 +823,7 @@ export const ProfilePage: React.FC = () => {
                       <span className="text-xs md:text-sm text-slate-400 font-medium uppercase tracking-wide flex items-center gap-1.5">
                         <span className="text-base">🏆</span> Score Geral
                       </span>
-                      <span className="text-lg md:text-xl font-bold text-yellow-400 drop-shadow-lg">{profileUser.totalScore?.toLocaleString() || 0}</span>
+                      <span className="text-lg md:text-xl font-bold text-yellow-400 drop-shadow-lg">{formatScore(profileUser.totalScore)}</span>
                     </div>
                     <div className="flex items-center justify-between pt-2 border-t border-slate-700/30">
                       <span className="text-xs text-slate-500 font-medium">📈 V/D</span>
@@ -1740,11 +1744,11 @@ export const ProfilePage: React.FC = () => {
                                 </span>
                               </td>
                               <td className="py-3 px-4 text-gray-300">
-                                {requiredScore.toLocaleString('pt-BR')} pts
+                                {formatScore(requiredScore)} pts
                               </td>
                               <td className="py-3 px-4">
                                 <span className={scoreRemaining === 0 ? 'text-green-400' : 'text-yellow-400'}>
-                                  {scoreRemaining === 0 ? '✅ Alcançado' : `${scoreRemaining.toLocaleString('pt-BR')} pts`}
+                                  {scoreRemaining === 0 ? '✅ Alcançado' : `${formatScore(scoreRemaining)} pts`}
                                 </span>
                               </td>
                             </tr>
@@ -1757,7 +1761,7 @@ export const ProfilePage: React.FC = () => {
 
                 <div className="mt-6 pt-4 border-t border-gray-700/50">
                   <p className="text-sm text-gray-400 text-center">
-                    Score atual: <span className="text-white font-bold">{parseFloat(profileUser?.totalScore || 0).toLocaleString('pt-BR')} pts</span>
+                    Score atual: <span className="text-white font-bold">{formatScore(profileUser?.totalScore)} pts</span>
                   </p>
                 </div>
               </div>

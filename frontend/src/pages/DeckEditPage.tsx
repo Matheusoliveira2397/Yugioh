@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { api } from '../api/axios';
 import { useAuthStore } from '../stores/authStore';
 import CardImage from '../components/CardImage';
+import { getCardDescription } from '../utils/cardDescription';
 
 interface UserCard {
   id: string;
@@ -59,6 +60,10 @@ export default function DeckEditPage() {
   const [maletaSearch, setMaletaSearch] = useState('');
   const [maletaFilterType, setMaletaFilterType] = useState<string>('all');
   const [maletaFilterRarity, setMaletaFilterRarity] = useState<string>('all');
+  /** Imagem do deck: carta de capa (opcional) */
+  const [coverCardId, setCoverCardId] = useState<string | null>(null);
+  const [coverCard, setCoverCard] = useState<{ id: string; name: string; cardImage?: string; idCarta?: string } | null>(null);
+  const [showCoverPicker, setShowCoverPicker] = useState(false);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const deckNameTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const savingRef = useRef(false);
@@ -68,11 +73,29 @@ export default function DeckEditPage() {
   const extraDeckRef = useRef(extraDeck);
   const deckNameRef = useRef(deckName);
   const originalDeckNameRef = useRef<string | null>(originalDeckNameForSave);
+  const coverCardIdRef = useRef<string | null>(coverCardId);
   const loadMaletaRef = useRef<(() => Promise<void>) | null>(null);
+  const loadDeckRef = useRef<((overrideAllUserCards?: UserCard[]) => Promise<void>) | null>(null);
+  /** Nome do deck que estamos editando (vindo da navegação), para sempre carregar o deck certo */
+  const deckNameFromNavigationRef = useRef<string | null>(null);
+  /** Decks retornados pela API na última loadMaleta (para recalcular maleta com o deck atual) */
+  const decksDataRef = useRef<any[]>([]);
+  /** Para só chamar loadDeck a partir da maleta uma vez (carregamento inicial) */
+  const initialDeckLoadDoneRef = useRef(false);
+
+  // Guardar nome do deck vindo da navegação para não carregar o deck errado
+  useEffect(() => {
+    if (locationState?.deckName && typeof locationState.deckName === 'string') {
+      deckNameFromNavigationRef.current = locationState.deckName.trim();
+    }
+  }, [locationState?.deckName]);
 
   useEffect(() => {
     originalDeckNameRef.current = originalDeckNameForSave;
   }, [originalDeckNameForSave]);
+  useEffect(() => {
+    coverCardIdRef.current = coverCardId;
+  }, [coverCardId]);
 
   // Atualizar refs quando o estado mudar
   useEffect(() => {
@@ -155,6 +178,7 @@ export default function DeckEditPage() {
           name: currentDeckName.trim() || 'Meu Deck',
           cardIds,
           extraDeckCardIds: extraDeckCardIds.length > 0 ? extraDeckCardIds : undefined,
+          coverCardId: coverCardIdRef.current ?? undefined,
         };
         if (originalDeckNameRef.current) {
           payload.originalDeckName = originalDeckNameRef.current;
@@ -175,15 +199,7 @@ export default function DeckEditPage() {
           cardsCount: res.data?.cards?.length || 0
         });
         setOriginalDeckNameForSave(currentDeckName.trim() || 'Meu Deck');
-
-        // Recarregar a maleta após salvar para garantir sincronização com todos os decks
-        // Isso garante que a maleta mostre apenas cartas que não estão em nenhum deck
-        // Usar uma ref para evitar dependência circular
-        setTimeout(() => {
-          if (loadMaletaRef.current) {
-            loadMaletaRef.current();
-          }
-        }, 300);
+        // Não recarregar maleta aqui para não “atualizar” a tela ao colocar/remover cartas (já atualizamos a maleta em modo otimista)
       } catch (error: any) {
         console.error('❌ [saveDeckImmediately] Erro ao salvar deck:', error);
         console.error('❌ [saveDeckImmediately] Status:', error.response?.status);
@@ -229,6 +245,7 @@ export default function DeckEditPage() {
       const decksData = Array.isArray(decksPayload)
         ? decksPayload
         : (Array.isArray(decksPayload?.data) ? decksPayload.data : decksPayload?.decks ?? []);
+      decksDataRef.current = decksData;
 
       // O endpoint retorna { cards: UserCard[], playmats: any[], skins: any[] }
       const inventoryData = inventoryResponse?.cards || (Array.isArray(inventoryResponse) ? inventoryResponse : []);
@@ -259,7 +276,6 @@ export default function DeckEditPage() {
         // IMPORTANTE: allUserCards deve manter a quantidade TOTAL que o usuário possui
         setAllUserCards(inventoryData);
 
-        // Só recalcular maleta se tivermos a lista de decks (evita mostrar total quando GET /decks falha ou retorna vazio)
         const hasDecksData = Array.isArray(decksData) && decksData.length > 0;
         if (hasDecksData) {
           const adjusted: UserCard[] = [];
@@ -279,6 +295,15 @@ export default function DeckEditPage() {
             cartasDisponiveis: adjusted.length,
             cópiasDisponíveis: adjusted.reduce((sum, uc) => sum + (uc.quantity || 0), 0)
           });
+        } else {
+          // Sem decks (ou GET /decks vazio): toda a inventário está disponível na maleta
+          setMaleta(inventoryData.map((uc: UserCard) => ({ ...uc })));
+          console.log('✅ Maleta carregada (sem outros decks):', inventoryData.length, 'itens');
+        }
+        // Carregar deck após maleta (com dados corretos), mesmo quando hasDecksData é false (ex.: primeiro deck)
+        if (!isNewDeck && !initialDeckLoadDoneRef.current && loadDeckRef.current) {
+          initialDeckLoadDoneRef.current = true;
+          loadDeckRef.current(inventoryData);
         }
         // Se não tiver decksData, não atualiza setMaleta (mantém estado anterior e evita mostrar 6 em vez de 3)
       } else {
@@ -288,6 +313,10 @@ export default function DeckEditPage() {
           length: inventoryData?.length
         });
         setAllUserCards([]);
+        if (!isNewDeck && !initialDeckLoadDoneRef.current && loadDeckRef.current) {
+          initialDeckLoadDoneRef.current = true;
+          loadDeckRef.current([]);
+        }
       }
       } catch (error: any) {
       console.error('❌ Erro ao carregar maleta:', error);
@@ -296,7 +325,7 @@ export default function DeckEditPage() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, isNewDeck]);
 
   // Atualizar ref quando loadMaleta for definido
   useEffect(() => {
@@ -306,15 +335,20 @@ export default function DeckEditPage() {
   // A maleta é calculada em loadMaleta baseada em allUserCards (total) - usedInDecks
   // Não precisa recalcular aqui, a maleta já é atualizada em loadMaleta
 
-  const loadDeck = useCallback(async () => {
+  const loadDeck = useCallback(async (overrideAllUserCards?: UserCard[]) => {
     if (!user) return;
+    const allCards = overrideAllUserCards ?? allUserCards;
     try {
-      // Usar deckName do estado (que pode ter sido atualizado) ou initialDeckName
-      const deckNameToLoad = deckName || initialDeckName || (user as any)?.equippedDeckName || 'Meu Deck';
+      // Prioridade: nome vindo da navegação (deck que o usuário clicou) > estado > initial > equipped
+      const deckNameToLoad =
+        deckNameFromNavigationRef.current?.trim() ||
+        deckName?.trim() ||
+        initialDeckName?.trim() ||
+        (user as any)?.equippedDeckName?.trim() ||
+        'Meu Deck';
       console.log('🔄 [loadDeck] Carregando deck salvo...');
+      console.log('🔄 [loadDeck] deckNameFromNavigation:', deckNameFromNavigationRef.current);
       console.log('🔄 [loadDeck] deckName (estado):', deckName);
-      console.log('🔄 [loadDeck] initialDeckName:', initialDeckName);
-      console.log('🔄 [loadDeck] user.equippedDeckName:', (user as any)?.equippedDeckName);
       console.log('🔄 [loadDeck] Usando deckNameToLoad:', deckNameToLoad);
       const res = await Promise.race([
         api.get(`/decks/current?name=${encodeURIComponent(deckNameToLoad)}`, { timeout: 20000 }),
@@ -344,7 +378,7 @@ export default function DeckEditPage() {
         
         // Criar um mapa de cardId para UserCard de todas as cartas do usuário
         const allCardsMap = new Map<string, UserCard>();
-        allUserCards.forEach(uc => {
+        allCards.forEach(uc => {
           if (uc.cardId) {
             allCardsMap.set(uc.cardId, uc);
           }
@@ -421,13 +455,45 @@ export default function DeckEditPage() {
           setDeckName(res.data.name);
         }
         setOriginalDeckNameForSave(loadedName || null);
-        // Recalcular maleta ao trocar de deck (garante que "disponível" considera todos os decks)
-        if (loadMaletaRef.current) loadMaletaRef.current();
+        setCoverCardId(res.data.coverCardId ?? null);
+        setCoverCard(res.data.coverCard ?? null);
+
+        // Recalcular maleta: uso nos OUTROS decks (API) + uso no deck atual (o que acabamos de carregar)
+        // Assim a maleta nunca mostra como disponível carta que já está em algum deck
+        const usedInDecks = new Map<string, number>();
+        const currentNameNorm = (loadedName || '').trim().toLowerCase();
+        (decksDataRef.current || []).forEach((d: any) => {
+          const nameNorm = (d.name || '').trim().toLowerCase();
+          if (nameNorm === currentNameNorm) return;
+          const deckCards = d.cards ?? d.deck_cards ?? [];
+          if (Array.isArray(deckCards)) {
+            deckCards.forEach((dc: any) => {
+              const cid = dc.cardId ?? dc.card_id;
+              if (cid) usedInDecks.set(cid, (usedInDecks.get(cid) || 0) + 1);
+            });
+          }
+        });
+        [...loadedDeck, ...loadedExtraDeck].filter(Boolean).forEach((slot: any) => {
+          const cid = slot?.cardId || slot?.card?.id;
+          if (cid) usedInDecks.set(cid, (usedInDecks.get(cid) || 0) + 1);
+        });
+        const adjusted: UserCard[] = [];
+        allCards.forEach((uc: UserCard) => {
+          if (!uc || !uc.cardId) return;
+          const ownedQty = uc.quantity || 0;
+          const usedQty = usedInDecks.get(uc.cardId) || 0;
+          const available = ownedQty - usedQty;
+          if (available > 0) adjusted.push({ ...uc, quantity: available });
+        });
+        setMaleta(adjusted);
+        setDeckLoaded(true);
       } else {
         console.warn('⚠️ [loadDeck] Resposta sem dados');
+        setDeckLoaded(true);
       }
     } catch (error: any) {
       console.error('❌ [loadDeck] Erro ao carregar deck:', error);
+      setDeckLoaded(true);
       console.error('❌ [loadDeck] Status:', error.response?.status);
       console.error('❌ [loadDeck] Dados:', error.response?.data);
       // Não é erro se não houver deck salvo
@@ -435,36 +501,25 @@ export default function DeckEditPage() {
   }, [user, allUserCards, deckName, initialDeckName]);
 
   useEffect(() => {
+    loadDeckRef.current = loadDeck;
+  }, [loadDeck]);
+
+  useEffect(() => {
     loadMaleta();
   }, [loadMaleta]);
 
-  // Carregar deck após a maleta ser carregada (apenas uma vez)
+  // Novo deck: inicializar vazio. Deck existente é carregado por loadMaleta → loadDeck (com dados corretos).
   useEffect(() => {
-    if (!deckLoaded && user) {
-      // Aguardar maleta carregar OU se for novo deck, não precisa esperar
-      if (isNewDeck) {
-        // Novo deck: começar vazio e não carregar do backend
-        setDeck(Array(60).fill(null));
-        setDeckName('Novo Deck');
-        setOriginalDeckNameForSave(null);
-        setDeckLoaded(true);
-      } else if (allUserCards.length >= 0) {
-        // Carregar deck mesmo se maleta estiver vazia (pode ter cartas no deck que não estão na maleta)
-        // Usar um pequeno delay para garantir que o deckName foi atualizado
-        const timer = setTimeout(() => {
-          console.log('🔄 [useEffect] Carregando deck, deckName:', deckName);
-          loadDeck();
-          setDeckLoaded(true);
-        }, 100);
-        return () => clearTimeout(timer);
-      }
-      
-      // Inicializar Extra Deck vazio se for novo deck
-      if (isNewDeck) {
-        setExtraDeck(Array(15).fill(null));
-      }
+    if (!deckLoaded && user && isNewDeck) {
+      setDeck(Array(60).fill(null));
+      setExtraDeck(Array(15).fill(null));
+      setDeckName('Novo Deck');
+      setOriginalDeckNameForSave(null);
+      setCoverCardId(null);
+      setCoverCard(null);
+      setDeckLoaded(true);
     }
-  }, [allUserCards.length, deckLoaded, user, loadDeck, isNewDeck, deckName]);
+  }, [deckLoaded, user, isNewDeck]);
 
   // Recarregar maleta quando a página receber foco (útil após comprar cartas)
   useEffect(() => {
@@ -562,20 +617,17 @@ export default function DeckEditPage() {
     setDeck(prev => {
       const newDeck = [...prev];
       newDeck[emptySlot] = { ...userCard };
-      // Atualizar ref imediatamente
       deckRef.current = newDeck;
-      // Salvar imediatamente
       saveDeckImmediately();
       return newDeck;
     });
 
-    // Recarregar maleta após salvar o deck para recalcular quantidades disponíveis
-    // A maleta será recalculada automaticamente quando o deck for salvo
-    setTimeout(() => {
-      if (loadMaletaRef.current) {
-        loadMaletaRef.current();
-      }
-    }, 500);
+    // Atualização otimista da maleta (não refetch para não “atualizar” a tela)
+    setMaleta(prev => prev.map(uc => {
+      if (uc.cardId !== userCard.cardId && uc.card?.id !== userCard.card?.id) return uc;
+      const newQty = Math.max(0, (uc.quantity || 0) - 1);
+      return { ...uc, quantity: newQty };
+    }).filter(uc => (uc.quantity || 0) > 0));
   };
 
   const removeFromDeck = (idx: number) => {
@@ -600,16 +652,17 @@ export default function DeckEditPage() {
         newDeckLength: newDeck.filter(s => s !== null).length
       });
       
-      // Salvar imediatamente
       saveDeckImmediately();
-      
-      // Recarregar maleta após salvar o deck para recalcular quantidades disponíveis
-      setTimeout(() => {
-        if (loadMaletaRef.current) {
-          loadMaletaRef.current();
-        }
-      }, 500);
-      
+
+      // Atualização otimista da maleta ao remover carta (não refetch)
+      if (cardToRemove) {
+        setMaleta(prev => {
+          const found = prev.find(uc => uc.cardId === cardToRemove.cardId || uc.card?.id === cardToRemove?.card?.id);
+          if (found) return prev.map(uc => uc === found ? { ...uc, quantity: (uc.quantity || 0) + 1 } : uc);
+          return [...prev, { ...cardToRemove, quantity: 1 }];
+        });
+      }
+
       return newDeck;
     });
   };
@@ -673,19 +726,17 @@ export default function DeckEditPage() {
     setExtraDeck(prev => {
       const newExtraDeck = [...prev];
       newExtraDeck[emptySlot] = { ...userCard };
-      // Atualizar ref imediatamente
       extraDeckRef.current = newExtraDeck;
-      // Salvar imediatamente
       saveDeckImmediately();
       return newExtraDeck;
     });
 
-    // Recarregar maleta após salvar o deck para recalcular quantidades disponíveis
-    setTimeout(() => {
-      if (loadMaletaRef.current) {
-        loadMaletaRef.current();
-      }
-    }, 500);
+    // Atualização otimista da maleta (não refetch)
+    setMaleta(prev => prev.map(uc => {
+      if (uc.cardId !== userCard.cardId && uc.card?.id !== userCard.card?.id) return uc;
+      const newQty = Math.max(0, (uc.quantity || 0) - 1);
+      return { ...uc, quantity: newQty };
+    }).filter(uc => (uc.quantity || 0) > 0));
   };
 
   const removeFromExtraDeck = (idx: number) => {
@@ -707,16 +758,17 @@ export default function DeckEditPage() {
         newExtraDeckLength: newExtraDeck.filter(s => s !== null).length
       });
       
-      // Salvar imediatamente
       saveDeckImmediately();
-      
-      // Recarregar maleta após salvar o deck para recalcular quantidades disponíveis
-      setTimeout(() => {
-        if (loadMaletaRef.current) {
-          loadMaletaRef.current();
-        }
-      }, 500);
-      
+
+      // Atualização otimista da maleta ao remover do Extra Deck (não refetch)
+      if (cardToRemove) {
+        setMaleta(prev => {
+          const found = prev.find(uc => uc.cardId === cardToRemove.cardId || uc.card?.id === cardToRemove?.card?.id);
+          if (found) return prev.map(uc => uc === found ? { ...uc, quantity: (uc.quantity || 0) + 1 } : uc);
+          return [...prev, { ...cardToRemove, quantity: 1 }];
+        });
+      }
+
       return newExtraDeck;
     });
   };
@@ -866,6 +918,7 @@ export default function DeckEditPage() {
         name: deckName.trim() || 'Meu Deck',
         cardIds,
         extraDeckCardIds: extraDeckCardIds.length > 0 ? extraDeckCardIds : undefined,
+        coverCardId: coverCardId ?? undefined,
       };
       if (originalDeckNameForSave) {
         payload.originalDeckName = originalDeckNameForSave;
@@ -945,6 +998,7 @@ export default function DeckEditPage() {
           name: currentDeckName.trim() || 'Meu Deck',
           cardIds,
           extraDeckCardIds: extraDeckCardIds.length > 0 ? extraDeckCardIds : undefined,
+          coverCardId: coverCardIdRef.current ?? undefined,
         };
         if (originalDeckNameRef.current) {
           payload.originalDeckName = originalDeckNameRef.current;
@@ -1050,6 +1104,88 @@ export default function DeckEditPage() {
               )}
             </div>
           </div>
+
+          {/* Imagem do Deck (carta de capa) */}
+          <div className="mb-4">
+            <label className="block text-white/90 text-sm font-medium mb-2">Imagem do Deck (opcional)</label>
+            <p className="text-gray-400 text-xs mb-2">Escolha uma carta do deck para ser a imagem exibida na lista de decks.</p>
+            <div className="flex items-center gap-4 flex-wrap">
+              {coverCard ? (
+                <div className="flex items-center gap-3 p-2 rounded-lg bg-gray-800/50 border border-gray-600">
+                  <CardImage
+                    card={coverCard}
+                    className="w-16 aspect-[59/86] rounded object-cover"
+                    fallback="/images/fundoCarta.webp"
+                  />
+                  <div>
+                    <p className="text-white font-medium text-sm">{coverCard.name}</p>
+                    <button
+                      type="button"
+                      onClick={() => { setCoverCardId(null); setCoverCard(null); saveDeckImmediately(); }}
+                      className="text-red-400 hover:text-red-300 text-xs mt-1"
+                    >
+                      Remover imagem
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setShowCoverPicker(!showCoverPicker)}
+                className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium"
+              >
+                {coverCardId ? 'Trocar carta' : 'Escolher carta'}
+              </button>
+            </div>
+            {showCoverPicker && (() => {
+              const slotsWithCards = [...deck, ...extraDeck].filter((s): s is UserCard => s !== null && !!s.card);
+              const seen = new Set<string>();
+              const uniqueCards = slotsWithCards.filter(s => {
+                const id = s.card?.id || s.cardId;
+                if (!id || seen.has(id)) return false;
+                seen.add(id);
+                return true;
+              });
+              return (
+                <div className="mt-3 p-3 rounded-lg bg-gray-800/80 border border-gray-600 max-h-64 overflow-y-auto">
+                  <p className="text-gray-400 text-sm mb-2">Clique em uma carta do deck para definir como imagem:</p>
+                  <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                    {uniqueCards.length === 0 ? (
+                      <p className="col-span-full text-gray-500 text-sm">Adicione cartas ao deck primeiro.</p>
+                    ) : (
+                      uniqueCards.map((uc) => (
+                        <button
+                          key={uc.card?.id || uc.cardId}
+                          type="button"
+                          onClick={() => {
+                            const c = uc.card;
+                            if (c) {
+                              setCoverCardId(c.id);
+                              setCoverCard({ id: c.id, name: c.name, cardImage: c.cardImage, idCarta: (c as any).idCarta });
+                              setShowCoverPicker(false);
+                              saveDeckImmediately();
+                            }
+                          }}
+                          className={`rounded-lg overflow-hidden border-2 transition-all ${
+                            coverCardId === (uc.card?.id || uc.cardId)
+                              ? 'border-amber-400 ring-2 ring-amber-400/50'
+                              : 'border-gray-600 hover:border-purple-500'
+                          }`}
+                        >
+                          <CardImage
+                            card={uc.card!}
+                            className="w-full aspect-[59/86] object-cover"
+                            fallback="/images/fundoCarta.webp"
+                          />
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
           <div className="rounded-xl px-8 py-12 bg-transparent backdrop-blur-sm border-2 border-blue-500/50 shadow-2xl overflow-hidden">
             <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 justify-items-center" style={{ gap: '24px' }}>
               {deck.map((slot, idx) => (
@@ -1385,7 +1521,7 @@ export default function DeckEditPage() {
               />
             </div>
             <h3 className="text-2xl font-bold text-white mb-2">{selectedCard.card?.name || 'Carta sem nome'}</h3>
-            <p className="text-white/80 mb-4">{selectedCard.card?.description || 'Sem descrição'}</p>
+            <p className="text-white/80 mb-4">{getCardDescription(selectedCard?.card)}</p>
             {selectedCard.card?.type === 'Monster' && (
               <div className="flex gap-4 mb-4">
                 {selectedCard.card?.atk !== undefined && selectedCard.card?.atk !== null && (

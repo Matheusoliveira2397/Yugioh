@@ -34,6 +34,8 @@ import { FriendsGateway } from '../friends/friends.gateway';
 import { Achievement, AchievementType } from '../users/entities/achievement.entity';
 import { UploadService } from '../upload/upload.service';
 import { CreditPaymentLog } from './entities/credit-payment-log.entity';
+import { DuelScoreSettings } from './entities/duel-score-settings.entity';
+import { DuelOrigin } from '../duels/entities/duel.entity';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -44,6 +46,8 @@ export class AdminService implements OnModuleInit {
     private authService: AuthService,
     @InjectRepository(CreditPaymentLog)
     private creditPaymentLogRepository: Repository<CreditPaymentLog>,
+    @InjectRepository(DuelScoreSettings)
+    private duelScoreSettingsRepository: Repository<DuelScoreSettings>,
     @InjectRepository(Achievement)
     private achievementsRepository: Repository<Achievement>,
     @InjectRepository(UserCard)
@@ -157,6 +161,34 @@ export class AdminService implements OnModuleInit {
       }
     } catch (error: any) {
       console.error('❌ [AdminService] Erro ao verificar/criar tabela social_media:', error);
+    }
+
+    // Verificar e criar tabela duel_score_settings se não existir
+    try {
+      const duelScoreTableExists = await this.duelScoreSettingsRepository.query(`
+        SELECT table_name FROM information_schema.tables WHERE table_name = 'duel_score_settings'
+      `);
+      if (duelScoreTableExists.length === 0) {
+        await this.duelScoreSettingsRepository.query(`
+          CREATE TABLE "duel_score_settings" (
+            "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+            "scoreRandom" NUMERIC(10,2) NOT NULL DEFAULT 1.7,
+            "scoreChat" NUMERIC(10,2) NOT NULL DEFAULT 1.0,
+            "scoreTournament" NUMERIC(10,2) NOT NULL DEFAULT 10.0,
+            "scoreArena" NUMERIC(10,2) NOT NULL DEFAULT 2.0,
+            "scoreOther" NUMERIC(10,2) NOT NULL DEFAULT 1.0,
+            "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+            "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+          )
+        `);
+        await this.duelScoreSettingsRepository.query(`
+          INSERT INTO duel_score_settings ("scoreRandom","scoreChat","scoreTournament","scoreArena","scoreOther","createdAt","updatedAt")
+          VALUES (1.7, 1.0, 10.0, 2.0, 1.0, NOW(), NOW())
+        `);
+        console.log('✅ [AdminService] Tabela duel_score_settings criada');
+      }
+    } catch (err: any) {
+      console.error('❌ [AdminService] Erro ao verificar/criar duel_score_settings:', err?.message);
     }
 
     // Verificar e criar tabela divisions se não existir
@@ -1239,7 +1271,7 @@ export class AdminService implements OnModuleInit {
     console.log(`✅ [resetAdminDeck] ${deletedCount} decks deletados`);
 
     // Limpar equippedDeckName do usuário
-    await this.usersRepository.update(admin.id, { equippedDeckName: null });
+    await this.usersRepository.update(admin.id, { equippedDeckId: null, equippedDeckName: null });
 
     // Aplicar deck inicial
     console.log(`🎴 [resetAdminDeck] Aplicando deck inicial ao Admin...`);
@@ -1795,6 +1827,7 @@ export class AdminService implements OnModuleInit {
         userSet.cash = initialCash;
       }
       if (options.resetCartas) {
+        userSet.equippedDeckId = null;
         userSet.equippedDeckName = null;
       }
       if (Object.keys(userSet).length > 0) {
@@ -1884,5 +1917,171 @@ export class AdminService implements OnModuleInit {
       achievementsDeleted,
       groupsUpdated,
     };
+  }
+
+  /**
+   * Retorna, por carta, quantas pessoas possuem essa carta (maleta e/ou deck) e o total de cópias na maleta.
+   * Conta qualquer jogador que tenha a carta na maleta (user_cards) OU em algum deck (deck_cards).
+   */
+  async getCardOwnershipStats(): Promise<{
+    list: { cardId: string; name: string; cardImage: string | null; ownerCount: number; totalQuantity: number }[];
+    totalUserCardRows?: number;
+  }> {
+    const totalUserCardRows = await this.userCardsRepository
+      .createQueryBuilder('uc')
+      .getCount()
+      .catch(() => undefined);
+
+    const rows = await this.userCardsRepository.query(`
+      WITH owners AS (
+        SELECT "cardId", "userId" FROM user_cards
+        UNION
+        SELECT dc."cardId", d."userId" FROM deck_cards dc INNER JOIN decks d ON d.id = dc."deckId"
+      ),
+      agg AS (
+        SELECT o."cardId",
+               COUNT(DISTINCT o."userId") AS "ownerCount"
+        FROM owners o
+        GROUP BY o."cardId"
+      ),
+      maleta_totals AS (
+        SELECT "cardId", COALESCE(SUM(quantity), 0)::int AS "totalQuantity"
+        FROM user_cards
+        GROUP BY "cardId"
+      )
+      SELECT agg."cardId" AS "cardId",
+             c.name AS name,
+             c."cardImage" AS "cardImage",
+             agg."ownerCount" AS "ownerCount",
+             COALESCE(mt."totalQuantity", 0) AS "totalQuantity"
+      FROM agg
+      INNER JOIN cards c ON c.id = agg."cardId"
+      LEFT JOIN maleta_totals mt ON mt."cardId" = agg."cardId"
+      ORDER BY agg."ownerCount" DESC
+    `) as Record<string, unknown>[];
+
+    const list = rows.map((r) => {
+      const raw = (k: string) => r[k] ?? r[k.toLowerCase()];
+      return {
+        cardId: String(raw('cardId') ?? ''),
+        name: String(raw('name') ?? ''),
+        cardImage: raw('cardImage') != null ? String(raw('cardImage')) : null,
+        ownerCount: typeof raw('ownerCount') === 'number' ? (raw('ownerCount') as number) : parseInt(String(raw('ownerCount') ?? 0), 10) || 0,
+        totalQuantity: typeof raw('totalQuantity') === 'number' ? (raw('totalQuantity') as number) : parseInt(String(raw('totalQuantity') ?? 0), 10) || 0,
+      };
+    });
+
+    return { list, totalUserCardRows };
+  }
+
+  /**
+   * Retorna a lista de duelistas que possuem uma carta, com o total de cópias (maleta + deck).
+   */
+  async getCardOwners(cardId: string): Promise<{
+    userId: number;
+    nickname: string;
+    username: string;
+    totalQuantity: number;
+  }[]> {
+    const raw = await this.userCardsRepository.query(
+      `
+      WITH in_maleta AS (
+        SELECT "userId", COALESCE(SUM(quantity), 0)::int AS qty
+        FROM user_cards
+        WHERE "cardId" = $1
+        GROUP BY "userId"
+      ),
+      in_decks AS (
+        SELECT d."userId", COUNT(*)::int AS qty
+        FROM deck_cards dc
+        INNER JOIN decks d ON d.id = dc."deckId"
+        WHERE dc."cardId" = $1
+        GROUP BY d."userId"
+      ),
+      combined AS (
+        SELECT COALESCE(m."userId", deck."userId") AS "userId",
+               GREATEST(COALESCE(m.qty, 0), COALESCE(deck.qty, 0)) AS total_qty
+        FROM in_maleta m
+        FULL OUTER JOIN in_decks deck ON deck."userId" = m."userId"
+      )
+      SELECT c."userId",
+             u.nickname,
+             u.username,
+             c.total_qty AS "totalQuantity"
+      FROM combined c
+      INNER JOIN users u ON u.id = c."userId"
+      WHERE c.total_qty > 0
+      ORDER BY c.total_qty DESC, u.nickname
+      `,
+      [cardId],
+    ) as Record<string, unknown>[];
+
+    return raw.map((r) => {
+      const val = (k: string) => r[k] ?? r[k.toLowerCase()];
+      return {
+        userId: Number(val('userId')),
+        nickname: String(val('nickname') ?? ''),
+        username: String(val('username') ?? ''),
+        totalQuantity: Number(val('totalQuantity') ?? 0),
+      };
+    });
+  }
+
+  /** Score por vitória por tipo de duelo (usado em finishDuel). Retorna valores padrão se não houver linha. */
+  async getDuelScoreSettings(): Promise<Record<string, number>> {
+    const row = await this.ensureDuelScoreSettingsRow();
+    const scoreRandom = Number(row.scoreRandom) || 1.7;
+    return {
+      [DuelOrigin.RANDOM]: scoreRandom,
+      [DuelOrigin.RANDOM_ANIME]: scoreRandom,
+      [DuelOrigin.CHAT]: Number(row.scoreChat) || 1.0,
+      [DuelOrigin.TOURNAMENT]: Number(row.scoreTournament) || 10.0,
+      [DuelOrigin.ARENA]: Number(row.scoreArena) || 2.0,
+      [DuelOrigin.OTHER]: Number(row.scoreOther) || 1.0,
+    };
+  }
+
+  /** Retorna a linha de configuração para o painel admin (scoreRandom, scoreChat, ...). */
+  async getDuelScoreSettingsForAdmin(): Promise<{ scoreRandom: number; scoreChat: number; scoreTournament: number; scoreArena: number; scoreOther: number }> {
+    const row = await this.ensureDuelScoreSettingsRow();
+    return {
+      scoreRandom: Number(row.scoreRandom) || 1.7,
+      scoreChat: Number(row.scoreChat) || 1.0,
+      scoreTournament: Number(row.scoreTournament) || 10.0,
+      scoreArena: Number(row.scoreArena) || 2.0,
+      scoreOther: Number(row.scoreOther) || 1.0,
+    };
+  }
+
+  private async ensureDuelScoreSettingsRow(): Promise<DuelScoreSettings> {
+    let row = await this.duelScoreSettingsRepository.findOne({ where: {} });
+    if (!row) {
+      row = this.duelScoreSettingsRepository.create({
+        scoreRandom: 1.7,
+        scoreChat: 1.0,
+        scoreTournament: 10.0,
+        scoreArena: 2.0,
+        scoreOther: 1.0,
+      });
+      row = await this.duelScoreSettingsRepository.save(row);
+    }
+    return row;
+  }
+
+  /** Atualizar score por tipo de duelo (admin). */
+  async updateDuelScoreSettings(dto: {
+    scoreRandom?: number;
+    scoreChat?: number;
+    scoreTournament?: number;
+    scoreArena?: number;
+    scoreOther?: number;
+  }): Promise<DuelScoreSettings> {
+    const row = await this.ensureDuelScoreSettingsRow();
+    if (dto.scoreRandom != null) row.scoreRandom = Number(dto.scoreRandom);
+    if (dto.scoreChat != null) row.scoreChat = Number(dto.scoreChat);
+    if (dto.scoreTournament != null) row.scoreTournament = Number(dto.scoreTournament);
+    if (dto.scoreArena != null) row.scoreArena = Number(dto.scoreArena);
+    if (dto.scoreOther != null) row.scoreOther = Number(dto.scoreOther);
+    return this.duelScoreSettingsRepository.save(row);
   }
 }

@@ -221,24 +221,26 @@ export default function InventoryPage() {
                         isEquipped ? 'border-blue-400 shadow-lg shadow-blue-500/40' : 'border-white/20'
                       }`}
                     >
-                      <div className="w-32 aspect-[21/9] rounded-lg overflow-hidden border border-blue-400/50 bg-gradient-to-br from-blue-500/30 via-cyan-500/20 to-purple-500/30">
-                        {imageSrc ? (
-                          <img
-                            src={imageSrc}
-                            alt={playmat.name}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-blue-100/80 text-3xl">
-                            🎨
-                          </div>
-                        )}
+                      <div className="flex flex-col items-center flex-shrink-0 w-32">
+                        <div className="w-full aspect-[21/9] rounded-lg overflow-hidden border border-blue-400/50 bg-gradient-to-br from-blue-500/30 via-cyan-500/20 to-purple-500/30">
+                          {imageSrc ? (
+                            <img
+                              src={imageSrc}
+                              alt={playmat.name}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-blue-100/80 text-3xl">
+                              🎨
+                            </div>
+                          )}
+                        </div>
+                        <p className="font-bold text-white text-center text-sm mt-1.5 w-full break-words">{playmat.name}</p>
                       </div>
-                      <div className="flex-1">
-                        <p className="font-bold text-white mb-1">{playmat.name}</p>
+                      <div className="flex-1 min-w-0">
                         <p className="text-xs text-gray-400">
                           Usado como plano de fundo do campo de duelo
                         </p>
@@ -304,24 +306,26 @@ export default function InventoryPage() {
                         isEquipped ? 'border-emerald-400 shadow-lg shadow-emerald-500/40' : 'border-white/20'
                       }`}
                     >
-                      <div className="relative w-16 sm:w-20 aspect-[2/3] rounded-lg overflow-hidden border border-emerald-400/60 bg-gradient-to-br from-green-500/30 via-emerald-500/20 to-cyan-500/30">
-                        {imageSrc ? (
-                          <img
-                            src={imageSrc}
-                            alt={skin.name}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-emerald-100/80 text-3xl">
-                            🎭
-                          </div>
-                        )}
+                      <div className="flex flex-col items-center flex-shrink-0 w-16 sm:w-20">
+                        <div className="relative w-full aspect-[2/3] rounded-lg overflow-hidden border border-emerald-400/60 bg-gradient-to-br from-green-500/30 via-emerald-500/20 to-cyan-500/30">
+                          {imageSrc ? (
+                            <img
+                              src={imageSrc}
+                              alt={skin.name}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-emerald-100/80 text-3xl">
+                              🎭
+                            </div>
+                          )}
+                        </div>
+                        <p className="font-bold text-white text-center text-xs mt-1.5 w-full break-words">{skin.name}</p>
                       </div>
-                      <div className="flex-1">
-                        <p className="font-bold text-white mb-1">{skin.name}</p>
+                      <div className="flex-1 min-w-0">
                         <p className="text-xs text-gray-400">
                           Usada como fundo das cartas viradas para baixo
                         </p>
@@ -385,22 +389,24 @@ export default function InventoryPage() {
                         isEquipped ? 'border-amber-400 shadow-lg shadow-amber-500/40' : 'border-white/20'
                       }`}
                     >
-                      <div className="relative w-14 h-14 rounded-lg overflow-hidden border border-amber-400/60 bg-gradient-to-br from-amber-500/30 to-yellow-500/30 flex items-center justify-center flex-shrink-0">
-                        {imageSrc ? (
-                          <img
-                            src={imageSrc}
-                            alt={talisman.name || 'Talismã'}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <span className="text-2xl">✨</span>
-                        )}
+                      <div className="flex flex-col items-center flex-shrink-0 w-14">
+                        <div className="relative w-14 h-14 rounded-lg overflow-hidden border border-amber-400/60 bg-gradient-to-br from-amber-500/30 to-yellow-500/30 flex items-center justify-center">
+                          {imageSrc ? (
+                            <img
+                              src={imageSrc}
+                              alt={talisman.name || 'Talismã'}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <span className="text-2xl">✨</span>
+                          )}
+                        </div>
+                        <p className="font-bold text-white text-center text-[10px] mt-1 w-full break-words">{talisman.name || 'Talismã'}</p>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-bold text-white mb-0.5">{talisman.name || 'Talismã'}</p>
                         <p className="text-xs text-amber-200/80">
                           Score +{talisman.bonusScorePct ?? 0}% • Cash +{talisman.bonusCashPct ?? 0}% • Arena +{talisman.bonusArenaPointsPct ?? 0}%
                         </p>

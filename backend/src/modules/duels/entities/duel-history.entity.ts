@@ -18,6 +18,7 @@ export enum DuelHistoryResult {
 
 export enum DuelHistoryOrigin {
   RANDOM = 'RANDOM',
+  RANDOM_ANIME = 'RANDOM_ANIME',
   ARENA = 'ARENA',
   TOURNAMENT = 'TOURNAMENT',
   CHAT = 'CHAT',

@@ -215,6 +215,39 @@ export class SeasonsService implements OnModuleInit {
     }
   }
 
+  /** Retorna a season ativa sem criar uma nova. Usado para saber se score deve contar para ranking/grupo da season. */
+  async getActiveSeasonOrNull(): Promise<Season | null> {
+    try {
+      const seasonRaw = await this.seasonRepository
+        .createQueryBuilder('s')
+        .select('s.id', 'id')
+        .addSelect('s.name', 'name')
+        .addSelect('s.seasonNumber', 'seasonNumber')
+        .addSelect('s.startDate', 'startDate')
+        .addSelect('s.endDate', 'endDate')
+        .addSelect('s.isActive', 'isActive')
+        .addSelect('s.prizes', 'prizes')
+        .addSelect('s.divisionPrizes', 'divisionPrizes')
+        .where('s.isActive = :isActive', { isActive: true })
+        .getRawOne();
+
+      if (!seasonRaw) return null;
+
+      return (this.seasonRepository.create({
+        id: seasonRaw.id,
+        name: seasonRaw.name,
+        seasonNumber: seasonRaw.seasonNumber,
+        startDate: seasonRaw.startDate,
+        endDate: seasonRaw.endDate,
+        isActive: seasonRaw.isActive,
+        prizes: seasonRaw.prizes,
+        divisionPrizes: seasonRaw.divisionPrizes || undefined,
+      }) as unknown as Season) as Season;
+    } catch {
+      return null;
+    }
+  }
+
   // Criar ranking inicial para um novo usuário
   async createUserRanking(userId: number): Promise<SeasonRanking | null> {
     try {
@@ -297,47 +330,47 @@ export class SeasonsService implements OnModuleInit {
     }
   }
 
-  // Atualizar ranking de um usuário
+  // Atualizar ranking de um usuário (score da season + vitórias/derrotas). Usa SQL direto para garantir que seasonScore persiste (decimal).
   async updateUserRanking(userId: number, scoreToAdd: number, win: boolean): Promise<SeasonRanking> {
     const season = await this.getActiveSeason();
-    
+
     let ranking = await this.rankingRepository.findOne({
       where: { seasonId: season.id, userId }
     });
 
     if (!ranking) {
-      // Se não existe ranking, criar um novo - sempre começa no Bronze
       ranking = this.rankingRepository.create({
         seasonId: season.id,
         userId,
         seasonScore: 0,
         wins: 0,
         losses: 0,
-        division: Division.BRONZE, // Todo jogador começa no Bronze
+        division: Division.BRONZE,
         divisionPoints: 0,
         rank: 0
       });
+      ranking = await this.rankingRepository.save(ranking);
       console.log(`✅ [updateUserRanking] Ranking criado para usuário ${userId} - divisão: ${ranking.division}`);
     }
 
-    const currentScore = Number(ranking.seasonScore) || 0;
-    ranking.seasonScore = currentScore + scoreToAdd;
+    const winIncr = win ? 1 : 0;
+    const lossIncr = win ? 0 : 1;
+    // Manter decimais (ex.: 1.7 para random duel); parseFloat evita truncar para inteiro
+    const scoreNum = parseFloat(String(scoreToAdd)) || 0;
 
-    if (win) {
-      ranking.wins++;
-    } else {
-      ranking.losses++;
-    }
+    await this.rankingRepository.query(
+      `UPDATE season_rankings
+       SET "seasonScore" = COALESCE("seasonScore", 0)::numeric + $1::numeric,
+           wins = wins + $2,
+           losses = losses + $3
+       WHERE "seasonId" = $4 AND "userId" = $5`,
+      [scoreNum, winIncr, lossIncr, season.id, userId]
+    );
 
-    // Por enquanto, manter todos no Bronze
-    // Futuramente, atualizar divisão baseado no score quando implementar sistema de promoção/rebaixamento
-    // ranking.division = this.calculateDivision(ranking.seasonScore);
-    // Por enquanto, garantir que está em Bronze
-    if (ranking.division !== Division.BRONZE) {
-      ranking.division = Division.BRONZE;
-    }
-    
-    await this.rankingRepository.save(ranking);
+    const updated = await this.rankingRepository.findOne({
+      where: { seasonId: season.id, userId }
+    });
+    if (updated) ranking = updated;
 
     // Atualizar divisão do usuário na tabela users
     try {
@@ -395,18 +428,18 @@ export class SeasonsService implements OnModuleInit {
     // return Division.BRONZE;
   }
 
-  // Recalcular ranks de todos os usuários
+  // Recalcular ranks (apenas coluna rank) para não sobrescrever seasonScore ao salvar entidades.
   private async recalculateRanks(seasonId: string): Promise<void> {
-    const rankings = await this.rankingRepository.find({
-      where: { seasonId },
-      order: { seasonScore: 'DESC' }
-    });
-
-    for (let i = 0; i < rankings.length; i++) {
-      rankings[i].rank = i + 1;
+    const rows = await this.rankingRepository.query(
+      `SELECT id, "seasonScore" FROM season_rankings WHERE "seasonId" = $1 ORDER BY "seasonScore" DESC NULLS LAST`,
+      [seasonId]
+    ) as { id: string }[];
+    for (let i = 0; i < rows.length; i++) {
+      await this.rankingRepository.query(
+        `UPDATE season_rankings SET rank = $1 WHERE id = $2`,
+        [i + 1, rows[i].id]
+      );
     }
-
-    await this.rankingRepository.save(rankings);
   }
 
   // Buscar ranking da season
@@ -477,8 +510,8 @@ export class SeasonsService implements OnModuleInit {
     });
   }
 
-  // Finalizar season e distribuir prêmios
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  // Verificar a cada minuto se alguma season ativa passou do horário final e finalizá-la
+  @Cron(CronExpression.EVERY_MINUTE)
   async checkAndEndSeasons(): Promise<void> {
     const now = new Date();
     // Usar QueryBuilder para evitar erro se divisionPrizes não existir

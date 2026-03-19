@@ -3,8 +3,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { UsersCosmeticsController } from './users-cosmetics.controller';
+import { UserSystemNotificationsDbMigrationService } from './user-system-notifications-db-migration.service';
 import { User } from './entities/user.entity';
 import { Achievement } from './entities/achievement.entity';
+import { UserSystemNotification } from './entities/user-system-notification.entity';
 import { AchievementsService } from './achievements.service';
 import { UploadModule } from '../upload/upload.module';
 import { MailModule } from '../mail/mail.module';
@@ -19,14 +21,14 @@ import { DeckCard } from '../decks/entities/deck-card.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Achievement, SeasonRanking, Season, GroupMember, Group, Deck, DeckCard]),
+    TypeOrmModule.forFeature([User, Achievement, UserSystemNotification, SeasonRanking, Season, GroupMember, Group, Deck, DeckCard]),
     UploadModule,
     MailModule,
     RedisModule,
     LevelsModule,
   ],
   controllers: [UsersController, UsersCosmeticsController],
-  providers: [UsersService, AchievementsService],
+  providers: [UsersService, AchievementsService, UserSystemNotificationsDbMigrationService],
   exports: [UsersService, AchievementsService],
 })
 export class UsersModule {}

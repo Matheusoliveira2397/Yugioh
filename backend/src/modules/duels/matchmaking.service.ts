@@ -10,11 +10,13 @@ interface PlayerInQueue {
   userId: number;
   socketId: string;
   joinedAt: Date;
+  animeDeckId?: string;
 }
 
 @Injectable()
 export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
   private queue: PlayerInQueue[] = [];
+  private animeQueue: PlayerInQueue[] = [];
   private processingInterval: NodeJS.Timeout | null = null;
   private readonly PROCESSING_INTERVAL_MS = 3000; // 3 segundos
   private server: Server | null = null;
@@ -53,22 +55,14 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
       // CRÍTICO: Verificar duelos ativos de forma não bloqueante
       // Usar setImmediate para dar prioridade a HTTP antes de verificar
       setImmediate(() => {
-        const activeDuels = this.duelsService.getActiveDuelsCount();
-        console.log(`🔍 [Matchmaking] Verificando: ${activeDuels} duelos ativos em memória, ${this.queue.length} na fila, processando: ${this.isProcessing}`);
-        
-        // NÃO pausar o matchmaking baseado em duelos em memória
-        // Duelos antigos no banco não devem impedir novos matches
-        // O matchmaking deve continuar funcionando mesmo com duelos ativos
-        // Apenas pausar se houver muitos duelos simultâneos (mais de 10)
-        if (activeDuels > 10) {
-          console.log(`⏸️ [Matchmaking] Muitos duelos ativos (${activeDuels}), pausando temporariamente...`);
-          // Não pausar completamente, apenas reduzir frequência
-          return;
-        }
+        console.log(`🔍 [Matchmaking] Verificando: ${this.duelsService.getActiveDuelsCount()} duelos ativos, fila: ${this.queue.length}, anime: ${this.animeQueue.length}, processando: ${this.isProcessing}`);
         
         // Yield ao Event Loop novamente (prioriza HTTP)
         setImmediate(() => {
-          if (!this.isProcessing && this.queue.length >= 2) {
+          if (!this.isProcessing && this.animeQueue.length >= 2) {
+            console.log(`🚀 [Matchmaking] Processando fila Anime Deck...`);
+            this.processAnimeQueue();
+          } else if (!this.isProcessing && this.queue.length >= 2) {
             console.log(`🚀 [Matchmaking] Condições atendidas! Processando fila...`);
             this.processQueue();
           } else {
@@ -81,11 +75,10 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
                 console.log(`⏳ [Matchmaking] Fila: ${this.queue.length} jogador(es) - aguardando mais um...`);
                 this.lastQueueLog = now;
               }
-            } else if (this.queue.length === 0) {
-              // Log apenas a cada 10 segundos quando a fila está vazia
+            } else if (this.queue.length === 0 && this.animeQueue.length === 0) {
               const now = Date.now();
               if (!this.lastQueueLog || now - this.lastQueueLog > 10000) {
-                console.log(`⏳ [Matchmaking] Fila vazia, aguardando jogadores...`);
+                console.log(`⏳ [Matchmaking] Filas vazias, aguardando jogadores...`);
                 this.lastQueueLog = now;
               }
             }
@@ -102,7 +95,15 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  addToQueue(userId: number, socketId: string): void {
+  addToQueue(userId: number, socketId: string, animeDeckId?: string): void {
+    if (animeDeckId) {
+      const alreadyInAnime = this.animeQueue.some(p => p.userId === userId);
+      if (!alreadyInAnime) {
+        this.animeQueue.push({ userId, socketId, joinedAt: new Date(), animeDeckId });
+        logger.debug(`🔍 [Matchmaking] Usuário ${userId} adicionado à fila Anime Deck. Total: ${this.animeQueue.length}`);
+      }
+      return;
+    }
     const alreadyInQueue = this.queue.find(p => p.userId === userId);
     if (!alreadyInQueue) {
       this.queue.push({ userId, socketId, joinedAt: new Date() });
@@ -114,10 +115,11 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
 
   removeFromQueue(userId: number): void {
     this.queue = this.queue.filter(p => p.userId !== userId);
+    this.animeQueue = this.animeQueue.filter(p => p.userId !== userId);
   }
 
   isInQueue(userId: number): boolean {
-    return this.queue.some(p => p.userId === userId);
+    return this.queue.some(p => p.userId === userId) || this.animeQueue.some(p => p.userId === userId);
   }
 
   private async processQueue() {
@@ -248,12 +250,44 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private async processAnimeQueue() {
+    if (this.isProcessing || this.animeQueue.length < 2) return;
+    this.isProcessing = true;
+    await new Promise(resolve => setImmediate(resolve));
+    try {
+      const player1 = this.animeQueue[0];
+      const player2 = this.animeQueue[1];
+      if (!player1?.animeDeckId || !player2?.animeDeckId) {
+        this.isProcessing = false;
+        return;
+      }
+      if (!this.animeQueue.some(p => p.userId === player1.userId) || !this.animeQueue.some(p => p.userId === player2.userId)) {
+        this.removeFromQueue(player1.userId);
+        this.removeFromQueue(player2.userId);
+        this.isProcessing = false;
+        return;
+      }
+      this.animeQueue = this.animeQueue.filter(p => p.userId !== player1.userId && p.userId !== player2.userId);
+      logger.debug(`✅ [Matchmaking] Match Anime Deck: P1=${player1.userId} (deck ${player1.animeDeckId}) vs P2=${player2.userId} (deck ${player2.animeDeckId})`);
+      this.createDuelForPlayers(player1, player2);
+    } catch (error) {
+      logger.error('❌ [Matchmaking] Erro processAnimeQueue:', error);
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
   private async createDuelForPlayers(player1: PlayerInQueue, player2: PlayerInQueue) {
     // Criar duelo em background (não bloqueia)
     (async () => {
         try {
-          logger.debug(`🎮 [Matchmaking] Criando duelo para P1=${player1.userId} vs P2=${player2.userId}...`);
-          const duel = await this.duelsService.createDuel(player1.userId, player2.userId, DuelOrigin.RANDOM);
+          const isAnimeDuel = !!(player1.animeDeckId && player2.animeDeckId);
+          const origin = isAnimeDuel ? DuelOrigin.RANDOM_ANIME : DuelOrigin.RANDOM;
+          const options = isAnimeDuel
+            ? { player1AnimeDeckId: player1.animeDeckId!, player2AnimeDeckId: player2.animeDeckId! }
+            : undefined;
+          logger.debug(`🎮 [Matchmaking] Criando duelo para P1=${player1.userId} vs P2=${player2.userId}... (origin: ${origin})`);
+          const duel = await this.duelsService.createDuel(player1.userId, player2.userId, origin, options);
           
           if (duel && duel.id) {
             const duelIdStr = typeof duel.id === 'string' ? duel.id : String(duel.id);

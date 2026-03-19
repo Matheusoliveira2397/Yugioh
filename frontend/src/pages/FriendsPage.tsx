@@ -3,8 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useSocketStore } from '../stores/socketStore';
-import axios from 'axios';
+import api from '../api/axios';
 import { getImageUrl } from '../utils/imageUrl';
+import { formatScore } from '../utils/formatScore';
 
 interface Friend {
   id: number | string;
@@ -38,8 +39,6 @@ interface FriendRequest {
   createdAt: string;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-
 export default function FriendsPage() {
   const { user, token } = useAuthStore();
   const { connect, getSocket, isConnected } = useSocketStore();
@@ -58,9 +57,7 @@ export default function FriendsPage() {
       if (!token) return;
       try {
         setLoading(true);
-        const response = await axios.get(`${API_URL}/friends`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await api.get('/friends');
         // Garantir que os dados estão no formato correto
         const friendsData = Array.isArray(response.data) ? response.data : [];
         setFriends(friendsData.map((friend: any) => ({
@@ -88,9 +85,7 @@ export default function FriendsPage() {
     if (!token) return;
     try {
       setLoadingRequests(true);
-      const response = await axios.get(`${API_URL}/friends/pending`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get('/friends/pending');
       setPendingRequests(response.data.received || []);
     } catch (error) {
       console.error('Erro ao carregar solicitações:', error);
@@ -119,17 +114,9 @@ export default function FriendsPage() {
   const handleAcceptRequest = async (requestId: string) => {
     if (!token) return;
     try {
-      await axios.put(
-        `${API_URL}/friends/${requestId}/accept`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      // Remover da lista e recarregar amigos
+      await api.put(`/friends/${requestId}/accept`, {});
       setPendingRequests(prev => prev.filter(r => r.id !== requestId));
-      // Recarregar lista de amigos
-      const response = await axios.get(`${API_URL}/friends`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get('/friends');
       const friendsData = Array.isArray(response.data) ? response.data : [];
       setFriends(friendsData.map((friend: any) => ({
         id: friend.id,
@@ -149,11 +136,7 @@ export default function FriendsPage() {
   const handleRejectRequest = async (requestId: string) => {
     if (!token) return;
     try {
-      await axios.put(
-        `${API_URL}/friends/${requestId}/reject`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.put(`/friends/${requestId}/reject`, {});
       // Remover da lista
       setPendingRequests(prev => prev.filter(r => r.id !== requestId));
     } catch (error) {
@@ -303,9 +286,7 @@ export default function FriendsPage() {
         console.error('ID de amigo inválido:', friendId);
         return;
       }
-      const response = await axios.get(`${API_URL}/messages/${friendIdNum}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get(`/messages/${friendIdNum}`);
       
       // Remover duplicatas baseado no ID
       const uniqueMessages = response.data.filter((msg: Message, index: number, self: Message[]) => 
@@ -395,16 +376,10 @@ export default function FriendsPage() {
     setMessageInput('');
 
     try {
-      const response = await axios.post(
-        `${API_URL}/messages`,
-        {
-          receiverId: receiverId.toString(),
-          content: messageContent
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
+      const response = await api.post('/messages', {
+        receiverId: receiverId.toString(),
+        content: messageContent,
+      });
 
       const newMessage: Message = response.data;
       
@@ -622,7 +597,7 @@ export default function FriendsPage() {
                             <div className="flex items-center gap-2 text-xs text-gray-500">
                               <span>Nível {friend.level || 1}</span>
                               <span>•</span>
-                              <span>Score: {friend.totalScore?.toFixed(1) || 0}</span>
+                              <span>Score: {formatScore(friend.totalScore)}</span>
                             </div>
                           </div>
                         </div>

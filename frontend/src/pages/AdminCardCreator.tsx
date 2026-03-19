@@ -33,6 +33,7 @@ interface CardForm {
   priceCredits?: number;
   priceCash?: number;
   isForSale: boolean;
+  isActive: boolean;
 
   // Avançado
   archetype?: string;
@@ -61,6 +62,7 @@ export default function AdminCardCreator() {
     type: 'Monster',
     rarity: 'Common',
     isForSale: true,
+    isActive: true,
     maxCopiesInDeck: 3,
   });
 
@@ -600,12 +602,13 @@ export default function AdminCardCreator() {
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={cardForm.isForSale}
-                    onChange={(e) => setCardForm({ ...cardForm, isForSale: e.target.checked })}
-                    className="w-5 h-5"
+                    checked={cardForm.isActive}
+                    onChange={(e) => setCardForm({ ...cardForm, isActive: e.target.checked })}
+                    className="w-5 h-5 accent-emerald-500"
                   />
-                  <span className="font-bold">Disponível na Loja</span>
+                  <span className="font-bold">Carta ativa (aparece na loja)</span>
                 </label>
+                <p className="text-xs text-gray-400 mt-1">Cartas inativas não aparecem na loja. Você pode ativar ou desativar depois em Editar carta.</p>
               </div>
             </div>
 

@@ -123,6 +123,7 @@ export class AuthService {
           clanTag: fullProfile.clanTag || null,
           level: fullProfile.level || 1,
           totalScore: fullProfile.totalScore != null ? Number(fullProfile.totalScore) : 0,
+          equippedDeckId: (fullProfile as any).equippedDeckId || null,
           equippedDeckName: (fullProfile as any).equippedDeckName || null,
           group: fullProfile.group || null,
           division: fullProfile.division || null, // Divisão dinâmica do usuário

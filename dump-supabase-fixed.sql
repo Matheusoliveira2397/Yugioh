@@ -1,4 +1,4 @@
-﻿--
+--
 -- PostgreSQL database dump
 --
 
@@ -199,6 +199,7 @@ CREATE TYPE public.duelhistoryresult AS ENUM (
 
 CREATE TYPE public.duelorigin AS ENUM (
     'RANDOM',
+    'RANDOM_ANIME',
     'CHAT',
     'TOURNAMENT',
     'ARENA',

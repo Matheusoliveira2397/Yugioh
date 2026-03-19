@@ -21,7 +21,7 @@ BEGIN
     
     -- Criar enum DuelOrigin se não existir
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'duelorigin') THEN
-        CREATE TYPE "duelorigin" AS ENUM ('RANDOM', 'CHAT', 'TOURNAMENT', 'ARENA', 'OTHER');
+        CREATE TYPE "duelorigin" AS ENUM ('RANDOM', 'RANDOM_ANIME', 'CHAT', 'TOURNAMENT', 'ARENA', 'OTHER');
     END IF;
 END $$;
 

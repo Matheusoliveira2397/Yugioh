@@ -82,7 +82,9 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3000
-      DATABASE_URL: postgresql://yugioh_user:yugioh_password_2024@postgres:5432/yugioh_db
+      # Use Supabase: defina DATABASE_URL no .env da raiz com a connection string do Supabase.
+      # Se não definir, usa o Postgres do Docker (local).
+      DATABASE_URL: ${DATABASE_URL:-postgresql://yugioh_user:yugioh_password_2024@postgres:5432/yugioh_db}
       MONGODB_URI: mongodb://yugioh_mongo:yugioh_mongo_password@mongodb:27017/yugioh_chat?authSource=admin
       REDIS_URL: redis://redis:6379
       JWT_SECRET: yugioh_super_secret_key_2024_change_in_production

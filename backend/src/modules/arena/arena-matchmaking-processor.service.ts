@@ -116,12 +116,6 @@ export class ArenaMatchmakingProcessorService implements OnModuleInit, OnModuleD
       // Apenas dar yield ao Event Loop para priorizar HTTP
       // Yield antes de processar (prioriza HTTP)
       await new Promise(resolve => setImmediate(resolve));
-      
-      // Leve yield só com muitos duelos ativos
-      const activeDuels = this.duelsService.getActiveDuelsCount();
-      if (activeDuels > 20) {
-        await new Promise(resolve => setTimeout(resolve, 30));
-      }
 
       const levelRanges = this.arenaMatchmakingService.getLevelRanges();
 

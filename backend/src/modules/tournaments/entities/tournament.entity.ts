@@ -81,9 +81,9 @@ export class Tournament {
   @Column({ type: 'int', default: 0 })
   prizeThird: number;
 
-  /** Premiação por lugar: 1..4 => { credit?, cash?, cardIds?, trophyTitle?, trophyIcon? } */
+  /** Premiação por lugar: 1..4 => { credit?, cash?, cardIds?, trophyTitle?, trophyIcon?, stars? } */
   @Column({ type: 'jsonb', nullable: true })
-  prizeDetails: Record<number, { credit?: number; cash?: number; cardIds?: string[]; trophyTitle?: string; trophyIcon?: string }> | null;
+  prizeDetails: Record<number, { credit?: number; cash?: number; cardIds?: string[]; trophyTitle?: string; trophyIcon?: string; stars?: number }> | null;
 
   // Criador do torneio
   @ManyToOne(() => User)

@@ -44,6 +44,7 @@ import { PromotionsModule } from '../promotions/promotions.module';
 import { CardsModule } from '../cards/cards.module';
 import { CosmeticsModule } from '../cosmetics/cosmetics.module';
 import { CreditPaymentLog } from './entities/credit-payment-log.entity';
+import { DuelScoreSettings } from './entities/duel-score-settings.entity';
 import { AdminDbMigrationService } from './admin-db-migration.service';
 
 @Module({
@@ -55,6 +56,7 @@ import { AdminDbMigrationService } from './admin-db-migration.service';
     CardsModule,
     TypeOrmModule.forFeature([
       CreditPaymentLog,
+      DuelScoreSettings,
       User,
       Card,
       UserCard,

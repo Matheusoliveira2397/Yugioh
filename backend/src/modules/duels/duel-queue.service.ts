@@ -39,23 +39,9 @@ export class DuelQueueService implements OnModuleInit, OnModuleDestroy {
     if (this.processingInterval) return;
 
     this.processingInterval = setInterval(() => {
-      // CRÍTICO: Verificar duelos ativos de forma não bloqueante
-      // Usar setImmediate para dar prioridade a HTTP antes de verificar
+      // Processar fila mesmo com duelos ativos (vários jogadores podem estar na Arena ao mesmo tempo).
+      // Só dar um leve yield se houver muitos duelos para não sobrecarregar.
       setImmediate(() => {
-        const activeDuels = this.duelsService.getActiveDuelsCount();
-        if (activeDuels > 0) {
-          // Parar o intervalo completamente e reiniciar quando não houver duelos
-          this.stop();
-          // Reiniciar após 10 segundos (quando duelos terminarem)
-          setTimeout(() => {
-            if (this.duelsService.getActiveDuelsCount() === 0 && this.queue.length > 0) {
-              this.start();
-            }
-          }, 10000);
-          return;
-        }
-        
-        // Yield ao Event Loop novamente (prioriza HTTP)
         setImmediate(() => {
           if (!this.isProcessing && this.queue.length > 0) {
             this.processNext();

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
-import axios from 'axios';
+import api from '../api/axios';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSocketStore } from '../stores/socketStore';
 import { getImageUrl } from '../utils/imageUrl';
@@ -20,12 +20,11 @@ interface FriendRequest {
 
 interface SystemNotification {
   id: string;
-  type: 'system';
+  type: string;
   content: string;
   createdAt: string;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const NOTIFICATIONS_STORAGE_KEY = 'yugioh_system_notifications';
 const NOTIFICATIONS_MAX = 50;
 
@@ -70,9 +69,7 @@ export default function NotificationBell() {
     if (!token) return;
     try {
       setLoading(true);
-      const response = await axios.get(`${API_URL}/friends/pending`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get('/friends/pending');
       setPendingRequests(response.data.received || []);
     } catch (error) {
       console.error('Erro ao carregar solicitações:', error);
@@ -82,10 +79,31 @@ export default function NotificationBell() {
     }
   };
 
-  // Carregar notificações salvas ao mudar de usuário
+  // Buscar notificações do sistema no servidor (ex.: cash semanal do clã) e mesclar com as locais
+  const fetchServerNotifications = async () => {
+    if (!token || !user?.id) return;
+    try {
+      const response = await api.get<SystemNotification[]>('/users/me/notifications', {
+        params: { limit: NOTIFICATIONS_MAX },
+      });
+      const fromServer = Array.isArray(response.data) ? response.data : [];
+      setSystemNotifications((prev) => {
+        const byId = new Map(prev.map((n) => [n.id, n]));
+        for (const n of fromServer) {
+          if (n?.id && !byId.has(n.id)) byId.set(n.id, { id: n.id, type: n.type || 'system', content: n.content, createdAt: n.createdAt });
+        }
+        return Array.from(byId.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, NOTIFICATIONS_MAX);
+      });
+    } catch (err) {
+      console.error('Erro ao carregar notificações do servidor:', err);
+    }
+  };
+
+  // Carregar notificações salvas ao mudar de usuário e buscar as do servidor
   useEffect(() => {
     if (user?.id) {
       setSystemNotifications(loadStoredNotifications(user.id));
+      fetchServerNotifications();
     }
   }, [user?.id]);
 
@@ -194,11 +212,7 @@ export default function NotificationBell() {
   const handleAcceptRequest = async (requestId: string) => {
     if (!token) return;
     try {
-      await axios.put(
-        `${API_URL}/friends/${requestId}/accept`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.put(`/friends/${requestId}/accept`, {});
       setPendingRequests(prev => prev.filter(r => r.id !== requestId));
     } catch (error) {
       console.error('Erro ao aceitar solicitação:', error);
@@ -209,11 +223,7 @@ export default function NotificationBell() {
   const handleRejectRequest = async (requestId: string) => {
     if (!token) return;
     try {
-      await axios.put(
-        `${API_URL}/friends/${requestId}/reject`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.put(`/friends/${requestId}/reject`, {});
       setPendingRequests(prev => prev.filter(r => r.id !== requestId));
     } catch (error) {
       console.error('Erro ao rejeitar solicitação:', error);

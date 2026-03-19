@@ -33,7 +33,16 @@ export class SeasonRanking {
   @Column({ type: 'int' })
   userId: number;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+    transformer: {
+      from: (v: unknown) => (v != null ? parseFloat(String(v)) : 0),
+      to: (v: unknown) => (v != null ? Number(v) : 0),
+    },
+  })
   seasonScore: number;
 
   @Column({ type: 'int', default: 0 })

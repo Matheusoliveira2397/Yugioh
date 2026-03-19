@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../api/axios';
 import { getImageUrl } from '../utils/imageUrl';
+import { formatScore } from '../utils/formatScore';
 
 interface Player {
   id: number;
@@ -473,7 +474,7 @@ export default function AdminPlayersPanel() {
                             Season: {player.winsSeason || 0}V / {player.lossesSeason || 0}D
                           </div>
                           <div className="text-xs text-purple-400">
-                            ⭐ Score: {Number(player.totalScore ?? 0).toFixed(1)}
+                            ⭐ Score: {formatScore(player.totalScore)}
                           </div>
                           <div className="text-xs text-blue-400">
                             Lv.{player.level || 1}
