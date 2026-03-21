@@ -5,6 +5,7 @@ import { DuelOrigin } from './entities/duel.entity';
 import { logger } from '../../common/utils/logger.util';
 import { RandomDuelLevelRangesService } from '../admin/random-duel-level-ranges.service';
 import { UsersService } from '../users/users.service';
+import { normalizeProfileImageForClient } from '../users/profile-image.util';
 
 interface PlayerInQueue {
   userId: number;
@@ -354,7 +355,7 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
                 nickname: player2User?.nickname || player2User?.username || 'Unknown',
                 clanTag: player2User?.clanTag || null,
                 level: player2User?.level || 1,
-                profileImage: player2User?.profileImage || null,
+                profileImage: normalizeProfileImageForClient(player2User?.profileImage || null),
               },
               player1Field: player1Field, // SEMPRE do player1
               player2Field: player2Field, // SEMPRE do player2
@@ -369,7 +370,7 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
                 nickname: player1User?.nickname || player1User?.username || 'Unknown',
                 clanTag: player1User?.clanTag || null,
                 level: player1User?.level || 1,
-                profileImage: player1User?.profileImage || null,
+                profileImage: normalizeProfileImageForClient(player1User?.profileImage || null),
               },
               player1Field: player1Field, // SEMPRE do player1
               player2Field: player2Field, // SEMPRE do player2

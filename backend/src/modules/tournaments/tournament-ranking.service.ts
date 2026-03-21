@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TournamentClass } from './entities/tournament-class.entity';
 import { User } from '../users/entities/user.entity';
+import { normalizeProfileImageForClient } from '../users/profile-image.util';
 
 export interface TournamentRankingEntry {
   rank: number;
@@ -51,7 +52,7 @@ export class TournamentRankingService {
       .map((u) => ({
         userId: u.id,
         nickname: u.nickname,
-        profileImage: u.profileImage ?? null,
+        profileImage: normalizeProfileImageForClient(u.profileImage ?? null),
         clanTag: u.clanTag ?? null,
         tournamentPoints: (u as any).tournamentPoints ?? 0,
       }))
@@ -74,7 +75,7 @@ export class TournamentRankingService {
           rank: ranking.length + 1,
           userId: u.userId,
           nickname: u.nickname,
-          profileImage: u.profileImage,
+          profileImage: normalizeProfileImageForClient(u.profileImage),
           clanTag: u.clanTag,
           tournamentPoints: u.tournamentPoints,
           className: cls.name,

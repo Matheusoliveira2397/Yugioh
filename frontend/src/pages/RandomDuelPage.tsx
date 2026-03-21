@@ -2,8 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { useSocket } from '../hooks/useSocket';
-import { getImageUrl } from '../utils/imageUrl';
-import { formatScore } from '../utils/formatScore';
+import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import api from '../api/axios';
 import CardImage from '../components/CardImage';
 
@@ -36,6 +35,11 @@ interface MyDeckOption {
   coverCard?: { id: string; name: string; cardImage?: string; idCarta?: string } | null;
 }
 
+interface SiteTab {
+  key: string;
+  isActive: boolean;
+}
+
 export default function RandomDuelPage() {
   const { user } = useAuthStore();
   const { isConnected, isSearching, duelFound, duelError, clearDuelFound, clearDuelError, searchDuel, cancelSearch, getSocket } = useSocket();
@@ -51,6 +55,7 @@ export default function RandomDuelPage() {
   const [equippingDeckId, setEquippingDeckId] = useState<string | null>(null);
   const [showDeckPicker, setShowDeckPicker] = useState(false);
   const [randomStats, setRandomStats] = useState<{ total: number; wins: number; losses: number } | null>(null);
+  const [isRandomAnimeEnabled, setIsRandomAnimeEnabled] = useState(true);
   const handlerRef = useRef<((data: any) => void) | null>(null);
   const isOpeningRef = useRef<boolean>(false);
   const searchStartTimeRef = useRef<number | null>(null);
@@ -113,6 +118,32 @@ export default function RandomDuelPage() {
       })
       .catch(() => setRandomStats({ total: 0, wins: 0, losses: 0 }));
   }, [user?.id]);
+
+  // Verificar se a aba "Random Anime" está ativa no painel admin
+  useEffect(() => {
+    const fetchRandomAnimeTabStatus = async () => {
+      try {
+        const response = await fetch(`${API_URL}/public/site-tabs/active`);
+        if (!response.ok) return;
+        const data = await response.json();
+        const tabs: SiteTab[] = Array.isArray(data) ? data : [];
+        const randomAnimeTab = tabs.find((tab) => tab.key === 'random-anime');
+        setIsRandomAnimeEnabled(!!randomAnimeTab?.isActive);
+      } catch {
+        // Em caso de erro, manter habilitado para não bloquear funcionalidade existente.
+        setIsRandomAnimeEnabled(true);
+      }
+    };
+
+    fetchRandomAnimeTabStatus();
+  }, []);
+
+  // Se a aba for desativada no admin, forçar retorno ao modo normal
+  useEffect(() => {
+    if (!isRandomAnimeEnabled && duelMode === 'anime') {
+      setDuelMode('normal');
+    }
+  }, [isRandomAnimeEnabled, duelMode]);
 
   // Buscar decks do usuário quando modo Random Duel normal
   useEffect(() => {
@@ -375,35 +406,33 @@ export default function RandomDuelPage() {
               {/* Info do Oponente */}
               <div className="mb-3 sm:mb-4">
                 <div className="flex flex-col items-center gap-2 sm:gap-3">
-                  {duelFound.opponent?.profileImage && (
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ delay: 0.2 }}
+                    className="relative"
+                  >
                     <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ delay: 0.2 }}
-                      className="relative"
-                    >
-                      <motion.div
-                        animate={{ 
-                          scale: [1, 1.1, 1],
-                          boxShadow: [
-                            '0 0 20px rgba(239, 68, 68, 0.4)',
-                            '0 0 30px rgba(239, 68, 68, 0.6)',
-                            '0 0 20px rgba(239, 68, 68, 0.4)'
-                          ]
-                        }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                        className="absolute inset-0 bg-red-500 rounded-full blur-xl opacity-50"
-                      />
-                      <img 
-                        src={getImageUrl(duelFound.opponent.profileImage)}
-                        alt={duelFound.opponent?.nickname || 'Oponente'}
-                        className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-full border-2 sm:border-4 border-red-500 shadow-lg object-cover"
-                        onError={(e) => {
-                          e.currentTarget.src = '/images/default.png';
-                        }}
-                      />
-                    </motion.div>
-                  )}
+                      animate={{ 
+                        scale: [1, 1.1, 1],
+                        boxShadow: [
+                          '0 0 20px rgba(239, 68, 68, 0.4)',
+                          '0 0 30px rgba(239, 68, 68, 0.6)',
+                          '0 0 20px rgba(239, 68, 68, 0.4)'
+                        ]
+                      }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                      className="absolute inset-0 bg-red-500 rounded-full blur-xl opacity-50"
+                    />
+                    <img 
+                      src={getProfileImageUrl(duelFound.opponent?.profileImage)}
+                      alt={duelFound.opponent?.nickname || 'Oponente'}
+                      className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-full border-2 sm:border-4 border-red-500 shadow-lg object-cover"
+                      onError={(e) => {
+                        e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
+                      }}
+                    />
+                  </motion.div>
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -896,34 +925,8 @@ export default function RandomDuelPage() {
           >
             {/* Header com Logo e Status */}
             <div className="mb-4 sm:mb-6">
-              {/* Logo Random Duel */}
+              {/* Header do Random Duel */}
               <div className="flex flex-col items-center mb-3 sm:mb-4">
-                <motion.div
-                  initial={{ scale: 0.9, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{ duration: 0.5 }}
-                  className="relative mb-2 sm:mb-3"
-                >
-                  <motion.div
-                    animate={{ 
-                      boxShadow: [
-                        '0 0 20px rgba(139, 92, 246, 0.3)',
-                        '0 0 40px rgba(139, 92, 246, 0.5)',
-                        '0 0 20px rgba(139, 92, 246, 0.3)'
-                      ]
-                    }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                    className="absolute inset-0 bg-purple-500/30 rounded-2xl blur-2xl"
-                  />
-                  <img 
-                    src="/images/Icones/Random Duel.png" 
-                    alt="Random Duel"
-                    className="relative w-24 h-24 sm:w-32 sm:h-32 md:w-40 md:h-40 object-contain drop-shadow-2xl"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
-                  />
-                </motion.div>
                 <motion.p
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -931,6 +934,14 @@ export default function RandomDuelPage() {
                   className="text-white/90 text-sm sm:text-base md:text-lg text-center max-w-md px-2"
                 >
                   Encontre um oponente aleatório e prove seu valor!
+                </motion.p>
+                <motion.p
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 }}
+                  className="mt-2 text-xs sm:text-sm text-purple-200/90 text-center"
+                >
+                  Deck equipado: {user.equippedDeckName || 'Nenhum deck equipado'}
                 </motion.p>
               </div>
 
@@ -961,17 +972,19 @@ export default function RandomDuelPage() {
                 >
                   🎲 Random Duel
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setDuelMode('anime')}
-                  className={`px-4 py-2 rounded-xl font-semibold transition-all ${
-                    duelMode === 'anime'
-                      ? 'bg-purple-600 text-white border-2 border-purple-400'
-                      : 'bg-gray-700/50 text-gray-400 border-2 border-transparent hover:border-gray-500'
-                  }`}
-                >
-                  🎬 Animes Deck
-                </button>
+                {isRandomAnimeEnabled && (
+                  <button
+                    type="button"
+                    onClick={() => setDuelMode('anime')}
+                    className={`px-4 py-2 rounded-xl font-semibold transition-all ${
+                      duelMode === 'anime'
+                        ? 'bg-purple-600 text-white border-2 border-purple-400'
+                        : 'bg-gray-700/50 text-gray-400 border-2 border-transparent hover:border-gray-500'
+                    }`}
+                  >
+                    🎬 Animes Deck
+                  </button>
+                )}
               </div>
 
               {/* Se modo Animes Deck: escolher deck */}
@@ -1020,81 +1033,130 @@ export default function RandomDuelPage() {
               )}
             </div>
 
-            {/* Player Info Card */}
+            {/* Card do duelista */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="mb-3 sm:mb-4 bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm rounded-lg sm:rounded-xl p-2 sm:p-3 border border-purple-500/20 shadow-xl"
+              className="mb-3 sm:mb-4 mx-auto w-full max-w-sm rounded-xl border border-purple-500/25 bg-gradient-to-br from-slate-900/90 via-gray-900/80 to-slate-950/90 backdrop-blur-md shadow-xl shadow-purple-950/20 overflow-hidden"
             >
-              <div className="flex flex-col md:flex-row items-center md:items-start gap-2 sm:gap-3">
-                <div className="flex flex-col items-center flex-shrink-0 gap-2">
-                  <div className="relative">
+              <div className="px-3 py-2 sm:px-4 sm:py-2.5 border-b border-white/5 bg-purple-950/20">
+                <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-purple-300/90">
+                  Seu duelista
+                </span>
+              </div>
+              <div className="p-3 sm:p-4 space-y-3 sm:space-y-4">
+                {/* Avatar + identidade (sempre em linha em telas médias+) */}
+                <div className="flex flex-row gap-3 sm:gap-4 items-center text-left">
+                  <div className="relative flex-shrink-0">
                     <motion.div
-                      animate={{ 
-                        scale: [1, 1.05, 1],
+                      animate={{
+                        scale: [1, 1.04, 1],
                         boxShadow: [
-                          '0 0 20px rgba(139, 92, 246, 0.3)',
-                          '0 0 30px rgba(139, 92, 246, 0.5)',
-                          '0 0 20px rgba(139, 92, 246, 0.3)'
-                        ]
+                          '0 0 18px rgba(139, 92, 246, 0.25)',
+                          '0 0 28px rgba(139, 92, 246, 0.45)',
+                          '0 0 18px rgba(139, 92, 246, 0.25)',
+                        ],
                       }}
                       transition={{ duration: 2, repeat: Infinity }}
-                      className="absolute inset-0 bg-purple-500 rounded-full blur-xl opacity-50"
+                      className="absolute -inset-1 rounded-full bg-purple-500/35 blur-md"
                     />
-                    <img 
-                      src={getImageUrl(user.profileImage)} 
+                    <img
+                      src={getProfileImageUrl(user.profileImage)}
                       alt={user.nickname}
-                      className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-full border-2 border-purple-500 shadow-lg object-cover"
+                      className="relative h-[4.5rem] w-[4.5rem] sm:h-[5.25rem] sm:w-[5.25rem] rounded-full border-2 border-purple-400/80 object-cover shadow-lg ring-2 ring-black/40"
                       onError={(e) => {
-                        e.currentTarget.src = '/images/default.png';
+                        e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                       }}
                     />
                   </div>
-                  {/* Deck (modo normal): imagem + nome embaixo, sem info redundante com o card do lado */}
-                  {duelMode === 'normal' && (
-                    <div className="w-full max-w-[220px] p-2 rounded-lg bg-gray-800/50 border border-purple-500/30">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-lg sm:text-xl font-bold leading-tight text-white break-words">
+                      {user.clanTag ? (
+                        <>
+                          <span className="text-purple-300/90">|{user.clanTag}|</span>{' '}
+                          <span className="bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text text-transparent">
+                            {user.nickname}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text text-transparent">
+                          {user.nickname}
+                        </span>
+                      )}
+                    </h3>
+                    {levelRange && (
+                      <div className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-lg border border-purple-500/35 bg-purple-500/10 px-2 py-1">
+                        <span className="text-[10px] sm:text-xs font-medium text-white/55">Faixa de nível</span>
+                        <span className="truncate text-xs sm:text-sm font-bold text-purple-200">{levelRange.name}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Deck + botão procurar (botão fora do card do deck, à direita, maior) */}
+                {duelMode === 'normal' ? (
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/25 p-2">
+                      <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-white/45">
+                        Deck para este duelo
+                      </p>
                       {myDecksLoading ? (
-                        <p className="text-gray-400 text-xs text-center py-2">Carregando...</p>
+                        <p className="text-gray-400 text-xs py-1.5">Carregando decks…</p>
                       ) : myDecks.length === 0 ? (
-                        <p className="text-amber-400 text-xs text-center py-2">Crie um deck no Deck Builder.</p>
+                        <p className="text-amber-400/90 text-xs py-1.5">Crie um deck no Deck Builder.</p>
                       ) : (
                         <div className="flex items-center gap-2">
                           {(() => {
                             const equippedDeck = myDecks.find((d) => d.id === user?.equippedDeckId);
                             const mainDeckCount = equippedDeck ? (equippedDeck.cards?.filter((c) => !c.isExtraDeck).length ?? 0) : 0;
-                            const coverCard = equippedDeck ? (equippedDeck.coverCard ?? equippedDeck.cards?.[0]?.card ?? null) : null;
+                            const coverCard = equippedDeck
+                              ? (equippedDeck.coverCard ?? equippedDeck.cards?.[0]?.card ?? null)
+                              : null;
+                            const ok = equippedDeck && mainDeckCount >= 40;
                             return (
                               <>
-                                {equippedDeck && mainDeckCount >= 40 ? (
-                                  <div className="flex-1 min-w-0 flex flex-col items-center rounded-lg border-2 border-purple-400 bg-purple-600/40 text-white py-2 px-2">
-                                    {coverCard ? (
-                                      <div className="flex-shrink-0 w-14 sm:w-16 aspect-[59/86] rounded overflow-hidden border border-white/20 mb-1.5">
-                                        <CardImage
-                                          card={coverCard}
-                                          className="w-full h-full object-cover"
-                                          fallback="/images/fundoCarta.webp"
-                                        />
-                                      </div>
+                                <div
+                                  className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-lg border px-2 py-1.5 ${
+                                    ok
+                                      ? 'border-purple-400/50 bg-purple-600/15'
+                                      : 'border-dashed border-gray-600 bg-gray-800/30'
+                                  }`}
+                                >
+                                  {ok && coverCard ? (
+                                    <div className="relative w-[3.25rem] shrink-0 overflow-hidden rounded border border-white/15 bg-black/40 aspect-[59/86] sm:w-[3.625rem]">
+                                      <CardImage
+                                        card={coverCard}
+                                        className="absolute inset-0 h-full w-full min-h-0"
+                                        style={{ backgroundSize: 'cover', backgroundPosition: 'top center' }}
+                                        fallback="/images/fundoCarta.webp"
+                                      />
+                                    </div>
+                                  ) : ok ? (
+                                    <div className="flex w-[3.25rem] shrink-0 items-center justify-center rounded border border-white/10 bg-gray-700 text-base aspect-[59/86] sm:w-[3.625rem]">
+                                      🃏
+                                    </div>
+                                  ) : null}
+                                  <div className="min-w-0 w-full px-0.5 text-center">
+                                    {ok && equippedDeck ? (
+                                      <p className="line-clamp-2 text-xs font-semibold leading-tight text-white sm:text-sm">
+                                        {equippedDeck.name}
+                                      </p>
                                     ) : (
-                                      <div className="flex-shrink-0 w-14 sm:w-16 aspect-[59/86] rounded bg-gray-700 border border-white/20 flex items-center justify-center text-xl mb-1.5">
-                                        🃏
-                                      </div>
+                                      <p className="text-[11px] leading-snug text-gray-400 sm:text-xs">
+                                        {equippedDeck && mainDeckCount < 40
+                                          ? `"${equippedDeck.name}" precisa de no mínimo 40 cartas.`
+                                          : 'Nenhum deck equipado.'}
+                                      </p>
                                     )}
-                                    <span className="font-semibold text-xs text-center truncate w-full block">{equippedDeck.name}</span>
                                   </div>
-                                ) : (
-                                  <div className="flex-1 py-3 px-2 rounded-lg border border-dashed border-gray-500 text-gray-400 text-xs text-center">
-                                    {equippedDeck && mainDeckCount < 40
-                                      ? `${equippedDeck.name} (mín. 40)`
-                                      : 'Nenhum deck equipado'}
-                                  </div>
-                                )}
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() => setShowDeckPicker(true)}
-                                  className="flex-shrink-0 w-10 h-10 rounded-lg border-2 border-purple-500/50 bg-gray-700/50 text-purple-400 hover:bg-purple-600/30 hover:border-purple-400 flex items-center justify-center text-xl font-bold transition-all"
+                                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-purple-500/45 bg-purple-500/10 text-lg font-bold leading-none text-purple-200 transition-all hover:border-purple-400 hover:bg-purple-500/20 sm:h-11 sm:w-11"
                                   title="Trocar deck"
+                                  aria-label="Trocar deck equipado"
                                 >
                                   +
                                 </button>
@@ -1104,89 +1166,145 @@ export default function RandomDuelPage() {
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-                <div className="flex-1 text-center md:text-left min-w-0">
-                  <div className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-0.5">
-                    {user.clanTag ? `|${user.clanTag}| ${user.nickname}` : user.nickname}
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: 0.35 }}
+                      className="flex shrink-0 flex-col items-center justify-center self-center"
+                    >
+                      <motion.button 
+                        type="button"
+                        whileHover={isConnected ? { scale: 1.03 } : {}}
+                        whileTap={isConnected ? { scale: 0.98 } : {}}
+                        onClick={() => {
+                          if (user?.id) {
+                            const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
+                            searchDuel(userId, undefined);
+                          }
+                        }}
+                        disabled={!isConnected}
+                        className="border-0 bg-transparent p-0 shadow-none transition-opacity duration-200 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-xl"
+                        aria-label="Procurar duelo"
+                      >
+                        <img
+                          src="/images/ProcurarDuelo.png"
+                          alt=""
+                          className="block h-auto w-[10rem] max-w-[42vw] object-contain select-none drop-shadow-[0_6px_24px_rgba(0,0,0,0.45)] sm:w-[12rem] md:w-[13.5rem]"
+                          draggable={false}
+                        />
+                      </motion.button>
+                    </motion.div>
                   </div>
-                  <div className="text-white/70 mb-1 sm:mb-2 text-sm sm:text-base">
-                    Nível {user.level || 1} ⭐ Score: {formatScore(user.totalScore)}
+                ) : (
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/25 p-2">
+                      <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-white/45">
+                        Deck anime
+                      </p>
+                      {(() => {
+                        const sel = animeDecks.find((d) => d.id === selectedAnimeDeckId);
+                        if (!sel) {
+                          return <p className="text-xs text-gray-400">Selecione um deck na lista acima.</p>;
+                        }
+                        const cc = sel.coverCard;
+                        return (
+                          <div className="flex flex-col items-center gap-1 py-0.5 text-center">
+                            {cc ? (
+                              <div className="relative w-[3.25rem] shrink-0 overflow-hidden rounded border border-white/15 bg-black/40 aspect-[59/86] sm:w-[3.625rem]">
+                                <CardImage
+                                  card={cc}
+                                  className="absolute inset-0 h-full w-full min-h-0"
+                                  style={{ backgroundSize: 'cover', backgroundPosition: 'top center' }}
+                                  fallback="/images/fundoCarta.webp"
+                                />
+                              </div>
+                            ) : (
+                              <div className="flex w-[3.25rem] shrink-0 items-center justify-center rounded border border-white/10 bg-gray-700 text-base aspect-[59/86] sm:w-[3.625rem]">
+                                🃏
+                              </div>
+                            )}
+                            <p className="line-clamp-2 w-full text-xs font-semibold leading-tight text-white sm:text-sm">
+                              {sel.name}
+                            </p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: 0.35 }}
+                      className="flex shrink-0 flex-col items-center justify-center self-center"
+                    >
+                      <motion.button 
+                        type="button"
+                        whileHover={isConnected && !!selectedAnimeDeckId && animeDecks.length > 0 ? { scale: 1.03 } : {}}
+                        whileTap={isConnected && !!selectedAnimeDeckId && animeDecks.length > 0 ? { scale: 0.98 } : {}}
+                        onClick={() => {
+                          if (user?.id) {
+                            const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
+                            const opts = selectedAnimeDeckId ? { animeDeckId: selectedAnimeDeckId } : undefined;
+                            searchDuel(userId, opts);
+                          }
+                        }}
+                        disabled={!isConnected || !selectedAnimeDeckId || animeDecks.length === 0}
+                        className="border-0 bg-transparent p-0 shadow-none transition-opacity duration-200 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-xl"
+                        aria-label="Procurar duelo"
+                      >
+                        <img
+                          src="/images/ProcurarDuelo.png"
+                          alt=""
+                          className="block h-auto w-[10rem] max-w-[42vw] object-contain select-none drop-shadow-[0_6px_24px_rgba(0,0,0,0.45)] sm:w-[12rem] md:w-[13.5rem]"
+                          draggable={false}
+                        />
+                      </motion.button>
+                    </motion.div>
                   </div>
-                  {levelRange && (
-                    <div className="mb-1.5 sm:mb-2">
-                      <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded border border-purple-500/30 backdrop-blur-sm">
-                        <span className="text-white/70 text-xs font-medium">Faixa:</span>
-                        <span className="text-purple-300 font-bold text-sm">{levelRange.name}</span>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Estatísticas no Random: duelos feitos, V/D e % vitórias */}
-                  <div className="w-full min-w-0 md:text-left">
-                    <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-2 sm:mb-3">
-                      <motion.div
-                        whileHover={{ scale: 1.02 }}
-                        className="bg-gradient-to-br from-amber-500/20 to-orange-500/20 rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2 border border-amber-500/30 backdrop-blur-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-0.5 min-w-0"
-                      >
-                        <span className="text-white/70 text-xs font-medium truncate">Duelos Random</span>
-                        <span className="text-sm sm:text-base font-bold text-amber-400 truncate">{randomStats?.total ?? 0}</span>
-                      </motion.div>
-                      <motion.div
-                        whileHover={{ scale: 1.02 }}
-                        className="bg-gray-800/50 rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2 border border-purple-500/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-0.5 min-w-0"
-                      >
-                        <span className="text-white/70 text-xs truncate">V/D Random</span>
-                        <span className="text-sm sm:text-base font-bold truncate">
-                          <span className="text-green-400">{randomStats?.wins ?? 0}</span> / <span className="text-red-400">{randomStats?.losses ?? 0}</span>
-                        </span>
-                      </motion.div>
-                      <motion.div
-                        whileHover={{ scale: 1.02 }}
-                        className="bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2 border border-purple-500/30 backdrop-blur-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-0.5 min-w-0"
-                      >
-                        <span className="text-white/70 text-xs font-medium truncate">% Vitórias</span>
-                        <span className="text-sm sm:text-base font-bold text-purple-400 truncate">
-                          {(() => {
-                            const total = randomStats?.total ?? 0;
-                            const wins = randomStats?.wins ?? 0;
-                            return total > 0 ? Math.round((wins / total) * 100) : 0;
-                          })()}%
-                        </span>
-                      </motion.div>
-                    </div>
+                )}
+
+                {/* Estatísticas Random */}
+                <div>
+                  <p className="mb-2 text-[10px] sm:text-xs font-medium uppercase tracking-wide text-white/45">
+                    Histórico no Random
+                  </p>
+                  <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
+                    <motion.div
+                      whileHover={{ scale: 1.02 }}
+                      className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-2 py-2 text-center sm:px-2.5 sm:py-2.5"
+                    >
+                      <span className="block text-[10px] font-medium text-amber-200/70">Duelos</span>
+                      <span className="text-base font-bold tabular-nums text-amber-300 sm:text-lg">
+                        {randomStats?.total ?? 0}
+                      </span>
+                    </motion.div>
+                    <motion.div
+                      whileHover={{ scale: 1.02 }}
+                      className="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-center sm:px-2.5 sm:py-2.5"
+                    >
+                      <span className="block text-[10px] font-medium text-white/55">Vit / Der</span>
+                      <span className="text-sm font-bold tabular-nums sm:text-base">
+                        <span className="text-emerald-400">{randomStats?.wins ?? 0}</span>
+                        <span className="text-white/35"> / </span>
+                        <span className="text-rose-400">{randomStats?.losses ?? 0}</span>
+                      </span>
+                    </motion.div>
+                    <motion.div
+                      whileHover={{ scale: 1.02 }}
+                      className="rounded-lg border border-purple-500/25 bg-purple-500/10 px-2 py-2 text-center sm:px-2.5 sm:py-2.5"
+                    >
+                      <span className="block text-[10px] font-medium text-purple-200/70">Aproveit.</span>
+                      <span className="text-base font-bold tabular-nums text-purple-200 sm:text-lg">
+                        {(() => {
+                          const total = randomStats?.total ?? 0;
+                          const wins = randomStats?.wins ?? 0;
+                          return total > 0 ? Math.round((wins / total) * 100) : 0;
+                        })()}
+                        %
+                      </span>
+                    </motion.div>
                   </div>
                 </div>
               </div>
-            </motion.div>
-
-            {/* Botão Principal */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.4 }}
-              className="flex justify-center mb-4 sm:mb-6"
-            >
-              <motion.button 
-                whileHover={isConnected && (duelMode !== 'anime' || !!selectedAnimeDeckId) ? { scale: 1.03 } : {}}
-                whileTap={isConnected && (duelMode !== 'anime' || !!selectedAnimeDeckId) ? { scale: 0.98 } : {}}
-                onClick={() => {
-                  if (user?.id) {
-                    const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
-                    const opts = duelMode === 'anime' && selectedAnimeDeckId ? { animeDeckId: selectedAnimeDeckId } : undefined;
-                    searchDuel(userId, opts);
-                  }
-                }}
-                disabled={!isConnected || (duelMode === 'anime' && !selectedAnimeDeckId) || (duelMode === 'anime' && animeDecks.length === 0)}
-                className="group relative px-8 sm:px-12 md:px-14 py-4 sm:py-5 rounded-xl font-bold text-lg sm:text-xl md:text-2xl disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 overflow-hidden border-2 border-amber-500/80 bg-gradient-to-b from-[#1c0f0f] to-[#2a1515] text-amber-400 hover:border-amber-400 hover:shadow-[0_0_24px_rgba(251,191,36,0.25)] hover:text-amber-300"
-              >
-                <span className="relative z-10 flex items-center justify-center gap-2 sm:gap-3">
-                  <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 4l16 16M20 4L4 20" />
-                  </svg>
-                  Procurar Duelo
-                </span>
-              </motion.button>
             </motion.div>
 
           </motion.div>

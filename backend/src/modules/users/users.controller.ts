@@ -47,6 +47,21 @@ export class UsersController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('me/login-broadcast')
+  async getMyLoginBroadcast(@Request() req: any) {
+    const userId = typeof req.user.id === 'string' ? parseInt(req.user.id, 10) : Number(req.user.id);
+    return this.usersService.getLoginBroadcastForUser(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('me/login-broadcast/dismiss')
+  async dismissMyLoginBroadcast(@Request() req: any, @Body() body: { id: string }) {
+    const userId = typeof req.user.id === 'string' ? parseInt(req.user.id, 10) : Number(req.user.id);
+    await this.usersService.dismissLoginBroadcast(userId, body?.id);
+    return { ok: true };
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('me')
   async getProfile(@Request() req: any) {
     // CRÍTICO: Timeout agressivo para garantir que HTTP sempre responda
@@ -226,8 +241,12 @@ export class UsersController {
       // Busca o usuário para pegar a imagem antiga
       const user = await this.usersService.findById(userId);
       
-      // Se tem imagem antiga e não é a padrão, deleta
-      if (user.profileImage && !user.profileImage.includes('/images/default')) {
+      // Se tem imagem antiga e não é a padrão, remove do storage (libera espaço)
+      if (
+        user.profileImage &&
+        !user.profileImage.includes('/images/default') &&
+        !user.profileImage.includes('/avatars/default')
+      ) {
         await this.uploadService.deleteAvatar(user.profileImage);
       }
 

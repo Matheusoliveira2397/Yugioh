@@ -46,6 +46,7 @@ import { CosmeticsModule } from '../cosmetics/cosmetics.module';
 import { CreditPaymentLog } from './entities/credit-payment-log.entity';
 import { DuelScoreSettings } from './entities/duel-score-settings.entity';
 import { AdminDbMigrationService } from './admin-db-migration.service';
+import { LoginBroadcast } from './entities/login-broadcast.entity';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { AdminDbMigrationService } from './admin-db-migration.service';
       Division,
       RandomDuelLevelRange,
       SocialMedia,
+      LoginBroadcast,
     ]),
     RedisModule,
     InitialDecksModule,

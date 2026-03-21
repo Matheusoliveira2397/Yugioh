@@ -4,7 +4,9 @@ import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { UsersCosmeticsController } from './users-cosmetics.controller';
 import { UserSystemNotificationsDbMigrationService } from './user-system-notifications-db-migration.service';
+import { LoginBroadcastMigrationService } from './login-broadcast-migration.service';
 import { User } from './entities/user.entity';
+import { LoginBroadcast } from '../admin/entities/login-broadcast.entity';
 import { Achievement } from './entities/achievement.entity';
 import { UserSystemNotification } from './entities/user-system-notification.entity';
 import { AchievementsService } from './achievements.service';
@@ -21,14 +23,14 @@ import { DeckCard } from '../decks/entities/deck-card.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Achievement, UserSystemNotification, SeasonRanking, Season, GroupMember, Group, Deck, DeckCard]),
+    TypeOrmModule.forFeature([User, Achievement, UserSystemNotification, LoginBroadcast, SeasonRanking, Season, GroupMember, Group, Deck, DeckCard]),
     UploadModule,
     MailModule,
     RedisModule,
     LevelsModule,
   ],
   controllers: [UsersController, UsersCosmeticsController],
-  providers: [UsersService, AchievementsService, UserSystemNotificationsDbMigrationService],
+  providers: [UsersService, AchievementsService, UserSystemNotificationsDbMigrationService, LoginBroadcastMigrationService],
   exports: [UsersService, AchievementsService],
 })
 export class UsersModule {}

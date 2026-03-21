@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useSocketStore } from '../stores/socketStore';
 import api from '../api/axios';
-import { getImageUrl } from '../utils/imageUrl';
+import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { formatScore } from '../utils/formatScore';
 
 interface Friend {
@@ -512,11 +512,11 @@ export default function FriendsPage() {
                         >
                           <div className="flex items-center gap-3 mb-3">
                             <img
-                              src={getImageUrl(request.user.profileImage)}
+                              src={getProfileImageUrl(request.user.profileImage)}
                               alt={request.user.nickname}
                               className="w-12 h-12 rounded-full border-2 border-yellow-500 object-cover"
                               onError={(e) => {
-                                e.currentTarget.src = '/images/default.png';
+                                e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                               }}
                             />
                             <div className="flex-1 min-w-0">
@@ -576,11 +576,11 @@ export default function FriendsPage() {
                         <div className="flex items-center gap-3">
                           <div className="relative">
                             <img
-                              src={getImageUrl(friend.profileImage)}
+                              src={getProfileImageUrl(friend.profileImage)}
                               alt={friend.nickname}
                               className="w-12 h-12 rounded-full border-2 border-purple-500 object-cover"
                               onError={(e) => {
-                                e.currentTarget.src = '/images/default.png';
+                                e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                               }}
                             />
                             {friend.isOnline && (
@@ -631,11 +631,11 @@ export default function FriendsPage() {
                   <div className="p-4 border-b border-slate-700 flex items-center gap-3">
                     <div className="relative">
                       <img
-                        src={getImageUrl(selectedFriend.profileImage)}
+                        src={getProfileImageUrl(selectedFriend.profileImage)}
                         alt={selectedFriend.nickname}
                         className="w-12 h-12 rounded-full border-2 border-purple-500 object-cover"
                         onError={(e) => {
-                          e.currentTarget.src = '/images/default.png';
+                          e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                         }}
                       />
                       {selectedFriend.isOnline && (

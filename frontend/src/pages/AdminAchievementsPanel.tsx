@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
 import { Navigate, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { getImageUrl } from '../utils/imageUrl';
+import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -293,11 +293,11 @@ export default function AdminAchievementsPanel() {
                         className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
                       />
                       <img
-                        src={getImageUrl(user.profileImage)}
+                        src={getProfileImageUrl(user.profileImage)}
                         alt={user.nickname}
                         className="w-8 h-8 rounded-full object-cover"
                         onError={(e) => {
-                          e.currentTarget.src = '/images/default.png';
+                          e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                         }}
                       />
                       <div className="flex-1">

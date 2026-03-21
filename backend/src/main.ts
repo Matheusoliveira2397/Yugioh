@@ -3,7 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { join } from 'path';
+import { join, resolve, sep } from 'path';
 import { LoggingInterceptor } from './logging.interceptor';
 import { HttpExceptionFilter } from './http-exception.filter';
 import { RedisIoAdapter } from './redis-io.adapter';
@@ -58,9 +58,9 @@ async function bootstrap() {
   const uploadsDir = join(__dirname, '..', 'uploads');
   const avatarsDir = join(uploadsDir, 'avatars');
   const imagesDir = join(uploadsDir, 'images');
-  const defaultAvatarPath = join(avatarsDir, 'default.png');
-  const defaultImagePath = join(imagesDir, 'default.png');
-  const frontendDefaultPath = join(__dirname, '..', '..', 'frontend', 'public', 'images', 'default.png');
+  const defaultAvatarPath = join(avatarsDir, 'default.jpg');
+  const defaultImagePath = join(imagesDir, 'default.jpg');
+  const frontendDefaultPath = join(__dirname, '..', '..', 'frontend', 'public', 'images', 'default.jpg');
 
   // Criar diretórios se não existirem
   if (!fs.existsSync(avatarsDir)) {
@@ -77,36 +77,17 @@ async function bootstrap() {
     console.log('📁 Diretório de cartas (uploads) criado:', cardsUploadDir);
   }
 
-  // Copiar default.png se não existir
-  // Tenta copiar do frontend (desenvolvimento local) ou usar arquivo já existente no volume (Docker)
-  if (!fs.existsSync(defaultAvatarPath)) {
-    if (fs.existsSync(frontendDefaultPath)) {
-      try {
-        fs.copyFileSync(frontendDefaultPath, defaultAvatarPath);
-        console.log('✅ Arquivo default.png copiado para avatares do frontend');
-      } catch (error) {
-        console.warn('⚠️ Não foi possível copiar do frontend. Arquivo deve estar no volume do Docker.');
-      }
-    } else {
-      console.warn('⚠️ Arquivo default.png não encontrado em avatares. Certifique-se de que está no volume do Docker.');
+  // Sempre sobrescrever com o arquivo canônico do frontend (evita ficar com default antigo em uploads/).
+  if (fs.existsSync(frontendDefaultPath)) {
+    try {
+      fs.copyFileSync(frontendDefaultPath, defaultAvatarPath);
+      fs.copyFileSync(frontendDefaultPath, defaultImagePath);
+      console.log('✅ default.jpg sincronizado (frontend/public/images → uploads/avatars e uploads/images)');
+    } catch (error) {
+      console.warn('⚠️ Não foi possível sincronizar default.jpg do frontend para uploads.', error);
     }
   } else {
-    console.log('✅ Arquivo default.png já existe em avatares');
-  }
-  
-  if (!fs.existsSync(defaultImagePath)) {
-    if (fs.existsSync(frontendDefaultPath)) {
-      try {
-        fs.copyFileSync(frontendDefaultPath, defaultImagePath);
-        console.log('✅ Arquivo default.png copiado para imagens do frontend');
-      } catch (error) {
-        console.warn('⚠️ Não foi possível copiar do frontend. Arquivo deve estar no volume do Docker.');
-      }
-    } else {
-      console.warn('⚠️ Arquivo default.png não encontrado em imagens. Certifique-se de que está no volume do Docker.');
-    }
-  } else {
-    console.log('✅ Arquivo default.png já existe em imagens');
+    console.warn('⚠️ frontend/public/images/default.jpg não encontrado — coloque o avatar padrão nesse caminho.');
   }
 
   // Servir arquivos estáticos (uploads) com cache para reduzir carga e melhorar carregamento em produção
@@ -115,6 +96,49 @@ async function bootstrap() {
     setHeaders: (res: any) => {
       res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 dia
     },
+  });
+
+  // Avatar salvo no DB mas arquivo ausente no disco (volume novo, deploy, exclusão manual) → não retornar 404 ao <img>
+  app.use((req: any, res: any, next: any) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    const p: string = req.path || '';
+    const prefix = '/uploads/avatars/';
+    if (!p.startsWith(prefix)) return next();
+    const relRaw = p.slice(prefix.length);
+    if (!relRaw) return next();
+    let rel: string;
+    try {
+      rel = decodeURIComponent(relRaw);
+    } catch {
+      return next();
+    }
+    if (!/^[\w.-]+$/.test(rel)) return next();
+    const baseResolved = resolve(avatarsDir);
+    const filePath = resolve(join(avatarsDir, rel));
+    if (!filePath.startsWith(baseResolved + sep) && filePath !== baseResolved) return next();
+
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      const ext = rel.toLowerCase();
+      if (ext.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
+      else if (ext.endsWith('.webp')) res.setHeader('Content-Type', 'image/webp');
+      else if (ext.endsWith('.gif')) res.setHeader('Content-Type', 'image/gif');
+      else res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      if (req.method === 'HEAD') {
+        res.end();
+        return;
+      }
+      return fs.createReadStream(filePath).pipe(res);
+    }
+
+    if (!fs.existsSync(defaultAvatarPath)) return next();
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=120');
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+    fs.createReadStream(defaultAvatarPath).pipe(res);
   });
 
   // Servir avatares padrão com cache

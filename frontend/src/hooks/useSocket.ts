@@ -43,6 +43,8 @@ interface ChatMessage {
   username: string;
   message: string;
   timestamp: Date;
+  /** Foto de perfil do remetente (path ou URL); opcional em mensagens antigas */
+  profileImage?: string | null;
 }
 
 interface DuelLog {

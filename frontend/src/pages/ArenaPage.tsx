@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
 import { useSocket } from '../hooks/useSocket';
 import axios from 'axios';
-import { getImageUrl } from '../utils/imageUrl';
+import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
+import { arenaBackgroundUrls } from '../utils/arenaBackgroundUrls';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -67,6 +68,18 @@ export default function ArenaPage() {
   const [lastArenaTop5, setLastArenaTop5] = useState<{ arena: { id: string; name: string; endTime: string }; rankings: Record<string, ArenaRanking[]> } | null>(null);
   const [loadingLastTop5, setLoadingLastTop5] = useState(false);
   const [equippedTalisman, setEquippedTalisman] = useState<{ name: string; bonusScorePct: number; bonusCashPct: number; bonusArenaPointsPct: number; charges?: number } | null>(null);
+
+  /** Hero da arena ativa: tenta várias imagens e, por fim, qualquer extensão de `/images/background.*` */
+  const arenaHeroImageFallbacks = useMemo(
+    () =>
+      ['/images/ArenaDeDuelos.jpg', '/images/CampoDeDuelo01.jpg', ...arenaBackgroundUrls('/images/background')],
+    [],
+  );
+  const arenaHeroFallbackIndexRef = useRef(0);
+
+  useLayoutEffect(() => {
+    arenaHeroFallbackIndexRef.current = 0;
+  }, [currentArena?.id]);
 
   const fetchLastArenaTop5 = async () => {
     try {
@@ -590,11 +603,11 @@ export default function ArenaPage() {
                             </div>
                             <div className="flex items-center gap-2 min-w-0 overflow-hidden">
                               <img
-                                src={getImageUrl(player.profileImage)}
+                                src={getProfileImageUrl(player.profileImage)}
                                 alt={player.nickname}
                                 className="w-9 h-9 rounded-full border-2 border-slate-500 object-cover flex-shrink-0 shadow"
                                 onError={(e) => {
-                                  e.currentTarget.src = '/images/default.png';
+                                  e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                                 }}
                               />
                               <span className="font-bold text-white text-sm sm:text-base truncate min-w-0" title={player.clanTag ? `[${player.clanTag}] ${player.nickname}` : player.nickname}>
@@ -657,15 +670,20 @@ export default function ArenaPage() {
           >
             <div className="relative rounded-lg overflow-hidden border-2 border-red-500/50 group-hover:border-red-500 transition-all shadow-lg">
               <img
-                src="/images/ArenaDeDuelos.jpg"
+                key={currentArena.id}
+                src={arenaHeroImageFallbacks[0]}
                 alt="Arena de Duelos"
                 className="w-full h-auto max-h-[200px] sm:max-h-[280px] md:max-h-[340px] object-contain"
                 onError={(e) => {
                   const target = e.currentTarget as HTMLImageElement;
-                  if (target.src.includes('ArenaDeDuelos.jpg')) {
-                    target.src = '/images/CampoDeDuelo01.jpg';
+                  arenaHeroFallbackIndexRef.current += 1;
+                  const next = arenaHeroImageFallbacks[arenaHeroFallbackIndexRef.current];
+                  if (next) {
+                    target.src = next;
                   } else {
-                    target.src = '/images/background.webp';
+                    target.onerror = null;
+                    target.src =
+                      'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
                   }
                 }}
               />
@@ -764,10 +782,10 @@ export default function ArenaPage() {
                             {player.rank}°
                           </div>
                           <img
-                            src={getImageUrl(player.profileImage)}
+                            src={getProfileImageUrl(player.profileImage)}
                             alt={player.nickname}
                             className="w-7 h-7 sm:w-9 sm:h-9 rounded-full border-2 border-slate-500 object-cover flex-shrink-0"
-                            onError={(e) => { e.currentTarget.src = '/images/default.png'; }}
+                            onError={(e) => { e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH; }}
                           />
                           <div className="flex-1 min-w-0">
                             <div className="font-bold text-white text-xs sm:text-sm truncate">

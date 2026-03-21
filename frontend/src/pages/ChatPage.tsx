@@ -5,7 +5,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useSocketStore } from '../stores/socketStore';
 import { getSocialIcon } from '../components/SocialMediaIcons';
 import axios from 'axios';
-import { getImageUrl } from '../utils/imageUrl';
+import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -757,7 +757,7 @@ export default function ChatPage() {
                               <div key={idx} className={`flex gap-2 ${isMyMessage ? 'flex-row-reverse' : 'flex-row'} max-w-[85%] ${isMyMessage ? 'ml-auto' : 'mr-auto'}`}>
                                 <div className={`p-2 rounded-lg border text-sm ${isMyMessage ? 'border-blue-500/50 bg-blue-900/20' : isChallenge ? 'border-yellow-500/50 bg-yellow-900/20' : 'border-white/20 bg-gray-800'}`}>
                                   <div className="flex items-center gap-2 mb-0.5">
-                                    <img src={msg.profileImage ? getImageUrl(msg.profileImage) : '/images/default.png'} alt="" className="w-5 h-5 rounded-full object-cover" onError={(e) => { e.currentTarget.src = '/images/default.png'; }} />
+                                    <img src={getProfileImageUrl(msg.profileImage)} alt="" className="w-5 h-5 rounded-full object-cover" onError={(e) => { e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH; }} />
                                     <span className="font-semibold text-gray-300">{msg.clanTag ? `|${msg.clanTag}| ` : ''}{msg.username}</span>
                                     <span className="text-xs text-gray-500">{timeString}</span>
                                   </div>
@@ -838,16 +838,12 @@ export default function ChatPage() {
                     {/* Avatar */}
                     <div className="flex-shrink-0">
                       <img
-                        src={
-                          msg.profileImage
-                            ? getImageUrl(msg.profileImage)
-                            : `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMyMessage ? '3b82f6' : 'ef4444'}&color=fff&size=48`
-                        }
+                        src={getProfileImageUrl(msg.profileImage)}
                         alt={msg.username}
                         className="w-8 h-8 rounded-full object-cover border border-gray-600"
                         loading="lazy"
                         onError={(e) => {
-                          e.currentTarget.src = '/images/default.png';
+                          e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                         }}
                       />
                     </div>
@@ -957,16 +953,12 @@ export default function ChatPage() {
                           <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse flex-shrink-0"></div>
                           <div className="relative flex-shrink-0">
                             <img
-                              src={
-                                onlineUser.profileImage
-                                  ? getImageUrl(onlineUser.profileImage)
-                                  : `https://ui-avatars.com/api/?name=${encodeURIComponent(onlineUser.username)}&background=6366f1&color=fff&size=48`
-                              }
+                              src={getProfileImageUrl(onlineUser.profileImage)}
                               alt={onlineUser.username}
                               className="w-10 h-10 rounded-full object-cover border border-gray-600"
                               loading="lazy"
                               onError={(e) => {
-                                e.currentTarget.src = '/images/default.png';
+                                e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                               }}
                             />
                             {(onlineUser.level ?? 0) > 0 && (

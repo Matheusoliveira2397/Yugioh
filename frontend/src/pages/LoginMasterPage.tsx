@@ -2,6 +2,7 @@ import { useState, FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { motion } from 'framer-motion';
+import ArenaFullBleedBackground from '../components/ArenaFullBleedBackground';
 
 export default function LoginMasterPage() {
   const [username, setUsername] = useState('');
@@ -29,15 +30,9 @@ export default function LoginMasterPage() {
   };
 
   return (
-    <div
-      className="min-h-screen flex flex-col items-center justify-center p-4 relative"
-      style={{
-        backgroundImage: 'url(/images/backgroundLogin.jpg)',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-      }}
-    >
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" aria-hidden />
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden">
+      <ArenaFullBleedBackground basePathWithoutExt="/images/backgroundLogin" zIndexClass="fixed inset-0 z-0" />
+      <div className="absolute inset-0 z-[1] bg-black/60 backdrop-blur-sm" aria-hidden />
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}

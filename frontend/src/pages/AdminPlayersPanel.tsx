@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../api/axios';
-import { getImageUrl } from '../utils/imageUrl';
+import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { formatScore } from '../utils/formatScore';
 
 interface Player {
@@ -430,10 +430,10 @@ export default function AdminPlayersPanel() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-3">
                           <img
-                            src={getImageUrl(player.profileImage ?? (player as any).profile_image)}
+                            src={getProfileImageUrl(player.profileImage ?? (player as any).profile_image)}
                             alt={player.nickname || player.username}
                             className="w-10 h-10 rounded-full object-cover border-2 border-gray-600"
-                            onError={(e) => { (e.target as HTMLImageElement).src = getImageUrl(null); }}
+                            onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }}
                           />
                           <div>
                             <p className="font-bold text-white cursor-pointer hover:text-purple-400 transition-colors"
@@ -596,9 +596,9 @@ export default function AdminPlayersPanel() {
               <div className="space-y-4">
                 <div className="flex items-center gap-4">
                   <img
-                    src={getImageUrl(selectedPlayer.profileImage ?? (selectedPlayer as any).profile_image)}
+                    src={getProfileImageUrl(selectedPlayer.profileImage ?? (selectedPlayer as any).profile_image)}
                     alt={selectedPlayer.nickname || selectedPlayer.username}
-                    onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }}
+                    onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }}
                     className="w-20 h-20 rounded-full object-cover border-2 border-purple-500"
                   />
                   <div>

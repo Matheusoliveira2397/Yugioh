@@ -6,7 +6,7 @@ import axios from 'axios';
 import { logger } from '../utils/logger';
 import LatestCardsMarquee from '../components/LatestCardsMarquee';
 
-import { getImageUrl } from '../utils/imageUrl';
+import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { formatScore } from '../utils/formatScore';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -56,6 +56,19 @@ interface Card {
   createdAt: string;
 }
 
+interface PublicStats {
+  currentSeasonNumber: number;
+  seasonEndsAt: string | null;
+  seasonEndsInDays: number | null;
+  totalDuelists: number;
+  totalDuels: number;
+  tournamentsFinished: number;
+  cardsRegistered: number;
+  playersOnline: number;
+  maxOnlineToday: number;
+  maxOnlineYesterday: number;
+}
+
 export default function HomePage() {
   const { token, user } = useAuthStore();
   const navigate = useNavigate();
@@ -72,6 +85,7 @@ export default function HomePage() {
   const [selectedNewsModal, setSelectedNewsModal] = useState<News | null>(null);
   const [nextArena, setNextArena] = useState<{ name: string; startTime: string } | null>(null);
   const [timeUntilNextArena, setTimeUntilNextArena] = useState<number>(0);
+  const [publicStats, setPublicStats] = useState<PublicStats | null>(null);
   
   // Função para entrar em um clã
   const handleJoinGroup = async (groupId: string) => {
@@ -208,7 +222,7 @@ export default function HomePage() {
       }
 
       // Buscar todas as informações em paralelo (endpoints públicos) - timeout aumentado para evitar problemas com WebSocket
-      const [playersRes, seasonPlayersRes, clansGeneralRes, clansSeasonRes, newsRes, cardsRes, nextArenaRes] = await Promise.all([
+      const [playersRes, seasonPlayersRes, clansGeneralRes, clansSeasonRes, newsRes, cardsRes, nextArenaRes, statsRes] = await Promise.all([
         Promise.race([
           axios.get(`${API_URL}/users/ranking/general`, { headers, timeout: 20000 }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 20000))
@@ -254,6 +268,10 @@ export default function HomePage() {
         Promise.race([
           axios.get(`${API_URL}/arena/next`, { headers, timeout: 10000 }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
+        ]).catch(() => ({ data: null })),
+        Promise.race([
+          axios.get(`${API_URL}/public/stats`, { headers, timeout: 15000 }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 15000)),
         ]).catch(() => ({ data: null })),
       ]);
       
@@ -326,16 +344,25 @@ export default function HomePage() {
         setNextArena(null);
         setTimeUntilNextArena(0);
       }
+
+      const st = statsRes?.data;
+      if (st && typeof st === 'object' && typeof st.totalDuelists === 'number') {
+        setPublicStats(st as PublicStats);
+      } else {
+        setPublicStats(null);
+      }
     } catch (error: any) {
       logger.error('Erro ao buscar dados:', error.response?.data || error.message);
       // Definir arrays vazios em caso de erro
       setTopPlayers([]);
       setTopSeasonPlayers([]);
-      setTopClans([]);
+      setTopClansGeneral([]);
+      setTopClansSeason([]);
       setNews([]);
       setShopCards([]);
       setNextArena(null);
       setTimeUntilNextArena(0);
+      setPublicStats(null);
     } finally {
       setLoading(false);
     }
@@ -386,6 +413,76 @@ export default function HomePage() {
             </motion.div>
           )}
 
+          {/* Estatísticas globais (igual login) */}
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+            className="rounded-lg border border-white/20 bg-black/20 backdrop-blur-sm overflow-hidden shadow-lg"
+          >
+            <div className="px-2 sm:px-3 py-2 border-b border-white/10 bg-gradient-to-r from-emerald-500/20 to-transparent">
+              <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5">
+                <span className="text-base sm:text-lg">📊</span> Estatísticas
+              </h2>
+            </div>
+            {publicStats === null ? (
+              <div className="p-3">
+                <p className="text-white/50 text-xs">Estatísticas indisponíveis no momento.</p>
+              </div>
+            ) : (
+              <div className="p-2 sm:p-3 grid grid-cols-2 gap-2 sm:gap-3">
+                <div className="px-2 py-1.5 rounded-md bg-white/5">
+                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Temporada</p>
+                  <p className="text-white font-bold text-xs sm:text-sm">{publicStats.currentSeasonNumber}º</p>
+                </div>
+                {publicStats.seasonEndsInDays != null && (
+                  <div className="px-2 py-1.5 rounded-md bg-white/5">
+                    <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Termina em</p>
+                    <p className="text-amber-300 font-bold text-xs sm:text-sm">
+                      {publicStats.seasonEndsInDays} dia{publicStats.seasonEndsInDays === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                )}
+                <div className="px-2 py-1.5 rounded-md bg-white/5">
+                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Duelistas</p>
+                  <p className="text-white font-bold text-xs sm:text-sm">{publicStats.totalDuelists.toLocaleString('pt-BR')}</p>
+                </div>
+                <div className="px-2 py-1.5 rounded-md bg-white/5">
+                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Duelos</p>
+                  <p className="text-white font-bold text-xs sm:text-sm">{publicStats.totalDuels.toLocaleString('pt-BR')}</p>
+                </div>
+                <div className="px-2 py-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 col-span-2">
+                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Online agora</p>
+                  <p className="text-emerald-400 font-bold text-base sm:text-lg">{publicStats.playersOnline.toLocaleString('pt-BR')}</p>
+                </div>
+                <div className="px-2 py-1.5 rounded-md bg-white/5">
+                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Torneios</p>
+                  <p className="text-white font-bold text-xs sm:text-sm">{publicStats.tournamentsFinished.toLocaleString('pt-BR')}</p>
+                </div>
+                <div className="px-2 py-1.5 rounded-md bg-white/5">
+                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Cartas</p>
+                  <p className="text-white font-bold text-xs sm:text-sm">{publicStats.cardsRegistered.toLocaleString('pt-BR')}</p>
+                </div>
+                {(publicStats.maxOnlineToday > 0 || publicStats.maxOnlineYesterday > 0) && (
+                  <>
+                    {publicStats.maxOnlineToday > 0 && (
+                      <div className="px-2 py-1.5 rounded-md bg-white/5">
+                        <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Pico hoje</p>
+                        <p className="text-white font-bold text-xs sm:text-sm">{publicStats.maxOnlineToday.toLocaleString('pt-BR')}</p>
+                      </div>
+                    )}
+                    {publicStats.maxOnlineYesterday > 0 && (
+                      <div className="px-2 py-1.5 rounded-md bg-white/5">
+                        <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Pico ontem</p>
+                        <p className="text-white font-bold text-xs sm:text-sm">{publicStats.maxOnlineYesterday.toLocaleString('pt-BR')}</p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </motion.div>
+
           {/* Card único: Top 5 Duelistas (Geral + Season lado a lado, igual ao login) */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -409,7 +506,7 @@ export default function HomePage() {
                       <li key={p.id} className="flex items-center gap-1.5 sm:gap-2">
                         <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
                         <Link to={`/profile/${p.id}`} className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 rounded-md p-0.5 -m-0.5 hover:bg-white/10 transition-colors cursor-pointer">
-                          <img src={getImageUrl(p.profileImage)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                          <img src={getProfileImageUrl(p.profileImage)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }} />
                           <div className="min-w-0 flex-1">
                             <span className="text-white text-[10px] sm:text-xs font-medium truncate block hover:text-amber-200">{p.clanTag ? `|${p.clanTag}| ` : ''}{p.nickname || '—'}</span>
                             <span className="text-amber-300/90 text-[9px] sm:text-[10px]">{formatScore(p.score)} pts</span>
@@ -431,7 +528,7 @@ export default function HomePage() {
                       <li key={p.id} className="flex items-center gap-1.5 sm:gap-2">
                         <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
                         <Link to={`/profile/${p.id}`} className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 rounded-md p-0.5 -m-0.5 hover:bg-white/10 transition-colors cursor-pointer">
-                          <img src={getImageUrl(p.profileImage)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                          <img src={getProfileImageUrl(p.profileImage)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }} />
                           <div className="min-w-0 flex-1">
                             <span className="text-white text-[10px] sm:text-xs font-medium truncate block hover:text-purple-200">{p.clanTag ? `|${p.clanTag}| ` : ''}{p.nickname || '—'}</span>
                             <span className="text-purple-300/90 text-[9px] sm:text-[10px]">{formatScore(p.score)} pts</span>
@@ -477,7 +574,7 @@ export default function HomePage() {
                         className="flex items-center gap-1.5 sm:gap-2 cursor-pointer rounded-md p-1 hover:bg-white/5 transition-colors"
                       >
                         <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
-                        <img src={getImageUrl(c.logo)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                        <img src={getImageUrl(c.logo)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }} />
                         <div className="min-w-0 flex-1">
                           <span className="text-white text-[10px] sm:text-xs font-medium truncate block">[{c.tag}] {c.name || '—'}</span>
                           <span className="text-amber-300/90 text-[9px] sm:text-[10px]">{formatScore(c.totalScore)} pts</span>
@@ -500,7 +597,7 @@ export default function HomePage() {
                         className="flex items-center gap-1.5 sm:gap-2 cursor-pointer rounded-md p-1 hover:bg-white/5 transition-colors"
                       >
                         <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
-                        <img src={getImageUrl(c.logo)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                        <img src={getImageUrl(c.logo)} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }} />
                         <div className="min-w-0 flex-1">
                           <span className="text-white text-[10px] sm:text-xs font-medium truncate block">[{c.tag}] {c.name || '—'}</span>
                           <span className="text-purple-300/90 text-[9px] sm:text-[10px]">{formatScore(c.totalScore)} pts</span>

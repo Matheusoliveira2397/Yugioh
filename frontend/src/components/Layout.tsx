@@ -4,6 +4,7 @@ import { useI18n } from '../i18n/I18nContext';
 import { useAuthStore } from '../stores/authStore';
 import ActiveDuelBanner from './ActiveDuelBanner';
 import ArenaCountdownBanner from './ArenaCountdownBanner';
+import ArenaFullBleedBackground from './ArenaFullBleedBackground';
 import { UserProfileCard } from './UserProfileCard';
 import LanguageSelector from './LanguageSelector';
 import { getSocialIcon } from './SocialMediaIcons';
@@ -51,7 +52,9 @@ export default function Layout({ children }: LayoutProps) {
     const fetchActiveTabs = async () => {
       try {
         const response = await axios.get(`${API_URL}/public/site-tabs/active`);
-        const tabs: SiteTab[] = Array.isArray(response.data) ? response.data : [];
+        const tabs: SiteTab[] = (Array.isArray(response.data) ? response.data : []).filter(
+          (tab) => tab.key !== 'random-anime'
+        );
         const hasRanking = tabs.some((t) => t.route === '/ranking');
         if (!hasRanking) {
           tabs.push({
@@ -103,13 +106,7 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-gray-900 relative flex flex-col">
-      {/* Background Image */}
-      <div 
-        className="fixed inset-0 bg-cover bg-center bg-no-repeat z-0"
-        style={{
-          backgroundImage: 'url(/images/backgroundLogin.jpg)',
-        }}
-      />
+      <ArenaFullBleedBackground basePathWithoutExt="/images/backgroundLogin" zIndexClass="z-0" />
       {/* Overlay escuro para melhorar legibilidade */}
       <div className="fixed inset-0 bg-black bg-opacity-60 z-0"></div>
 
@@ -123,7 +120,7 @@ export default function Layout({ children }: LayoutProps) {
       <div className="relative z-10 flex flex-col lg:flex-row flex-1">
         {/* Conteúdo Principal */}
         <div className="flex-1 relative z-10 min-w-0 flex flex-col">
-        <nav id="main-nav" className="relative border-b border-purple-500/20 shadow-lg" style={{ backgroundColor: 'transparent' }}>
+        <nav id="main-nav" className="relative shadow-lg" style={{ backgroundColor: 'transparent' }}>
           <div className="w-full px-2 sm:px-3 md:px-6">
             <div className="flex items-center h-14 sm:h-20 md:h-24 lg:h-28 gap-2 md:gap-3">
               {/* Menu Hamburger - Mobile - área de toque ~44px */}
@@ -379,6 +376,7 @@ export default function Layout({ children }: LayoutProps) {
           )}
         </div>
       </footer>
+
     </div>
   );
 }

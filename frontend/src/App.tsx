@@ -63,6 +63,7 @@ import ActiveDuelsPage from './pages/ActiveDuelsPage';
 import FinishedDuelsPage from './pages/FinishedDuelsPage';
 import NewsDetailPage from './pages/NewsDetailPage';
 import Layout from './components/Layout';
+import LoginBroadcastModal from './components/LoginBroadcastModal';
 
 function App() {
   const { isAuthenticated } = useAuthStore();
@@ -74,6 +75,7 @@ function App() {
         v7_relativeSplatPath: true,
       }}
     >
+      {isAuthenticated ? <LoginBroadcastModal /> : null}
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/loginMaster" element={<LoginMasterPage />} />

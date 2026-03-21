@@ -22,14 +22,63 @@ function getImageBaseUrl(): string {
   return getApiBaseUrl();
 }
 
+/**
+ * Path do arquivo em `public/images/` (o que o banco grava). Sem query string.
+ */
+export const DEFAULT_PROFILE_ASSET_PATH = '/images/default.jpg';
+
+/**
+ * URL usada na UI para o avatar padrão. Inclui `?v=` para invalidar cache do navegador
+ * depois de trocar `public/images/default.jpg` — incremente o número ao atualizar a arte.
+ */
+export const DEFAULT_PROFILE_IMAGE_PATH = `${DEFAULT_PROFILE_ASSET_PATH}?v=4`;
+
 export function getImageUrl(
   url: string | null | undefined,
-  defaultUrl = '/images/default.png',
+  defaultUrl = DEFAULT_PROFILE_IMAGE_PATH,
 ): string {
-  if (!url) return defaultUrl;
-  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url == null || url === undefined) return defaultUrl;
+  const trimmed = String(url).trim();
+  if (!trimmed) return defaultUrl;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+  // `public/images/*` (ex.: `/images/default.jpg`): servido pelo origin do app, não pela API.
+  // O duelo manda o path do banco; prefixar com VITE_API_URL quebra em dev (Vite ≠ backend).
+  if (trimmed.startsWith('/images/')) {
+    return trimmed;
+  }
   const base = getImageBaseUrl();
-  return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
+  return `${base}${trimmed.startsWith('/') ? '' : '/'}${trimmed}`;
+}
+
+function profilePathIsDefaultAvatar(pathOnly: string): boolean {
+  const p = pathOnly.toLowerCase();
+  if (!p) return false;
+  if (p === DEFAULT_PROFILE_ASSET_PATH.toLowerCase()) return true;
+  if (p.endsWith('/images/default.jpg') || p.endsWith('/images/default.png') || p.endsWith('/images/default.webp')) {
+    return true;
+  }
+  if (p.includes('/images/default')) return true;
+  if (p.includes('/avatars/default')) return true;
+  return false;
+}
+
+/** Sempre retorna URL válida para foto de perfil (mesmo com `null` / vazio / só espaços). */
+export function getProfileImageUrl(url: string | null | undefined): string {
+  const resolved = getImageUrl(url, DEFAULT_PROFILE_IMAGE_PATH);
+  try {
+    const u = new URL(resolved, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+    const pathOnly = u.pathname;
+    if (profilePathIsDefaultAvatar(pathOnly)) {
+      return DEFAULT_PROFILE_IMAGE_PATH;
+    }
+  } catch {
+    const withoutOrigin = resolved.replace(/^https?:\/\/[^/]+/i, '');
+    const pathOnly = withoutOrigin.split('?')[0];
+    if (profilePathIsDefaultAvatar(pathOnly)) {
+      return DEFAULT_PROFILE_IMAGE_PATH;
+    }
+  }
+  return resolved;
 }
 
 /**

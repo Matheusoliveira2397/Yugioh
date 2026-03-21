@@ -20,7 +20,16 @@ export class YugiohApiService {
       throw new Error('URL da imagem é obrigatória');
     }
     const parsed = new URL(imageUrl);
-    if (!this.ALLOWED_IMAGE_HOSTS.some((h) => parsed.hostname === h || parsed.hostname.endsWith('.' + h))) {
+    const isAllowedHost =
+      this.ALLOWED_IMAGE_HOSTS.some(
+        (h) => parsed.hostname === h || parsed.hostname.endsWith('.' + h),
+      ) ||
+      // Supabase Storage público:
+      // https://<ref>.supabase.co/storage/v1/object/public/<bucket>/path
+      (parsed.hostname.endsWith('.supabase.co') &&
+        parsed.pathname.startsWith('/storage/v1/object/public/'));
+
+    if (!isAllowedHost) {
       throw new Error('Domínio da imagem não permitido para proxy');
     }
     const response = await axios.get(imageUrl, {

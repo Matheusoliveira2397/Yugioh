@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import axios from 'axios';
-import { getImageUrl } from '../utils/imageUrl';
+import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { getDivisionDisplayName, getDivisionImagePath } from '../utils/divisionDisplay';
 import { formatScore } from '../utils/formatScore';
 
@@ -88,7 +88,59 @@ export default function RankingPage() {
   const [availableDivisions, setAvailableDivisions] = useState<Division[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
+  /** Dados da season ativa (contagem usa seasonEndsAt em tempo real) */
+  const [publicSeason, setPublicSeason] = useState<{
+    currentSeasonNumber: number;
+    seasonEndsAt: string | null;
+  } | null>(null);
+  const [countdownTick, setCountdownTick] = useState(0);
   const { token, user } = useAuthStore();
+
+  useEffect(() => {
+    axios
+      .get<{
+        currentSeasonNumber?: number;
+        seasonEndsAt?: string | null;
+      }>(`${API_URL}/public/stats`)
+      .then((r) => {
+        setPublicSeason({
+          currentSeasonNumber: typeof r.data?.currentSeasonNumber === 'number' ? r.data.currentSeasonNumber : 0,
+          seasonEndsAt: r.data?.seasonEndsAt ?? null,
+        });
+      })
+      .catch(() => setPublicSeason(null));
+  }, []);
+
+  /** Atualiza contagem regressiva a cada segundo na aba Season */
+  useEffect(() => {
+    if (rankingType === 'classe' || activeTab !== 'season') return;
+    const id = window.setInterval(() => setCountdownTick((t) => t + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [rankingType, activeTab]);
+
+  const activeSeasonDisplay = useMemo(() => {
+    const byActive = seasons.find((s) => s.isActive);
+    if (byActive?.name) return { name: byActive.name, number: byActive.seasonNumber ?? publicSeason?.currentSeasonNumber };
+    if (publicSeason?.currentSeasonNumber) {
+      const byNum = seasons.find((s) => s.seasonNumber === publicSeason.currentSeasonNumber);
+      if (byNum?.name) return { name: byNum.name, number: byNum.seasonNumber };
+      return { name: `Season ${publicSeason.currentSeasonNumber}`, number: publicSeason.currentSeasonNumber };
+    }
+    return { name: 'Season atual', number: undefined as number | undefined };
+  }, [seasons, publicSeason]);
+
+  const seasonCountdownParts = useMemo(() => {
+    if (!publicSeason?.seasonEndsAt) return null;
+    const end = new Date(publicSeason.seasonEndsAt).getTime();
+    const diff = end - Date.now();
+    if (diff <= 0) return { ended: true as const, d: 0, h: 0, m: 0, s: 0 };
+    const d = Math.floor(diff / 86400000);
+    const h = Math.floor((diff % 86400000) / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+    return { ended: false as const, d, h, m, s };
+    // countdownTick só força recálculo a cada segundo
+  }, [publicSeason?.seasonEndsAt, countdownTick]);
 
   useEffect(() => {
     if (rankingType === 'classe') return;
@@ -512,6 +564,99 @@ export default function RankingPage() {
         </div>
         )}
 
+        {rankingType !== 'classe' && activeTab === 'season' && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 md:mb-8 max-w-3xl mx-auto rounded-2xl border border-amber-500/35 bg-gradient-to-br from-slate-900/95 via-purple-950/50 to-slate-900/95 p-4 sm:p-6 shadow-xl shadow-amber-950/30"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 pb-4 border-b border-white/10">
+              <div className="flex items-start gap-3">
+                <span className="text-3xl sm:text-4xl shrink-0" aria-hidden>
+                  🏆
+                </span>
+                <div>
+                  <p className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-amber-300/90 font-semibold mb-1">
+                    Season atual
+                  </p>
+                  <h2 className="text-lg sm:text-2xl font-bold text-white leading-tight">
+                    {publicSeason === null ? (
+                      <span className="text-slate-400">Carregando season…</span>
+                    ) : (
+                      activeSeasonDisplay.name
+                    )}
+                  </h2>
+                  {publicSeason != null && activeSeasonDisplay.number != null && (
+                    <p className="text-sm text-slate-400 mt-1">Temporada nº {activeSeasonDisplay.number}</p>
+                  )}
+                </div>
+              </div>
+              {publicSeason?.seasonEndsAt && (
+                <div className="text-left sm:text-right text-sm text-slate-400 sm:shrink-0">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-0.5">Término previsto</p>
+                  <p className="text-white font-medium tabular-nums">
+                    {new Date(publicSeason.seasonEndsAt).toLocaleString('pt-BR', {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    })}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <p className="text-center text-slate-400 text-xs sm:text-sm mt-4 mb-3">Contagem regressiva até o fim da season</p>
+
+            {publicSeason === null ? (
+              <div className="flex justify-center gap-2 sm:gap-3 flex-wrap opacity-60">
+                {(['Dias', 'Horas', 'Min', 'Seg'] as const).map((label) => (
+                  <div
+                    key={label}
+                    className="flex flex-col items-center rounded-xl bg-black/30 border border-white/5 px-4 py-3 min-w-[4.25rem] sm:min-w-[5rem]"
+                  >
+                    <span className="text-xl font-mono font-bold text-slate-500">—</span>
+                    <span className="text-[10px] uppercase text-slate-500 mt-1">{label}</span>
+                  </div>
+                ))}
+              </div>
+            ) : !publicSeason.seasonEndsAt ? (
+              <p className="text-center text-slate-500 text-sm py-2">Data de término da season ainda não está definida.</p>
+            ) : seasonCountdownParts?.ended ? (
+              <p className="text-center text-amber-200/95 font-medium py-3">
+                A season atual chegou ao fim ou está no último instante.
+              </p>
+            ) : (
+              seasonCountdownParts && (
+                <div className="flex justify-center gap-2 sm:gap-3 md:gap-4 flex-wrap" aria-live="polite">
+                  {(
+                    [
+                      ['Dias', seasonCountdownParts.d],
+                      ['Horas', seasonCountdownParts.h],
+                      ['Min', seasonCountdownParts.m],
+                      ['Seg', seasonCountdownParts.s],
+                    ] as const
+                  ).map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="flex flex-col items-center justify-center rounded-xl bg-black/45 border border-amber-500/20 px-3 py-2 sm:px-5 sm:py-3 min-w-[4.25rem] sm:min-w-[5.25rem] shadow-inner"
+                    >
+                      <span className="text-xl sm:text-2xl md:text-3xl font-bold font-mono text-amber-100 tabular-nums leading-none">
+                        {label === 'Dias' ? value : String(value).padStart(2, '0')}
+                      </span>
+                      <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-slate-400 mt-1.5">{label}</span>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
+            {rankingType === 'duelista' && selectedSeasonId && (
+              <p className="text-center text-slate-500 text-[11px] sm:text-xs mt-4 pt-3 border-t border-white/5">
+                Você está vendo o ranking de uma season anterior. A contagem acima é sempre da <strong className="text-slate-400">season atual</strong>.
+              </p>
+            )}
+          </motion.div>
+        )}
+
         {/* Descrição do ranking por Classe */}
         {rankingType === 'classe' && (
           <p className="text-slate-400 text-sm md:text-base text-center mb-4 md:mb-6 max-w-2xl mx-auto">
@@ -661,11 +806,11 @@ export default function RankingPage() {
                               className="flex items-center gap-2 lg:gap-4 hover:opacity-80 transition-opacity"
                             >
                               <img
-                                src={getImageUrl(row.profileImage)}
+                                src={getProfileImageUrl(row.profileImage)}
                                 alt={row.nickname}
                                 className="w-10 h-10 lg:w-14 lg:h-14 rounded-xl object-cover border-2 border-amber-500"
                                 loading="lazy"
-                                onError={(e) => { e.currentTarget.src = '/images/default.png'; }}
+                                onError={(e) => { e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH; }}
                               />
                               <div>
                                 <p className="text-white font-bold text-sm lg:text-lg flex items-center gap-1 lg:gap-2">
@@ -719,10 +864,10 @@ export default function RankingPage() {
                         </span>
                         <Link to={`/profile/${row.userId}`} className="flex items-center gap-2 flex-1 min-w-0">
                           <img
-                            src={getImageUrl(row.profileImage)}
+                            src={getProfileImageUrl(row.profileImage)}
                             alt={row.nickname}
                             className="w-12 h-12 rounded-xl object-cover border-2 border-amber-500 flex-shrink-0"
-                            onError={(e) => { e.currentTarget.src = '/images/default.png'; }}
+                            onError={(e) => { e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH; }}
                           />
                           <div className="flex-1 min-w-0">
                             <p className="text-white font-bold text-sm flex items-center gap-1">
@@ -806,12 +951,12 @@ export default function RankingPage() {
                             className="flex items-center gap-2 lg:gap-4 hover:opacity-80 transition-opacity"
                           >
                             <img
-                              src={getImageUrl(player.profileImage)}
+                              src={getProfileImageUrl(player.profileImage)}
                               alt={player.nickname}
                               className="w-10 h-10 lg:w-14 lg:h-14 rounded-xl object-cover border-2 border-purple-500"
                               loading="lazy"
                               onError={(e) => {
-                                e.currentTarget.src = '/images/default.png';
+                                e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                               }}
                             />
                             <div>
@@ -916,12 +1061,12 @@ export default function RankingPage() {
                         className="flex items-center gap-2 flex-1 min-w-0"
                       >
                         <img
-                          src={getImageUrl(player.profileImage)}
+                          src={getProfileImageUrl(player.profileImage)}
                           alt={player.nickname}
                           className="w-12 h-12 rounded-xl object-cover border-2 border-purple-500 flex-shrink-0"
                           loading="lazy"
                           onError={(e) => {
-                            e.currentTarget.src = '/images/default.png';
+                            e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                           }}
                         />
                         <div className="flex-1 min-w-0">
@@ -1041,7 +1186,7 @@ export default function RankingPage() {
                                   alt={group.name}
                                   className="w-10 h-10 lg:w-14 lg:h-14 rounded-xl object-cover border-2 border-cyan-500"
                                   onError={(e) => {
-                                    e.currentTarget.src = '/images/default.png';
+                                    e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                                   }}
                                 />
                               ) : (
@@ -1059,16 +1204,14 @@ export default function RankingPage() {
                           <td className="px-4 lg:px-6 py-3 lg:py-5">
                             {group.leader ? (
                               <div className="flex items-center gap-2">
-                                {group.leader.profileImage ? (
-                                  <img
-                                    src={getImageUrl(group.leader.profileImage)}
-                                    alt={group.leader.nickname}
-                                    className="w-8 h-8 lg:w-10 lg:h-10 rounded-full object-cover border border-purple-500"
-                                    onError={(e) => {
-                                      e.currentTarget.src = '/images/default.png';
-                                    }}
-                                  />
-                                ) : null}
+                                <img
+                                  src={getProfileImageUrl(group.leader.profileImage)}
+                                  alt={group.leader.nickname}
+                                  className="w-8 h-8 lg:w-10 lg:h-10 rounded-full object-cover border border-purple-500"
+                                  onError={(e) => {
+                                    e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
+                                  }}
+                                />
                                 <span className="text-slate-300 text-sm lg:text-base">{group.leader.nickname}</span>
                               </div>
                             ) : (
@@ -1136,7 +1279,7 @@ export default function RankingPage() {
                               alt={group.name}
                               className="w-12 h-12 rounded-xl object-cover border-2 border-cyan-500 flex-shrink-0"
                               onError={(e) => {
-                                e.currentTarget.src = '/images/default.png';
+                                e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                               }}
                             />
                           ) : (

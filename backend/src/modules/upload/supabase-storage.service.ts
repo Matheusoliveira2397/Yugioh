@@ -3,6 +3,36 @@ import { ConfigService } from '@nestjs/config';
 
 const BUCKETS = ['avatars', 'groups', 'achievements', 'cosmetics', 'cards'] as const;
 
+/** Valores típicos de .env de exemplo — não são chaves reais. */
+function looksLikePlaceholderUrl(url: string): boolean {
+  const u = url.trim().toLowerCase();
+  return u.includes('seu-projeto') || u.includes('xxx.supabase');
+}
+
+function looksLikePlaceholderKey(key: string): boolean {
+  const k = key.trim().toLowerCase();
+  return (
+    k.includes('cole_aqui') ||
+    k.includes('sua-service-role') ||
+    k.includes('your_service') ||
+    k === 'changeme'
+  );
+}
+
+function looksLikeCompactJws(key: string): boolean {
+  const k = key.trim();
+  if (!k) return false;
+  // JWS compacto (JWT) geralmente tem 2 pontos: header.payload.signature
+  const dotCount = (k.match(/\./g) || []).length;
+  if (dotCount < 2) return false;
+  // Normalmente começa com "eyJ..." (base64 de header JSON)
+  if (!/^eyJ/i.test(k) && !/^eyp/i.test(k) && !/^ewo/i.test(k)) {
+    // alguns JWTs podem começar diferente, mas "sb_secret_" ou similares definitivamente não são JWT
+    if (k.toLowerCase().startsWith('sb_secret_')) return false;
+  }
+  return true;
+}
+
 /** Tipo mínimo do cliente Supabase usado aqui (evita import do pacote em build). */
 type SupabaseClient = {
   storage: {
@@ -19,6 +49,7 @@ type SupabaseClient = {
 export class SupabaseStorageService {
   private client: SupabaseClient | null = null;
   private initialized = false;
+  private warnedMissingConfig = false;
 
   constructor(private config: ConfigService) {}
 
@@ -27,9 +58,36 @@ export class SupabaseStorageService {
       return this.client;
     }
     this.initialized = true;
-    const url = this.config.get<string>('SUPABASE_URL');
-    const key = this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY');
-    if (!url || !key) {
+    const url = (
+      this.config.get<string>('SUPABASE_URL') ||
+      process.env.SUPABASE_URL ||
+      ''
+    ).trim();
+    const key = (
+      this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY') ||
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      ''
+    ).trim();
+
+    const invalid =
+      !url ||
+      !key ||
+      looksLikePlaceholderUrl(url) ||
+      looksLikePlaceholderKey(key) ||
+      !looksLikeCompactJws(key);
+    if (invalid) {
+      const dbUrl = process.env.DATABASE_URL || '';
+      const usesSupabase =
+        typeof dbUrl === 'string' &&
+        (dbUrl.includes('supabase.co') || dbUrl.includes('pooler.supabase'));
+      if (usesSupabase && !this.warnedMissingConfig) {
+        this.warnedMissingConfig = true;
+        console.warn(
+          '⚠️ Supabase Storage não configurado: defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY com valores reais ' +
+            '(Dashboard > Project Settings > API > Secret API key — a chave longa, que é um JWT "compact JWS", não a "anon"). ' +
+            'Remova textos como COLE_AQUI do .env. Com Docker: .env na raiz do projeto + recrie o container do backend.',
+        );
+      }
       return (this.client = null);
     }
     try {
@@ -96,7 +154,8 @@ export class SupabaseStorageService {
   async deleteByPublicUrl(publicUrl: string): Promise<void> {
     const supabase = this.getClient();
     if (!supabase) return;
-    const match = publicUrl.match(
+    const urlNoQuery = publicUrl.split('?')[0].trim();
+    const match = urlNoQuery.match(
       /\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/,
     );
     if (!match) {

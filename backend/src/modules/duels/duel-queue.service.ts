@@ -3,6 +3,7 @@ import { DuelsService } from './duels.service';
 import { Server } from 'socket.io';
 import { DuelOrigin } from './entities/duel.entity';
 import { DuelActionType } from './entities/duel-log.entity';
+import { normalizeProfileImageForClient } from '../users/profile-image.util';
 
 interface DuelCreationTask {
   player1Id: number;
@@ -161,7 +162,7 @@ export class DuelQueueService implements OnModuleInit, OnModuleDestroy {
             username: (duel as any).player2?.nickname || 'Unknown',
             clanTag: (duel as any).player2?.clanTag || null,
             level: (duel as any).player2?.level || 1,
-            profileImage: (duel as any).player2?.profileImage || null,
+            profileImage: normalizeProfileImageForClient((duel as any).player2?.profileImage || null),
           },
           yourTurn: (duel as any).currentTurn === 1,
           lifePoints: duel.player1LifePoints || 8000,
@@ -179,7 +180,7 @@ export class DuelQueueService implements OnModuleInit, OnModuleDestroy {
             username: (duel as any).player1?.nickname || 'Unknown',
             clanTag: (duel as any).player1?.clanTag || null,
             level: (duel as any).player1?.level || 1,
-            profileImage: (duel as any).player1?.profileImage || null,
+            profileImage: normalizeProfileImageForClient((duel as any).player1?.profileImage || null),
           },
           yourTurn: (duel as any).currentTurn === 2,
           lifePoints: duel.player2LifePoints || 8000,

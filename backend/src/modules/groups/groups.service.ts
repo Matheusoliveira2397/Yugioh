@@ -12,6 +12,7 @@ import * as bcrypt from 'bcryptjs';
 import { SeasonsService } from '../seasons/seasons.service';
 import { DuelsGateway } from '../duels/duels.gateway';
 import { v4 as uuidv4 } from 'uuid';
+import { UploadService } from '../upload/upload.service';
 
 @Injectable()
 export class GroupsService implements OnModuleInit {
@@ -34,6 +35,7 @@ export class GroupsService implements OnModuleInit {
     @Optional()
     @Inject(forwardRef(() => DuelsGateway))
     private duelsGateway: DuelsGateway | null,
+    private readonly uploadService: UploadService,
   ) {}
 
   async onModuleInit() {
@@ -1961,8 +1963,18 @@ export class GroupsService implements OnModuleInit {
       }
     }
     if (updateData.description !== undefined) group.description = updateData.description;
-    if (updateData.logo !== undefined) group.logo = updateData.logo;
-    if (updateData.banner !== undefined) group.banner = updateData.banner;
+    if (updateData.logo !== undefined) {
+      if (group.logo && group.logo !== updateData.logo) {
+        await this.uploadService.deleteGroupAsset(group.logo);
+      }
+      group.logo = updateData.logo;
+    }
+    if (updateData.banner !== undefined) {
+      if (group.banner && group.banner !== updateData.banner) {
+        await this.uploadService.deleteGroupAsset(group.banner);
+      }
+      group.banner = updateData.banner;
+    }
     if (updateData.isPublic !== undefined) group.isPublic = updateData.isPublic;
     if (updateData.cashDivisionMembers !== undefined) {
       if (updateData.cashDivisionMembers !== null && updateData.cashDivisionMembers < 1) {
@@ -2096,6 +2108,9 @@ export class GroupsService implements OnModuleInit {
     if (!isPasswordValid) {
       throw new BadRequestException('Senha incorreta');
     }
+
+    await this.uploadService.deleteGroupAsset(group.logo);
+    await this.uploadService.deleteGroupAsset(group.banner);
 
     // Desativar grupo (soft delete)
     group.isActive = false;

@@ -28,6 +28,16 @@ export class ConfiscationEffect extends BaseCardEffect {
     this.logInfo('Confiscation ativada - requer escolha do jogador');
     
     const { duelId, duel, isPlayer1 } = context;
+
+    const currentLP = Number(isPlayer1 ? duel.player1LifePoints : duel.player2LifePoints);
+    if (!Number.isFinite(currentLP) || currentLP < 1000) {
+      this.logInfo(`Confiscation: LP insuficientes (${currentLP} < 1000)`);
+      return {
+        success: false,
+        createdPendingChoice: false,
+        message: 'Você precisa de pelo menos 1000 LP para ativar esta carta.',
+      };
+    }
     
     // Reduzir 1000 LP do jogador
     if (isPlayer1) {

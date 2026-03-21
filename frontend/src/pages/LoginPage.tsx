@@ -6,8 +6,10 @@ import { motion } from 'framer-motion';
 import axios from 'axios';
 import LatestCardsMarquee, { type MarqueeCard } from '../components/LatestCardsMarquee';
 import LanguageSelector from '../components/LanguageSelector';
-import { getImageUrl } from '../utils/imageUrl';
+import { SocialBrandIcon, socialPlatformLabel } from '../components/SocialBrandIcon';
+import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { formatScore } from '../utils/formatScore';
+import ArenaFullBleedBackground from '../components/ArenaFullBleedBackground';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -30,6 +32,16 @@ interface TopClan {
   totalScore?: number;
   memberCount?: number;
   logo?: string;
+}
+
+interface SocialMedia {
+  id: string;
+  platform: string;
+  url: string;
+  label: string | null;
+  icon: string | null;
+  order?: number;
+  isActive?: boolean;
 }
 
 interface PublicStats {
@@ -64,6 +76,7 @@ export default function LoginPage() {
   const [topClansGeneral, setTopClansGeneral] = useState<TopClan[]>([]);
   const [topClansSeason, setTopClansSeason] = useState<TopClan[]>([]);
   const [stats, setStats] = useState<PublicStats | null>(null);
+  const [socialMedia, setSocialMedia] = useState<SocialMedia[]>([]);
   const navigate = useNavigate();
   const { login } = useAuthStore();
   const { t } = useI18n();
@@ -109,13 +122,15 @@ export default function LoginPage() {
         return r.data.slice(0, 3).map(mapClan);
       }).catch(() => []),
       axios.get(`${API_URL}/public/stats`).then((r) => r.data).catch(() => null),
-    ]).then(([cards, playersGlobal, playersSeason, clansGeneral, clansSeason, publicStats]) => {
+      axios.get(`${API_URL}/public/social-media/active`).then((r) => (Array.isArray(r.data) ? r.data : [])).catch(() => []),
+    ]).then(([cards, playersGlobal, playersSeason, clansGeneral, clansSeason, publicStats, social]) => {
       setShopCards(cards);
       setTopPlayersGlobal(playersGlobal);
       setTopPlayersSeason(playersSeason);
       setTopClansGeneral(clansGeneral);
       setTopClansSeason(clansSeason);
       setStats(publicStats);
+      setSocialMedia(social);
     });
   }, []);
 
@@ -185,20 +200,13 @@ export default function LoginPage() {
   };
 
   return (
-    <div
-      className="min-h-screen flex flex-col relative overflow-hidden"
-      style={{
-        backgroundImage: 'url(/images/backgroundLogin.jpg)',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-      }}
-    >
+    <div className="min-h-screen flex flex-col relative overflow-hidden">
+      <ArenaFullBleedBackground basePathWithoutExt="/images/backgroundLogin" zIndexClass="fixed inset-0 z-0" />
       {/* Overlay suave */}
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" aria-hidden />
+      <div className="absolute inset-0 z-[1] bg-black/50 backdrop-blur-[2px]" aria-hidden />
 
       {/* Header: título + área de login */}
-      <header className="relative z-10 w-full border-b border-white/10 bg-black/30 backdrop-blur-md">
+      <header className="relative z-10 w-full bg-black/30 backdrop-blur-md">
         <div className="max-w-6xl mx-auto px-4 py-4 sm:py-5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-3 flex-wrap">
@@ -429,7 +437,7 @@ export default function LoginPage() {
                       {topPlayersGlobal.map((p, i) => (
                         <li key={p.id} className="flex items-center gap-2">
                           <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
-                          <img src={getImageUrl(p.profileImage)} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                          <img src={getProfileImageUrl(p.profileImage)} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }} />
                           <div className="min-w-0 flex-1">
                             <span className="text-white text-xs font-medium truncate block">{p.clanTag ? `[${p.clanTag}] ` : ''}{p.nickname || p.username || '—'}</span>
                             <span className="text-amber-300/90 text-[10px]">{formatScore(p.score)} {t('common.pts')}</span>
@@ -448,7 +456,7 @@ export default function LoginPage() {
                       {topPlayersSeason.map((p, i) => (
                         <li key={p.id} className="flex items-center gap-2">
                           <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
-                          <img src={getImageUrl(p.profileImage)} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                          <img src={getProfileImageUrl(p.profileImage)} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }} />
                           <div className="min-w-0 flex-1">
                             <span className="text-white text-xs font-medium truncate block">{p.clanTag ? `[${p.clanTag}] ` : ''}{p.nickname || p.username || '—'}</span>
                             <span className="text-purple-300/90 text-[10px]">{formatScore(p.score)} {t('common.pts')}</span>
@@ -483,7 +491,7 @@ export default function LoginPage() {
                       {topClansGeneral.map((c, i) => (
                         <li key={c.id} className="flex items-center gap-2">
                           <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
-                          <img src={getImageUrl(c.logo)} alt="" className="w-7 h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                          <img src={getImageUrl(c.logo)} alt="" className="w-7 h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }} />
                           <div className="min-w-0 flex-1">
                             <span className="text-white text-xs font-medium truncate block">[{c.tag}] {c.name}</span>
                             <span className="text-amber-300/90 text-[10px]">{formatScore(c.totalScore)} {t('common.pts')}</span>
@@ -502,7 +510,7 @@ export default function LoginPage() {
                       {topClansSeason.map((c, i) => (
                         <li key={c.id} className="flex items-center gap-2">
                           <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
-                          <img src={getImageUrl(c.logo)} alt="" className="w-7 h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = '/images/default.png'; }} />
+                          <img src={getImageUrl(c.logo)} alt="" className="w-7 h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }} />
                           <div className="min-w-0 flex-1">
                             <span className="text-white text-xs font-medium truncate block">[{c.tag}] {c.name}</span>
                             <span className="text-purple-300/90 text-[10px]">{formatScore(c.totalScore)} {t('common.pts')}</span>
@@ -532,46 +540,46 @@ export default function LoginPage() {
                   <div className="p-4"><p className="text-white/40 text-xs">{t('common.loading')}</p></div>
                 ) : (
                   <div className="p-4 grid grid-cols-2 gap-3">
-                    <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                    <div className="px-3 py-2">
                       <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.seasonLabel')}</p>
                       <p className="text-white font-bold text-sm">{stats.currentSeasonNumber}º</p>
                     </div>
                     {stats.seasonEndsInDays != null && (
-                      <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                      <div className="px-3 py-2">
                         <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.endsIn')}</p>
                         <p className="text-amber-300 font-bold text-sm">{stats.seasonEndsInDays} {t('loginRankings.days')}</p>
                       </div>
                     )}
-                    <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                    <div className="px-3 py-2">
                       <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.duelists')}</p>
                       <p className="text-white font-bold text-sm">{stats.totalDuelists.toLocaleString('pt-BR')}</p>
                     </div>
-                    <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                    <div className="px-3 py-2">
                       <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.duels')}</p>
                       <p className="text-white font-bold text-sm">{stats.totalDuels.toLocaleString('pt-BR')}</p>
                     </div>
-                    <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 col-span-2">
+                    <div className="px-3 py-2 col-span-2">
                       <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.onlineNow')}</p>
                       <p className="text-emerald-400 font-bold text-lg">{stats.playersOnline.toLocaleString('pt-BR')}</p>
                     </div>
-                    <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                    <div className="px-3 py-2">
                       <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.tournaments')}</p>
                       <p className="text-white font-bold text-sm">{stats.tournamentsFinished.toLocaleString('pt-BR')}</p>
                     </div>
-                    <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                    <div className="px-3 py-2">
                       <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.cards')}</p>
                       <p className="text-white font-bold text-sm">{stats.cardsRegistered.toLocaleString('pt-BR')}</p>
                     </div>
                     {(stats.maxOnlineToday > 0 || stats.maxOnlineYesterday > 0) && (
                       <>
                         {stats.maxOnlineToday > 0 && (
-                          <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                          <div className="px-3 py-2">
                             <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.maxToday')}</p>
                             <p className="text-white font-bold text-sm">{stats.maxOnlineToday.toLocaleString('pt-BR')}</p>
                           </div>
                         )}
                         {stats.maxOnlineYesterday > 0 && (
-                          <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                          <div className="px-3 py-2">
                             <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.maxYesterday')}</p>
                             <p className="text-white font-bold text-sm">{stats.maxOnlineYesterday.toLocaleString('pt-BR')}</p>
                           </div>
@@ -583,6 +591,44 @@ export default function LoginPage() {
               </div>
             </motion.aside>
           </div>
+
+          {socialMedia.length > 0 && (
+            <motion.section
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: 0.12 }}
+              className="rounded-2xl border border-white/20 bg-black/30 backdrop-blur-md overflow-hidden shadow-xl"
+              aria-label="Redes sociais"
+            >
+              <div className="px-4 py-3 border-b border-white/10 bg-gradient-to-r from-cyan-500/15 to-transparent">
+                <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                  <span className="text-lg" aria-hidden>
+                    🌐
+                  </span>
+                  Redes sociais
+                </h2>
+              </div>
+              <div className="p-4 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
+                {socialMedia.map((s) => {
+                  const name =
+                    (s.label && s.label.trim()) || socialPlatformLabel(s.platform, s.url);
+                  return (
+                    <a
+                      key={s.id}
+                      href={s.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={name}
+                      aria-label={name}
+                      className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-white/10 border border-white/15 hover:bg-white/20 hover:border-white/30 transition-colors"
+                    >
+                      <SocialBrandIcon platform={s.platform} url={s.url} size={22} />
+                    </a>
+                  );
+                })}
+              </div>
+            </motion.section>
+          )}
 
           {/* Marquee de cartas — largura total */}
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4, delay: 0.15 }}>

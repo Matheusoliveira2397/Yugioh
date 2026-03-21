@@ -16,11 +16,13 @@ import { DuelsService } from './duels.service';
 import { DuelQueueService } from './duel-queue.service';
 import { TurnPhase, DuelOrigin, DuelStatus } from './entities/duel.entity';
 import { UsersService } from '../users/users.service';
+import { normalizeProfileImageForClient } from '../users/profile-image.util';
 import { CardEffectHandlersService } from './services/card-effect-handlers.service';
 import { CardEffectsService } from './services/card-effects.service';
 import { ArenaMatchmakingService } from '../arena/arena-matchmaking.service';
 import { ArenaService } from '../arena/arena.service';
 import { ArenaMatchmakingProcessorService } from '../arena/arena-matchmaking-processor.service';
+import { assertActivatorHasLpForSpell } from './utils/spell-activation-lp.util';
 
 @WebSocketGateway({
   cors: {
@@ -73,6 +75,37 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
   /** Emite notificação do sistema para todos os clientes conectados (ex.: arena abriu). */
   emitSystemMessageToAll(data: { id: string; type: string; content: string; createdAt: string }) {
     this.server.emit('systemMessage', data);
+  }
+
+  /** Emite duelEnded para a sala quando o duelo já está FINISHED (ex.: deck vazio na Draw Phase). */
+  private emitDuelEndedIfFinished(duelId: string | number, duel: any): void {
+    if (!duel || duel.status !== DuelStatus.FINISHED) {
+      return;
+    }
+    const idStr = typeof duelId === 'string' ? duelId : String(duelId);
+    const winnerId = duel.winnerId;
+    const result = duel.result;
+    const winnerName =
+      winnerId === duel.player1Id
+        ? ((duel as any).player1?.nickname || 'Jogador 1')
+        : ((duel as any).player2?.nickname || 'Jogador 2');
+    this.server.to(`duel_${idStr}`).emit('duelEnded', {
+      status: DuelStatus.FINISHED,
+      result,
+      winnerId,
+      player1LifePoints: duel.player1LifePoints,
+      player2LifePoints: duel.player2LifePoints,
+      player1: (duel as any).player1,
+      player2: (duel as any).player2,
+      player1Id: duel.player1Id,
+      player2Id: duel.player2Id,
+      turnCounter: duel.turnCounter || 0,
+      currentTurn: duel.currentTurn,
+      duelTime: duel.duelTime || 0,
+      message: winnerId
+        ? `Duelo encerrado! ${winnerName} venceu!`
+        : 'Duelo encerrado em empate!',
+    });
   }
 
   afterInit(server: Server) {
@@ -761,26 +794,26 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         }
       }
       
-      // Se algum campo estiver vazio ou não tiver deck, buscar do banco novamente
-      if (!player1Field || !player1Field.deck || player1Field.deck.length === 0) {
-        console.error(`❌ [handleJoinDuelRoom] player1Field está vazio ou sem deck! Buscando do banco...`);
+      // Deck com 0 cartas é válido; só refazer fetch se campo/deck ausente ou deck não for array
+      if (!player1Field || !Array.isArray(player1Field.deck)) {
+        console.warn(`⚠️ [handleJoinDuelRoom] player1Field/deck inválido na memória — buscando do banco...`);
         const duelFromDb = await this.duelsService.findDuelByIdFromDatabase(duelId);
         if (duelFromDb) {
           const dbPlayer1Field = (duelFromDb as any).player1Field;
-          if (dbPlayer1Field && dbPlayer1Field.deck && dbPlayer1Field.deck.length > 0) {
+          if (dbPlayer1Field && Array.isArray(dbPlayer1Field.deck)) {
             player1Field = dbPlayer1Field;
-            console.log(`✅ [handleJoinDuelRoom] player1Field recuperado do banco: ${player1Field.deck.length} cartas`);
+            console.log(`✅ [handleJoinDuelRoom] player1Field recuperado do banco: ${player1Field.deck.length} cartas no deck`);
           }
         }
       }
-      if (!player2Field || !player2Field.deck || player2Field.deck.length === 0) {
-        console.error(`❌ [handleJoinDuelRoom] player2Field está vazio ou sem deck! Buscando do banco...`);
+      if (!player2Field || !Array.isArray(player2Field.deck)) {
+        console.warn(`⚠️ [handleJoinDuelRoom] player2Field/deck inválido na memória — buscando do banco...`);
         const duelFromDb = await this.duelsService.findDuelByIdFromDatabase(duelId);
         if (duelFromDb) {
           const dbPlayer2Field = (duelFromDb as any).player2Field;
-          if (dbPlayer2Field && dbPlayer2Field.deck && dbPlayer2Field.deck.length > 0) {
+          if (dbPlayer2Field && Array.isArray(dbPlayer2Field.deck)) {
             player2Field = dbPlayer2Field;
-            console.log(`✅ [handleJoinDuelRoom] player2Field recuperado do banco: ${player2Field.deck.length} cartas`);
+            console.log(`✅ [handleJoinDuelRoom] player2Field recuperado do banco: ${player2Field.deck.length} cartas no deck`);
           }
         }
       }
@@ -802,14 +835,14 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       console.log(`  - player1Field existe: ${!!player1Field}, deck.length: ${player1Field?.deck?.length || 0}`);
       console.log(`  - player2Field existe: ${!!player2Field}, deck.length: ${player2Field?.deck?.length || 0}`);
       
-      // Validar que ambos os campos existem e têm cartas antes de enviar
-      if (!player1Field || !player1Field.deck || player1Field.deck.length === 0) {
-        console.error(`❌ [handleJoinDuelRoom] ERRO CRÍTICO: player1Field ainda está vazio após buscar do banco!`);
+      // Exigir campos com deck como array (pode ser [] se o jogador já comprou tudo)
+      if (!player1Field || !Array.isArray(player1Field.deck)) {
+        console.error(`❌ [handleJoinDuelRoom] ERRO CRÍTICO: player1Field/deck inválido após buscar do banco!`);
         client.emit('duelError', { message: 'Erro ao carregar deck do jogador 1. Por favor, recarregue a página.' });
         return;
       }
-      if (!player2Field || !player2Field.deck || player2Field.deck.length === 0) {
-        console.error(`❌ [handleJoinDuelRoom] ERRO CRÍTICO: player2Field ainda está vazio após buscar do banco!`);
+      if (!player2Field || !Array.isArray(player2Field.deck)) {
+        console.error(`❌ [handleJoinDuelRoom] ERRO CRÍTICO: player2Field/deck inválido após buscar do banco!`);
         client.emit('duelError', { message: 'Erro ao carregar deck do jogador 2. Por favor, recarregue a página.' });
         return;
       }
@@ -878,6 +911,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           };
           // Emitir para todos na room do duelo
           this.server.to(`duel_${duelId}`).emit('duelUpdate', nextPhaseDuelData);
+          this.emitDuelEndedIfFinished(duelId, duel);
         }
       } else if (isCurrentTurn && duel.currentPhase !== TurnPhase.DRAW) {
         // Se não está em DRAW mas é o turno do jogador, o duelo já foi processado
@@ -927,13 +961,12 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         player2FieldHandLength: duelData.player2Field?.hand?.length || 0,
       });
       
-      // CRÍTICO: Garantir que o deck está presente antes de enviar
-      if (!duelData.player1Field?.deck || duelData.player1Field.deck.length === 0) {
-        console.error(`❌ [handleJoinDuelRoom] ERRO: player1Field.deck está vazio antes de enviar!`);
+      if (!Array.isArray(duelData.player1Field?.deck)) {
+        console.error(`❌ [handleJoinDuelRoom] ERRO: player1Field.deck não é array antes de enviar!`);
         console.error(`❌ [handleJoinDuelRoom] player1Field completo:`, JSON.stringify(duelData.player1Field, null, 2));
       }
-      if (!duelData.player2Field?.deck || duelData.player2Field.deck.length === 0) {
-        console.error(`❌ [handleJoinDuelRoom] ERRO: player2Field.deck está vazio antes de enviar!`);
+      if (!Array.isArray(duelData.player2Field?.deck)) {
+        console.error(`❌ [handleJoinDuelRoom] ERRO: player2Field.deck não é array antes de enviar!`);
         console.error(`❌ [handleJoinDuelRoom] player2Field completo:`, JSON.stringify(duelData.player2Field, null, 2));
       }
       
@@ -1147,6 +1180,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             updatedAt: finalDuel.updatedAt,
           };
           this.server.to(`duel_${duelId}`).emit('duelUpdate', standbyDuelData);
+          this.emitDuelEndedIfFinished(duelId, finalDuel);
         }
         return;
       }
@@ -1322,6 +1356,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             updatedAt: finalDuel.updatedAt,
           };
           this.server.to(`duel_${duelId}`).emit('duelUpdate', standbyDuelData);
+          this.emitDuelEndedIfFinished(duelId, finalDuel);
         } else {
           // Buscar duelo atualizado do banco
           const currentDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
@@ -1352,6 +1387,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
               updatedAt: currentDuel.updatedAt,
             };
             this.server.to(`duel_${duelId}`).emit('duelUpdate', standbyDuelData);
+            this.emitDuelEndedIfFinished(duelId, currentDuel);
           }
         }
         return;
@@ -1577,6 +1613,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             updatedAt: finalDuel.updatedAt,
           };
           this.server.to(`duel_${duelId}`).emit('duelUpdate', standbyDuelData);
+          this.emitDuelEndedIfFinished(duelId, finalDuel);
         } else {
           console.error(`❌ [handleEndTurn] processDrawPhase retornou null`);
         }
@@ -1615,6 +1652,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
       // Emitir atualização para todos na room do duelo
       this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
+      this.emitDuelEndedIfFinished(duelId, updatedDuel);
     } catch (error) {
       console.error(`❌ [handleEndTurn] Erro:`, error);
       client.emit('duelError', { message: 'Erro ao finalizar turno' });
@@ -1734,6 +1772,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
         // Emitir atualização para todos na room do duelo
         this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
+        this.emitDuelEndedIfFinished(duelId, finalDuel);
         return;
       }
 
@@ -2048,6 +2087,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
       // Emitir atualização para todos na room do duelo
       this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
+      this.emitDuelEndedIfFinished(duelId, finalDuel);
     } catch (error) {
       console.error(`❌ [handleStealTurn] Erro:`, error);
       client.emit('duelError', { message: 'Erro ao roubar turno' });
@@ -3842,6 +3882,12 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             client.emit('duelError', { message: 'Carta não encontrada na mão nem no campo' });
             return;
           }
+
+          const lpGateNonSpecial = assertActivatorHasLpForSpell(updatedDuel, Number(userId), cardToProcess);
+          if (!lpGateNonSpecial.ok) {
+            client.emit('duelError', { message: lpGateNonSpecial.message });
+            return;
+          }
           
           // Se a carta precisa de modal (na mão OU no campo em "set"), NÃO colocar no campo ainda
           // Criar pendingChoice e abrir modal - a carta permanece onde estava
@@ -5355,6 +5401,21 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           if (!updatedDuel) {
             client.emit('duelError', { message: 'Duelo não encontrado' });
             return;
+          }
+
+          if (actionType === 'ACTIVATE_SPELL_TRAP' && finalPosition === 'face-up') {
+            const lpCardSpecial = {
+              idCarta: cardId,
+              id: cardId,
+              cardId,
+              name: actionData?.cardName,
+              cardName: actionData?.cardName,
+            };
+            const lpGateSpecial = assertActivatorHasLpForSpell(updatedDuel, Number(userId), lpCardSpecial);
+            if (!lpGateSpecial.ok) {
+              client.emit('duelError', { message: lpGateSpecial.message });
+              return;
+            }
           }
           
           // Verificar se a carta está no campo
@@ -7431,8 +7492,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           targetZoneIndex: finalTargetZoneIndex
         });
         
-        // Obter informações do atacante e alvo ANTES do ataque
-        // Isso é necessário para emitir a animação mesmo se o ataque for cancelado por uma armadilha
+        // Obter informações do atacante e alvo ANTES do ataque (cartas + perfil do defensor para animação só em sucesso)
         // Reutilizar duelBeforeAttack que já foi buscado acima
         if (!duelBeforeAttack) {
           client.emit('duelError', { message: 'Duelo não encontrado' });
@@ -7470,34 +7530,34 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           } else {
             await this.createAndEmitDuelLog(duelId, userId, 'DIRECT_ATTACK', `${attackerName} atacou diretamente`);
           }
-        }
-        
-        // Se o ataque foi cancelado por uma armadilha, emitir evento para acionar a animação
-        if (!result.success && attackerBefore) {
-          // Verificar se a mensagem indica que foi cancelado por uma armadilha
-          const message = result.message || '';
-          const isTrapCancelled = message.includes('Mirror Force') || 
-                                  message.includes('Sakuretsu Armor') || 
-                                  message.includes('Dimensional Prison') ||
-                                  message.includes('foi ativada');
-          
-          if (isTrapCancelled) {
-            console.log(`🛡️ [handleDuelAction] Ataque cancelado por armadilha - emitindo evento para animação`);
-            
-            // Emitir evento para acionar a animação de ataque cancelado
-            this.server.to(`duel_${duelId}`).emit('attackCancelled', {
-              duelId: duelId,
-              attackerZoneIndex: attackerZoneIndex,
+
+          // Animação de batalha só após o servidor confirmar que o ataque resolveu (armadilhas que negam = sem animação)
+          if (attackerBefore) {
+            const isDirect =
+              finalTargetZoneIndex === null || finalTargetZoneIndex === undefined;
+            const defenderRel = isPlayer1
+              ? (duelBeforeAttack as any).player2
+              : (duelBeforeAttack as any).player1;
+            const defenderProfileRaw = normalizeProfileImageForClient(defenderRel?.profileImage ?? null);
+            const dmg =
+              typeof (result as any).damage === 'number' ? (result as any).damage : 0;
+
+            this.server.to(`duel_${duelId}`).emit('attackSucceeded', {
+              duelId,
+              attackerUserId: userId,
+              attackerZoneIndex,
               targetZoneIndex: finalTargetZoneIndex,
               attackerCard: attackerBefore,
-              targetCard: targetBefore,
-              message: message,
-              isDirectAttack: finalTargetZoneIndex === null || finalTargetZoneIndex === undefined
+              targetCard: isDirect ? null : targetBefore,
+              damage: dmg,
+              isDirectAttack: isDirect,
+              defenderProfileImage: isDirect ? defenderProfileRaw : null,
             });
           }
-          
+        }
+
+        if (!result.success && attackerBefore) {
           client.emit('duelError', { message: result.message || 'Erro ao atacar' });
-          // Continuar para emitir a atualização do duelo mesmo quando Mirror Force é ativada
         }
 
         const player1Field = (updatedDuel as any).player1Field;
@@ -8539,32 +8599,6 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     });
   }
 
-  @SubscribeMessage('directAttackAnimation')
-  async handleDirectAttackAnimation(
-    @MessageBody() data: { 
-      duelId: string | number; 
-      attackerCard?: any;
-      targetProfileImage: string; 
-      damage: number 
-    },
-    @ConnectedSocket() client: Socket,
-  ) {
-    try {
-      const duelIdStr = typeof data.duelId === 'string' ? data.duelId : data.duelId.toString();
-      
-      // Retransmitir para todos na room do duelo (incluindo o oponente)
-      this.server.to(`duel_${duelIdStr}`).emit('directAttackAnimation', {
-        attackerCard: data.attackerCard,
-        targetProfileImage: data.targetProfileImage,
-        damage: data.damage
-      });
-      
-      console.log(`⚔️ [directAttackAnimation] Animação de ataque direto retransmitida para duelo ${duelIdStr}`);
-    } catch (error) {
-      console.error('❌ [directAttackAnimation] Erro ao retransmitir animação:', error);
-    }
-  }
-
   @SubscribeMessage('duelChat')
   async handleDuelChat(
     @MessageBody() data: { duelId: number | string; userId?: number; message: string },
@@ -8597,7 +8631,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       // Usar nickname (não expor username a outros jogadores)
       const user = await this.duelsService['usersRepository'].findOne({ 
         where: { id: numericUserId },
-        select: ['id', 'nickname', 'clanTag']
+        select: ['id', 'nickname', 'clanTag', 'profileImage']
       });
 
       const displayName = user?.clanTag ? `|${user.clanTag}| ${user?.nickname || 'Jogador'}` : (user?.nickname || 'Jogador');
@@ -8607,6 +8641,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         username: displayName,
         message: message,
         timestamp: new Date(),
+        profileImage: normalizeProfileImageForClient(user?.profileImage ?? null),
       };
 
       this.server.to(`duel_${duelId}`).emit('chatMessage', chatData);

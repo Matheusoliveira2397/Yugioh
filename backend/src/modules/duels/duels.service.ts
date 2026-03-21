@@ -6,6 +6,7 @@ import { Duel, DuelStatus, DuelResult, TurnPhase, DuelOrigin } from './entities/
 import { DuelLog, DuelActionType } from './entities/duel-log.entity';
 import { DuelHistory, DuelHistoryResult, DuelHistoryOrigin } from './entities/duel-history.entity';
 import { User } from '../users/entities/user.entity';
+import { normalizeProfileImageForClient } from '../users/profile-image.util';
 import { DecksService } from '../decks/decks.service';
 import { TournamentsService } from '../tournaments/tournaments.service';
 import { CardsService } from '../cards/cards.service';
@@ -372,11 +373,12 @@ export class DuelsService implements OnModuleInit {
         }
       }
       
-      // Validar que ambos os campos têm deck
-      if (!(duel as any).player1Field?.deck || (duel as any).player1Field.deck.length === 0 ||
-          !(duel as any).player2Field?.deck || (duel as any).player2Field.deck.length === 0) {
-        logger.debug(`❌ [findDuelByIdLight] Campos sem deck em memória, forçando busca no banco`);
-        return null; // Retornar null para forçar busca do banco
+      // Deck vazio (0 cartas) é válido no meio do duelo; só invalidar se deck não existir ou não for array
+      const p1 = (duel as any).player1Field;
+      const p2 = (duel as any).player2Field;
+      if (!Array.isArray(p1?.deck) || !Array.isArray(p2?.deck)) {
+        logger.debug(`❌ [findDuelByIdLight] deck ausente ou não-array em memória, forçando busca no banco`);
+        return null;
       }
     }
     return duel;
@@ -626,7 +628,7 @@ export class DuelsService implements OnModuleInit {
                 id: u1.id,
                 nickname: (u1 as any).nickname,
                 clanTag: (u1 as any).clanTag,
-                profileImage: (u1 as any).profileImage,
+                profileImage: normalizeProfileImageForClient((u1 as any).profileImage),
                 equippedPlaymatId: (u1 as any).equippedPlaymatId,
                 equippedPlaymatImage: (u1 as any).equippedPlaymatImage,
                 equippedSkinId: (u1 as any).equippedSkinId,
@@ -639,7 +641,7 @@ export class DuelsService implements OnModuleInit {
                 id: u2.id,
                 nickname: (u2 as any).nickname,
                 clanTag: (u2 as any).clanTag,
-                profileImage: (u2 as any).profileImage,
+                profileImage: normalizeProfileImageForClient((u2 as any).profileImage),
                 equippedPlaymatId: (u2 as any).equippedPlaymatId,
                 equippedPlaymatImage: (u2 as any).equippedPlaymatImage,
                 equippedSkinId: (u2 as any).equippedSkinId,
@@ -672,10 +674,9 @@ export class DuelsService implements OnModuleInit {
           monstersLength: duel.player2Field?.monsters?.length || 0,
         });
         
-        // Validar que ambos os campos foram carregados corretamente do banco
-        // Se algum campo estiver vazio, tentar buscar diretamente do banco usando query SQL
-        if (!duel.player1Field || !duel.player1Field.deck || duel.player1Field.deck.length === 0) {
-          logger.warn(`⚠️ [findDuelByIdFromDatabase] player1Field está vazio! Tentando buscar diretamente do banco...`);
+        // Se player1Field ou deck não for array, tentar recuperar via SQL (deck com 0 cartas é válido)
+        if (!duel.player1Field || !Array.isArray(duel.player1Field.deck)) {
+          logger.warn(`⚠️ [findDuelByIdFromDatabase] player1Field/deck inválido! Tentando buscar diretamente do banco...`);
           try {
             const rawResult = await this.duelsRepository.query(
               `SELECT player1_field FROM duels WHERE id = $1`,
@@ -695,8 +696,8 @@ export class DuelsService implements OnModuleInit {
           }
         }
         
-        if (!duel.player2Field || !duel.player2Field.deck || duel.player2Field.deck.length === 0) {
-          logger.warn(`⚠️ [findDuelByIdFromDatabase] player2Field está vazio! Tentando buscar diretamente do banco...`);
+        if (!duel.player2Field || !Array.isArray(duel.player2Field.deck)) {
+          logger.warn(`⚠️ [findDuelByIdFromDatabase] player2Field/deck inválido! Tentando buscar diretamente do banco...`);
           try {
             const rawResult = await this.duelsRepository.query(
               `SELECT player2_field FROM duels WHERE id = $1`,
@@ -716,17 +717,13 @@ export class DuelsService implements OnModuleInit {
           }
         }
         
-        // CRÍTICO: Validar que ambos os campos foram carregados antes de adicionar ao cache
-        if (!duel.player1Field || !duel.player1Field.deck || duel.player1Field.deck.length === 0) {
-          logger.error(`❌ [findDuelByIdFromDatabase] player1Field inválido antes de adicionar ao cache! Duelo ID: ${duelIdStr}`);
-          // NÃO adicionar ao cache se os campos não estiverem corretos
-          // Isso forçará uma busca do banco na próxima vez
+        // Adicionar ao cache se ambos têm deck como array (pode ser [] após compras)
+        if (!duel.player1Field || !Array.isArray(duel.player1Field.deck)) {
+          logger.error(`❌ [findDuelByIdFromDatabase] player1Field/deck inválido antes de adicionar ao cache! Duelo ID: ${duelIdStr}`);
           return null;
         }
-        if (!duel.player2Field || !duel.player2Field.deck || duel.player2Field.deck.length === 0) {
-          logger.error(`❌ [findDuelByIdFromDatabase] player2Field inválido antes de adicionar ao cache! Duelo ID: ${duelIdStr}`);
-          // NÃO adicionar ao cache se os campos não estiverem corretos
-          // Isso forçará uma busca do banco na próxima vez
+        if (!duel.player2Field || !Array.isArray(duel.player2Field.deck)) {
+          logger.error(`❌ [findDuelByIdFromDatabase] player2Field/deck inválido antes de adicionar ao cache! Duelo ID: ${duelIdStr}`);
           return null;
         }
         
@@ -839,7 +836,7 @@ export class DuelsService implements OnModuleInit {
     
     if (clean.deck && Array.isArray(clean.deck)) {
         const originalDeckLength = clean.deck.length;
-        logger.info(`🧹 [deepCleanField] Limpando deck com ${originalDeckLength} cartas...`);
+        logger.debug(`🧹 [deepCleanField] Limpando deck com ${originalDeckLength} cartas...`);
         clean.deck = clean.deck.map((card: any, index: number) => {
           // Se a carta é null/undefined, retornar null (será filtrado)
           if (!card) {
@@ -848,7 +845,7 @@ export class DuelsService implements OnModuleInit {
           
           // Debug: Verificar cardImage antes de compactar
           if (index < 3 && card?.name) {
-            logger.info(`🔍 [deepCleanField] Carta ${index} do deck ANTES de compactCard:`, {
+            logger.debug(`🔍 [deepCleanField] Carta ${index} do deck ANTES de compactCard:`, {
               name: card.name,
               hasCardImage: !!card.cardImage,
               cardImage: card.cardImage,
@@ -865,7 +862,7 @@ export class DuelsService implements OnModuleInit {
             });
           } else if (compacted && index < 3 && compacted.name) {
             // Debug: Verificar cardImage depois de compactar
-            logger.info(`🔍 [deepCleanField] Carta ${index} do deck DEPOIS de compactCard:`, {
+            logger.debug(`🔍 [deepCleanField] Carta ${index} do deck DEPOIS de compactCard:`, {
               name: compacted.name,
               hasCardImage: !!compacted.cardImage,
               cardImage: compacted.cardImage,
@@ -878,7 +875,7 @@ export class DuelsService implements OnModuleInit {
         if (finalDeckLength < originalDeckLength) {
           logger.warn(`⚠️ [deepCleanField] ATENÇÃO: Deck perdeu ${originalDeckLength - finalDeckLength} cartas durante limpeza! (${originalDeckLength} -> ${finalDeckLength})`);
         }
-        logger.info(`🧹 [deepCleanField] Deck limpo: ${finalDeckLength} cartas restantes (de ${originalDeckLength} originais)`);
+        logger.debug(`🧹 [deepCleanField] Deck limpo: ${finalDeckLength} cartas restantes (de ${originalDeckLength} originais)`);
       } else {
         // CRÍTICO: Se deck não existe ou não é array, inicializar como array vazio
         if (!clean.deck || !Array.isArray(clean.deck)) {
@@ -888,11 +885,11 @@ export class DuelsService implements OnModuleInit {
     }
     
     if (clean.hand && Array.isArray(clean.hand)) {
-        logger.info(`🧹 [deepCleanField] Limpando hand com ${clean.hand.length} cartas...`);
+        logger.debug(`🧹 [deepCleanField] Limpando hand com ${clean.hand.length} cartas...`);
         clean.hand = clean.hand.map((card: any, index: number) => {
           // Debug: Verificar cardImage antes de compactar
           if (index < 3 && card?.name) {
-            logger.info(`🔍 [deepCleanField] Carta ${index} da mão ANTES de compactCard:`, {
+            logger.debug(`🔍 [deepCleanField] Carta ${index} da mão ANTES de compactCard:`, {
               name: card.name,
               hasCardImage: !!card.cardImage,
               cardImage: card.cardImage,
@@ -905,7 +902,7 @@ export class DuelsService implements OnModuleInit {
             logger.warn(`⚠️ [deepCleanField] Carta ${index} da mão retornou null após compactCard:`, card);
           } else if (compacted && index < 3 && compacted.name) {
             // Debug: Verificar cardImage depois de compactar
-            logger.info(`🔍 [deepCleanField] Carta ${index} da mão DEPOIS de compactCard:`, {
+            logger.debug(`🔍 [deepCleanField] Carta ${index} da mão DEPOIS de compactCard:`, {
               name: compacted.name,
               hasCardImage: !!compacted.cardImage,
               cardImage: compacted.cardImage,
@@ -913,13 +910,13 @@ export class DuelsService implements OnModuleInit {
           }
           return compacted;
         }).filter((c: any) => c !== null);
-        logger.info(`🧹 [deepCleanField] Hand limpa: ${clean.hand.length} cartas restantes`);
+        logger.debug(`🧹 [deepCleanField] Hand limpa: ${clean.hand.length} cartas restantes`);
       } else {
         clean.hand = clean.hand || [];
     }
     
     if (clean.monsters && Array.isArray(clean.monsters)) {
-      logger.info(`🧹 [deepCleanField] Limpando ${clean.monsters.length} monstros...`);
+      logger.debug(`🧹 [deepCleanField] Limpando ${clean.monsters.length} monstros...`);
       clean.monsters = clean.monsters.map((monster: any, index: number) => {
         if (!monster) return null;
         const compacted = this.compactCard(monster);
@@ -928,12 +925,12 @@ export class DuelsService implements OnModuleInit {
           // Preservar position
           if (monster.position !== undefined && monster.position !== null) {
             compacted.position = monster.position;
-            logger.info(`🔍 [deepCleanField] Preservando position para monstro ${compacted.name}: ${monster.position}`);
+            logger.debug(`🔍 [deepCleanField] Preservando position para monstro ${compacted.name}: ${monster.position}`);
           }
           // Preservar summonedTurnNumber (CRÍTICO para impedir mudança de posição no mesmo turno)
           if (monster.summonedTurnNumber !== undefined && monster.summonedTurnNumber !== null) {
             compacted.summonedTurnNumber = monster.summonedTurnNumber;
-            logger.info(`🔍 [deepCleanField] Preservando summonedTurnNumber para monstro ${compacted.name}: ${monster.summonedTurnNumber}`);
+            logger.debug(`🔍 [deepCleanField] Preservando summonedTurnNumber para monstro ${compacted.name}: ${monster.summonedTurnNumber}`);
           }
           // Preservar summonedByPlayer
           if (monster.summonedByPlayer !== undefined && monster.summonedByPlayer !== null) {
@@ -988,7 +985,7 @@ export class DuelsService implements OnModuleInit {
               compacted.equipmentBonusDef = monster.equipmentBonusDef;
             }
             compacted.equippedCards = [...monster.equippedCards];
-            logger.info(`🔍 [deepCleanField] Preservando equippedCards array para monstro ${compacted.name}: ${monster.equippedCards.length} equipamento(s) - ${monster.equippedCards.join(', ')}`);
+            logger.debug(`🔍 [deepCleanField] Preservando equippedCards array para monstro ${compacted.name}: ${monster.equippedCards.length} equipamento(s) - ${monster.equippedCards.join(', ')}`);
           } else {
             // Monstro sem equips: não persistir bônus/equip (evita ATK salvo após equip ou monstro destruído)
             if (compacted.equipmentBonusAtk !== undefined) delete compacted.equipmentBonusAtk;
@@ -1001,19 +998,19 @@ export class DuelsService implements OnModuleInit {
           // CRÍTICO: Preservar campos de controle do ChangeOfHeart
           if (monster.controlledBy !== undefined && monster.controlledBy !== null) {
             compacted.controlledBy = monster.controlledBy;
-            logger.info(`🔍 [deepCleanField] Preservando controlledBy para monstro ${compacted.name}: ${monster.controlledBy}`);
+            logger.debug(`🔍 [deepCleanField] Preservando controlledBy para monstro ${compacted.name}: ${monster.controlledBy}`);
           }
           if (monster.originalOwner !== undefined && monster.originalOwner !== null) {
             compacted.originalOwner = monster.originalOwner;
-            logger.info(`🔍 [deepCleanField] Preservando originalOwner para monstro ${compacted.name}: ${monster.originalOwner}`);
+            logger.debug(`🔍 [deepCleanField] Preservando originalOwner para monstro ${compacted.name}: ${monster.originalOwner}`);
           }
           if (monster.originalZoneIndex !== undefined && monster.originalZoneIndex !== null) {
             compacted.originalZoneIndex = monster.originalZoneIndex;
-            logger.info(`🔍 [deepCleanField] Preservando originalZoneIndex para monstro ${compacted.name}: ${monster.originalZoneIndex}`);
+            logger.debug(`🔍 [deepCleanField] Preservando originalZoneIndex para monstro ${compacted.name}: ${monster.originalZoneIndex}`);
           }
           if (monster.controlledUntilTurn !== undefined && monster.controlledUntilTurn !== null) {
             compacted.controlledUntilTurn = monster.controlledUntilTurn;
-            logger.info(`🔍 [deepCleanField] Preservando controlledUntilTurn para monstro ${compacted.name}: ${monster.controlledUntilTurn}`);
+            logger.debug(`🔍 [deepCleanField] Preservando controlledUntilTurn para monstro ${compacted.name}: ${monster.controlledUntilTurn}`);
           }
           // Breaker the Magical Warrior: preservar bônus de +300 ATK até usar o efeito ou monstro ser destruído
           if (monster.spellCounters !== undefined && monster.spellCounters !== null) {
@@ -1028,7 +1025,7 @@ export class DuelsService implements OnModuleInit {
           }
         }
         if (index < 2) {
-          logger.info(`🧹 [deepCleanField] Monstro ${index}:`, {
+          logger.debug(`🧹 [deepCleanField] Monstro ${index}:`, {
             name: compacted?.name,
             position: compacted?.position,
             summonedTurnNumber: compacted?.summonedTurnNumber,
@@ -1041,7 +1038,7 @@ export class DuelsService implements OnModuleInit {
         }
         return compacted;
       });
-      logger.info(`🧹 [deepCleanField] Monstros limpos:`, clean.monsters.map((m: any, i: number) => ({ 
+      logger.debug(`🧹 [deepCleanField] Monstros limpos:`, clean.monsters.map((m: any, i: number) => ({ 
         index: i, 
         name: m?.name || 'null', 
         position: m?.position || 'null',
@@ -1075,9 +1072,9 @@ export class DuelsService implements OnModuleInit {
 
     // Limpar extra deck (separado do deck principal)
     if (clean.extraDeck && Array.isArray(clean.extraDeck)) {
-        logger.info(`🧹 [deepCleanField] Limpando extra deck com ${clean.extraDeck.length} cartas...`);
+        logger.debug(`🧹 [deepCleanField] Limpando extra deck com ${clean.extraDeck.length} cartas...`);
         clean.extraDeck = clean.extraDeck.map((card: any) => this.compactCard(card)).filter((c: any) => c !== null);
-        logger.info(`🧹 [deepCleanField] Extra deck limpo: ${clean.extraDeck.length} cartas restantes`);
+        logger.debug(`🧹 [deepCleanField] Extra deck limpo: ${clean.extraDeck.length} cartas restantes`);
       } else {
         clean.extraDeck = clean.extraDeck || [];
     }
@@ -1085,7 +1082,7 @@ export class DuelsService implements OnModuleInit {
     // CRÍTICO: Preservar turnCounter no JSON do campo
     if (field.turnCounter !== undefined && field.turnCounter !== null) {
       clean.turnCounter = field.turnCounter;
-      logger.info(`🔍 [deepCleanField] Preservando turnCounter: ${field.turnCounter}`);
+      logger.debug(`🔍 [deepCleanField] Preservando turnCounter: ${field.turnCounter}`);
     }
     if (field.obeliskEffectUsedTurn !== undefined && field.obeliskEffectUsedTurn !== null) {
       clean.obeliskEffectUsedTurn = field.obeliskEffectUsedTurn;
@@ -1102,7 +1099,7 @@ export class DuelsService implements OnModuleInit {
     // CRÍTICO: Preservar array banished (cartas banidas)
     if (field.banished && Array.isArray(field.banished)) {
       clean.banished = field.banished.map((card: any) => this.compactCard(card)).filter((c: any) => c !== null);
-      logger.info(`🔍 [deepCleanField] Preservando banished: ${clean.banished.length} carta(s) banida(s)`);
+      logger.debug(`🔍 [deepCleanField] Preservando banished: ${clean.banished.length} carta(s) banida(s)`);
     } else {
       clean.banished = field.banished || [];
     }
@@ -1161,7 +1158,9 @@ export class DuelsService implements OnModuleInit {
   async updateDuelInDatabase(duelId: string | number, updates: Partial<Duel>): Promise<void> {
     try {
       const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
-      
+      const includePlayer1Field = Object.prototype.hasOwnProperty.call(updates as object, 'player1Field');
+      const includePlayer2Field = Object.prototype.hasOwnProperty.call(updates as object, 'player2Field');
+
       // OTIMIZAÇÃO: Usar cache em memória primeiro para evitar SELECT desnecessário
       let existingDuel: Duel | null | undefined = this.activeDuels.get(duelIdStr);
       
@@ -1236,13 +1235,17 @@ export class DuelsService implements OnModuleInit {
       }
       
       const cleanUpdates: any = { ...mergedUpdates };
-      
-      // Limpar campos se estiverem presentes (apenas quando necessário)
-      if (cleanUpdates.player1Field) {
+
+      // Só persiste JSONB de campo quando o caller envia explicitamente — evita regravar ~2× deck+GY a cada UPDATE pequeno (egress / WAL)
+      if (includePlayer1Field && cleanUpdates.player1Field) {
         cleanUpdates.player1Field = this.deepCleanField(cleanUpdates.player1Field);
+      } else {
+        delete cleanUpdates.player1Field;
       }
-      if (cleanUpdates.player2Field) {
+      if (includePlayer2Field && cleanUpdates.player2Field) {
         cleanUpdates.player2Field = this.deepCleanField(cleanUpdates.player2Field);
+      } else {
+        delete cleanUpdates.player2Field;
       }
       
       // Remover relações se estiverem presentes
@@ -1263,6 +1266,11 @@ export class DuelsService implements OnModuleInit {
       const result = await this.duelsRepository.update({ id: duelIdStr }, cleanUpdates);
       if (result.affected === 0) {
         logger.error(`❌ [updateDuelInDatabase] Duelo ${duelIdStr} não encontrado para atualizar`);
+      } else {
+        const mem = this.activeDuels.get(duelIdStr);
+        if (mem && cleanUpdates.updatedAt) {
+          (mem as any).updatedAt = cleanUpdates.updatedAt;
+        }
       }
     } catch (error) {
       logger.error(`❌ [updateDuelInDatabase] Erro ao atualizar duelo ${duelId}:`, error);
@@ -1271,7 +1279,12 @@ export class DuelsService implements OnModuleInit {
   }
 
 
-  async drawCard(duelId: string | number, userId: number): Promise<void> {
+  async drawCard(
+    duelId: string | number,
+    userId: number,
+    options?: { mandatory?: boolean },
+  ): Promise<void> {
+    const mandatory = options?.mandatory !== false;
     const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
     let duel = this.activeDuels.get(duelIdStr);
     
@@ -1280,6 +1293,10 @@ export class DuelsService implements OnModuleInit {
       const duelFromDb = await this.findDuelByIdFromDatabase(duelIdStr);
       if (!duelFromDb) return;
       duel = duelFromDb;
+    }
+
+    if (duel.status === DuelStatus.FINISHED) {
+      return;
     }
 
     const player1IdNum = Number(duel.player1Id);
@@ -1291,12 +1308,33 @@ export class DuelsService implements OnModuleInit {
     const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
     const opponentField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
     
+    const loseByDeckOut = async () => {
+      const duelResult = isPlayer1 ? DuelResult.PLAYER2_WIN : DuelResult.PLAYER1_WIN;
+      await this.saveDuelLog(
+        duelIdStr,
+        userIdNum,
+        DuelActionType.DUEL_END,
+        'Derrota: não havia cartas no deck para comprar',
+      );
+      await this.finishDuel(duelIdStr, duelResult, opponentId);
+      const fresh = await this.findDuelByIdFromDatabase(duelIdStr, true);
+      if (fresh) {
+        this.activeDuels.set(duelIdStr, fresh);
+      }
+    };
+
     if (!playerField || !playerField.deck || playerField.deck.length === 0) {
+      if (mandatory) {
+        await loseByDeckOut();
+      }
       return;
     }
 
     const drawnCard = playerField.deck.shift();
     if (!drawnCard) {
+      if (mandatory) {
+        await loseByDeckOut();
+      }
       return;
     }
 
@@ -1606,6 +1644,10 @@ export class DuelsService implements OnModuleInit {
       duel = duelFromDb;
     }
 
+    if (duel.status === DuelStatus.FINISHED) {
+      return duel;
+    }
+
     // Se não está na fase DRAW, não fazer nada
     if (duel.currentPhase !== TurnPhase.DRAW) {
       logger.info(`ℹ️ [processDrawPhase] Duelo ${duelIdStr} não está na fase DRAW (fase atual: ${duel.currentPhase})`);
@@ -1673,7 +1715,6 @@ export class DuelsService implements OnModuleInit {
     // Comprar uma carta para o jogador do turno atual
     logger.debug(`🔄 [processDrawPhase] Comprando carta para player ${currentPlayerId}...`);
     await this.drawCard(duelId, currentPlayerId);
-    logger.debug(`✅ [processDrawPhase] Carta comprada com sucesso`);
     
     // Buscar o duelo atualizado após comprar a carta - SEMPRE do banco para garantir dados atualizados
     let updatedDuel: Duel | null = await this.findDuelByIdFromDatabase(duelIdStr);
@@ -1684,6 +1725,14 @@ export class DuelsService implements OnModuleInit {
         return null;
       }
     }
+
+    if (updatedDuel.status === DuelStatus.FINISHED) {
+      logger.info(`🏁 [processDrawPhase] Duelo encerrado (deck vazio na compra obrigatória)`);
+      this.activeDuels.set(duelIdStr, updatedDuel);
+      return updatedDuel;
+    }
+
+    logger.debug(`✅ [processDrawPhase] Carta comprada com sucesso`);
     
     logger.debug(`🔄 [processDrawPhase] Duelo atualizado encontrado. Fase atual: ${updatedDuel.currentPhase}, turnCounter: ${(updatedDuel as any).turnCounter}, currentTurn: ${updatedDuel.currentTurn}`);
     
@@ -16340,7 +16389,7 @@ export class DuelsService implements OnModuleInit {
         id: player1.id,
         nickname: player1.nickname,
         clanTag: (player1 as any).clanTag,
-        profileImage: (player1 as any).profileImage,
+        profileImage: normalizeProfileImageForClient((player1 as any).profileImage),
         equippedPlaymatId: (player1 as any).equippedPlaymatId,
         equippedPlaymatImage: (player1 as any).equippedPlaymatImage,
         equippedSkinId: (player1 as any).equippedSkinId,
@@ -16352,7 +16401,7 @@ export class DuelsService implements OnModuleInit {
         id: player2.id,
         nickname: player2.nickname,
         clanTag: (player2 as any).clanTag,
-        profileImage: (player2 as any).profileImage,
+        profileImage: normalizeProfileImageForClient((player2 as any).profileImage),
         equippedPlaymatId: (player2 as any).equippedPlaymatId,
         equippedPlaymatImage: (player2 as any).equippedPlaymatImage,
         equippedSkinId: (player2 as any).equippedSkinId,
@@ -16826,8 +16875,9 @@ export class DuelsService implements OnModuleInit {
       race: (actualCard.type === 'Monster' || card.type === 'Monster' || actualCard.type === 'MONSTER' || card.type === 'MONSTER') 
         ? (actualCard.race || card.race || null) 
         : null, // race só para monstros
-      rarity: actualCard.rarity || card.rarity || null,
-      description: actualCard.description || card.description || null, // Preservar descrição
+      spellType: actualCard.spellType || card.spellType || null,
+      trapType: actualCard.trapType || card.trapType || null,
+      monsterType: actualCard.monsterType || card.monsterType || actualCard.monster_type || card.monster_type || null,
       // Preservar posição (attack, defense, set, face-up) - sempre incluir se existir
       position: card.position !== undefined ? card.position : (actualCard.position !== undefined ? actualCard.position : undefined),
       // CRÍTICO: Preservar cardImage EXATAMENTE como vem do banco (igual ao editar deck)
@@ -16919,7 +16969,7 @@ export class DuelsService implements OnModuleInit {
             this.cardImageLogCache = new Set();
           }
           if (!this.cardImageLogCache.has(logKey)) {
-            logger.info(`✅ [compactCard] cardImage RECUPERADO para "${compacted.name}": ${recoveredCardImage}`);
+            logger.debug(`✅ [compactCard] cardImage RECUPERADO para "${compacted.name}": ${recoveredCardImage}`);
             this.cardImageLogCache.add(logKey);
           }
         }
@@ -16934,8 +16984,8 @@ export class DuelsService implements OnModuleInit {
         this.cardImageLogCache = new Set();
       }
       if (!this.cardImageLogCache.has(logKey)) {
-        logger.info(`✅ [compactCard] cardImage preservado para "${compacted.name}": ${compacted.cardImage}`);
-        logger.info(`✅ [compactCard] idCarta: ${compacted.idCarta}, cardImage: ${compacted.cardImage}, temCard.card: ${!!card.card}`);
+        logger.debug(`✅ [compactCard] cardImage preservado para "${compacted.name}": ${compacted.cardImage}`);
+        logger.debug(`✅ [compactCard] idCarta: ${compacted.idCarta}, cardImage: ${compacted.cardImage}, temCard.card: ${!!card.card}`);
         this.cardImageLogCache.add(logKey);
       }
     } else if (compacted.name && !compacted.cardImage) {
@@ -16969,11 +17019,16 @@ export class DuelsService implements OnModuleInit {
     await this.updateDuelInDatabase(duelIdStr, {
       pendingChoice: choice
     } as any);
-    
-    // Atualizar cache
-    const duel = await this.findDuelByIdFromDatabase(duelIdStr);
-    if (duel) {
-      this.activeDuels.set(duelIdStr, duel);
+
+    const cached = this.activeDuels.get(duelIdStr);
+    if (cached) {
+      (cached as any).pendingChoice = JSON.parse(JSON.stringify(choice));
+    } else {
+      const duel = await this.findDuelByIdFromDatabase(duelIdStr);
+      if (duel) {
+        (duel as any).pendingChoice = choice;
+        this.activeDuels.set(duelIdStr, duel);
+      }
     }
   }
 
@@ -17064,14 +17119,18 @@ export class DuelsService implements OnModuleInit {
     await this.updateDuelInDatabase(duelIdStr, {
       pendingChoice: null
     } as any);
-    
-    // Atualizar cache (forçar busca do banco ignorando cache)
-    const updatedDuel = await this.findDuelByIdFromDatabase(duelIdStr, true);
-    if (updatedDuel) {
-      // Garantir que pendingChoice é null no objeto do cache
-      (updatedDuel as any).pendingChoice = null;
-      this.activeDuels.set(duelIdStr, updatedDuel);
+
+    const cachedAfterClear = this.activeDuels.get(duelIdStr);
+    if (cachedAfterClear) {
+      (cachedAfterClear as any).pendingChoice = null;
       logger.info(`✅ [clearPendingChoice] PendingChoice limpo e cache atualizado para duelo ${duelIdStr}`);
+    } else {
+      const updatedDuel = await this.findDuelByIdFromDatabase(duelIdStr, true);
+      if (updatedDuel) {
+        (updatedDuel as any).pendingChoice = null;
+        this.activeDuels.set(duelIdStr, updatedDuel);
+        logger.info(`✅ [clearPendingChoice] PendingChoice limpo e cache atualizado para duelo ${duelIdStr}`);
+      }
     }
   }
 
@@ -17167,7 +17226,7 @@ export class DuelsService implements OnModuleInit {
               id: opponent.id,
               nickname: opponent.nickname,
               clanTag: opponent.clanTag,
-              profileImage: opponent.profileImage,
+              profileImage: normalizeProfileImageForClient(opponent.profileImage),
             } : {
               id: h.opponentId,
               nickname: h.opponentNickname,
@@ -17374,12 +17433,12 @@ export class DuelsService implements OnModuleInit {
       player1: {
         id: player1.id,
         nickname: player1.nickname,
-        profileImage: player1.profileImage
+        profileImage: normalizeProfileImageForClient(player1.profileImage)
       },
       player2: {
         id: player2.id,
         nickname: player2.nickname,
-        profileImage: player2.profileImage
+        profileImage: normalizeProfileImageForClient(player2.profileImage)
       },
       total: stats.total,
       byOrigin: stats.byOrigin

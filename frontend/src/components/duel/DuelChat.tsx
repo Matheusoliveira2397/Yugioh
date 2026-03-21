@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../../utils/imageUrl';
 
 interface ChatMessage {
   username: string;
   message: string;
   timestamp: Date;
+  profileImage?: string | null;
 }
 
 interface DuelChatProps {
@@ -72,6 +74,14 @@ const DuelChat: React.FC<DuelChatProps> = ({ messages, onSendMessage, hideHeader
                     className="bg-slate-800/20 backdrop-blur-sm rounded-lg border-l-4 border-blue-500/30 pl-3 pr-2 py-2 hover:bg-slate-800/30 transition-all group"
                   >
                     <div className="flex items-center gap-2 mb-1">
+                      <img
+                        src={getProfileImageUrl(msg.profileImage)}
+                        alt=""
+                        className="h-7 w-7 flex-shrink-0 rounded-md border border-slate-600/60 object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH;
+                        }}
+                      />
                       <span className="text-white font-bold text-xs">{msg.username}</span>
                       <span className="text-slate-400 text-[10px]">
                         {new Date(msg.timestamp).toLocaleTimeString('pt-BR', { 

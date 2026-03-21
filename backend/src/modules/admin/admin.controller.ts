@@ -274,6 +274,22 @@ export class AdminController {
     return this.adminService.broadcastMessage(body.content);
   }
 
+  /** Aviso rico (HTML) exibido em modal quando o jogador entra no site */
+  @Get('login-broadcast')
+  getLoginBroadcast() {
+    return this.adminService.getActiveLoginBroadcast();
+  }
+
+  @Post('login-broadcast/publish')
+  publishLoginBroadcast(@Body() body: { title?: string; bodyHtml: string }) {
+    return this.adminService.publishLoginBroadcast(body);
+  }
+
+  @Post('login-broadcast/clear')
+  clearLoginBroadcast() {
+    return this.adminService.clearLoginBroadcast();
+  }
+
   // Enviar conquista para usuário(s)
   @Post('achievements/send')
   @UseInterceptors(FileInterceptor('image'))

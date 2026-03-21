@@ -35,6 +35,7 @@ import { Achievement, AchievementType } from '../users/entities/achievement.enti
 import { UploadService } from '../upload/upload.service';
 import { CreditPaymentLog } from './entities/credit-payment-log.entity';
 import { DuelScoreSettings } from './entities/duel-score-settings.entity';
+import { LoginBroadcast } from './entities/login-broadcast.entity';
 import { DuelOrigin } from '../duels/entities/duel.entity';
 import * as bcrypt from 'bcryptjs';
 
@@ -90,6 +91,8 @@ export class AdminService implements OnModuleInit {
     private divisionsRepository: Repository<Division>,
     @InjectRepository(SocialMedia)
     private socialMediaRepository: Repository<SocialMedia>,
+    @InjectRepository(LoginBroadcast)
+    private loginBroadcastRepository: Repository<LoginBroadcast>,
     private newAccountSettingsService: NewAccountSettingsService,
     private redisService: RedisService,
     @Inject(forwardRef(() => InitialDecksService))
@@ -1206,6 +1209,7 @@ export class AdminService implements OnModuleInit {
       { key: 'home', label: 'Home', route: '/', icon: '/images/Icones/Home.png', order: 0, isActive: true },
       { key: 'chat', label: 'Chat', route: '/chat', icon: '/images/Icones/Chat.png', order: 1, isActive: true },
       { key: 'random-duel', label: 'Random Duel', route: '/random-duel', icon: '/images/Icones/Random Duel.png', order: 2, isActive: true },
+      { key: 'random-anime', label: 'Random Anime', route: '/random-duel', icon: '🎬', order: 2, isActive: true },
       { key: 'arena', label: 'Arena', route: '/arena', icon: '⚔', order: 3, isActive: true },
       { key: 'tournaments', label: 'Torneios', route: '/tournaments', icon: '/images/Icones/Torneio.png', order: 4, isActive: true },
       { key: 'groups', label: 'Clãs', route: '/groups', icon: '/images/Icones/Cla.png', order: 5, isActive: true },
@@ -1331,6 +1335,71 @@ export class AdminService implements OnModuleInit {
       sentCount,
       totalUsers: allUsers.length,
     };
+  }
+
+  private sanitizeLoginBroadcastHtml(html: string): string {
+    if (!html || typeof html !== 'string') return '';
+    let s = html.slice(0, 100_000);
+    s = s.replace(/<\/script/gi, '');
+    s = s.replace(/<script\b[\s\S]*?>[\s\S]*?<\/script>/gi, '');
+    s = s.replace(/<script\b[\s\S]*?(?:\/>|>)/gi, '');
+    s = s.replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+    s = s.replace(/javascript:/gi, '');
+    return s;
+  }
+
+  async getActiveLoginBroadcast(): Promise<{
+    active: { id: string; title: string; bodyHtml: string; createdAt: string } | null;
+  }> {
+    const row = await this.loginBroadcastRepository.findOne({
+      where: { isActive: true },
+      order: { createdAt: 'DESC' },
+    });
+    if (!row) return { active: null };
+    return {
+      active: {
+        id: row.id,
+        title: row.title || '',
+        bodyHtml: row.bodyHtml,
+        createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+      },
+    };
+  }
+
+  async publishLoginBroadcast(body: { title?: string; bodyHtml: string }) {
+    const bodyHtml = this.sanitizeLoginBroadcastHtml(body?.bodyHtml || '');
+    if (!bodyHtml.trim()) {
+      throw new BadRequestException('Conteúdo HTML não pode estar vazio.');
+    }
+    const title = (body?.title ?? '').trim().slice(0, 200);
+    await this.loginBroadcastRepository
+      .createQueryBuilder()
+      .update(LoginBroadcast)
+      .set({ isActive: false })
+      .execute();
+    const row = this.loginBroadcastRepository.create({
+      title,
+      bodyHtml,
+      isActive: true,
+    });
+    const saved = await this.loginBroadcastRepository.save(row);
+    return {
+      ok: true,
+      broadcast: {
+        id: saved.id,
+        title: saved.title,
+        createdAt: saved.createdAt instanceof Date ? saved.createdAt.toISOString() : String(saved.createdAt),
+      },
+    };
+  }
+
+  async clearLoginBroadcast() {
+    await this.loginBroadcastRepository
+      .createQueryBuilder()
+      .update(LoginBroadcast)
+      .set({ isActive: false })
+      .execute();
+    return { ok: true };
   }
 
   // Buscar usuários por ID ou nickname

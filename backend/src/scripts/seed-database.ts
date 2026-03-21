@@ -92,7 +92,7 @@ async function seedUsers(dataSource: DataSource, count: number): Promise<number[
         level: 1,
         totalScore: 0,
         tournamentPoints: 0,
-        profileImage: '/images/default.png',
+        profileImage: '/images/default.jpg',
         isOnline: false,
         isBanned: false,
         isEmailVerified: true,

@@ -4,7 +4,7 @@ import { getDivisionDisplayName, getDivisionImagePath } from '../utils/divisionD
 import { useAuthStore } from '../stores/authStore';
 import { motion } from 'framer-motion';
 import axios from 'axios';
-import { getImageUrl } from '../utils/imageUrl';
+import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { formatScore } from '../utils/formatScore';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -583,7 +583,7 @@ export const ProfilePage: React.FC = () => {
     );
   }
 
-  const currentImageUrl = previewUrl || getImageUrl(profileUser.profileImage);
+  const currentImageUrl = previewUrl || getProfileImageUrl(profileUser.profileImage);
   // Usar winsSeason/lossesSeason do User se não houver seasonRanking
   const seasonWins = profileUser.seasonRanking?.wins || profileUser.winsSeason || 0;
   const seasonLosses = profileUser.seasonRanking?.losses || profileUser.lossesSeason || 0;
@@ -721,7 +721,7 @@ export const ProfilePage: React.FC = () => {
                   alt="Avatar"
                   className="w-full h-full object-cover"
                   onError={(e) => {
-                    e.currentTarget.src = '/images/default.png';
+                    e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                   }}
                 />
               </div>
@@ -754,26 +754,27 @@ export const ProfilePage: React.FC = () => {
                 </p>
               )}
               
-              {/* Nick do Duelista */}
-              <h1 className="text-3xl sm:text-4xl font-bold text-white mb-2">
-                {profileUser.nickname}
-              </h1>
-              
-              {/* Clã */}
-              {profileUser.clanTag && (
-                <p className="text-cyan-400 font-semibold mb-4 text-base sm:text-lg">
-                  {groupInfo?.group?.id ? (
-                    <Link 
+              {/* Sigla do clã + nick (mesmo tamanho de fonte) */}
+              <h1 className="mb-4 flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1 sm:justify-start text-2xl font-bold sm:text-3xl md:text-4xl">
+                {profileUser.clanTag ? (
+                  groupInfo?.group?.id ? (
+                    <Link
                       to={`/groups/${groupInfo.group.id}`}
-                      className="hover:text-cyan-300 transition-colors cursor-pointer"
+                      className="shrink-0 text-inherit font-bold text-cyan-400 transition-colors hover:text-cyan-300"
+                      title="Ver clã"
                     >
                       |{profileUser.clanTag}|
                     </Link>
                   ) : (
-                    `|${profileUser.clanTag}|`
-                  )}
-                </p>
-              )}
+                    <span className="shrink-0 text-inherit font-bold text-cyan-400">
+                      |{profileUser.clanTag}|
+                    </span>
+                  )
+                ) : null}
+                <span className="min-w-0 break-words text-inherit text-white">
+                  {profileUser.nickname}
+                </span>
+              </h1>
               
               {/* Outras informações básicas */}
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 sm:gap-4 text-sm text-slate-400">
@@ -1052,20 +1053,14 @@ export const ProfilePage: React.FC = () => {
                   <div className="flex items-center justify-center gap-4 md:gap-8 mb-6">
                     {/* Jogador 1 (você) */}
                     <div className="flex flex-col items-center">
-                      {currentUser?.profileImage ? (
-                        <img
-                          src={getImageUrl(currentUser.profileImage)}
-                          alt={currentUser.nickname}
-                          className="w-20 h-20 md:w-24 md:h-24 rounded-full border-2 border-purple-500/50 object-cover"
-                          onError={(e) => {
-                            e.currentTarget.src = '/images/default.png';
-                          }}
-                        />
-                      ) : (
-                        <div className="w-20 h-20 md:w-24 md:h-24 rounded-full border-2 border-purple-500/50 bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-2xl">
-                          {currentUser?.nickname?.[0]?.toUpperCase() || '?'}
-                        </div>
-                      )}
+                      <img
+                        src={getProfileImageUrl(currentUser?.profileImage)}
+                        alt={currentUser?.nickname || 'Jogador'}
+                        className="w-20 h-20 md:w-24 md:h-24 rounded-full border-2 border-purple-500/50 object-cover"
+                        onError={(e) => {
+                          e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
+                        }}
+                      />
                       <span className="text-white font-bold mt-2 text-sm md:text-base">{currentUser?.nickname || 'Você'}</span>
                     </div>
 
@@ -1074,20 +1069,14 @@ export const ProfilePage: React.FC = () => {
 
                     {/* Jogador 2 (oponente) */}
                     <div className="flex flex-col items-center">
-                      {directMatchStats.player2?.profileImage ? (
-                        <img
-                          src={getImageUrl(directMatchStats.player2.profileImage)}
-                          alt={directMatchStats.player2.nickname}
-                          className="w-20 h-20 md:w-24 md:h-24 rounded-full border-2 border-purple-500/50 object-cover"
-                          onError={(e) => {
-                            e.currentTarget.src = '/images/default.png';
-                          }}
-                        />
-                      ) : (
-                        <div className="w-20 h-20 md:w-24 md:h-24 rounded-full border-2 border-purple-500/50 bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-2xl">
-                          {directMatchStats.player2?.nickname?.[0]?.toUpperCase() || '?'}
-                        </div>
-                      )}
+                      <img
+                        src={getProfileImageUrl(directMatchStats.player2?.profileImage)}
+                        alt={directMatchStats.player2?.nickname || 'Oponente'}
+                        className="w-20 h-20 md:w-24 md:h-24 rounded-full border-2 border-purple-500/50 object-cover"
+                        onError={(e) => {
+                          e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
+                        }}
+                      />
                       <span className="text-white font-bold mt-2 text-sm md:text-base">{directMatchStats.player2?.nickname || 'Oponente'}</span>
                     </div>
                   </div>
@@ -1095,14 +1084,10 @@ export const ProfilePage: React.FC = () => {
                   {/* Estatísticas gerais */}
                   <div className="bg-black/30 rounded-lg p-4 border border-white/10 mb-6">
                     <h3 className="text-lg font-bold text-white mb-3 text-center">Estatísticas Gerais</h3>
-                    <div className="grid grid-cols-3 gap-4 text-center">
+                    <div className="grid grid-cols-2 gap-4 text-center">
                       <div>
                         <div className="text-2xl font-bold text-green-400">{directMatchStats.total.player1Wins}</div>
                         <div className="text-sm text-gray-400">Suas Vitórias</div>
-                      </div>
-                      <div>
-                        <div className="text-2xl font-bold text-yellow-400">{directMatchStats.total.draws}</div>
-                        <div className="text-sm text-gray-400">Empates</div>
                       </div>
                       <div>
                         <div className="text-2xl font-bold text-red-400">{directMatchStats.total.player2Wins}</div>
@@ -1134,14 +1119,10 @@ export const ProfilePage: React.FC = () => {
                             <h4 className="text-white font-bold">{label}</h4>
                             <span className="ml-auto text-sm text-gray-400">Total: {stats.total}</span>
                           </div>
-                          <div className="grid grid-cols-3 gap-4 text-center">
+                          <div className="grid grid-cols-2 gap-4 text-center">
                             <div>
                               <div className="text-xl font-bold text-green-400">{stats.player1Wins}</div>
                               <div className="text-xs text-gray-400">Você venceu</div>
-                            </div>
-                            <div>
-                              <div className="text-xl font-bold text-yellow-400">{stats.draws}</div>
-                              <div className="text-xs text-gray-400">Empates</div>
                             </div>
                             <div>
                               <div className="text-xl font-bold text-red-400">{stats.player2Wins}</div>
@@ -1234,21 +1215,15 @@ export const ProfilePage: React.FC = () => {
                       >
                         <div className="flex items-center gap-3">
                           {/* Foto do jogador atual */}
-                          {profileUser?.profileImage ? (
-                            <img
-                              src={getImageUrl(profileUser.profileImage)}
-                              alt={profileUser?.nickname}
-                              className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
-                              loading="lazy"
-                              onError={(e) => {
-                                e.currentTarget.src = '/images/default.png';
-                              }}
-                            />
-                          ) : (
-                            <div className="w-12 h-12 rounded-full border-2 border-purple-500/50 bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white font-bold">
-                              {profileUser?.nickname?.[0]?.toUpperCase() || '?'}
-                            </div>
-                          )}
+                          <img
+                            src={getProfileImageUrl(profileUser?.profileImage)}
+                            alt={profileUser?.nickname}
+                            className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
+                            loading="lazy"
+                            onError={(e) => {
+                              e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
+                            }}
+                          />
                           
                           {/* Texto do resultado */}
                           <div className="flex-1">
@@ -1276,21 +1251,15 @@ export const ProfilePage: React.FC = () => {
                           
                           {/* Foto do oponente (clicável para ir ao perfil) */}
                           <Link to={`/profile/${opponent?.id ?? ''}`} className="flex-shrink-0 rounded-full ring-2 ring-transparent hover:ring-blue-400/50 transition-all" title="Ver perfil">
-                            {opponent?.profileImage ? (
-                              <img
-                                src={getImageUrl(opponent.profileImage)}
-                                alt={opponent?.nickname}
-                                className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
-                                loading="lazy"
-                                onError={(e) => {
-                                  e.currentTarget.src = '/images/default.png';
-                                }}
-                              />
-                            ) : (
-                              <div className="w-12 h-12 rounded-full border-2 border-purple-500/50 bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white font-bold">
-                                {opponent?.nickname?.[0]?.toUpperCase() || '?'}
-                              </div>
-                            )}
+                            <img
+                              src={getProfileImageUrl(opponent?.profileImage)}
+                              alt={opponent?.nickname}
+                              className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
+                              loading="lazy"
+                              onError={(e) => {
+                                e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
+                              }}
+                            />
                           </Link>
                         </div>
                       </div>
@@ -1356,12 +1325,12 @@ export const ProfilePage: React.FC = () => {
                       >
                         <div className="flex items-center gap-3">
                           <img
-                            src={getImageUrl(friend.profileImage)}
+                            src={getProfileImageUrl(friend.profileImage)}
                             alt={friend.nickname}
                             className="w-16 h-16 rounded-full border-2 border-purple-500/50 object-cover"
                             loading="lazy"
                             onError={(e) => {
-                              e.currentTarget.src = '/images/default.png';
+                              e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                             }}
                           />
                           <div className="flex-1 min-w-0">
@@ -1437,12 +1406,12 @@ export const ProfilePage: React.FC = () => {
                       >
                         <div className="flex items-center gap-3">
                           <img
-                            src={getImageUrl(friend.profileImage)}
+                            src={getProfileImageUrl(friend.profileImage)}
                             alt={friend.nickname}
                             className="w-16 h-16 rounded-full border-2 border-purple-500/50 object-cover"
                             loading="lazy"
                             onError={(e) => {
-                              e.currentTarget.src = '/images/default.png';
+                              e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                             }}
                           />
                           <div className="flex-1 min-w-0">
@@ -1552,7 +1521,7 @@ export const ProfilePage: React.FC = () => {
                         alt="Avatar"
                         className="w-full h-full object-cover"
                         onError={(e) => {
-                          e.currentTarget.src = '/images/default.png';
+                          e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                         }}
                       />
                     </div>

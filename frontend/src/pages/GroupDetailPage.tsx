@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import axios from 'axios';
-import { getImageUrl } from '../utils/imageUrl';
+import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -734,11 +734,11 @@ export default function GroupDetailPage() {
                   <div className="mt-auto pt-2 border-t border-white/10 w-full">
                     <div className="flex items-center gap-1.5 justify-center mb-1">
                       <img
-                        src={getImageUrl(achievement.user?.profileImage)}
+                        src={getProfileImageUrl(achievement.user?.profileImage)}
                         alt={achievement.user?.nickname || 'Usuário'}
                         className="w-5 h-5 rounded-full border border-purple-500/50 object-cover flex-shrink-0"
                         onError={(e) => {
-                          e.currentTarget.src = '/images/default.png';
+                          e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                         }}
                       />
                       <p className="text-xs text-slate-300 truncate">
@@ -850,11 +850,11 @@ export default function GroupDetailPage() {
                     >
                       <div className="flex items-center gap-4">
                         <img
-                          src={getImageUrl(request.user?.profileImage)}
+                          src={getProfileImageUrl(request.user?.profileImage)}
                           alt={request.user?.nickname || 'Usuário'}
                           className="w-12 h-12 rounded-full border-2 border-purple-500/50 object-cover"
                           onError={(e) => {
-                            e.currentTarget.src = '/images/default.png';
+                            e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                           }}
                         />
                         <div>
@@ -938,20 +938,14 @@ export default function GroupDetailPage() {
                           </div>
 
                           {/* Foto do Membro */}
-                          {member.user?.profileImage ? (
-                            <img
-                              src={getImageUrl(member.user?.profileImage)}
-                              alt={member.user?.nickname || 'Membro'}
-                              className="w-14 h-14 rounded-full border-2 border-purple-500/50 object-cover"
-                              onError={(e) => {
-                                e.currentTarget.src = '/images/default.png';
-                              }}
-                            />
-                          ) : (
-                            <div className="w-14 h-14 rounded-full border-2 border-purple-500/50 bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white font-bold text-xl">
-                              {member.user?.nickname?.[0]?.toUpperCase() || '?'}
-                            </div>
-                          )}
+                          <img
+                            src={getProfileImageUrl(member.user?.profileImage)}
+                            alt={member.user?.nickname || 'Membro'}
+                            className="w-14 h-14 rounded-full border-2 border-purple-500/50 object-cover"
+                            onError={(e) => {
+                              e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
+                            }}
+                          />
 
                           {/* Informações do Membro */}
                           <div className="flex-1 min-w-0">
@@ -1074,11 +1068,11 @@ export default function GroupDetailPage() {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <img
-                            src={getImageUrl(member.user?.profileImage)}
+                            src={getProfileImageUrl(member.user?.profileImage)}
                             alt={member.user.nickname}
                             className="w-10 h-10 rounded-lg object-cover"
                             onError={(e) => {
-                              e.currentTarget.src = '/images/default.png';
+                              e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                             }}
                           />
                           <div>

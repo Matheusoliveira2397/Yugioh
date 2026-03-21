@@ -14,6 +14,9 @@ export enum UserRole {
   MASTER = 'MASTER',
 }
 
+/** Avatar padrão (arquivo em frontend/public/images/default.jpg). */
+export const DEFAULT_USER_PROFILE_IMAGE = '/images/default.jpg';
+
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn()
@@ -73,7 +76,7 @@ export class User {
   @Column({ type: 'int', default: 0 })
   stars: number;
 
-  @Column({ default: '/images/default.png', name: 'profileImage' })
+  @Column({ default: DEFAULT_USER_PROFILE_IMAGE, name: 'profileImage' })
   profileImage: string;
 
   @Column({ default: true })
@@ -163,6 +166,10 @@ export class User {
 
   @Column({ type: 'varchar', length: 100, nullable: true })
   equippedDeckName: string | null;
+
+  /** Último aviso global (login) que o jogador dispensou; novo aviso = novo uuid. */
+  @Column({ type: 'uuid', nullable: true })
+  dismissedLoginBroadcastId: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

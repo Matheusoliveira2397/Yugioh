@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import api from '../api/axios';
 import { useAuthStore } from '../stores/authStore';
 import TournamentBracket from '../components/TournamentBracket';
-import { getImageUrl } from '../utils/imageUrl';
+import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 
 interface Tournament {
   id: string;
@@ -586,10 +586,10 @@ export default function TournamentPage() {
                             <>
                               <div className="w-16 h-16 mx-auto mb-2 rounded-full overflow-hidden border-2 border-amber-500/50">
                                 <img
-                                  src={player.user.profileImage || '/images/default.png'}
+                                  src={getProfileImageUrl(player.user.profileImage)}
                                   alt={player.user.nickname}
                                   className="w-full h-full object-cover"
-                                  onError={(e) => { e.currentTarget.src = '/images/default.png'; }}
+                                  onError={(e) => { e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH; }}
                                 />
                               </div>
                               <p className="text-white font-semibold truncate">{player.user.nickname}</p>
@@ -696,7 +696,7 @@ export default function TournamentPage() {
                           <td className="p-3 text-white font-mono">{row.rank}</td>
                           <td className="p-3">
                             <div className="flex items-center gap-2">
-                              <img src={getImageUrl(row.profileImage)} alt="" className="w-8 h-8 rounded-full object-cover border border-amber-500/30" />
+                              <img src={getProfileImageUrl(row.profileImage)} alt="" className="w-8 h-8 rounded-full object-cover border border-amber-500/30" onError={(e) => { e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH; }} />
                               <span className="text-white font-medium">{row.clanTag ? `|${row.clanTag}| ` : ''}{row.nickname}</span>
                             </div>
                           </td>

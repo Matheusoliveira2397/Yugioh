@@ -12,8 +12,10 @@ function isSupabaseDatabase(): boolean {
 
 /** Mensagem única quando o banco é Supabase mas o Storage não está configurado. */
 const SUPABASE_STORAGE_REQUIRED_MSG =
-  'Banco Supabase em uso: configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env do backend. ' +
-  'Assim avatares, cartas, logos de grupos e outros uploads vão para o Storage e aparecem igual no local e em produção.';
+  'Supabase Storage não está ativo: em backend/.env (ou variáveis do deploy) defina SUPABASE_URL=https://SEU_REF.supabase.co e ' +
+  'SUPABASE_SERVICE_ROLE_KEY com a chave Secret correta (ela é um JWT "compact JWS", geralmente começa com "eyJ..."). ' +
+  'Não use texto placeholder (ex.: COLE_AQUI) nem outra chave que não seja a Service Role. ' +
+  'Docker: coloque no .env da raiz do projeto e rode docker compose up -d --force-recreate backend.';
 
 function ensureSupabaseStorageIfNeeded(supabaseStorage: SupabaseStorageService): void {
   if (isSupabaseDatabase() && !supabaseStorage.isEnabled()) {
@@ -105,11 +107,12 @@ export class UploadService {
       if (!imageUrl || imageUrl.includes('/images/default') || imageUrl.includes('/avatars/default')) {
         return;
       }
-      if (this.supabaseStorage.isSupabaseUrl(imageUrl)) {
-        await this.supabaseStorage.deleteByPublicUrl(imageUrl);
+      const urlBase = imageUrl.split('?')[0].trim();
+      if (this.supabaseStorage.isSupabaseUrl(urlBase)) {
+        await this.supabaseStorage.deleteByPublicUrl(urlBase);
         return;
       }
-      const fileName = path.basename(imageUrl);
+      const fileName = path.basename(urlBase);
       const filePath = path.join(this.uploadPath, fileName);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
@@ -417,6 +420,33 @@ export class UploadService {
     fs.writeFileSync(filePath, file.buffer);
     console.log('✅ Banner do grupo salvo (local):', fileName);
     return `/uploads/groups/${fileName}`;
+  }
+
+  /** Remove logo ou banner de grupo (Supabase Storage ou pasta uploads/groups). */
+  async deleteGroupAsset(imageUrl: string | null | undefined): Promise<void> {
+    try {
+      if (!imageUrl || typeof imageUrl !== 'string' || !imageUrl.trim()) return;
+      const urlBase = imageUrl.split('?')[0].trim();
+      if (
+        urlBase.includes('/images/default') ||
+        urlBase.includes('/groups/default') ||
+        urlBase.includes('/avatars/default')
+      ) {
+        return;
+      }
+      if (this.supabaseStorage.isSupabaseUrl(urlBase)) {
+        await this.supabaseStorage.deleteByPublicUrl(urlBase);
+        return;
+      }
+      const fileName = path.basename(urlBase);
+      const filePath = path.join(this.groupsPath, fileName);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log('✅ Arquivo de grupo deletado (local):', fileName);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao deletar imagem do grupo:', error);
+    }
   }
 
   /**

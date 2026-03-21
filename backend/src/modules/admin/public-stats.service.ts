@@ -58,7 +58,7 @@ export class PublicStatsService {
       this.userRepo.count(),
       this.duelRepo.count({ where: { status: DuelStatus.FINISHED } }),
       this.tournamentRepo.count({ where: { status: TournamentStatus.FINISHED } }),
-      this.cardRepo.count({ where: { isActive: true } }).catch(() => 0),
+      this.cardRepo.count().catch(() => 0),
       this.userRepo.count({ where: { isOnline: true } }),
     ]);
 

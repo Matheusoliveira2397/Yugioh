@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
 import { useNavigate } from 'react-router-dom';
 import { useSocketStore } from '../stores/socketStore';
+import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 
 interface MessageNotification {
   id: string;
@@ -13,8 +14,6 @@ interface MessageNotification {
   content: string;
   createdAt: string;
 }
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 export default function MessageIcon() {
   const { token, user } = useAuthStore();
@@ -89,7 +88,12 @@ export default function MessageIcon() {
             body: notification.content.length > 50 
               ? notification.content.substring(0, 50) + '...' 
               : notification.content,
-            icon: notification.senderProfileImage ? `${API_URL}${notification.senderProfileImage}` : undefined,
+            icon: (() => {
+              const u = getProfileImageUrl(notification.senderProfileImage);
+              if (u.startsWith('http://') || u.startsWith('https://')) return u;
+              if (typeof window !== 'undefined' && u.startsWith('/')) return `${window.location.origin}${u}`;
+              return u;
+            })(),
           });
         }
       };
@@ -206,11 +210,11 @@ export default function MessageIcon() {
                     >
                       <div className="flex items-start gap-3">
                         <img
-                          src={notification.senderProfileImage ? `${API_URL}${notification.senderProfileImage}` : '/images/default.png'}
+                          src={getProfileImageUrl(notification.senderProfileImage)}
                           alt={notification.senderName}
                           className="w-10 h-10 rounded-full border-2 border-blue-500 object-cover"
                           onError={(e) => {
-                            e.currentTarget.src = '/images/default.png';
+                            e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                           }}
                         />
                         <div className="flex-1 min-w-0">

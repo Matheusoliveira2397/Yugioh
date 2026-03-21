@@ -2,6 +2,7 @@ import { useState, FormEvent, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import axios from 'axios';
+import ArenaFullBleedBackground from '../components/ArenaFullBleedBackground';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -222,16 +223,9 @@ export default function RegisterPage() {
 
   if (success) {
     return (
-      <div
-        className="min-h-screen flex items-center justify-center px-4 py-8 relative"
-        style={{
-          backgroundImage: 'url(/images/backgroundLogin.jpg)',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-        }}
-      >
-        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/70 z-0" />
+      <div className="min-h-screen flex items-center justify-center px-4 py-8 relative overflow-hidden">
+        <ArenaFullBleedBackground basePathWithoutExt="/images/backgroundLogin" zIndexClass="fixed inset-0 z-0" />
+        <div className="absolute inset-0 z-[1] bg-gradient-to-b from-black/70 via-black/60 to-black/70" />
         <motion.div
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -307,16 +301,9 @@ export default function RegisterPage() {
   const inputInvalid = 'border-red-500/50';
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center px-4 py-8 relative"
-      style={{
-        backgroundImage: 'url(/images/backgroundLogin.jpg)',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-      }}
-    >
-      <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/70 z-0" />
+    <div className="min-h-screen flex items-center justify-center px-4 py-8 relative overflow-hidden">
+      <ArenaFullBleedBackground basePathWithoutExt="/images/backgroundLogin" zIndexClass="fixed inset-0 z-0" />
+      <div className="absolute inset-0 z-[1] bg-gradient-to-b from-black/70 via-black/60 to-black/70" />
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}

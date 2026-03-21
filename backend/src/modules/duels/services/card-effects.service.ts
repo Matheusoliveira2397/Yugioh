@@ -5,7 +5,6 @@ import { DuelUtilsService } from './duel-utils.service';
 import { logger } from '../../../common/utils/logger.util';
 import { CardEffectRegistryService } from './card-effects/registry/card-effect-registry.service';
 import { CardEffectContext } from './card-effects/interfaces/card-effect.interface';
-import { DuelActionType } from '../entities/duel-log.entity';
 
 /**
  * Serviço responsável por processar efeitos de cartas
@@ -138,35 +137,11 @@ export class CardEffectsService {
   ): Promise<void> {
     logger.info(`✨ [CardEffectsService] Processando efeito de flip do Dekoichi the Battlechanted Locomotive - controlador compra 1 carta`);
     
-    const player1Field = (duel as any).player1Field;
-    const player2Field = (duel as any).player2Field;
-    const controllerField = isPlayer1 ? player1Field : player2Field;
     const controllerUserId = isPlayer1 ? (duel as any).player1Id : (duel as any).player2Id;
-    
-    if (!controllerField || !controllerField.deck || controllerField.deck.length === 0) {
-      logger.info(`ℹ️ [CardEffectsService] Dekoichi: controlador não tem cartas no deck para comprar`);
-      return;
-    }
-    
-    const drawnCard = controllerField.deck.shift();
-    if (!drawnCard) return;
-    
-    (this.duelsService as any).ensureCardInstanceId(drawnCard);
-    controllerField.hand = controllerField.hand || [];
-    controllerField.hand.push(drawnCard);
-    
-    const cardName = drawnCard.name || drawnCard.cardName || 'Carta';
-    await this.duelsService.saveDuelLog(duelId, controllerUserId, DuelActionType.DRAW_CARD, `Comprou ${cardName} (Dekoichi)`);
-    logger.info(`✅ [CardEffectsService] Dekoichi: controlador comprou 1 carta: ${cardName}`);
-    
-    await this.duelsService.updateDuelInDatabase(duelId, {
-      player1Field: player1Field,
-      player2Field: player2Field,
-    } as any);
-    
-    const activeDuels = (this.duelsService as any).activeDuels;
-    if (activeDuels) {
-      activeDuels.set(duelId, duel);
+    await this.duelsService.drawCard(duelId, controllerUserId);
+    const updated = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+    if (updated) {
+      Object.assign(duel, updated);
     }
   }
 

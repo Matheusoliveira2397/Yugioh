@@ -2,6 +2,7 @@ import { useState, FormEvent } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import axios from 'axios';
+import ArenaFullBleedBackground from '../components/ArenaFullBleedBackground';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -43,16 +44,9 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center px-4 relative"
-      style={{
-        backgroundImage: 'url(/images/backgroundLogin.jpg)',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-      }}
-    >
-      <div className="absolute inset-0 bg-black/60" aria-hidden />
+    <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
+      <ArenaFullBleedBackground basePathWithoutExt="/images/backgroundLogin" zIndexClass="fixed inset-0 z-0" />
+      <div className="absolute inset-0 z-[1] bg-black/60" aria-hidden />
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

@@ -2,7 +2,8 @@ import { Injectable, ConflictException, NotFoundException, BadRequestException, 
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, MoreThan } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
-import { User } from './entities/user.entity';
+import { User, DEFAULT_USER_PROFILE_IMAGE } from './entities/user.entity';
+import { normalizeProfileImageForClient } from './profile-image.util';
 import { SeasonRanking, Division } from '../seasons/entities/season-ranking.entity';
 import { Season } from '../seasons/entities/season.entity';
 import { GroupMember } from '../groups/entities/group-member.entity';
@@ -13,6 +14,7 @@ import { RedisService } from '../redis/redis.service';
 import { Deck } from '../decks/entities/deck.entity';
 import { DeckCard } from '../decks/entities/deck-card.entity';
 import { UserSystemNotification } from './entities/user-system-notification.entity';
+import { LoginBroadcast } from '../admin/entities/login-broadcast.entity';
 
 @Injectable()
 export class UsersService implements OnModuleInit {
@@ -33,6 +35,8 @@ export class UsersService implements OnModuleInit {
     private deckCardsRepository: Repository<DeckCard>,
     @InjectRepository(UserSystemNotification)
     private systemNotificationRepository: Repository<UserSystemNotification>,
+    @InjectRepository(LoginBroadcast)
+    private loginBroadcastRepository: Repository<LoginBroadcast>,
     private levelsService: LevelsService,
     private mailService: MailService,
     private redisService: RedisService,
@@ -129,17 +133,16 @@ export class UsersService implements OnModuleInit {
     }
   }
 
-  // Helper para normalizar profileImage (retorna null se for imagem padrão inexistente)
   private normalizeProfileImage(profileImage: string | null | undefined): string | null {
-    if (!profileImage) return null;
-    if (profileImage.includes('/images/default') || profileImage.includes('/avatars/default')) {
-      return null;
-    }
-    return profileImage;
+    return normalizeProfileImageForClient(profileImage);
   }
 
   async create(userData: Partial<User>): Promise<User> {
-    const user = this.usersRepository.create(userData);
+    const data = { ...userData };
+    if (data.profileImage == null || String(data.profileImage).trim() === '') {
+      data.profileImage = DEFAULT_USER_PROFILE_IMAGE;
+    }
+    const user = this.usersRepository.create(data);
     return this.usersRepository.save(user);
   }
 
@@ -566,6 +569,34 @@ export class UsersService implements OnModuleInit {
       content: n.content,
       createdAt: n.createdAt instanceof Date ? n.createdAt.toISOString() : (n.createdAt as string),
     }));
+  }
+
+  /** Modal pós-login: aviso global ainda não dispensado por este usuário. */
+  async getLoginBroadcastForUser(
+    userId: number,
+  ): Promise<{ id: string; title: string; bodyHtml: string } | null> {
+    const user = await this.usersRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'dismissedLoginBroadcastId'],
+    });
+    if (!user) return null;
+    const active = await this.loginBroadcastRepository.findOne({
+      where: { isActive: true },
+      order: { createdAt: 'DESC' },
+    });
+    if (!active) return null;
+    if (user.dismissedLoginBroadcastId === active.id) return null;
+    return { id: active.id, title: active.title || '', bodyHtml: active.bodyHtml };
+  }
+
+  async dismissLoginBroadcast(userId: number, broadcastId: string): Promise<void> {
+    if (!broadcastId || typeof broadcastId !== 'string') return;
+    const active = await this.loginBroadcastRepository.findOne({
+      where: { isActive: true },
+      order: { createdAt: 'DESC' },
+    });
+    if (!active || active.id !== broadcastId) return;
+    await this.usersRepository.update(userId, { dismissedLoginBroadcastId: broadcastId });
   }
 
   /**
@@ -1473,7 +1504,7 @@ export class UsersService implements OnModuleInit {
         id: String(user.id),
         nickname: user.nickname,
         clanTag: clanTag,
-        profileImage: user.profileImage,
+        profileImage: this.normalizeProfileImage(user.profileImage),
         seasonScore: seasonRanking?.seasonScore || 0,
         totalScore: user.totalScore || 0,
         level: user.level || 1,

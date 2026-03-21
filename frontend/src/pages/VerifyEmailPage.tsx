@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import axios from 'axios';
+import ArenaFullBleedBackground from '../components/ArenaFullBleedBackground';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -42,20 +43,13 @@ export default function VerifyEmailPage() {
   }, [token]);
 
   return (
-    <div 
-      className="min-h-screen flex items-center justify-center px-4 relative"
-      style={{
-        backgroundImage: 'url(/images/backgroundLogin.jpg)',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-      }}
-    >
-      <div className="absolute inset-0 bg-black bg-opacity-60"></div>
+    <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
+      <ArenaFullBleedBackground basePathWithoutExt="/images/backgroundLogin" zIndexClass="fixed inset-0 z-0" />
+      <div className="absolute inset-0 z-[1] bg-black bg-opacity-60" />
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="max-w-md w-full"
+        className="relative z-10 max-w-md w-full"
       >
         {status === 'loading' && (
           <div className="bg-gray-800 rounded-lg shadow-2xl p-8 border border-blue-500 text-center">

@@ -126,7 +126,8 @@ services:
     volumes:
       - ${PROJECT_PATH:-.}/frontend:/app
       - /app/node_modules
-    command: npm run dev -- --host
+    # Sincroniza dependências com package.json do host (ex.: após adicionar react-quill), depois sobe o Vite.
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
 
   # Nginx - Load Balancer
   nginx:
