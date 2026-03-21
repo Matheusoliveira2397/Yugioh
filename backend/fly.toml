@@ -6,7 +6,9 @@
 app = 'yugioh'
 primary_region = 'gru'
 
+# Imagem explícita (evita confusão com outros Dockerfiles no repo)
 [build]
+  dockerfile = "Dockerfile.fly"
 
 [http_service]
   internal_port = 3000
