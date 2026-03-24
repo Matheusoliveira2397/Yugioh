@@ -5,6 +5,28 @@ import { motion } from 'framer-motion';
 import { getCardImage } from '../../utils/cardImage';
 import { getDefaultSkinCardImageUrl } from '../../utils/imageUrl';
 import CardImage from '../CardImage';
+import { DUEL_PLAYMAT_ASPECT } from '../../constants/duelLayout';
+
+/**
+ * Retângulo do playmat com proporção fixa 12∶5 (= 2400×1000). Arte nessa razão + object-cover preenche sem cortar.
+ * O grid de zonas é escalado (uniforme) para caber dentro; a largura reportada à mão inclui a escala.
+ */
+
+/** Centraliza o slot e aplica scale no filho — definido fora do DuelField para não remontar zonas a cada render. */
+function DuelFieldScaledSlotShell({
+  fieldMult,
+  children,
+}: {
+  fieldMult: number;
+  children: React.ReactNode;
+}) {
+  if (fieldMult <= 1.001) return <>{children}</>;
+  return (
+    <div className="flex h-full min-h-0 w-full min-w-0 items-center justify-center overflow-visible">
+      {children}
+    </div>
+  );
+}
 
 /** Payload da mão: `{ card, handIndex }` ou carta solta (compatibilidade). */
 function parseHandDragPayload(cardData: string): { card: any; handIndex?: number } {
@@ -63,6 +85,10 @@ interface DuelFieldProps {
   bannerOfCourageBonus?: number;
   /** LP do dono do campo (para bloquear ativação de spells com custo de LP) */
   activatorLifePoints?: number;
+  /** Reporta a largura medida de uma coluna do grid (1/7 do campo) — ex.: para igualar cartas da mão no DuelArena */
+  onSlotColumnWidthChange?: (widthPx: number) => void;
+  /** Opcional: >1 aplica scale no conteúdo do slot (padrão 1 = carta preenche o slot). */
+  fieldCardVisualMultiplier?: number;
 }
 
 const DuelField: React.FC<DuelFieldProps> = ({
@@ -103,6 +129,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
   disabled = false,
   bannerOfCourageBonus = 0,
   activatorLifePoints,
+  onSlotColumnWidthChange,
+  fieldCardVisualMultiplier = 1,
 }) => {
   const safeOnGraveyardClick = disabled ? undefined : onGraveyardClick;
   const safeOnExtraDeckClick = disabled ? undefined : onExtraDeckClick;
@@ -209,36 +237,86 @@ const DuelField: React.FC<DuelFieldProps> = ({
     };
   }, [draggingCardIndex, resetMonsterDragPreview]);
 
-  // Slots menores no mobile = tabuleiro mais estreito → zoom do DuelArena encaixa campo + fases + mão na tela
-  const [slotW, setSlotW] = useState(110);
-  const [slotH, setSlotH] = useState(160);
-  React.useEffect(() => {
-    const apply = () => {
-      const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
-      let w = 110;
-      if (vw < 380) w = 68;
-      else if (vw < 440) w = 78;
-      else if (vw < 520) w = 85;
-      else if (vw < 640) w = 93;
-      else if (vw < 900) w = 100;
-      const h = Math.round((w * 128) / 88);
-      setSlotW(w);
-      setSlotH(h);
+  /**
+   * Caixa de slot única para todas as zonas (FIELD, M, S/T, GY, ED, Deck): mesma largura de coluna,
+   * mesma proporção 59:86, shrink-0 para o grid não comprimir uma célula diferente das outras.
+   */
+  const slotBoxClass = 'w-full min-w-0 max-w-full aspect-[59/86] h-auto shrink-0';
+  /** Borda + cantos — combinar com slotBoxClass em todo motion.div de zona. */
+  const slotBorderClass = 'rounded-lg border-2 border-white';
+  /** Defesa = mesma arte que em ataque, só gira 90°. O vão entre colunas (duelGridColumnGap) é calibrado para G/W ≥ 29/59, assim duas defesas lado a lado não se sobrepõem. */
+  const defenseCardTransform = 'rotate(90deg)';
+  /**
+   * Largura do slot = W, altura = W×86/59. Após rotate(90°), a “largura” visual ≈ W×86/59.
+   * Para centros adjacentes não encostarem: W+G ≥ W×86/59 ⇒ G/W ≥ 27/59. Usamos 29/59 de folga.
+   * Com 7 colunas iguais: 7W+6G=T, G=(29/59)W ⇒ G = 29T/587 → column-gap como % da largura do grid.
+   * Com scale (fieldMult), reforço parcial do vão evita defesa encostar sem “espaço vazio” enorme entre colunas.
+   */
+  const fieldMult =
+    typeof fieldCardVisualMultiplier === 'number' && fieldCardVisualMultiplier > 1.001
+      ? fieldCardVisualMultiplier
+      : 1;
+  const columnGapBoost = fieldMult > 1.001 ? 1 + (fieldMult - 1) * 0.26 : 1;
+  const duelGridColumnGapStyle: React.CSSProperties = {
+    columnGap: `clamp(0.38rem, calc(100% * ${(29 / 587) * columnGapBoost}), 6rem)`,
+  };
+  const slotVisualScaleStyle: React.CSSProperties | undefined =
+    fieldMult > 1.001 ? { transform: `scale(${fieldMult})`, transformOrigin: 'center center' } : undefined;
+  const defenseVisualTransform =
+    fieldMult > 1.001 ? `${defenseCardTransform} scale(${fieldMult})` : defenseCardTransform;
+
+  const playmatRef = React.useRef<HTMLDivElement>(null);
+  const gridShellRef = React.useRef<HTMLDivElement>(null);
+  const [gridFitScale, setGridFitScale] = React.useState(1);
+
+  React.useLayoutEffect(() => {
+    const root = playmatRef.current;
+    const shell = gridShellRef.current;
+    if (!root || !shell) return;
+    const measure = () => {
+      const cw = root.clientWidth;
+      const ch = root.clientHeight;
+      if (cw < 16 || ch < 16) return;
+      const nw = shell.offsetWidth;
+      const nh = shell.offsetHeight;
+      if (nw < 1 || nh < 1) return;
+      const s = Math.min(1, cw / nw, ch / nh);
+      setGridFitScale((prev) => (Math.abs(prev - s) < 0.003 ? prev : s));
     };
-    apply();
-    window.addEventListener('resize', apply);
-    return () => window.removeEventListener('resize', apply);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(root);
+    ro.observe(shell);
+    return () => ro.disconnect();
   }, []);
 
-  const slotStyle = { width: slotW, height: slotH } as React.CSSProperties;
+  React.useLayoutEffect(() => {
+    if (!onSlotColumnWidthChange) return;
+    const root = playmatRef.current;
+    if (!root) return;
+    const read = () => {
+      const el = root.querySelector('[data-duel-slot-column]') as HTMLElement | null;
+      if (!el) return;
+      const w = el.offsetWidth * gridFitScale;
+      if (w > 1) onSlotColumnWidthChange(Math.round(w * 100) / 100);
+    };
+    read();
+    const ro = new ResizeObserver(() => read());
+    ro.observe(root);
+    return () => ro.disconnect();
+  }, [onSlotColumnWidthChange, gridFitScale]);
 
   return (
     <motion.div 
+      ref={playmatRef}
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.4 }}
-      className="relative aspect-[21/9] w-full max-w-full min-w-0 lg:max-w-[min(1580px,98vw)] mx-auto rounded-2xl border-2 border-white shadow-2xl mb-1.5 flex items-center justify-center"
-      style={{ overflow: 'visible' }}
+      className="relative w-full max-w-full min-w-0 min-h-0 lg:max-w-[min(5600px,100vw)] mx-auto rounded-2xl border-2 border-white shadow-2xl mb-0.5 sm:mb-1"
+      style={{
+        overflow: 'hidden',
+        aspectRatio: `${DUEL_PLAYMAT_ASPECT.width} / ${DUEL_PLAYMAT_ASPECT.height}`,
+      }}
       onDragOver={(e) => {
         // Permitir drop apenas no playmat do oponente para ataque direto
         if (isOpponent && canDirectAttack && safeOnMonsterDrop) {
@@ -297,49 +375,64 @@ const DuelField: React.FC<DuelFieldProps> = ({
           document.body,
         )}
       {/* Wrapper que rotaciona TODO o campo do oponente (playmat + zonas) */}
-      <div className={`relative w-full h-full ${isOpponent ? 'transform rotate-180' : ''}`}>
-        {/* Camada 1: fundo padrão (sempre visível; fica visível se o playmat customizado falhar) */}
-        <div 
-          className="absolute inset-0"
+      <div className={`relative h-full min-h-0 w-full ${isOpponent ? 'rotate-180' : ''}`}>
+        {/* Camada 0: base (se o PNG do playmat tiver transparência ou falhar o carregamento) */}
+        <div
+          className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950"
+          aria-hidden
+        />
+        {/* Camada 1: campo padrão — mesmo retângulo 12∶5 */}
+        <div
+          className="pointer-events-none absolute inset-0 z-[1] bg-cover bg-center bg-no-repeat"
           style={{
             backgroundImage: `url(${defaultFieldImage})`,
-            backgroundSize: '100% 100%',
-            backgroundPosition: 'center center',
-            backgroundRepeat: 'no-repeat',
           }}
         />
-        {/* Camada 2: playmat do jogador (em produção pode 404; onError deixa o padrão aparecer) */}
+        {/* Camada 2: playmat equipado — cover preenche 100% se a arte for 12∶5 (ex.: 2400×1000) */}
         {playmatImage && (
           <img
             src={playmatImage}
             alt=""
-            className="absolute inset-0 w-full h-full object-cover"
-            style={{ objectFit: 'cover' }}
+            className="pointer-events-none absolute inset-0 z-[2] h-full w-full select-none object-cover object-center"
+            decoding="async"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none';
             }}
           />
         )}
 
-        {/* Zonas do Campo: grid com largura intrínseca — scroll horizontal suave se não couber, para não “sair” do playmat */}
-        <div className="relative w-full min-w-0 max-w-full overflow-x-auto overflow-y-visible px-1.5 pt-1.5 pb-0 sm:px-3 lg:px-4 [scrollbar-width:thin]">
-          <div className="mx-auto flex w-max min-w-0 flex-col items-stretch">
-      {/* Linha 1: todos os slots 88px (campo um pouco maior para melhor leitura) */}
+        {/* column-gap proporcional à largura do grid: defesa (90°) com carta 59:86 não invade a coluna vizinha */}
+        <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden">
+          <div
+            ref={gridShellRef}
+            className="flex w-full max-w-full flex-col px-0.5 py-2.5 sm:px-2 sm:py-7 lg:px-2.5 lg:py-9"
+            style={{
+              transform: `scale(${gridFitScale})`,
+              transformOrigin: 'center center',
+            }}
+          >
+            <div className="mx-auto flex w-full max-w-full flex-col justify-center gap-y-2.5 sm:gap-y-5 lg:gap-y-7 self-center">
+      {/* Linha 1 */}
       <div
-        className="grid justify-items-center gap-x-2 gap-y-0 mt-3 sm:gap-x-5 lg:gap-x-7"
-        style={{ gridTemplateColumns: `repeat(7, ${slotW}px)` }}
+        className="grid w-full min-w-0 grid-cols-7 justify-items-stretch items-stretch gap-y-0 [align-content:center]"
+        style={duelGridColumnGapStyle}
       >
-        {/* Field Zone */}
-        <motion.div 
-          className="zone-card border-2 border-white rounded-lg transition-all cursor-pointer flex items-center justify-center bg-transparent overflow-visible"
-          style={slotStyle}
-        >
-          <div className="flex items-center justify-center min-h-0 py-1">
-            <span className="text-yellow-300 text-xs font-bold drop-shadow-lg leading-tight">
-              FIELD
-            </span>
-          </div>
-        </motion.div>
+        {/* Field Zone — data-duel-slot-column: largura = demais colunas (medida para mão no DuelArena) */}
+        <DuelFieldScaledSlotShell fieldMult={fieldMult}>
+          <motion.div
+            data-duel-slot-column
+            className={`zone-card ${slotBorderClass} transition-all cursor-pointer bg-transparent overflow-visible ${slotBoxClass}`}
+          >
+            <div
+              className="flex h-full min-h-0 w-full items-center justify-center py-0.5"
+              style={slotVisualScaleStyle}
+            >
+              <span className="text-yellow-300 text-[10px] sm:text-xs font-bold drop-shadow-lg leading-tight">
+                FIELD
+              </span>
+            </div>
+          </motion.div>
+        </DuelFieldScaledSlotShell>
 
         {/* 5 Monster Zones - Modernizado */}
         {monsterZones.map((_, index) => {
@@ -352,12 +445,14 @@ const DuelField: React.FC<DuelFieldProps> = ({
             <div
               key={`monster-${index}`}
               data-monster-zone={index}
-              className="relative"
+              className="relative h-full min-h-0"
               style={{
                 position: 'relative',
-                zIndex: isDefense ? 30 : 1,
+                // Defesa pode ultrapassar a célula: z-index cresce com a coluna para empilhar de forma estável
+                zIndex: isDefense ? 40 + index : 1,
               }}
             >
+              <DuelFieldScaledSlotShell fieldMult={fieldMult}>
               {/* Slot (sempre visível, mas sem borda quando há carta em defesa) */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
@@ -541,8 +636,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                     }
                   }
                 }}
-                style={slotStyle}
-                className={`zone-card rounded-lg transition-all bg-transparent relative border-2 border-white ${
+                className={`zone-card ${slotBorderClass} ${slotBoxClass} transition-all bg-transparent relative ${
                   hasMonster 
                     ? isSelectingMonsterTarget && (monster.position === 'attack' || monster.position === 'defense')
                       ? 'ring-4 ring-blue-400/50 cursor-pointer'
@@ -561,9 +655,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
                 }`}
                 title={monster ? monster.name : isSelectingTarget && isOpponent ? "Clique para atacar este monstro" : "Monster Zone"}
               >
+                <div className="relative h-full w-full overflow-visible" style={slotVisualScaleStyle}>
                 {monster && monster.position === 'attack' ? (
                   <motion.div
-                    className={`absolute inset-0 w-full h-full overflow-visible ${
+                    className={`absolute inset-0 z-[5] h-full w-full overflow-hidden rounded-md ${
                       (() => {
                         // Permitir arrastar para atacar em STANDBY, MAIN1 ou BATTLE
                         if (!isOpponent && isMyTurn && (currentPhase === 'STANDBY' || currentPhase === 'MAIN1' || currentPhase === 'BATTLE')) {
@@ -817,10 +912,12 @@ const DuelField: React.FC<DuelFieldProps> = ({
                   >
                     <CardImage
                       card={monster}
-                      className="w-full h-full"
+                      className="h-full w-full rounded-md"
                       style={{
                         width: '100%',
                         height: '100%',
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center top',
                       }}
                       fallback={fallbackCard}
                     />
@@ -893,10 +990,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
                         safeOnAttackClick(index);
                       }
                     }}
-                    className="absolute top-1 left-1 z-50 w-6 h-6 bg-gradient-to-br from-red-600/90 to-red-700/90 hover:from-red-500 hover:to-red-600 border border-red-400/70 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md shadow-red-500/50 hover:shadow-red-500/70"
+                    className="absolute top-1 left-1 z-50 w-10 h-10 sm:w-11 sm:h-11 bg-gradient-to-br from-red-600/90 to-red-700/90 hover:from-red-500 hover:to-red-600 border border-red-400/70 rounded-lg flex items-center justify-center transition-all cursor-pointer shadow-md shadow-red-500/50 hover:shadow-red-500/70"
                     title={`Atacar com ${monster.name} (ATK: ${Math.max(0, (monster.atk || 0) + (monster.equipmentBonusAtk || 0) + (monster.spellCounterBonusAtk || 0) + bannerOfCourageBonus + (/slifer\s*the\s*sky\s*dragon/i.test((monster.name || monster.cardName || '')) ? (handCount ?? 0) * 1000 : 0) - (Number(monster.sliferAtkDebuff) || 0))})`}
                   >
-                    <span className="text-xs">⚔️</span>
+                    <span className="text-sm sm:text-base leading-none">⚔️</span>
                   </motion.button>
                 )}
                 
@@ -921,7 +1018,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                     const canChangePosition = !monsterPositionChanged && (canChangePositionSameTurn || !wasSummonedThisTurn);
                     
                     return (
-                      <div className="absolute top-1 left-1 flex gap-1 z-50">
+                      <div className="absolute top-1 left-1 flex gap-2 z-50">
                         {/* Botão para mudar para ataque */}
                         {monster.position !== 'attack' && canChangePosition && (
                           <motion.button
@@ -941,13 +1038,13 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                 safeOnChangePosition(index, 'attack');
                               }
                             }}
-                            className="w-6 h-6 border rounded-md flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-red-600/90 to-red-700/90 hover:from-red-500 hover:to-red-600 border-red-400/70 cursor-pointer shadow-red-500/40 hover:shadow-red-500/60"
+                            className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-red-600/90 to-red-700/90 hover:from-red-500 hover:to-red-600 border-red-400/70 cursor-pointer shadow-red-500/40 hover:shadow-red-500/60"
                             title="Mudar para Ataque"
                           >
                             <img 
                               src="/images/Duelo/Ataque.png" 
                               alt="Ataque" 
-                              className="w-4 h-4 object-contain"
+                              className="w-5 h-5 sm:w-6 sm:h-6 object-contain"
                             />
                           </motion.button>
                         )}
@@ -971,10 +1068,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                 safeOnChangePosition(index, 'defense');
                               }
                             }}
-                            className="w-6 h-6 border rounded-md flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-blue-600/90 to-blue-700/90 hover:from-blue-500 hover:to-blue-600 border-blue-400/70 cursor-pointer shadow-blue-500/40 hover:shadow-blue-500/60"
+                            className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-blue-600/90 to-blue-700/90 hover:from-blue-500 hover:to-blue-600 border-blue-400/70 cursor-pointer shadow-blue-500/40 hover:shadow-blue-500/60"
                             title="Mudar para Defesa"
                           >
-                            <span className="text-xs">🛡️</span>
+                            <span className="text-sm sm:text-base leading-none">🛡️</span>
                           </motion.button>
                         )}
                         
@@ -995,10 +1092,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                 e.stopPropagation();
                                 if (safeOnBreakerRemoveCounter) safeOnBreakerRemoveCounter(index);
                               }}
-                              className="w-6 h-6 border rounded-md flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-purple-600/90 to-purple-700/90 hover:from-purple-500 hover:to-purple-600 border-purple-400/70 cursor-pointer shadow-purple-500/40 hover:shadow-purple-500/60"
+                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-purple-600/90 to-purple-700/90 hover:from-purple-500 hover:to-purple-600 border-purple-400/70 cursor-pointer shadow-purple-500/40 hover:shadow-purple-500/60"
                               title="Escolher 1 Spell/Trap no campo para destruir (este monstro perde os +300 de ATK)"
                             >
-                              <span className="text-xs">✨</span>
+                              <span className="text-sm sm:text-base leading-none">✨</span>
                             </motion.button>
                           ) : null;
                         })()}
@@ -1025,10 +1122,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                   safeOnActivateMonsterEffect(index);
                                 }
                               }}
-                              className="w-6 h-6 border rounded-md flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-indigo-600/90 to-purple-600/90 hover:from-indigo-500 hover:to-purple-500 border-indigo-400/70 cursor-pointer shadow-indigo-500/40 hover:shadow-indigo-500/60"
+                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-indigo-600/90 to-purple-600/90 hover:from-indigo-500 hover:to-purple-500 border-indigo-400/70 cursor-pointer shadow-indigo-500/40 hover:shadow-indigo-500/60"
                               title="Efeito do ChaosSorcerer: Uma vez por turno, banir 1 monstro face-up do oponente (não pode atacar neste turno)"
                             >
-                              <span className="text-xs">🌟</span>
+                              <span className="text-sm sm:text-base leading-none">🌟</span>
                             </motion.button>
                           ) : null;
                         })()}
@@ -1060,10 +1157,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                   safeOnActivateMonsterEffect(index);
                                 }
                               }}
-                              className="w-6 h-6 border rounded-md flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-red-600/90 to-orange-600/90 hover:from-red-500 hover:to-orange-500 border-red-400/70 cursor-pointer shadow-red-500/40 hover:shadow-red-500/60"
+                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-red-600/90 to-orange-600/90 hover:from-red-500 hover:to-orange-500 border-red-400/70 cursor-pointer shadow-red-500/40 hover:shadow-red-500/60"
                               title="Efeito do Chaos Emperor Dragon: Pague 1000 LP; descarte todas as cartas do campo e da mão de ambos os duelistas para o cemitério. O oponente perde 300 LP por cada carta enviada."
                             >
-                              <span className="text-xs">💥</span>
+                              <span className="text-sm sm:text-base leading-none">💥</span>
                             </motion.button>
                           ) : null;
                         })()}
@@ -1089,10 +1186,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                   safeOnActivateMonsterEffect(index);
                                 }
                               }}
-                              className="w-6 h-6 border rounded-md flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-amber-600/90 to-yellow-600/90 hover:from-amber-500 hover:to-yellow-500 border-amber-400/70 cursor-pointer shadow-amber-500/40 hover:shadow-amber-500/60"
+                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-amber-600/90 to-yellow-600/90 hover:from-amber-500 hover:to-yellow-500 border-amber-400/70 cursor-pointer shadow-amber-500/40 hover:shadow-amber-500/60"
                               title="Efeito do Black Luster Soldier: Escolha 1 - Banir 1 monstro (não ataca este turno) ou 2 - Se destruir monstro em batalha, pode atacar novamente"
                             >
-                              <span className="text-xs">⚔️</span>
+                              <span className="text-sm sm:text-base leading-none">⚔️</span>
                             </motion.button>
                           ) : null;
                         })()}
@@ -1122,10 +1219,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                   safeOnActivateMonsterEffect(index);
                                 }
                               }}
-                              className="w-6 h-6 border rounded-md flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-red-600/90 to-orange-600/90 hover:from-red-500 hover:to-orange-500 border-red-400/70 cursor-pointer shadow-red-500/40 hover:shadow-red-500/60"
+                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-red-600/90 to-orange-600/90 hover:from-red-500 hover:to-orange-500 border-red-400/70 cursor-pointer shadow-red-500/40 hover:shadow-red-500/60"
                               title="Efeito do Red-Eyes Darkness Metal Dragon: Uma vez por turno, invocar por invocação especial 1 monstro do Tipo Dragão da sua mão ou Cemitério (exceto Red-Eyes Darkness Metal Dragon) em posição de ataque"
                             >
-                              <span className="text-xs">🐉</span>
+                              <span className="text-sm sm:text-base leading-none">🐉</span>
                             </motion.button>
                           ) : null;
                         })()}
@@ -1154,10 +1251,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                   safeOnActivateMonsterEffect(index);
                                 }
                               }}
-                              className="w-6 h-6 border rounded-md flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-cyan-600/90 to-blue-600/90 hover:from-cyan-500 hover:to-blue-500 border-cyan-400/70 cursor-pointer shadow-cyan-500/40 hover:shadow-cyan-500/60"
+                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-cyan-600/90 to-blue-600/90 hover:from-cyan-500 hover:to-blue-500 border-cyan-400/70 cursor-pointer shadow-cyan-500/40 hover:shadow-cyan-500/60"
                               title="Efeito do Cyber-Stein: Pague 5000 LP; invoque por invocação especial 1 monstro do seu Extra Deck em modo de ataque"
                             >
-                              <span className="text-xs">⚡</span>
+                              <span className="text-sm sm:text-base leading-none">⚡</span>
                             </motion.button>
                           ) : null;
                         })()}
@@ -1189,10 +1286,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                   safeOnActivateMonsterEffect(index);
                                 }
                               }}
-                              className="w-6 h-6 border rounded-md flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-purple-600/90 to-indigo-600/90 hover:from-purple-500 hover:to-indigo-500 border-purple-400/70 cursor-pointer shadow-purple-500/40 hover:shadow-purple-500/60"
+                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-purple-600/90 to-indigo-600/90 hover:from-purple-500 hover:to-indigo-500 border-purple-400/70 cursor-pointer shadow-purple-500/40 hover:shadow-purple-500/60"
                               title="Efeito do Dark Armed Dragon: Bane 1 monstro Dark do seu cemitério; depois, você pode destruir 1 carta no campo."
                             >
-                              <span className="text-xs">⚡</span>
+                              <span className="text-sm sm:text-base leading-none">⚡</span>
                             </motion.button>
                           ) : null;
                         })()}
@@ -1222,10 +1319,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                   safeOnActivateMonsterEffect(index);
                                 }
                               }}
-                              className="w-6 h-6 border rounded-md flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-orange-600/90 to-red-600/90 hover:from-orange-500 hover:to-red-500 border-orange-400/70 cursor-pointer shadow-orange-500/40 hover:shadow-orange-500/60"
+                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-orange-600/90 to-red-600/90 hover:from-orange-500 hover:to-red-500 border-orange-400/70 cursor-pointer shadow-orange-500/40 hover:shadow-orange-500/60"
                               title="Efeito do Exiled Force: Você pode tributar este monstro; destrua 1 monstro no campo."
                             >
-                              <span className="text-xs">💥</span>
+                              <span className="text-sm sm:text-base leading-none">💥</span>
                             </motion.button>
                           ) : null;
                         })()}
@@ -1244,10 +1341,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                 e.stopPropagation();
                                 if (safeOnActivateMonsterEffect) safeOnActivateMonsterEffect(index);
                               }}
-                              className="w-6 h-6 border rounded-md flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-amber-700/90 to-amber-900/90 hover:from-amber-600 hover:to-amber-800 border-amber-500/70 cursor-pointer shadow-amber-500/40"
+                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-amber-700/90 to-amber-900/90 hover:from-amber-600 hover:to-amber-800 border-amber-500/70 cursor-pointer shadow-amber-500/40"
                               title="Efeito do Obelisk: Escolha 2 monstros que você controla; destrua todos os monstros do oponente. (1x por turno)"
                             >
-                              <span className="text-xs">⚡</span>
+                              <span className="text-sm sm:text-base leading-none">⚡</span>
                             </motion.button>
                           ) : null;
                         })()}
@@ -1257,8 +1354,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
                     );
                   })()
                 )}
+                </div>
               </motion.div>
-              
+              </DuelFieldScaledSlotShell>
+
               {/* Carta em defesa (aparece sobreposta no slot, inteira e deitada) */}
               {isDefense ? (
                 <motion.div
@@ -1296,7 +1395,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    zIndex: 30,
+                    zIndex: 5,
                     // Permitir pointer-events quando está selecionando alvo OU quando há safeOnMonsterDrop (para permitir drag and drop em monstros face-down)
                     pointerEvents: (isSelectingTarget && isOpponent) || safeOnCardClick || (isOpponent && safeOnMonsterDrop) ? 'auto' : 'none',
                     overflow: 'visible',
@@ -1335,8 +1434,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                       style={{
                         backgroundImage: `url(${fallbackCard})`,
                         backgroundSize: 'cover',
-                        backgroundPosition: 'center',
-                        transform: 'rotate(90deg)', // Mesmo tamanho que ataque (104×152), só deitada
+                        backgroundPosition: 'center top',
+                        transform: defenseVisualTransform,
                         transformOrigin: 'center center',
                         borderRadius: '8px',
                         boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
@@ -1351,13 +1450,13 @@ const DuelField: React.FC<DuelFieldProps> = ({
                         <div
                           className={isSelectingTarget && isOpponent ? 'ring-4 ring-yellow-400/70' : safeOnCardClick ? 'cursor-pointer' : ''}
                           style={{
-                            transform: 'rotate(90deg)', // Mesmo tamanho que ataque (104×152), só deitada
+                            transform: defenseVisualTransform,
                             transformOrigin: 'center center',
                             borderRadius: '8px',
                             boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
                             width: '100%',
                             height: '100%',
-                            overflow: 'hidden',
+                            overflow: 'visible',
                             position: 'relative',
                             pointerEvents: 'auto', // Permitir eventos de drag-and-drop
                           }}
@@ -1417,10 +1516,12 @@ const DuelField: React.FC<DuelFieldProps> = ({
                           >
                             <CardImage
                               card={monster}
-                              className="w-full h-full"
+                              className="h-full w-full rounded-md"
                               style={{
                                 width: '100%',
                                 height: '100%',
+                                backgroundSize: 'cover',
+                                backgroundPosition: 'center top',
                               }}
                               fallback={fallbackCard}
                             />
@@ -1463,11 +1564,12 @@ const DuelField: React.FC<DuelFieldProps> = ({
         })}
 
         {/* Graveyard - texto GY visível por completo */}
+        <DuelFieldScaledSlotShell fieldMult={fieldMult}>
         <motion.div 
           onClick={safeOnGraveyardClick}
-          className="zone-card border-2 border-white rounded-lg relative overflow-hidden transition-all cursor-pointer bg-transparent"
-          style={slotStyle}
+          className={`zone-card ${slotBorderClass} relative overflow-hidden transition-all cursor-pointer bg-transparent ${slotBoxClass}`}
         >
+          <div className="relative h-full min-h-0 w-full overflow-hidden rounded-md" style={slotVisualScaleStyle}>
           {graveyard.length > 0 ? (
             <>
               {/* Mostrar a última carta descartada (topo do cemitério) */}
@@ -1477,10 +1579,14 @@ const DuelField: React.FC<DuelFieldProps> = ({
                 return (
                   <>
                     {/* Imagem da última carta usando CardImage */}
-                    <div className="absolute inset-0">
+                    <div className="absolute inset-0 overflow-hidden rounded-md">
                       <CardImage
                         card={lastCard}
-                        className="w-full h-full"
+                        className="h-full w-full rounded-md"
+                        style={{
+                          backgroundSize: 'cover',
+                          backgroundPosition: 'center top',
+                        }}
                         fallback={fallbackCard}
                       />
                     </div>
@@ -1500,27 +1606,34 @@ const DuelField: React.FC<DuelFieldProps> = ({
               </div>
             </div>
           )}
+          </div>
         </motion.div>
+        </DuelFieldScaledSlotShell>
       </div>
 
-      {/* Linha 2 (Baixo): Extra Deck | 5 Spell/Trap Zones | Deck - mesmas colunas que a linha 1 */}
+      {/* Linha 2: Extra Deck | 5 S/T | Deck — mesmo vão horizontal que a linha 1 */}
       <div
-        className="grid justify-items-center gap-x-2 gap-y-0 mt-4 sm:mt-6 sm:gap-x-5 lg:gap-x-7"
-        style={{ gridTemplateColumns: `repeat(7, ${slotW}px)` }}
+        className="grid w-full min-w-0 grid-cols-7 justify-items-stretch items-stretch gap-y-0 [align-content:center]"
+        style={duelGridColumnGapStyle}
       >
         {/* Extra Deck / Deck - Modernizado */}
+        <DuelFieldScaledSlotShell fieldMult={fieldMult}>
         <motion.div 
               onClick={safeOnExtraDeckClick}
-              className="zone-card border-2 border-white rounded-lg relative overflow-hidden bg-transparent transition-all cursor-pointer hover:shadow-lg hover:shadow-white/30"
-              style={slotStyle}
+              className={`zone-card ${slotBorderClass} relative overflow-hidden bg-transparent transition-all cursor-pointer hover:shadow-lg hover:shadow-white/30 ${slotBoxClass}`}
         >
+          <div className="relative h-full min-h-0 w-full overflow-hidden rounded-md" style={slotVisualScaleStyle}>
           {extraDeck && extraDeck.length > 0 ? (
             <>
               {/* Mostrar a primeira carta do extra deck empilhada */}
-              <div className="absolute inset-0">
+              <div className="absolute inset-0 overflow-hidden rounded-md">
                 <CardImage
                   card={extraDeck[0]}
-                  className="w-full h-full"
+                  className="h-full w-full rounded-md"
+                  style={{
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center top',
+                  }}
                   fallback={fallbackCard}
                 />
               </div>
@@ -1537,15 +1650,17 @@ const DuelField: React.FC<DuelFieldProps> = ({
               </div>
             </div>
           )}
+          </div>
         </motion.div>
+        </DuelFieldScaledSlotShell>
 
         {/* 5 Spell/Trap Zones - Modernizado */}
         {spellTrapZones.map((_, index) => {
           const spellTrap = spellTraps[index];
           const isEmpty = !spellTrap || spellTrap === null;
           return (
+            <DuelFieldScaledSlotShell key={`spell-${index}`} fieldMult={fieldMult}>
             <motion.div
-              key={`spell-${index}`}
               data-spell-trap-zone={index}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1594,8 +1709,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                   }
                 }
               }}
-              style={slotStyle}
-              className={`zone-card rounded-lg transition-all bg-transparent relative overflow-hidden border-2 border-white ${
+              className={`zone-card ${slotBorderClass} ${slotBoxClass} transition-all bg-transparent relative overflow-hidden ${
                 spellTrap 
                   ? isSelectingSpellTrapTarget
                     ? 'ring-4 ring-yellow-400/50 cursor-pointer'
@@ -1612,6 +1726,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
               }`}
               title={spellTrap ? spellTrap.name : isSelectingSpellTrapSlot && !isOpponent ? "Clique para colocar a carta aqui" : "Spell/Trap Zone"}
             >
+              <div className="relative h-full w-full overflow-hidden" style={slotVisualScaleStyle}>
               {spellTrap ? (() => {
                 const cardImageUrl = getCardImage(spellTrap);
                 
@@ -1639,7 +1754,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                             ? `url(${cardImageUrl})` 
                             : `url(${fallbackCard})`,
                           backgroundSize: 'cover',
-                          backgroundPosition: 'center',
+                          backgroundPosition: 'center top',
                           aspectRatio: '59/86',
                           zIndex: 5,
                         }}
@@ -1716,7 +1831,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                         style={{
                           backgroundImage: `url(${fallbackCard})`,
                           backgroundSize: 'cover',
-                          backgroundPosition: 'center',
+                          backgroundPosition: 'center top',
                           aspectRatio: '59/86',
                           zIndex: 5,
                         }}
@@ -1821,10 +1936,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
                               // Prevenir que o drag comece quando clicar no botão
                               e.stopPropagation();
                             }}
-                            className="absolute top-1 right-1 z-50 w-6 h-6 bg-gradient-to-br from-green-600/90 to-green-700/90 hover:from-green-500 hover:to-green-600 border border-green-400/70 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md shadow-green-500/50 hover:shadow-green-500/70 pointer-events-auto"
+                            className="absolute top-1 right-1 z-50 w-10 h-10 sm:w-11 sm:h-11 bg-gradient-to-br from-green-600/90 to-green-700/90 hover:from-green-500 hover:to-green-600 border border-green-400/70 rounded-lg flex items-center justify-center transition-all cursor-pointer shadow-md shadow-green-500/50 hover:shadow-green-500/70 pointer-events-auto"
                             title={`Ativar ${spellTrap.name || spellTrap.cardName || 'Spell'}`}
                           >
-                            <span className="text-xs">✨</span>
+                            <span className="text-sm sm:text-base leading-none">✨</span>
                           </motion.button>
                         )}
                       </div>
@@ -1832,15 +1947,18 @@ const DuelField: React.FC<DuelFieldProps> = ({
                   </>
                 );
               })() : null}
+              </div>
             </motion.div>
+            </DuelFieldScaledSlotShell>
           );
         })}
 
         {/* Deck / Extra Deck - Modernizado */}
+        <DuelFieldScaledSlotShell fieldMult={fieldMult}>
         <motion.div 
-          className="zone-card border-2 border-white rounded-lg relative overflow-hidden transition-all cursor-pointer bg-transparent"
-          style={slotStyle}
+          className={`zone-card ${slotBorderClass} relative overflow-hidden transition-all cursor-pointer bg-transparent ${slotBoxClass}`}
         >
+          <div className="relative h-full min-h-0 w-full overflow-hidden rounded-md" style={slotVisualScaleStyle}>
           {deckCount > 0 ? (
             <>
               {/* Imagem de verso de carta (usa sleeve equipada ou fundo padrão) */}
@@ -1871,10 +1989,13 @@ const DuelField: React.FC<DuelFieldProps> = ({
               </div>
             </div>
           )}
+          </div>
         </motion.div>
+        </DuelFieldScaledSlotShell>
         </div>
           </div>
-      </div>
+          </div>
+        </div>
       </div>
     </motion.div>
   );

@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { useSocket } from '../hooks/useSocket';
@@ -311,7 +311,7 @@ export default function RandomDuelPage() {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+    <div className="min-h-[100svh] flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
       <div className="max-w-4xl w-full text-center py-2 sm:py-4">
         {/* Erro da busca (ex.: "já tem duelo ativo", timeout, deck não equipado) */}
         {duelError && (
@@ -339,7 +339,6 @@ export default function RandomDuelPage() {
             </div>
           </motion.div>
         )}
-        <AnimatePresence mode="wait">
         {duelFound ? (
           /* Card "Partida encontrada" integrado à página (mesma área do Random Duel) */
           <motion.div
@@ -1033,18 +1032,14 @@ export default function RandomDuelPage() {
               )}
             </div>
 
-            {/* Card do duelista */}
+            {/* Card do duelista + botão em frente */}
+            <div className="relative mx-auto mb-3 sm:mb-4 w-full max-w-sm">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="mb-3 sm:mb-4 mx-auto w-full max-w-sm rounded-xl border border-purple-500/25 bg-gradient-to-br from-slate-900/90 via-gray-900/80 to-slate-950/90 backdrop-blur-md shadow-xl shadow-purple-950/20 overflow-hidden"
+              className="w-full rounded-xl border border-purple-500/25 bg-transparent backdrop-blur-md shadow-xl shadow-purple-950/20 overflow-hidden"
             >
-              <div className="px-3 py-2 sm:px-4 sm:py-2.5 border-b border-white/5 bg-purple-950/20">
-                <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-purple-300/90">
-                  Seu duelista
-                </span>
-              </div>
               <div className="p-3 sm:p-4 space-y-3 sm:space-y-4">
                 {/* Avatar + identidade (sempre em linha em telas médias+) */}
                 <div className="flex flex-row gap-3 sm:gap-4 items-center text-left">
@@ -1096,10 +1091,9 @@ export default function RandomDuelPage() {
 
                 {/* Deck + botão procurar (botão fora do card do deck, à direita, maior) */}
                 {duelMode === 'normal' ? (
-                  <div className="flex items-center gap-2 sm:gap-3">
-                    <div className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/25 p-2">
+                  <div className="min-w-0 rounded-xl border border-white/10 bg-black/25 p-2">
                       <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-white/45">
-                        Deck para este duelo
+                        Deck Equipado
                       </p>
                       {myDecksLoading ? (
                         <p className="text-gray-400 text-xs py-1.5">Carregando decks…</p>
@@ -1119,7 +1113,7 @@ export default function RandomDuelPage() {
                                 <div
                                   className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-lg border px-2 py-1.5 ${
                                     ok
-                                      ? 'border-purple-400/50 bg-purple-600/15'
+                                      ? 'border-purple-400/50 bg-transparent'
                                       : 'border-dashed border-gray-600 bg-gray-800/30'
                                   }`}
                                 >
@@ -1165,100 +1159,40 @@ export default function RandomDuelPage() {
                           })()}
                         </div>
                       )}
-                    </div>
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: 0.35 }}
-                      className="flex shrink-0 flex-col items-center justify-center self-center"
-                    >
-                      <motion.button 
-                        type="button"
-                        whileHover={isConnected ? { scale: 1.03 } : {}}
-                        whileTap={isConnected ? { scale: 0.98 } : {}}
-                        onClick={() => {
-                          if (user?.id) {
-                            const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
-                            searchDuel(userId, undefined);
-                          }
-                        }}
-                        disabled={!isConnected}
-                        className="border-0 bg-transparent p-0 shadow-none transition-opacity duration-200 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-xl"
-                        aria-label="Procurar duelo"
-                      >
-                        <img
-                          src="/images/ProcurarDuelo.png"
-                          alt=""
-                          className="block h-auto w-[10rem] max-w-[42vw] object-contain select-none drop-shadow-[0_6px_24px_rgba(0,0,0,0.45)] sm:w-[12rem] md:w-[13.5rem]"
-                          draggable={false}
-                        />
-                      </motion.button>
-                    </motion.div>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 sm:gap-3">
-                    <div className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/25 p-2">
-                      <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-white/45">
-                        Deck anime
-                      </p>
-                      {(() => {
-                        const sel = animeDecks.find((d) => d.id === selectedAnimeDeckId);
-                        if (!sel) {
-                          return <p className="text-xs text-gray-400">Selecione um deck na lista acima.</p>;
-                        }
-                        const cc = sel.coverCard;
-                        return (
-                          <div className="flex flex-col items-center gap-1 py-0.5 text-center">
-                            {cc ? (
-                              <div className="relative w-[3.25rem] shrink-0 overflow-hidden rounded border border-white/15 bg-black/40 aspect-[59/86] sm:w-[3.625rem]">
-                                <CardImage
-                                  card={cc}
-                                  className="absolute inset-0 h-full w-full min-h-0"
-                                  style={{ backgroundSize: 'cover', backgroundPosition: 'top center' }}
-                                  fallback="/images/fundoCarta.webp"
-                                />
-                              </div>
-                            ) : (
-                              <div className="flex w-[3.25rem] shrink-0 items-center justify-center rounded border border-white/10 bg-gray-700 text-base aspect-[59/86] sm:w-[3.625rem]">
-                                🃏
-                              </div>
-                            )}
-                            <p className="line-clamp-2 w-full text-xs font-semibold leading-tight text-white sm:text-sm">
-                              {sel.name}
-                            </p>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: 0.35 }}
-                      className="flex shrink-0 flex-col items-center justify-center self-center"
-                    >
-                      <motion.button 
-                        type="button"
-                        whileHover={isConnected && !!selectedAnimeDeckId && animeDecks.length > 0 ? { scale: 1.03 } : {}}
-                        whileTap={isConnected && !!selectedAnimeDeckId && animeDecks.length > 0 ? { scale: 0.98 } : {}}
-                        onClick={() => {
-                          if (user?.id) {
-                            const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
-                            const opts = selectedAnimeDeckId ? { animeDeckId: selectedAnimeDeckId } : undefined;
-                            searchDuel(userId, opts);
-                          }
-                        }}
-                        disabled={!isConnected || !selectedAnimeDeckId || animeDecks.length === 0}
-                        className="border-0 bg-transparent p-0 shadow-none transition-opacity duration-200 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-xl"
-                        aria-label="Procurar duelo"
-                      >
-                        <img
-                          src="/images/ProcurarDuelo.png"
-                          alt=""
-                          className="block h-auto w-[10rem] max-w-[42vw] object-contain select-none drop-shadow-[0_6px_24px_rgba(0,0,0,0.45)] sm:w-[12rem] md:w-[13.5rem]"
-                          draggable={false}
-                        />
-                      </motion.button>
-                    </motion.div>
+                  <div className="min-w-0 rounded-xl border border-white/10 bg-black/25 p-2">
+                    <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-white/45">
+                      Deck anime
+                    </p>
+                    {(() => {
+                      const sel = animeDecks.find((d) => d.id === selectedAnimeDeckId);
+                      if (!sel) {
+                        return <p className="text-xs text-gray-400">Selecione um deck na lista acima.</p>;
+                      }
+                      const cc = sel.coverCard;
+                      return (
+                        <div className="flex flex-col items-center gap-1 py-0.5 text-center">
+                          {cc ? (
+                            <div className="relative w-[3.25rem] shrink-0 overflow-hidden rounded border border-white/15 bg-black/40 aspect-[59/86] sm:w-[3.625rem]">
+                              <CardImage
+                                card={cc}
+                                className="absolute inset-0 h-full w-full min-h-0"
+                                style={{ backgroundSize: 'cover', backgroundPosition: 'top center' }}
+                                fallback="/images/fundoCarta.webp"
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex w-[3.25rem] shrink-0 items-center justify-center rounded border border-white/10 bg-gray-700 text-base aspect-[59/86] sm:w-[3.625rem]">
+                              🃏
+                            </div>
+                          )}
+                          <p className="line-clamp-2 w-full text-xs font-semibold leading-tight text-white sm:text-sm">
+                            {sel.name}
+                          </p>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -1306,10 +1240,90 @@ export default function RandomDuelPage() {
                 </div>
               </div>
             </motion.div>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.35 }}
+              className="pointer-events-none absolute inset-y-0 left-full z-20 hidden items-center pl-4 sm:flex md:pl-5"
+            >
+              <motion.button
+                type="button"
+                whileHover={
+                  duelMode === 'normal'
+                    ? (isConnected ? { scale: 1.03 } : {})
+                    : (isConnected && !!selectedAnimeDeckId && animeDecks.length > 0 ? { scale: 1.03 } : {})
+                }
+                whileTap={
+                  duelMode === 'normal'
+                    ? (isConnected ? { scale: 0.98 } : {})
+                    : (isConnected && !!selectedAnimeDeckId && animeDecks.length > 0 ? { scale: 0.98 } : {})
+                }
+                onClick={() => {
+                  if (!user?.id) return;
+                  const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
+                  if (duelMode === 'anime') {
+                    const opts = selectedAnimeDeckId ? { animeDeckId: selectedAnimeDeckId } : undefined;
+                    searchDuel(userId, opts);
+                    return;
+                  }
+                  searchDuel(userId, undefined);
+                }}
+                disabled={duelMode === 'anime' ? (!isConnected || !selectedAnimeDeckId || animeDecks.length === 0) : !isConnected}
+                className="pointer-events-auto border-0 bg-transparent p-0 shadow-none transition-opacity duration-200 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-xl"
+                aria-label="Procurar duelo"
+              >
+                <img
+                  src="/images/ProcurarDuelo.png"
+                  alt=""
+                  className="block h-auto w-[15.5rem] max-w-[64vw] object-contain select-none drop-shadow-[0_12px_34px_rgba(0,0,0,0.62)] md:w-[17.5rem] lg:w-[19rem]"
+                  draggable={false}
+                />
+              </motion.button>
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.35 }}
+              className="mt-2 flex w-full justify-center sm:hidden"
+            >
+              <motion.button
+                type="button"
+                whileHover={
+                  duelMode === 'normal'
+                    ? (isConnected ? { scale: 1.03 } : {})
+                    : (isConnected && !!selectedAnimeDeckId && animeDecks.length > 0 ? { scale: 1.03 } : {})
+                }
+                whileTap={
+                  duelMode === 'normal'
+                    ? (isConnected ? { scale: 0.98 } : {})
+                    : (isConnected && !!selectedAnimeDeckId && animeDecks.length > 0 ? { scale: 0.98 } : {})
+                }
+                onClick={() => {
+                  if (!user?.id) return;
+                  const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
+                  if (duelMode === 'anime') {
+                    const opts = selectedAnimeDeckId ? { animeDeckId: selectedAnimeDeckId } : undefined;
+                    searchDuel(userId, opts);
+                    return;
+                  }
+                  searchDuel(userId, undefined);
+                }}
+                disabled={duelMode === 'anime' ? (!isConnected || !selectedAnimeDeckId || animeDecks.length === 0) : !isConnected}
+                className="border-0 bg-transparent p-0 shadow-none transition-opacity duration-200 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-xl"
+                aria-label="Procurar duelo"
+              >
+                <img
+                  src="/images/ProcurarDuelo.png"
+                  alt=""
+                  className="block h-auto w-[14.5rem] max-w-[80vw] object-contain select-none drop-shadow-[0_12px_34px_rgba(0,0,0,0.62)]"
+                  draggable={false}
+                />
+              </motion.button>
+            </motion.div>
+            </div>
 
           </motion.div>
         )}
-        </AnimatePresence>
       </div>
 
       {/* Modal: escolher deck para duelar */}

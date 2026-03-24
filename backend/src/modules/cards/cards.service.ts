@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like } from 'typeorm';
+import { Repository, Like, ILike } from 'typeorm';
 import { Card } from './entities/card.entity';
 import { ShopService } from '../shop/shop.service';
 import { CreateCardDto } from './dto/create-card.dto';
@@ -56,7 +56,7 @@ export class CardsService implements OnModuleInit {
     const where: any = { isActive: true };
     
     if (search) {
-      where.name = Like(`%${search}%`);
+      where.name = ILike(`%${search}%`);
     }
     
     if (type) {
@@ -117,6 +117,17 @@ export class CardsService implements OnModuleInit {
       throw new NotFoundException(`Card with idCarta "${idCarta}" not found`);
     }
     return card;
+  }
+
+  /** idCarta ignorando maiúsculas/minúsculas (útil para admin no duelo). */
+  async findOneByIdCartaIgnoreCase(idCarta: string): Promise<Card | null> {
+    const t = (idCarta || '').trim();
+    if (!t) return null;
+    return this.cardsRepository
+      .createQueryBuilder('card')
+      .where('LOWER(card.idCarta) = LOWER(:id)', { id: t })
+      .andWhere('card.isActive = :active', { active: true })
+      .getOne();
   }
 
   /**
@@ -1029,6 +1040,17 @@ export class CardsService implements OnModuleInit {
     return this.cardsRepository.findOne({
       where: { name },
     });
+  }
+
+  /** Nome exato ignorando maiúsculas/minúsculas e espaços nas pontas (PostgreSQL). */
+  async findByNameExactIgnoreCase(name: string): Promise<Card | null> {
+    const trimmed = (name || '').trim();
+    if (!trimmed) return null;
+    return this.cardsRepository
+      .createQueryBuilder('card')
+      .where('LOWER(TRIM(card.name)) = LOWER(:name)', { name: trimmed })
+      .andWhere('card.isActive = :active', { active: true })
+      .getOne();
   }
 
   // ==================== ADICIONAR EFEITO À CARTA ====================

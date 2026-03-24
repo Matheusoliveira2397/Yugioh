@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import io, { Socket } from 'socket.io-client';
 import { useAuthStore } from '../stores/authStore';
 
@@ -633,6 +633,19 @@ export const useSocket = () => {
     socketRef.current?.emit('lifePointsChange', { duelId, userId: userIdNum.toString(), newLifePoints });
   };
 
+  /** Socket ativo da aba: o registry é a fonte da verdade após reconexão/troca de rota. */
+  const resolveConnectedSocket = useCallback((): Socket | null => {
+    const tabId = getTabId();
+    const registrySocket = socketRegistry.get(tabId) ?? null;
+    if (registrySocket?.connected) {
+      if (socketRef.current !== registrySocket) {
+        socketRef.current = registrySocket;
+      }
+      return registrySocket;
+    }
+    return socketRef.current && socketRef.current.connected ? socketRef.current : null;
+  }, []);
+
   const joinDuelRoom = (duelId: string | number, userId?: string | number) => {
     // ID agora é UUID (string), não converter para número
     const duelIdStr = typeof duelId === 'string' ? duelId : String(duelId);
@@ -641,13 +654,14 @@ export const useSocket = () => {
       const numericUserId = typeof userId === 'string' ? parseInt(userId, 10) : userId;
       payload.userId = numericUserId;
     }
-    
+
+    const socket = resolveConnectedSocket();
+
     console.log(`📤 [useSocket] Enviando joinDuelRoom - duelId: ${duelIdStr} (tipo: ${typeof duelIdStr}), userId: ${payload.userId}`);
-    console.log(`📤 [useSocket] Socket disponível: ${socketRef.current ? 'SIM' : 'NÃO'}, Conectado: ${socketRef.current?.connected}`);
-    
-    if (socketRef.current && socketRef.current.connected) {
-      // Não limpar logs aqui: duelLogsLoaded substituirá com os logs persistidos ao reabrir o duelo
-      socketRef.current.emit('joinDuelRoom', payload);
+    console.log(`📤 [useSocket] Socket conectado (registry/ref): ${socket ? 'SIM' : 'NÃO'}`);
+
+    if (socket) {
+      socket.emit('joinDuelRoom', payload);
       console.log(`✅ [useSocket] Evento joinDuelRoom emitido com sucesso!`);
     } else {
       console.error(`❌ [useSocket] Não foi possível emitir joinDuelRoom - socket não disponível ou não conectado`);
@@ -683,6 +697,16 @@ export const useSocket = () => {
     updateLifePoints,
     joinDuelRoom,
     endTurn,
-    getSocket: () => socketRef.current,
+    getSocket: (): Socket | null => {
+      const tabId = getTabId();
+      const registrySocket = socketRegistry.get(tabId) ?? null;
+      if (registrySocket?.connected) {
+        if (socketRef.current !== registrySocket) {
+          socketRef.current = registrySocket;
+        }
+        return registrySocket;
+      }
+      return socketRef.current;
+    },
   };
 };

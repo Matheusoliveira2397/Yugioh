@@ -13,9 +13,11 @@ interface DuelChatProps {
   messages: ChatMessage[];
   onSendMessage: (message: string) => void;
   hideHeader?: boolean;
+  /** Sem borda/sombra própria — preenche o card pai (arena) */
+  embedded?: boolean;
 }
 
-const DuelChat: React.FC<DuelChatProps> = ({ messages, onSendMessage, hideHeader }) => {
+const DuelChat: React.FC<DuelChatProps> = ({ messages, onSendMessage, hideHeader, embedded }) => {
   const [inputMessage, setInputMessage] = useState('');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
@@ -40,7 +42,11 @@ const DuelChat: React.FC<DuelChatProps> = ({ messages, onSendMessage, hideHeader
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-transparent backdrop-blur-sm rounded-xl border border-slate-700/30 shadow-lg overflow-hidden flex flex-col flex-1 min-h-0"
+      className={`flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent backdrop-blur-sm ${
+        embedded
+          ? 'h-full rounded-none border-0 shadow-none'
+          : 'min-h-0 rounded-xl border border-slate-700/30 shadow-lg'
+      }`}
     >
       {!hideHeader && (
         <div className="bg-slate-900/20 backdrop-blur-sm px-4 py-3 border-b border-slate-700/30 flex items-center justify-between">
@@ -58,7 +64,10 @@ const DuelChat: React.FC<DuelChatProps> = ({ messages, onSendMessage, hideHeader
 
       <div className="flex flex-col flex-1 overflow-hidden">
             {/* Mensagens */}
-            <div ref={messagesContainerRef} className="flex-1 min-h-0 overflow-hidden flex flex-col justify-end gap-2 p-3">
+            <div
+              ref={messagesContainerRef}
+              className="flex min-h-0 flex-1 flex-col justify-end gap-2 overflow-y-auto overflow-x-hidden p-3 [scrollbar-width:thin]"
+            >
               {messages.length === 0 ? (
                 <div className="text-center py-8 text-slate-400 text-xs">
                   <p>Nenhuma mensagem ainda</p>

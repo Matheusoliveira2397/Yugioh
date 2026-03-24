@@ -11,6 +11,7 @@ import { UsersService } from '../users/users.service';
 import { AchievementsService } from '../users/achievements.service';
 import { ShopService } from '../shop/shop.service';
 import { AchievementType } from '../users/entities/achievement.entity';
+import { User } from '../users/entities/user.entity';
 
 @Injectable()
 export class TournamentsService {
@@ -366,52 +367,8 @@ const matchesToStart = await this.matchRepository.find({
       throw new NotFoundException('Torneio não encontrado');
     }
 
-    if (tournament.status !== TournamentStatus.REGISTRATION_OPEN) {
-      throw new BadRequestException('Inscrições não estão abertas');
-    }
-
-    if (tournament.currentParticipants >= tournament.maxParticipants) {
-      throw new BadRequestException('Torneio está cheio');
-    }
-
-    // Verificar se já está inscrito
-    const existing = await this.participantRepository.findOne({
-      where: { tournament: { id: tournamentId }, userId },
-    });
-
-    if (existing) {
-      throw new BadRequestException('Você já está inscrito neste torneio');
-    }
-
-    const user = await this.usersService.findById(userId);
-    const minLevel = tournament.minLevel ?? 1;
-    if ((user?.level ?? 1) < minLevel) {
-      throw new BadRequestException(`Nível mínimo para este torneio: ${minLevel}`);
-    }
-    const maxLevel = tournament.maxLevel;
-    if (maxLevel != null && (user?.level ?? 1) > maxLevel) {
-      throw new BadRequestException(`Nível máximo para este torneio: ${maxLevel}`);
-    }
-
-    // Cobrar taxa de inscrição (crédito ou cash)
-    const feeType = (tournament as any).entryFeeType === 'cash' ? 'cash' : 'credit';
-    if (tournament.entryFee > 0) {
-      if (feeType === 'cash') {
-        if ((user.cash ?? 0) < tournament.entryFee) {
-          throw new BadRequestException('Cash insuficiente para a taxa de inscrição');
-        }
-        await this.usersService.update(userId, {
-          cash: (user.cash ?? 0) - tournament.entryFee,
-        });
-      } else {
-        if ((user.credits || 0) < tournament.entryFee) {
-          throw new BadRequestException('Créditos insuficientes');
-        }
-        await this.usersService.update(userId, {
-          credits: (user.credits || 0) - tournament.entryFee,
-        });
-      }
-    }
+    // Regras de status/vagas/duplicidade/saldo são validadas novamente dentro da transação
+    // com lock pessimista para evitar condição de corrida em alta concorrência.
 
     // Garantir que tournamentId está definido
     const tournamentIdValue = String(tournament.id).trim();
@@ -430,35 +387,91 @@ const matchesToStart = await this.matchRepository.find({
     this.logger.log(`📝 Registrando usuário ${userIdValue} no torneio ${tournamentIdValue}`);
 
     try {
-      const existingAgain = await this.participantRepository.findOne({
-        where: { tournament: { id: tournamentIdValue }, userId: userIdValue },
+      const participantId = await this.tournamentRepository.manager.transaction(async (manager) => {
+        const tournamentRepo = manager.getRepository(Tournament);
+        const participantRepo = manager.getRepository(TournamentParticipant);
+        const userRepo = manager.getRepository(User);
+
+        const lockedTournament = await tournamentRepo
+          .createQueryBuilder('tournament')
+          .setLock('pessimistic_write')
+          .where('tournament.id = :id', { id: tournamentIdValue })
+          .getOne();
+
+        if (!lockedTournament) {
+          throw new NotFoundException('Torneio não encontrado');
+        }
+        if (lockedTournament.status !== TournamentStatus.REGISTRATION_OPEN) {
+          throw new BadRequestException('Inscrições não estão abertas');
+        }
+        if (lockedTournament.currentParticipants >= lockedTournament.maxParticipants) {
+          throw new BadRequestException('Torneio está cheio');
+        }
+
+        const existingAgain = await participantRepo.findOne({
+          where: { tournament: { id: tournamentIdValue }, userId: userIdValue },
+        });
+        if (existingAgain) {
+          throw new BadRequestException('Você já está inscrito neste torneio');
+        }
+
+        const lockedUser = await userRepo
+          .createQueryBuilder('user')
+          .setLock('pessimistic_write')
+          .where('user.id = :id', { id: userIdValue })
+          .getOne();
+
+        if (!lockedUser) {
+          throw new NotFoundException('Usuário não encontrado');
+        }
+        const minLevel = lockedTournament.minLevel ?? 1;
+        if ((lockedUser.level ?? 1) < minLevel) {
+          throw new BadRequestException(`Nível mínimo para este torneio: ${minLevel}`);
+        }
+        const maxLevel = lockedTournament.maxLevel;
+        if (maxLevel != null && (lockedUser.level ?? 1) > maxLevel) {
+          throw new BadRequestException(`Nível máximo para este torneio: ${maxLevel}`);
+        }
+
+        const feeType = (lockedTournament as any).entryFeeType === 'cash' ? 'cash' : 'credit';
+        if (lockedTournament.entryFee > 0) {
+          if (feeType === 'cash') {
+            if ((lockedUser.cash ?? 0) < lockedTournament.entryFee) {
+              throw new BadRequestException('Cash insuficiente para a taxa de inscrição');
+            }
+            lockedUser.cash = (lockedUser.cash ?? 0) - lockedTournament.entryFee;
+          } else {
+            if ((lockedUser.credits || 0) < lockedTournament.entryFee) {
+              throw new BadRequestException('Créditos insuficientes');
+            }
+            lockedUser.credits = (lockedUser.credits || 0) - lockedTournament.entryFee;
+          }
+          await userRepo.save(lockedUser);
+        }
+
+        const participant = participantRepo.create({
+          tournament: lockedTournament,
+          userId: userIdValue,
+          status: ParticipantStatus.REGISTERED,
+          wins: 0,
+          losses: 0,
+          draws: 0,
+        });
+        const savedParticipant = await participantRepo.save(participant);
+        this.logger.log(`✅ Participante inserido com sucesso.`);
+
+        lockedTournament.currentParticipants++;
+        if (lockedTournament.currentParticipants >= lockedTournament.maxParticipants) {
+          lockedTournament.status = TournamentStatus.REGISTRATION_CLOSED;
+          this.logger.log(`🔒 Torneio ${lockedTournament.name} atingiu capacidade máxima`);
+        }
+        await tournamentRepo.save(lockedTournament);
+
+        return savedParticipant.id;
       });
-      if (existingAgain) {
-        throw new BadRequestException('Você já está inscrito neste torneio');
-      }
-
-      const participant = this.participantRepository.create({
-        tournament,
-        userId: userIdValue,
-        status: ParticipantStatus.REGISTERED,
-        wins: 0,
-        losses: 0,
-        draws: 0,
-      });
-      await this.participantRepository.save(participant);
-      this.logger.log(`✅ Participante inserido com sucesso.`);
-
-      tournament.currentParticipants++;
-      await this.tournamentRepository.save(tournament);
-
-      if (tournament.currentParticipants >= tournament.maxParticipants) {
-        tournament.status = TournamentStatus.REGISTRATION_CLOSED;
-        await this.tournamentRepository.save(tournament);
-        this.logger.log(`🔒 Torneio ${tournament.name} atingiu capacidade máxima`);
-      }
 
       const saved = await this.participantRepository.findOne({
-        where: { id: participant.id },
+        where: { id: participantId },
         relations: ['user', 'tournament'],
       });
       if (!saved) {

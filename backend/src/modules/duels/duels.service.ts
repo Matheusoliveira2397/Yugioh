@@ -1084,6 +1084,12 @@ export class DuelsService implements OnModuleInit {
       clean.turnCounter = field.turnCounter;
       logger.debug(`🔍 [deepCleanField] Preservando turnCounter: ${field.turnCounter}`);
     }
+    if (field.firstTurnPlayer === 1 || field.firstTurnPlayer === 2) {
+      clean.firstTurnPlayer = field.firstTurnPlayer;
+    }
+    if (field.stolenTurnOccurred === true) {
+      clean.stolenTurnOccurred = true;
+    }
     if (field.obeliskEffectUsedTurn !== undefined && field.obeliskEffectUsedTurn !== null) {
       clean.obeliskEffectUsedTurn = field.obeliskEffectUsedTurn;
     }
@@ -1183,6 +1189,12 @@ export class DuelsService implements OnModuleInit {
         if (!mergedUpdates.player1Field.turnCounter) {
           mergedUpdates.player1Field.turnCounter = (existingDuel as any).player1Field?.turnCounter || 1;
         }
+        if (mergedUpdates.player1Field.firstTurnPlayer == null && (existingDuel as any).player1Field?.firstTurnPlayer != null) {
+          mergedUpdates.player1Field.firstTurnPlayer = (existingDuel as any).player1Field.firstTurnPlayer;
+        }
+        if (mergedUpdates.player1Field.stolenTurnOccurred !== true && (existingDuel as any).player1Field?.stolenTurnOccurred === true) {
+          mergedUpdates.player1Field.stolenTurnOccurred = true;
+        }
         // Garantir que spellTrap seja um array de 5 elementos (preservando nulls)
         if (!Array.isArray(mergedUpdates.player1Field.spellTrap)) {
           mergedUpdates.player1Field.spellTrap = [null, null, null, null, null];
@@ -1201,6 +1213,12 @@ export class DuelsService implements OnModuleInit {
         // Garantir que o campo tenha a estrutura correta
         if (!mergedUpdates.player2Field.turnCounter) {
           mergedUpdates.player2Field.turnCounter = (existingDuel as any).player2Field?.turnCounter || 1;
+        }
+        if (mergedUpdates.player2Field.firstTurnPlayer == null && (existingDuel as any).player2Field?.firstTurnPlayer != null) {
+          mergedUpdates.player2Field.firstTurnPlayer = (existingDuel as any).player2Field.firstTurnPlayer;
+        }
+        if (mergedUpdates.player2Field.stolenTurnOccurred !== true && (existingDuel as any).player2Field?.stolenTurnOccurred === true) {
+          mergedUpdates.player2Field.stolenTurnOccurred = true;
         }
         // Garantir que spellTrap seja um array de 5 elementos (preservando nulls)
         if (!Array.isArray(mergedUpdates.player2Field.spellTrap)) {
@@ -1458,48 +1476,67 @@ export class DuelsService implements OnModuleInit {
       playerField.hand = [];
     }
 
-    logger.info(`🔍 [masterAddCardToHand] Buscando carta "${cardName}" na lista completa de cartas do jogo para ${isPlayer1 ? 'Player 1' : 'Player 2'}`);
+    const trimmedQuery = cardName.trim();
+    logger.info(`🔍 [masterAddCardToHand] Buscando carta "${trimmedQuery}" na lista completa de cartas do jogo para ${isPlayer1 ? 'Player 1' : 'Player 2'}`);
 
-    // Buscar a carta na lista completa de cartas do jogo
+    const normalizeName = (s: string) =>
+      (s || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+
+    const scoreNameMatch = (cardDisplayName: string, queryNorm: string): number => {
+      const n = normalizeName(cardDisplayName);
+      if (!n || !queryNorm) return 0;
+      if (n === queryNorm) return 10_000;
+      if (n.startsWith(queryNorm)) return 5_000 + Math.max(0, 500 - n.length);
+      if (n.includes(queryNorm)) return 2_000 + Math.max(0, 500 - n.length);
+      return 0;
+    };
+
     let card: any = null;
-    
-    // Tentar buscar por nome exato primeiro
+
     try {
-      card = await this.cardsService.findByNameExact(cardName.trim());
+      card = await this.cardsService.findByNameExact(trimmedQuery);
       if (card) {
         logger.info(`✅ [masterAddCardToHand] Carta encontrada por nome exato: "${card.name}"`);
-      } else {
-        logger.info(`ℹ️ [masterAddCardToHand] Nome exato não encontrado (retornou null), tentando busca parcial...`);
       }
     } catch (error) {
       logger.info(`ℹ️ [masterAddCardToHand] Erro ao buscar por nome exato:`, error);
     }
-    
-    // Se não encontrou por nome exato, tentar busca parcial
+
     if (!card) {
       try {
-        logger.info(`🔍 [masterAddCardToHand] Buscando por nome parcial: "${cardName.trim()}"`);
-        const cards = await this.cardsService.findAll(cardName.trim());
+        card = await this.cardsService.findByNameExactIgnoreCase(trimmedQuery);
+        if (card) {
+          logger.info(`✅ [masterAddCardToHand] Carta encontrada por nome exato (ignora maiúsculas): "${card.name}"`);
+        }
+      } catch (error) {
+        logger.info(`ℹ️ [masterAddCardToHand] Busca exata case-insensitive falhou:`, error);
+      }
+    }
+
+    if (!card) {
+      try {
+        logger.info(`🔍 [masterAddCardToHand] Buscando por nome parcial (case-insensitive): "${trimmedQuery}"`);
+        const cards = await this.cardsService.findAll(trimmedQuery);
         logger.info(`🔍 [masterAddCardToHand] Encontradas ${cards.length} cartas com busca parcial`);
-        
+
         if (cards.length > 0) {
-          // Normalizar o nome da busca
-          const normalizedSearchName = cardName.trim().toLowerCase().replace(/\s+/g, ' ');
-          
-          // Procurar a melhor correspondência (exata ou parcial)
+          const qNorm = normalizeName(trimmedQuery);
+          let best: { c: (typeof cards)[0]; score: number } | null = null;
           for (const c of cards) {
-            const cardNameToCheck = (c.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
-            if (cardNameToCheck === normalizedSearchName) {
-              card = c;
-              logger.info(`✅ [masterAddCardToHand] Carta encontrada por correspondência exata: "${card.name}"`);
-              break;
+            const sc = scoreNameMatch(c.name || '', qNorm);
+            if (!best || sc > best.score || (sc === best.score && (c.name || '').length < (best.c.name || '').length)) {
+              best = { c, score: sc };
             }
           }
-          
-          // Se não encontrou correspondência exata, usar a primeira
-          if (!card && cards.length > 0) {
-            card = cards[0];
-            logger.info(`⚠️ [masterAddCardToHand] Carta exata não encontrada, usando primeira correspondência: "${card.name}"`);
+          if (best && best.score > 0) {
+            card = best.c;
+            logger.info(`✅ [masterAddCardToHand] Melhor correspondência: "${card.name}" (score ${best.score})`);
+          } else if (cards.length > 0) {
+            card = cards.sort((a, b) => (a.name || '').length - (b.name || '').length)[0];
+            logger.info(`⚠️ [masterAddCardToHand] Usando carta mais curta entre resultados: "${card.name}"`);
           }
         }
       } catch (searchError) {
@@ -1507,11 +1544,10 @@ export class DuelsService implements OnModuleInit {
       }
     }
 
-    // Se ainda não encontrou, tentar buscar por idCarta
     if (!card) {
       try {
-        logger.info(`🔍 [masterAddCardToHand] Tentando buscar por idCarta: "${cardName.trim()}"`);
-        card = await this.cardsService.findByIdCarta(cardName.trim());
+        logger.info(`🔍 [masterAddCardToHand] Tentando idCarta (case-insensitive): "${trimmedQuery}"`);
+        card = await this.cardsService.findOneByIdCartaIgnoreCase(trimmedQuery);
         if (card) {
           logger.info(`✅ [masterAddCardToHand] Carta encontrada por idCarta: "${card.name}" (${card.idCarta})`);
         }
@@ -1626,6 +1662,25 @@ export class DuelsService implements OnModuleInit {
   }
 
   /**
+   * Assento (1 ou 2) do duelista que começou o duelo (primeiro turno). Persistido em player1Field/player2Field.
+   * Usado para DP→MAIN2 e restrições de BP só no primeiro turno de quem começou.
+   * `stolenTurnOccurred` anula isso para o restante do duelo.
+   */
+  private getFirstTurnPlayerSeat(duel: Duel): 1 | 2 | undefined {
+    const p1 = (duel as any).player1Field;
+    const p2 = (duel as any).player2Field;
+    const fp = p1?.firstTurnPlayer ?? p2?.firstTurnPlayer;
+    return fp === 1 || fp === 2 ? fp : undefined;
+  }
+
+  /** Após qualquer roubo de turno, o restante do duelo usa só fases normais (nada de DP→MP2 / sem BP do 1º turno). */
+  private hasStarterFirstTurnRulesVoided(duel: Duel): boolean {
+    const p1 = (duel as any).player1Field;
+    const p2 = (duel as any).player2Field;
+    return p1?.stolenTurnOccurred === true || p2?.stolenTurnOccurred === true;
+  }
+
+  /**
    * Processa a fase DRAW automaticamente: compra uma carta e avança para STANDBY
    * A fase DRAW deve ser mostrada visualmente antes de processar
    * Retorna o duelo atualizado após processar
@@ -1736,16 +1791,22 @@ export class DuelsService implements OnModuleInit {
     
     logger.debug(`🔄 [processDrawPhase] Duelo atualizado encontrado. Fase atual: ${updatedDuel.currentPhase}, turnCounter: ${(updatedDuel as any).turnCounter}, currentTurn: ${updatedDuel.currentTurn}`);
     
-    // Regra Yu-Gi-Oh!: o duelista que COMEÇA o duelo (escolhido aleatoriamente) na DP compra a carta e pula direto para MP2 (sem STANDBY, MP1, BP).
-    // Quem começa pode ser player 1 ou 2 (currentTurn é definido aleatoriamente na criação do duelo).
+    // Regra Yu-Gi-Oh!: só no primeiro turno de quem COMEÇOU o duelo: na DP compra e pula para MP2 (sem STANDBY, MP1, BP).
+    // Roubo de turno anula essa regra para todo o duelo; com turnCounter===1 outro assento também vai para STANDBY após a compra.
     const turnCounter = (updatedDuel as any).turnCounter;
     const turnCounterNum = turnCounter != null && turnCounter !== undefined ? Number(turnCounter) : 1;
-    const isFirstTurnOfDuel = turnCounterNum === 1 || (turnCounter == null && updatedDuel.currentPhase === TurnPhase.DRAW);
-    if (isFirstTurnOfDuel) {
+    const firstSeat = this.getFirstTurnPlayerSeat(updatedDuel);
+    const voided = this.hasStarterFirstTurnRulesVoided(updatedDuel);
+    const isStartingPlayersFirstTurnDraw =
+      !voided &&
+      (firstSeat != null
+        ? turnCounterNum === 1 && updatedDuel.currentTurn === firstSeat
+        : turnCounterNum === 1 || (turnCounter == null && updatedDuel.currentPhase === TurnPhase.DRAW));
+    if (isStartingPlayersFirstTurnDraw) {
       updatedDuel.currentPhase = TurnPhase.MAIN2;
-      logger.info(`✅ [processDrawPhase] Primeiro turno do duelo (jogador ${updatedDuel.currentTurn}): DP → MAIN2 (regra: quem começa compra na DP e pula para MP2)`);
+      logger.info(`✅ [processDrawPhase] Primeiro turno de quem começou (assento ${firstSeat ?? 'legacy'}, jogador atual ${updatedDuel.currentTurn}): DP → MAIN2`);
     } else {
-      // Demais turnos: após DRAW vai para STANDBY normalmente
+      // Demais turnos (ou quem roubou o turno no turnCounter 1): após DRAW vai para STANDBY
       updatedDuel.currentPhase = TurnPhase.STANDBY;
       logger.debug(`✅ [processDrawPhase] Fase DRAW processada, avançando para STANDBY`);
     }
@@ -13893,26 +13954,31 @@ export class DuelsService implements OnModuleInit {
       return null;
     }
 
-    // Verificar se é o primeiro turno do primeiro jogador
+    // Verificar se é o primeiro turno de quem começou o duelo (não confundir com “sempre player 1”)
     const currentTurnCounter = duel.turnCounter || 1;
     const isFirstTurn = currentTurnCounter === 1;
     const isPlayer1Turn = duel.currentTurn === 1;
-    const isFirstTurnOfFirstPlayer = isFirstTurn && isPlayer1Turn;
+    const firstSeat = this.getFirstTurnPlayerSeat(duel);
+    const voidedGt = this.hasStarterFirstTurnRulesVoided(duel);
+    const isFirstTurnOfStartingPlayer =
+      !voidedGt &&
+      isFirstTurn &&
+      (firstSeat != null ? duel.currentTurn === firstSeat : isPlayer1Turn);
 
-    // Se é o primeiro turno do primeiro jogador e está tentando ir para BATTLE, ir para MAIN2
-    if (isFirstTurnOfFirstPlayer && targetPhase === TurnPhase.BATTLE) {
-      logger.info(`⏭️ [goToPhase] Primeiro turno do primeiro jogador - redirecionando BATTLE para MAIN2`);
+    // Se é o primeiro turno de quem começou e está tentando ir para BATTLE, ir para MAIN2
+    if (isFirstTurnOfStartingPlayer && targetPhase === TurnPhase.BATTLE) {
+      logger.info(`⏭️ [goToPhase] Primeiro turno de quem começou - redirecionando BATTLE para MAIN2`);
       return this.goToPhase(duelId, TurnPhase.MAIN2);
     }
 
-    // Se é o primeiro turno do primeiro jogador e está tentando ir para uma fase após BATTLE, pular BATTLE
-    if (isFirstTurnOfFirstPlayer && targetIndex > phases.indexOf(TurnPhase.BATTLE) && currentIndex < phases.indexOf(TurnPhase.BATTLE)) {
+    // Se é o primeiro turno de quem começou e está tentando ir para uma fase após BATTLE, pular BATTLE
+    if (isFirstTurnOfStartingPlayer && targetIndex > phases.indexOf(TurnPhase.BATTLE) && currentIndex < phases.indexOf(TurnPhase.BATTLE)) {
       // Se está antes de BATTLE e quer ir para MAIN2 ou END, pode ir direto
       if (targetPhase === TurnPhase.MAIN2 || targetPhase === TurnPhase.END) {
         logger.info(`⏭️ [goToPhase] Primeiro turno do primeiro jogador - pulando BATTLE para ir para ${targetPhase}`);
         duel.currentPhase = targetPhase;
       } else {
-        logger.warn(`⚠️ [goToPhase] Não é possível ir para ${targetPhase} no primeiro turno do primeiro jogador`);
+        logger.warn(`⚠️ [goToPhase] Não é possível ir para ${targetPhase} no primeiro turno de quem começou`);
         return null;
       }
     } else {
@@ -13992,19 +14058,24 @@ export class DuelsService implements OnModuleInit {
     const phases = [TurnPhase.DRAW, TurnPhase.STANDBY, TurnPhase.MAIN1, TurnPhase.BATTLE, TurnPhase.MAIN2, TurnPhase.END];
     const currentIndex = phases.indexOf(duel.currentPhase);
     
-    // Verificar se é o primeiro turno do primeiro jogador (player1 começa)
+    // Verificar se é o primeiro turno de quem começou o duelo
     const currentTurnCounter = duel.turnCounter || 1;
     const isFirstTurn = currentTurnCounter === 1;
     const isPlayer1Turn = duel.currentTurn === 1;
-    const isFirstTurnOfFirstPlayer = isFirstTurn && isPlayer1Turn;
+    const firstSeatNp = this.getFirstTurnPlayerSeat(duel);
+    const voidedNp = this.hasStarterFirstTurnRulesVoided(duel);
+    const isFirstTurnOfStartingPlayer =
+      !voidedNp &&
+      isFirstTurn &&
+      (firstSeatNp != null ? duel.currentTurn === firstSeatNp : isPlayer1Turn);
     
     // Se está em MAIN2 ou antes, avançar normalmente
     // Quando chegar em END, verificar se precisa descartar antes de avançar turno
     if (currentIndex < phases.length - 2) {
-      // Se está em BATTLE no primeiro turno do primeiro jogador, pular direto para MAIN2
-      // (porque não pode atacar no primeiro turno)
-      if (isFirstTurnOfFirstPlayer && duel.currentPhase === TurnPhase.BATTLE) {
-        logger.info(`⏭️ [nextPhase] Primeiro turno do primeiro jogador em BATTLE - pulando para MAIN2 (não pode atacar)`);
+      // Se está em BATTLE no primeiro turno de quem começou, pular direto para MAIN2
+      // (porque não pode atacar nesse primeiro turno)
+      if (isFirstTurnOfStartingPlayer && duel.currentPhase === TurnPhase.BATTLE) {
+        logger.info(`⏭️ [nextPhase] Primeiro turno de quem começou em BATTLE - pulando para MAIN2 (não pode atacar)`);
         duel.currentPhase = TurnPhase.MAIN2;
       } else {
         // Avançar para a próxima fase normalmente
@@ -16085,6 +16156,9 @@ export class DuelsService implements OnModuleInit {
         monsterDestroyedThisTurn: false, // Flag para Last Will
         // Armazenar turnCounter no JSON para validação de cartas
         turnCounter: 1,
+        // Quem deu o primeiro turno (regras de DP→MP2 / sem BP no 1º turno)
+        firstTurnPlayer: duelData.currentTurn,
+        stolenTurnOccurred: false,
       };
       
       const p2FieldObj = {
@@ -16100,6 +16174,8 @@ export class DuelsService implements OnModuleInit {
         monsterDestroyedThisTurn: false, // Flag para Last Will
         // Armazenar turnCounter no JSON para validação de cartas
         turnCounter: 1,
+        firstTurnPlayer: duelData.currentTurn,
+        stolenTurnOccurred: false,
       };
       
       logger.info(`🔍 [createDuelInternal] ANTES de atribuir ao duelData:`);
@@ -16436,12 +16512,13 @@ export class DuelsService implements OnModuleInit {
         this.lastCountUpdate = Date.now();
       logger.info(`✅ [createDuelInternal] Duelo adicionado ao cache. Total de duelos ativos: ${this.activeDuels.size}`);
       
-      // Regra: no primeiro turno o jogador que começa compra na DP e vai direto para MP2. Processar já na criação para evitar race ao dar join.
+      // Regra: no primeiro turno só quem começou compra na DP e vai direto para MP2. Processar já na criação para evitar race ao dar join.
       const isFirstTurn = (cachedDuel.turnCounter ?? 1) === 1;
-      const isPlayer1Turn = cachedDuel.currentTurn === 1;
-      const isFirstTurnOfFirstPlayer = isFirstTurn && isPlayer1Turn;
+      const firstSeatCreate = this.getFirstTurnPlayerSeat(cachedDuel) ?? cachedDuel.currentTurn;
+      const isFirstTurnOfStartingPlayer =
+        !this.hasStarterFirstTurnRulesVoided(cachedDuel) && isFirstTurn && cachedDuel.currentTurn === firstSeatCreate;
       
-      if (isFirstTurnOfFirstPlayer && cachedDuel.currentPhase === TurnPhase.DRAW) {
+      if (isFirstTurnOfStartingPlayer && cachedDuel.currentPhase === TurnPhase.DRAW) {
         logger.info(`🔄 [createDuelInternal] Processando DP na criação (primeiro turno → compra + MAIN2)...`);
         try {
           const updatedDuel = await this.processDrawPhase(savedDuelIdStr);

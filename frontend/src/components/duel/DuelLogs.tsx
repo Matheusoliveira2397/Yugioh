@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useLayoutEffect } from 'react';
 import { motion } from 'framer-motion';
 
 interface DuelLog {
@@ -18,18 +18,32 @@ interface DuelLogsProps {
   hideHeader?: boolean;
   /** ID do usuário atual: usado para mostrar mensagem completa só para quem fez a ação */
   currentUserId?: number | null;
+  /** Sem borda/sombra própria — preenche o card pai (arena) */
+  embedded?: boolean;
 }
 
-const DuelLogs: React.FC<DuelLogsProps> = ({ logs, hideHeader, currentUserId }) => {
+const logsScrollThumb = 'rgba(168, 85, 247, 0.55)';
+const logsScrollTrack = 'rgba(15, 23, 42, 0.65)';
+
+const DuelLogs: React.FC<DuelLogsProps> = ({ logs, hideHeader, currentUserId, embedded }) => {
   const logsContainerRef = useRef<HTMLDivElement>(null);
+  const prevLogCountRef = useRef(0);
 
   const scrollToBottom = () => {
     const el = logsContainerRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
   };
 
-  useEffect(() => {
-    scrollToBottom();
+  /** Só força o fim quando entra log novo — ResizeObserver + motion disparavam o tempo todo e impossibilitavam rolar. */
+  useLayoutEffect(() => {
+    const n = logs.length;
+    const prev = prevLogCountRef.current;
+    prevLogCountRef.current = n;
+    if (n > prev || (n > 0 && prev === 0)) {
+      scrollToBottom();
+      requestAnimationFrame(() => scrollToBottom());
+    }
   }, [logs]);
 
   const getActionColor = (actionType: string) => {
@@ -74,7 +88,9 @@ const DuelLogs: React.FC<DuelLogsProps> = ({ logs, hideHeader, currentUserId }) 
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-gradient-to-br from-slate-800/20 to-slate-900/20 backdrop-blur-md rounded-xl border border-slate-700/30 shadow-2xl overflow-hidden flex flex-col flex-1 min-h-0"
+      className={`flex h-full min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden bg-gradient-to-br from-slate-800/20 to-slate-900/20 backdrop-blur-md ${
+        embedded ? 'rounded-none border-0 shadow-none' : 'rounded-xl border border-slate-700/30 shadow-2xl'
+      }`}
     >
       {!hideHeader && (
         <div className="bg-gradient-to-r from-slate-700/20 to-slate-800/20 px-4 py-3 border-b border-slate-700/30 flex items-center justify-between">
@@ -90,7 +106,13 @@ const DuelLogs: React.FC<DuelLogsProps> = ({ logs, hideHeader, currentUserId }) 
         </div>
       )}
 
-      <div ref={logsContainerRef} className="flex-1 min-h-0 overflow-hidden flex flex-col justify-end p-3">
+      <div
+        ref={logsContainerRef}
+        className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-y-auto overflow-x-hidden p-3 [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-900/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-purple-500/55 [&::-webkit-scrollbar-thumb]:hover:bg-purple-400/75"
+        style={{
+          scrollbarColor: `${logsScrollThumb} ${logsScrollTrack}`,
+        }}
+      >
             {logs.length === 0 ? (
               <div className="text-center py-8 text-slate-400 text-xs">
                 <p>Nenhuma ação registrada</p>

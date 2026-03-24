@@ -43,6 +43,34 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
   // Map<userId, Map<clientInstanceId, socket>> - múltiplas conexões por usuário
   private userSocketMap: Map<number, Map<string, Socket>> = new Map();
+  // Serializa ações por duelo para evitar race conditions entre eventos simultâneos.
+  private duelActionLocks: Map<string, Promise<void>> = new Map();
+
+  private async executeWithDuelLock<T>(duelId: string | number, operation: () => Promise<T>): Promise<T> {
+    const duelKey = String(duelId);
+    const previousTail = this.duelActionLocks.get(duelKey) ?? Promise.resolve();
+    let releaseCurrent: (() => void) | undefined;
+    const currentTail = previousTail.catch(() => undefined).then(
+      () =>
+        new Promise<void>((resolve) => {
+          // Wrapper evita TS2349: resolve de Promise<void> não é inferido como () => void
+          releaseCurrent = () => {
+            resolve();
+          };
+        }),
+    );
+    this.duelActionLocks.set(duelKey, currentTail);
+
+    try {
+      await previousTail.catch(() => undefined);
+      return await operation();
+    } finally {
+      releaseCurrent?.();
+      if (this.duelActionLocks.get(duelKey) === currentTail) {
+        this.duelActionLocks.delete(duelKey);
+      }
+    }
+  }
 
   constructor(
     private jwtService: JwtService,
@@ -1465,13 +1493,19 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     @MessageBody() data: { duelId: number | string; userId?: number; cardIdsToDiscard?: string[] },
     @ConnectedSocket() client: Socket,
   ) {
-    try {
-      const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
+    const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
+    if (!duelId) {
+      client.emit('duelError', { message: 'Dados inválidos' });
+      return;
+    }
+
+    await this.executeWithDuelLock(duelId, async () => {
+      try {
       // Segurança: usar APENAS o userId do JWT. Nunca confiar em data.userId do cliente.
       const userId = client.data.userId;
       const cardIdsToDiscard = data.cardIdsToDiscard || [];
 
-      if (!duelId || !userId) {
+      if (!userId) {
         client.emit('duelError', { message: 'Dados inválidos' });
         return;
       }
@@ -1653,10 +1687,11 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       // Emitir atualização para todos na room do duelo
       this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
       this.emitDuelEndedIfFinished(duelId, updatedDuel);
-    } catch (error) {
-      console.error(`❌ [handleEndTurn] Erro:`, error);
-      client.emit('duelError', { message: 'Erro ao finalizar turno' });
-    }
+      } catch (error) {
+        console.error(`❌ [handleEndTurn] Erro:`, error);
+        client.emit('duelError', { message: 'Erro ao finalizar turno' });
+      }
+    });
   }
 
   @SubscribeMessage('discardCard')
@@ -1664,13 +1699,19 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     @MessageBody() data: { duelId: number | string; userId?: number; cardId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    try {
-      const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
+    const duelId = typeof data.duelId === 'string' ? data.duelId : data.duelId?.toString() || null;
+    if (!duelId) {
+      client.emit('duelError', { message: 'Dados inválidos' });
+      return;
+    }
+
+    await this.executeWithDuelLock(duelId, async () => {
+      try {
       // Segurança: usar APENAS o userId do JWT. Nunca confiar em data.userId do cliente.
       const userId = client.data.userId;
       const cardId = data.cardId;
 
-      if (!duelId || !userId || !cardId) {
+      if (!userId || !cardId) {
         client.emit('duelError', { message: 'Dados inválidos' });
         return;
       }
@@ -1806,10 +1847,11 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
       // Emitir atualização para todos na room do duelo
       this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
-    } catch (error) {
-      console.error(`❌ [handleDiscardCard] Erro:`, error);
-      client.emit('duelError', { message: 'Erro ao descartar carta' });
-    }
+      } catch (error) {
+        console.error(`❌ [handleDiscardCard] Erro:`, error);
+        client.emit('duelError', { message: 'Erro ao descartar carta' });
+      }
+    });
   }
 
   @SubscribeMessage('stealTurn')
@@ -1982,6 +2024,25 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         }
       }
       
+      // Duelos antigos sem firstTurnPlayer: no turnCounter 1, quem está com o turno agora é quem começou — persistir antes de trocar o turno.
+      const tcSteal = (duelAfterDiscard as any).turnCounter ?? 1;
+      if (tcSteal === 1) {
+        const p1f = (duelAfterDiscard as any).player1Field;
+        const p2f = (duelAfterDiscard as any).player2Field;
+        const fpExisting = p1f?.firstTurnPlayer ?? p2f?.firstTurnPlayer;
+        if (fpExisting == null && p1f && p2f) {
+          const starterSeat = duelAfterDiscard.currentTurn;
+          p1f.firstTurnPlayer = starterSeat;
+          p2f.firstTurnPlayer = starterSeat;
+        }
+      }
+
+      // Depois de qualquer roubo: todos os turnos seguintes usam fluxo normal (nada de 1º turno especial).
+      if ((duelAfterDiscard as any).player1Field && (duelAfterDiscard as any).player2Field) {
+        (duelAfterDiscard as any).player1Field.stolenTurnOccurred = true;
+        (duelAfterDiscard as any).player2Field.stolenTurnOccurred = true;
+      }
+
       const newTurn = duelAfterDiscard.currentTurn === 1 ? 2 : 1;
       duelAfterDiscard.currentTurn = newTurn;
       duelAfterDiscard.currentPhase = TurnPhase.DRAW; // Resetar para fase inicial (DP)
@@ -2137,10 +2198,16 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     const userId = client.data.userId;
     const actionType = data.actionType;
     const actionData = data.actionData || {};
-    
-    try {
 
-      if (!duelId || !userId || !actionType) {
+    if (!duelId) {
+      client.emit('duelError', { message: 'Dados inválidos' });
+      return;
+    }
+
+    await this.executeWithDuelLock(duelId, async () => {
+      try {
+
+      if (!userId || !actionType) {
         client.emit('duelError', { message: 'Dados inválidos' });
         return;
       }
@@ -8376,14 +8443,15 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       } else {
         client.emit('duelError', { message: 'Ação não reconhecida' });
       }
-    } catch (error) {
-      console.error('❌ [handleDuelAction] Erro ao processar ação do duelo:', error);
-      console.error('❌ [handleDuelAction] Stack trace:', error instanceof Error ? error.stack : 'N/A');
-      console.error('❌ [handleDuelAction] Action type:', actionType);
-      console.error('❌ [handleDuelAction] Action data:', JSON.stringify(actionData, null, 2));
-      const errorMessage = error instanceof Error ? error.message : 'Erro ao processar ação do duelo';
-      client.emit('duelError', { message: errorMessage });
-    }
+      } catch (error) {
+        console.error('❌ [handleDuelAction] Erro ao processar ação do duelo:', error);
+        console.error('❌ [handleDuelAction] Stack trace:', error instanceof Error ? error.stack : 'N/A');
+        console.error('❌ [handleDuelAction] Action type:', actionType);
+        console.error('❌ [handleDuelAction] Action data:', JSON.stringify(actionData, null, 2));
+        const errorMessage = error instanceof Error ? error.message : 'Erro ao processar ação do duelo';
+        client.emit('duelError', { message: errorMessage });
+      }
+    });
   }
 
   /**
