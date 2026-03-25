@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 import { UploadService } from '../../upload/upload.service';
+import { Card, CardRarity } from '../entities/card.entity';
 
 @Injectable()
 export class YugiohApiService {
@@ -41,6 +42,13 @@ export class YugiohApiService {
     });
     const contentType = response.headers['content-type']?.split(';')[0]?.trim() || 'image/jpeg';
     return { buffer: Buffer.from(response.data), contentType };
+  }
+
+  /** Tradução opcional para import em massa (evita chamar em milhares de cartas sem necessidade). */
+  async translateDescription(text: string): Promise<string> {
+    if (!text?.trim()) return text || '';
+    if (this.isPortuguese(text)) return text;
+    return this.translateToPortuguese(text);
   }
 
   /**
@@ -122,6 +130,150 @@ export class YugiohApiService {
       console.error('Erro ao buscar cartas na API:', error.message);
       return [];
     }
+  }
+
+  /**
+   * Baixa o catálogo completo da YGOPRODeck (uma requisição; pode levar ~1–3 min e ~15k+ cartas).
+   */
+  async fetchAllCardData(): Promise<any[]> {
+    const response = await axios.get(`${this.API_BASE_URL}/cardinfo.php`, {
+      timeout: 300000,
+      validateStatus: (s) => s === 200 || s === 400,
+    });
+    if (response.status !== 200 || !response.data?.data) {
+      throw new Error(
+        response.data?.error || `YGOPRODeck retornou status ${response.status}`,
+      );
+    }
+    return response.data.data;
+  }
+
+  /** Banlist TCG (fallback OCG) a partir do objeto da API, sem nova requisição. */
+  parseBanlistFromApiCard(apiCard: any): { maxCopies: number; isBanned: boolean } {
+    const banlistInfo = apiCard?.banlist_info;
+    if (!banlistInfo) {
+      return { maxCopies: 3, isBanned: false };
+    }
+    const tryParse = (raw: unknown): { maxCopies: number; isBanned: boolean } | null => {
+      if (!raw || typeof raw !== 'string') return null;
+      const v = raw.toLowerCase().trim();
+      if (v === 'banned') return { maxCopies: 0, isBanned: true };
+      if (v === 'limited') return { maxCopies: 1, isBanned: false };
+      if (v === 'semi-limited' || v === 'semi limited') return { maxCopies: 2, isBanned: false };
+      return null;
+    };
+    const tcg = tryParse(banlistInfo.ban_tcg);
+    if (tcg) return tcg;
+    const ocg = tryParse(banlistInfo.ban_ocg);
+    if (ocg) return ocg;
+    return { maxCopies: 3, isBanned: false };
+  }
+
+  /**
+   * Converte um registro da API em campos persistíveis (sem tradução).
+   * @param artImageId id de card_images; define idCarta YGOPRO_<id>
+   * @param imageUrl URL da arte (preferir image_url da API)
+   */
+  mapApiCardToImportPartial(
+    apiCard: any,
+    options?: { artImageId?: number; imageUrl?: string; descriptionOverride?: string },
+  ): Partial<Card> {
+    const artId = options?.artImageId ?? apiCard.id;
+    const idCarta = `YGOPRO_${artId}`;
+    const imageUrl =
+      options?.imageUrl ||
+      apiCard.card_images?.[0]?.image_url ||
+      apiCard.card_images?.[0]?.image_url_small ||
+      '';
+    const desc =
+      (options?.descriptionOverride ??
+        (typeof apiCard.desc === 'string' ? apiCard.desc : '')) || '';
+
+    const ban = this.parseBanlistFromApiCard(apiCard);
+    const typeStr = String(apiCard.type || '');
+    const base: Partial<Card> = {
+      name: apiCard.name,
+      idCarta,
+      description: desc,
+      cardImage: imageUrl || undefined,
+      type: this.mapCardType(typeStr) as Card['type'],
+      archetype: apiCard.archetype || undefined,
+      rarity: CardRarity.COMMON,
+      isActive: true,
+      isBanned: ban.isBanned,
+      maxCopiesInDeck: ban.maxCopies,
+      isForSale: false,
+    };
+
+    if (typeStr.includes('Monster') || typeStr === 'Token') {
+      base.monsterType = this.mapMonsterType(typeStr) as Card['monsterType'];
+      base.attribute = this.mapAttribute(apiCard.attribute) as Card['attribute'];
+      base.race = this.mapRace(apiCard.race) as Card['race'];
+      const lv = apiCard.level;
+      if (typeof lv === 'number' && lv > 0) {
+        base.level = lv;
+      }
+      if (typeof apiCard.rank === 'number' && apiCard.rank > 0) {
+        base.rank = apiCard.rank;
+      }
+      const atk = this.parseStat(apiCard.atk);
+      const def = this.parseStat(apiCard.def);
+      if (atk !== undefined) base.atk = atk;
+      if (def !== undefined) base.def = def;
+    }
+
+    if (typeStr.includes('Spell') || typeStr.toLowerCase().includes('skill')) {
+      base.spellType = this.mapSpellType(typeStr) as Card['spellType'];
+    }
+    if (typeStr.includes('Trap')) {
+      base.trapType = this.mapTrapType(typeStr) as Card['trapType'];
+    }
+
+    return base;
+  }
+
+  /** Monster / Spell / Trap — filtro do import em massa (mesma regra de `mapApiCardToImportPartial`). */
+  getImportCardTypeFromApi(apiCard: any): 'Monster' | 'Spell' | 'Trap' {
+    return this.mapCardType(String(apiCard?.type || ''));
+  }
+
+  /** Subtipo de monstro mapeado como no import; null se não for monstro/token. */
+  getImportMonsterSubtypeFromApi(apiCard: any): string | null {
+    const typeStr = String(apiCard?.type || '');
+    if (!typeStr.includes('Monster') && typeStr !== 'Token' && !typeStr.includes('Token')) {
+      return null;
+    }
+    return this.mapMonsterType(typeStr);
+  }
+
+  /** Subtipo de magia/skill; null se não for spell. */
+  getImportSpellSubtypeFromApi(apiCard: any): string | null {
+    const typeStr = String(apiCard?.type || '');
+    if (!typeStr.includes('Spell') && !typeStr.toLowerCase().includes('skill')) {
+      return null;
+    }
+    return this.mapSpellType(typeStr);
+  }
+
+  /** Subtipo de armadilha; null se não for trap. */
+  getImportTrapSubtypeFromApi(apiCard: any): string | null {
+    const typeStr = String(apiCard?.type || '');
+    if (!typeStr.includes('Trap')) {
+      return null;
+    }
+    return this.mapTrapType(typeStr);
+  }
+
+  private parseStat(v: unknown): number | undefined {
+    if (v === null || v === undefined) return undefined;
+    if (typeof v === 'number' && !Number.isNaN(v)) return v;
+    if (typeof v === 'string') {
+      const t = v.trim();
+      if (t === '' || t === '?') return undefined;
+      const n = parseInt(t, 10);
+      return Number.isNaN(n) ? undefined : n;
+    }
+    return undefined;
   }
 
   /**
@@ -307,9 +459,11 @@ export class YugiohApiService {
   }
 
   private mapCardType(type: string): 'Monster' | 'Spell' | 'Trap' {
-    if (type.includes('Monster')) return 'Monster';
-    if (type.includes('Spell')) return 'Spell';
-    if (type.includes('Trap')) return 'Trap';
+    const t = type || '';
+    if (t.toLowerCase().includes('skill')) return 'Spell';
+    if (t.includes('Spell')) return 'Spell';
+    if (t.includes('Trap')) return 'Trap';
+    if (t.includes('Monster') || t === 'Token' || t.includes('Token')) return 'Monster';
     return 'Monster';
   }
 

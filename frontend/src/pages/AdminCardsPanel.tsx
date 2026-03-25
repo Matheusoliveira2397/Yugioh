@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import api from '../api/axios';
 import { CardType, CardAttribute, CardRarity, MonsterType } from './types';
 import CardImage from '../components/CardImage';
 import { getCardDescription } from '../utils/cardDescription';
+import BulkYgoproDeckImportSection from '../components/admin/BulkYgoproDeckImportSection';
 
 /** Em produção, imagens externas (Yugioh API) podem falhar por CORS/referrer. Usar proxy do backend. */
 function cardImageSrc(url: string | undefined | null): string {
@@ -42,6 +43,11 @@ export default function AdminCardsPanel() {
   const [editingCard, setEditingCard] = useState<Card | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('active');
   const [searchTerm, setSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(48);
+  const [listTotal, setListTotal] = useState(0);
+  const [cardCounts, setCardCounts] = useState({ total: 0, active: 0, inactive: 0 });
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>('');
   
@@ -91,20 +97,69 @@ export default function AdminCardsPanel() {
 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  useEffect(() => {
-    loadCards();
+  const fetchCounts = useCallback(async () => {
+    try {
+      const { data } = await api.get<{ total: number; active: number; inactive: number }>('/cards/admin/counts');
+      setCardCounts(data);
+    } catch (error) {
+      console.error('Erro ao carregar totais de cartas:', error);
+    }
   }, []);
 
-  const loadCards = async () => {
+  const fetchList = useCallback(async () => {
+    setLoading(true);
     try {
-      const response = await api.get('/cards/admin/all');
-      setCards(response.data);
+      const { data } = await api.get<{
+        items: Card[];
+        total: number;
+        page: number;
+        limit: number;
+        totalPages: number;
+      }>('/cards/admin/list', {
+        params: {
+          page,
+          limit: pageSize,
+          search: debouncedSearch || undefined,
+          status: filter,
+        },
+      });
+      setCards(data.items ?? []);
+      setListTotal(Number(data.total) || 0);
     } catch (error) {
       console.error('Erro ao carregar cartas:', error);
+      setCards([]);
+      setListTotal(0);
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSize, debouncedSearch, filter]);
+
+  const reloadAdminCards = useCallback(async () => {
+    await fetchCounts();
+    await fetchList();
+  }, [fetchCounts, fetchList]);
+
+  useEffect(() => {
+    fetchCounts();
+  }, [fetchCounts]);
+
+  useEffect(() => {
+    const ms = searchTerm === '' ? 0 : 350;
+    const t = setTimeout(() => {
+      setDebouncedSearch(searchTerm.trim());
+      setPage(1);
+    }, ms);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    fetchList();
+  }, [fetchList]);
+
+  useEffect(() => {
+    const tp = Math.max(1, Math.ceil(listTotal / pageSize) || 1);
+    if (page > tp) setPage(tp);
+  }, [listTotal, pageSize, page]);
 
   // Função para buscar cartas na API YGOPRODeck
   const searchYugiohCards = async (query: string) => {
@@ -145,19 +200,20 @@ export default function AdminCardsPanel() {
     }
   };
 
-  // Função para buscar cartas existentes (para criar skin)
-  const searchOriginalCards = (query: string) => {
+  // Função para buscar cartas existentes (para criar skin) — servidor (lista paginada no painel)
+  const searchOriginalCards = async (query: string) => {
     if (query.length < 2) {
       setOriginalCardResults([]);
       return;
     }
-    
-    const filtered = cards.filter(card => 
-      card.name.toLowerCase().includes(query.toLowerCase()) && 
-      card.isActive
-    );
-    console.log('🔍 Buscando cartas originais:', { query, totalCards: cards.length, filtered: filtered.length });
-    setOriginalCardResults(filtered.slice(0, 10));
+    try {
+      const { data } = await api.get<{ items: Card[] }>('/cards/admin/list', {
+        params: { page: 1, limit: 15, search: query.trim(), status: 'active' },
+      });
+      setOriginalCardResults((data.items ?? []).slice(0, 10));
+    } catch {
+      setOriginalCardResults([]);
+    }
   };
 
   // Função para selecionar carta original (ao criar skin)
@@ -526,7 +582,7 @@ export default function AdminCardsPanel() {
         setSelectedCard(prev => prev && prev.id === updated.id ? { ...prev, ...merged } : prev);
         setImageJustSavedAt(prev => ({ ...prev, [updated.id]: Date.now() }));
         setMessage({ type: 'success', text: '✅ Carta atualizada com sucesso!' });
-        // Não chamar loadCards() aqui: a lista já foi atualizada com response.data acima.
+        // Lista local já atualizada; evita refetch desnecessário (imagem aparece na hora).
         // Assim a nova imagem aparece na hora (evita redeploy/refresh).
       } else {
         // CRIAR
@@ -574,13 +630,15 @@ export default function AdminCardsPanel() {
         const response = await api.post('/cards', cleanedFormData);
         console.log('✅ Resposta do servidor:', response.data);
         const created = response.data;
-        setCards(prev => [...prev, created]);
         setImageJustSavedAt(prev => ({ ...prev, [created.id]: Date.now() }));
         setMessage({ type: 'success', text: '✅ Carta criada com sucesso!' });
       }
 
       resetForm();
-      if (!editingCard) loadCards();
+      if (!editingCard) {
+        setPage(1);
+        await reloadAdminCards();
+      }
       setShowForm(false);
       setSelectedImageFile(null);
       setImagePreview('');
@@ -690,7 +748,7 @@ export default function AdminCardsPanel() {
     try {
       const response = await api.delete(`/cards/${id}`);
       setMessage({ type: 'success', text: response.data?.message || '✅ Carta desativada com sucesso!' });
-      loadCards();
+      await reloadAdminCards();
     } catch (error: any) {
       console.error('❌ Erro ao desativar carta:', error);
       const errorMessage = error.response?.data?.message || error.message || '❌ Erro ao desativar carta';
@@ -704,7 +762,7 @@ export default function AdminCardsPanel() {
     try {
       const response = await api.delete(`/cards/${id}/hard`);
       setMessage({ type: 'success', text: response.data?.message || '✅ Carta deletada permanentemente!' });
-      loadCards();
+      await reloadAdminCards();
     } catch (error: any) {
       console.error('❌ Erro ao deletar carta:', error);
       const errorMessage = error.response?.data?.message || error.message || '❌ Erro ao deletar carta';
@@ -716,7 +774,7 @@ export default function AdminCardsPanel() {
     try {
       await api.post(`/cards/${id}/activate`, {});
       setMessage({ type: 'success', text: '✅ Carta reativada com sucesso!' });
-      loadCards();
+      await reloadAdminCards();
     } catch (error) {
       setMessage({ type: 'error', text: '❌ Erro ao reativar carta' });
     }
@@ -761,15 +819,9 @@ export default function AdminCardsPanel() {
     setOtherSkins([]);
   };
 
-  const filteredCards = cards
-    .filter(card => {
-      if (filter === 'active') return card.isActive;
-      if (filter === 'inactive') return !card.isActive;
-      return true;
-    })
-    .filter(card => 
-      card.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+  const totalPages = Math.max(1, Math.ceil(listTotal / pageSize) || 1);
+  const rangeFrom = listTotal === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeTo = Math.min(page * pageSize, listTotal);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -779,18 +831,38 @@ export default function AdminCardsPanel() {
           <div>
             <h1 className="text-4xl font-bold mb-2">🎴 Gerenciamento de Cartas</h1>
             <p className="text-gray-300">Crie e gerencie todas as cartas do jogo</p>
+            <p className="text-sm text-purple-200/90 mt-2">
+              Use <strong className="text-amber-200">Cadastro em massa</strong> abaixo para importar da YGOPRODeck.
+            </p>
           </div>
-          <button
-            onClick={() => {
-              resetForm();
-              setShowForm(!showForm);
-            }}
-            className="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-bold transition-all"
-          >
-            {showForm ? '❌ Cancelar' : '➕ Nova Carta'}
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+            <button
+              type="button"
+              onClick={() =>
+                document.getElementById('admin-bulk-ygopro-import')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }
+              className="bg-amber-600 hover:bg-amber-500 text-black px-5 py-3 rounded-lg font-bold transition-all"
+            >
+              📥 Cadastro em massa
+            </button>
+            <button
+              onClick={() => {
+                resetForm();
+                setShowForm(!showForm);
+              }}
+              className="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-bold transition-all"
+            >
+              {showForm ? '❌ Cancelar' : '➕ Nova Carta'}
+            </button>
+          </div>
         </div>
       </div>
+
+      <BulkYgoproDeckImportSection
+        defaultExpanded
+        onAfterRealImport={() => void reloadAdminCards()}
+        onNotify={(m) => setMessage(m)}
+      />
 
       {/* Mensagem */}
       {message && (
@@ -1303,7 +1375,7 @@ export default function AdminCardsPanel() {
                           setMessage({ type: 'success', text: response.data?.message || '✅ Carta desativada com sucesso!' });
                           setFormData(prev => ({ ...prev, isActive: false }));
                           setEditingCard(prev => prev ? { ...prev, isActive: false } : null);
-                          loadCards();
+                          await reloadAdminCards();
                         } catch (err: any) {
                           setMessage({ type: 'error', text: err.response?.data?.message || '❌ Erro ao desativar carta' });
                         }
@@ -1313,7 +1385,7 @@ export default function AdminCardsPanel() {
                           setMessage({ type: 'success', text: '✅ Carta reativada com sucesso!' });
                           setFormData(prev => ({ ...prev, isActive: true }));
                           setEditingCard(prev => prev ? { ...prev, isActive: true } : null);
-                          loadCards();
+                          await reloadAdminCards();
                         } catch {
                           setMessage({ type: 'error', text: '❌ Erro ao reativar carta' });
                         }
@@ -1359,12 +1431,28 @@ export default function AdminCardsPanel() {
         />
         <select
           value={filter}
-          onChange={(e) => setFilter(e.target.value as any)}
+          onChange={(e) => {
+            setPage(1);
+            setFilter(e.target.value as typeof filter);
+          }}
           className="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
         >
-          <option value="all">Todas ({cards.length})</option>
-          <option value="active">Ativas ({cards.filter(c => c.isActive).length})</option>
-          <option value="inactive">Inativas ({cards.filter(c => !c.isActive).length})</option>
+          <option value="all">Todas ({cardCounts.total})</option>
+          <option value="active">Ativas ({cardCounts.active})</option>
+          <option value="inactive">Inativas ({cardCounts.inactive})</option>
+        </select>
+        <select
+          value={pageSize}
+          onChange={(e) => {
+            setPageSize(Number(e.target.value));
+            setPage(1);
+          }}
+          className="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 text-sm"
+          aria-label="Itens por página"
+        >
+          <option value={24}>24 / página</option>
+          <option value={48}>48 / página</option>
+          <option value={96}>96 / página</option>
         </select>
       </div>
 
@@ -1376,7 +1464,7 @@ export default function AdminCardsPanel() {
         </div>
       ) : (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
-          {filteredCards.map((card, index) => (
+          {cards.map((card, index) => (
             <motion.div
               key={card.id}
               initial={{ opacity: 0, scale: 0.9 }}
@@ -1399,13 +1487,20 @@ export default function AdminCardsPanel() {
 
               {/* Preview da Carta - Menor */}
               <div className="relative flex items-center justify-center p-2">
-                <div className="relative w-full aspect-[2/3]">
+                <div
+                  className="relative w-full aspect-[2/3] [content-visibility:auto] [contain-intrinsic-size:120px_180px]"
+                >
                   <CardImage
                     key={`${card.id}-${imageJustSavedAt[card.id] ?? 0}`}
                     card={card}
                     cacheBuster={imageJustSavedAt[card.id]}
-                    className="w-full h-full object-cover rounded transition-transform duration-200 group-hover:scale-110"
+                    className="h-full w-full rounded transition-transform duration-200 group-hover:scale-110"
                     fallback="/images/fundoCarta.webp"
+                    singleLayerImage
+                    omitNameBasedPaths
+                    pathExtensions={['.webp', '.jpg', '.jpeg', '.png']}
+                    sizes="(max-width: 640px) 28vw, (max-width: 1024px) 14vw, 120px"
+                    fetchPriority="low"
                   />
                 </div>
               </div>
@@ -1418,6 +1513,37 @@ export default function AdminCardsPanel() {
               </div>
             </motion.div>
           ))}
+        </div>
+      )}
+
+      {!loading && listTotal > 0 && (
+        <div className="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-sm text-slate-400">
+          <p>
+            Mostrando <span className="text-slate-200 font-medium">{rangeFrom}</span>–
+            <span className="text-slate-200 font-medium">{rangeTo}</span> de{' '}
+            <span className="text-slate-200 font-medium">{listTotal}</span>
+          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium"
+            >
+              Anterior
+            </button>
+            <span className="text-slate-300 px-2">
+              Página {page} / {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+              className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium"
+            >
+              Próxima
+            </button>
+          </div>
         </div>
       )}
 
@@ -1449,8 +1575,12 @@ export default function AdminCardsPanel() {
                     key={`modal-${selectedCard.id}-${imageJustSavedAt[selectedCard.id] ?? 0}`}
                     card={selectedCard}
                     cacheBuster={imageJustSavedAt[selectedCard.id]}
-                    className="w-full h-full object-contain rounded-lg shadow-2xl"
+                    className="h-full w-full rounded-lg shadow-2xl"
                     fallback="/images/fundoCarta.webp"
+                    singleLayerImage
+                    loading="eager"
+                    objectFit="contain"
+                    sizes="400px"
                   />
                 </div>
               </div>
@@ -1625,7 +1755,7 @@ export default function AdminCardsPanel() {
         </div>
       )}
 
-      {filteredCards.length === 0 && !loading && (
+      {cards.length === 0 && !loading && (
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

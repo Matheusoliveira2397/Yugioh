@@ -4,6 +4,7 @@ import api from '../../api/axios';
 import { CardType, CardAttribute, CardRarity, MonsterType } from '../../pages/types';
 import CardImage from '../CardImage';
 import { getCardDescription } from '../../utils/cardDescription';
+import BulkYgoproDeckImportSection from './BulkYgoproDeckImportSection';
 
 interface Card {
   id: string;
@@ -257,6 +258,11 @@ export default function AdminCardsPanel() {
           </button>
         </div>
       </div>
+
+      <BulkYgoproDeckImportSection
+        onAfterRealImport={() => loadCards()}
+        onNotify={(m) => setMessage(m)}
+      />
 
       {/* Mensagem */}
       {message && (

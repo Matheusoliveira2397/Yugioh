@@ -9,6 +9,13 @@ import { HttpExceptionFilter } from './http-exception.filter';
 import { RedisIoAdapter } from './redis-io.adapter';
 import * as fs from 'fs';
 
+function resolveUploadsRoot(): string {
+  const envRoot = process.env.UPLOADS_ROOT?.trim();
+  if (envRoot) return resolve(envRoot);
+  if (fs.existsSync('/app/uploads')) return '/app/uploads';
+  return resolve(join(__dirname, '..', 'uploads'));
+}
+
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     // Configurações do servidor HTTP para não bloquear quando há WebSocket ativo
@@ -55,9 +62,10 @@ async function bootstrap() {
   app.use(require('express').urlencoded({ extended: true, limit: '10mb' }));
 
   // Garantir que os diretórios e arquivos padrão existam
-  const uploadsDir = join(__dirname, '..', 'uploads');
+  const uploadsDir = resolveUploadsRoot();
   const avatarsDir = join(uploadsDir, 'avatars');
   const imagesDir = join(uploadsDir, 'images');
+  const groupsDir = join(uploadsDir, 'groups');
   const defaultAvatarPath = join(avatarsDir, 'default.jpg');
   const defaultImagePath = join(imagesDir, 'default.jpg');
   const frontendDefaultPath = join(__dirname, '..', '..', 'frontend', 'public', 'images', 'default.jpg');
@@ -70,6 +78,10 @@ async function bootstrap() {
   if (!fs.existsSync(imagesDir)) {
     fs.mkdirSync(imagesDir, { recursive: true });
     console.log('📁 Diretório de imagens criado:', imagesDir);
+  }
+  if (!fs.existsSync(groupsDir)) {
+    fs.mkdirSync(groupsDir, { recursive: true });
+    console.log('📁 Diretório de grupos criado:', groupsDir);
   }
   const cardsUploadDir = join(uploadsDir, 'cards');
   if (!fs.existsSync(cardsUploadDir)) {
@@ -91,7 +103,7 @@ async function bootstrap() {
   }
 
   // Servir arquivos estáticos (uploads) com cache para reduzir carga e melhorar carregamento em produção
-  app.useStaticAssets(join(__dirname, '..', 'uploads'), {
+  app.useStaticAssets(uploadsDir, {
     prefix: '/uploads/',
     setHeaders: (res: any) => {
       res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 dia
@@ -141,8 +153,51 @@ async function bootstrap() {
     fs.createReadStream(defaultAvatarPath).pipe(res);
   });
 
+  // Logo/banner de grupo ausente no disco: evitar 404 ruidoso e retornar placeholder.
+  app.use((req: any, res: any, next: any) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    const p: string = req.path || '';
+    const prefix = '/uploads/groups/';
+    if (!p.startsWith(prefix)) return next();
+    const relRaw = p.slice(prefix.length);
+    if (!relRaw) return next();
+    let rel: string;
+    try {
+      rel = decodeURIComponent(relRaw);
+    } catch {
+      return next();
+    }
+    if (!/^[\w.-]+$/.test(rel)) return next();
+    const baseResolved = resolve(groupsDir);
+    const filePath = resolve(join(groupsDir, rel));
+    if (!filePath.startsWith(baseResolved + sep) && filePath !== baseResolved) return next();
+
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      const ext = rel.toLowerCase();
+      if (ext.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
+      else if (ext.endsWith('.webp')) res.setHeader('Content-Type', 'image/webp');
+      else if (ext.endsWith('.gif')) res.setHeader('Content-Type', 'image/gif');
+      else res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      if (req.method === 'HEAD') {
+        res.end();
+        return;
+      }
+      return fs.createReadStream(filePath).pipe(res);
+    }
+
+    if (!fs.existsSync(defaultImagePath)) return next();
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=120');
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+    fs.createReadStream(defaultImagePath).pipe(res);
+  });
+
   // Servir avatares padrão com cache
-  app.useStaticAssets(join(__dirname, '..', 'uploads', 'avatars'), {
+  app.useStaticAssets(avatarsDir, {
     prefix: '/avatars/',
     setHeaders: (res: any) => {
       res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 dia
@@ -226,7 +281,7 @@ async function bootstrap() {
   }
 
   // Servir imagens padrão (DEPOIS de /images/cards/ para não conflitar) com cache
-  app.useStaticAssets(join(__dirname, '..', 'uploads', 'images'), {
+  app.useStaticAssets(imagesDir, {
     prefix: '/images/',
     index: false,
     setHeaders: (res: any) => {

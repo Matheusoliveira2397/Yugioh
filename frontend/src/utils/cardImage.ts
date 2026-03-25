@@ -171,6 +171,29 @@ const getCardNameBasedPaths = (cardName: string): string[] => {
   return paths;
 };
 
+/** Cache de sessão: primeiro path que carregou com sucesso por idCarta (evita 404 em duplicatas no duelo/loja). */
+const cardImageLoadSuccess = new Map<string, string>();
+
+export function rememberSuccessfulCardImagePath(cardKey: string, path: string): void {
+  const k = (cardKey || '').trim();
+  const p = (path || '').trim();
+  if (!k || !p) return;
+  if (!cardImageLoadSuccess.has(k)) cardImageLoadSuccess.set(k, p);
+}
+
+export function peekSuccessfulCardImagePath(cardKey: string): string | null {
+  return cardImageLoadSuccess.get((cardKey || '').trim()) ?? null;
+}
+
+/** Extensão sugerida a partir de um path/URL já conhecido (1 tentativa a menos). */
+function extFromCardImageField(cardImage: string | undefined | null): string | null {
+  if (!cardImage || typeof cardImage !== 'string') return null;
+  const base = cardImage.split('?')[0].split('/').pop() || '';
+  const ext = base.includes('.') ? base.slice(base.lastIndexOf('.')).toLowerCase() : '';
+  if (['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext)) return ext;
+  return null;
+}
+
 /**
  * Função para obter a imagem da carta, com fallback
  * Retorna o caminho da imagem local se disponível, ou null para usar fallback
@@ -188,44 +211,115 @@ function isCardImagePath(p: string): boolean {
   );
 }
 
+/**
+ * Preferência: arquivos estáticos em `frontend/public/images/cards` (nome = idCarta),
+ * alinhado ao script de download — não usar `cardImage` do banco para a primeira URL.
+ */
 export const getCardImage = (card: any): string | null => {
-  const cardImage = card?.cardImage;
-  if (cardImage && typeof cardImage === 'string' && cardImage.trim() !== '' && isCardImagePath(cardImage)) {
-    return cardImage;
+  const idCarta = card?.idCarta || card?.cardId;
+  if (idCarta != null && String(idCarta).trim() !== '') {
+    const id = String(idCarta).trim();
+    const hit = peekSuccessfulCardImagePath(id);
+    if (hit) return hit;
+    const hinted = extFromCardImageField(card?.cardImage);
+    const ext = hinted || '.jpg';
+    return `/images/cards/${id}${ext}`;
   }
 
-  const cardId = card?.idCarta || card?.id || card?.cardId;
-  if (cardId) {
-    const extensions = ['.jpg', '.jpeg', '.png', '.webp'];
-    for (const ext of extensions) {
-      return `/uploads/cards/${cardId}${ext}`;
-    }
+  const legacyId = card?.id;
+  if (legacyId != null && String(legacyId).trim() !== '') {
+    const lid = String(legacyId).trim();
+    const hit = peekSuccessfulCardImagePath(lid);
+    if (hit) return hit;
+    const hinted = extFromCardImageField(card?.cardImage);
+    return `/images/cards/${lid}${hinted || '.jpg'}`;
+  }
+
+  const cardImage = card?.cardImage;
+  if (cardImage && typeof cardImage === 'string' && cardImage.trim() !== '' && isCardImagePath(cardImage)) {
+    return cardImage.trim();
   }
 
   return null;
 };
 
 /**
+ * Ordem: extensões mais comuns no projeto primeiro (menos 404 em sequência).
+ */
+const CARD_IMAGE_EXTS_ORDER = ['.jpg', '.webp', '.jpeg', '.png', '.gif'] as const;
+
+function orderedExts(preferFirst?: string | null): string[] {
+  const hint = preferFirst?.toLowerCase();
+  const rest = CARD_IMAGE_EXTS_ORDER.filter((e) => e !== hint);
+  return hint && CARD_IMAGE_EXTS_ORDER.includes(hint as (typeof CARD_IMAGE_EXTS_ORDER)[number])
+    ? [hint, ...rest]
+    : [...CARD_IMAGE_EXTS_ORDER];
+}
+
+/**
+ * Quando há idCarta estável (ex.: YGOPRO_*), não gerar dezenas de URLs por nome — só atrasam o carregamento.
+ */
+function shouldIncludeNameBasedPaths(card: any): boolean {
+  const idCarta = card?.idCarta || card?.cardId;
+  if (idCarta == null || String(idCarta).trim() === '') return true;
+  const id = String(idCarta).trim();
+  if (/^YGOPRO[_-]/i.test(id)) return false;
+  if (/^[a-zA-Z]+[_-][\w.-]+$/.test(id)) return false;
+  return true;
+}
+
+export type GetAllCardImagePathsOptions = {
+  /** Listas grandes (ex.: admin em grade): sem dezenas de URLs por nome — menos 404 e menos rede. */
+  omitNameBasedPaths?: boolean;
+  /** Só estas extensões (ex.: grade admin: jpg + webp). */
+  extensions?: readonly string[];
+};
+
+/**
  * Retorna todos os caminhos possíveis para uma carta (para o componente CardImage tentar)
  * AGORA: Todas as imagens são salvas com idCarta como nome do arquivo
  */
-export const getAllCardImagePaths = (card: any): string[] => {
+export const getAllCardImagePaths = (card: any, options?: GetAllCardImagePathsOptions): string[] => {
   const paths: string[] = [];
-  const cardImage = card?.cardImage;
-  const cardId = card?.idCarta || card?.id || card?.cardId;
+  const cardImage = card?.cardImage?.trim();
+  const idCarta = card?.idCarta || card?.cardId;
+  const hinted = extFromCardImageField(cardImage);
+  const exts =
+    options?.extensions && options.extensions.length > 0
+      ? orderedExts(hinted).filter((e) => options.extensions!.includes(e))
+      : orderedExts(hinted);
+  const useExts = exts.length > 0 ? exts : orderedExts(hinted);
 
-  if (cardImage && typeof cardImage === 'string' && cardImage.trim() !== '' && isCardImagePath(cardImage)) {
-    paths.push(cardImage);
+  if (idCarta != null && String(idCarta).trim() !== '') {
+    const id = String(idCarta).trim();
+    const hit = peekSuccessfulCardImagePath(id);
+    if (hit) paths.push(hit);
+    for (const ext of useExts) {
+      paths.push(`/images/cards/${id}${ext}`);
+    }
   }
 
-  if (cardId) {
-    // Priorizar /images/cards (frontend public) — no duelo as imagens costumam estar aí
-    for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
-      paths.push(`/images/cards/${cardId}${ext}`);
+  if (card?.name && shouldIncludeNameBasedPaths(card) && !options?.omitNameBasedPaths) {
+    paths.push(...getCardNameBasedPaths(card.name));
+  }
+
+  if (idCarta != null && String(idCarta).trim() !== '') {
+    const id = String(idCarta).trim();
+    for (const ext of useExts) {
+      paths.push(`/uploads/cards/${id}${ext}`);
     }
-    for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
-      paths.push(`/uploads/cards/${cardId}${ext}`);
+  }
+
+  const legacyId = card?.id;
+  if ((!idCarta || String(idCarta).trim() === '') && legacyId != null && String(legacyId).trim() !== '') {
+    const id = String(legacyId).trim();
+    for (const ext of useExts) {
+      paths.push(`/images/cards/${id}${ext}`);
     }
+  }
+
+  if (cardImage && isCardImagePath(cardImage)) {
+    paths.push(cardImage);
   }
 
   return Array.from(new Set(paths));

@@ -1,6 +1,22 @@
 import { SimpleCardEffectFunction, CardEffectContext, CardEffectResult } from '../interfaces/card-effect.interface';
 import { logger } from '../../../../../common/utils/logger.util';
 
+/** Embaralha uma cópia do baralho (Fisher–Yates). */
+function shuffleDeckArray(deck: any[]): any[] {
+  const shuffled = [...deck];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+const isFaceUpMonster = (m: any): boolean =>
+  m && m !== null && (m.position === 'attack' || m.position === 'defense');
+
+const isDefensePositionMonster = (m: any): boolean =>
+  m && m !== null && (m.position === 'defense' || m.position === 'set');
+
 /**
  * Efeitos simples de cartas
  * 
@@ -777,6 +793,796 @@ export const createSwordsOfRevealingLightEffect = (duelsService: any): SimpleCar
       createdPendingChoice: false,
       message: 'Swords Of Revealing Light: Bloqueando ataques do oponente por 3 turnos',
     };
+  };
+};
+
+/**
+ * Jar of Greed (Armadilha) — Compre 1 carta.
+ */
+export const createJarOfGreedEffect = (duelsService: any): SimpleCardEffectFunction => {
+  return async (context: CardEffectContext): Promise<CardEffectResult> => {
+    const { duelId, duel, isPlayer1, zoneIndex } = context;
+    const userId = isPlayer1 ? duel.player1Id : duel.player2Id;
+    logger.info(`✨ [JarOfGreed] Comprando 1 carta`);
+    await duelsService.drawCard(duelId, userId);
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    if (playerField?.spellTrap?.[zoneIndex]) {
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
+      playerField.spellTrap[zoneIndex] = null;
+    }
+    await (duelsService as any).syncDuelState(duelId, duel, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    });
+    return { success: true, createdPendingChoice: false, message: 'Jar of Greed: comprou 1 carta' };
+  };
+};
+
+/**
+ * Card Destruction — Ambos os jogadores descartam a mão inteira e compram o mesmo número de cartas.
+ */
+export const createCardDestructionEffect = (duelsService: any): SimpleCardEffectFunction => {
+  return async (context: CardEffectContext): Promise<CardEffectResult> => {
+    const { duelId, duel, isPlayer1, zoneIndex } = context;
+    const p1 = (duel as any).player1Field;
+    const p2 = (duel as any).player2Field;
+    if (!p1?.hand) p1.hand = [];
+    if (!p2?.hand) p2.hand = [];
+    if (!p1.graveyard) p1.graveyard = [];
+    if (!p2.graveyard) p2.graveyard = [];
+    const n1 = p1.hand.length;
+    const n2 = p2.hand.length;
+    logger.info(`✨ [CardDestruction] P1 descarta ${n1}, P2 descarta ${n2}`);
+    for (const c of [...p1.hand]) p1.graveyard.push(c);
+    p1.hand = [];
+    for (const c of [...p2.hand]) p2.graveyard.push(c);
+    p2.hand = [];
+    for (let i = 0; i < n1; i++) await duelsService.drawCard(duelId, duel.player1Id);
+    for (let i = 0; i < n2; i++) await duelsService.drawCard(duelId, duel.player2Id);
+    const playerField = isPlayer1 ? p1 : p2;
+    if (playerField?.spellTrap?.[zoneIndex]) {
+      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
+      playerField.spellTrap[zoneIndex] = null;
+    }
+    await (duelsService as any).syncDuelState(duelId, duel, {
+      player1Field: p1,
+      player2Field: p2,
+    });
+    await (duelsService as any).recalculateMagePowerAtk(duelId, duel, true);
+    await (duelsService as any).recalculateMagePowerAtk(duelId, duel, false);
+    return {
+      success: true,
+      createdPendingChoice: false,
+      message: `Card Destruction: mãos trocadas (${n1}/${n2} compras)`,
+    };
+  };
+};
+
+/**
+ * Reload — Devolve toda a mão ao deck, embaralha e compra o mesmo número (a spell não está na mão).
+ */
+export const createReloadEffect = (duelsService: any): SimpleCardEffectFunction => {
+  return async (context: CardEffectContext): Promise<CardEffectResult> => {
+    const { duelId, duel, isPlayer1, zoneIndex } = context;
+    const userId = isPlayer1 ? duel.player1Id : duel.player2Id;
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    if (!playerField) {
+      return { success: false, createdPendingChoice: false, message: 'Campo inválido' };
+    }
+    if (!playerField.hand) playerField.hand = [];
+    if (!playerField.deck) playerField.deck = [];
+    const n = playerField.hand.length;
+    logger.info(`✨ [Reload] ${n} carta(s) da mão voltam ao deck`);
+    playerField.deck.push(...playerField.hand.splice(0, playerField.hand.length));
+    playerField.deck = shuffleDeckArray(playerField.deck);
+    for (let i = 0; i < n; i++) await duelsService.drawCard(duelId, userId);
+    if (playerField.spellTrap?.[zoneIndex]) {
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
+      playerField.spellTrap[zoneIndex] = null;
+    }
+    await (duelsService as any).syncDuelState(duelId, duel, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    });
+    return { success: true, createdPendingChoice: false, message: `Reload: embaralhou e comprou ${n} carta(s)` };
+  };
+};
+
+/**
+ * Fissure — Destrói 1 monstro com face para cima no campo do oponente com o menor ATK (empate: menor índice de zona).
+ */
+export const createFissureEffect = (duelsService: any): SimpleCardEffectFunction => {
+  return async (context: CardEffectContext): Promise<CardEffectResult> => {
+    const { duelId, duel, isPlayer1, zoneIndex } = context;
+    const opponentField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    if (!opponentField?.monsters) {
+      return { success: false, createdPendingChoice: false, message: 'Campo do oponente inválido' };
+    }
+    let bestIdx = -1;
+    let bestAtk = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < opponentField.monsters.length; i++) {
+      const m = opponentField.monsters[i];
+      if (!isFaceUpMonster(m)) continue;
+      const atk = Number(m.atk ?? m.ATK ?? 0);
+      if (atk < bestAtk) {
+        bestAtk = atk;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx >= 0) {
+      const destroyedCard = opponentField.monsters[bestIdx];
+      await (duelsService as any).handleEquipmentDestruction(duelId, duel, !isPlayer1, destroyedCard);
+      opponentField.monsters[bestIdx] = null;
+      if (!opponentField.graveyard) opponentField.graveyard = [];
+      opponentField.graveyard.push(destroyedCard);
+      if (!opponentField.monsterDestroyedThisTurn) opponentField.monsterDestroyedThisTurn = true;
+      await (duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
+      logger.info(`✨ [Fissure] Destruiu ${destroyedCard.name || destroyedCard.cardName} (ATK ${bestAtk})`);
+    } else {
+      logger.info(`ℹ️ [Fissure] Nenhum monstro com face para cima no oponente`);
+    }
+    if (playerField?.spellTrap?.[zoneIndex]) {
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
+      playerField.spellTrap[zoneIndex] = null;
+    }
+    await (duelsService as any).syncDuelState(duelId, duel, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    });
+    await (duelsService as any).recalculateMagePowerAtk(duelId, duel, isPlayer1);
+    return { success: true, createdPendingChoice: false, message: 'Fissure resolvido' };
+  };
+};
+
+/**
+ * Smashing Ground — Destrói 1 monstro com face para cima no campo do oponente com a maior DEF (empate: menor índice).
+ */
+export const createSmashingGroundEffect = (duelsService: any): SimpleCardEffectFunction => {
+  return async (context: CardEffectContext): Promise<CardEffectResult> => {
+    const { duelId, duel, isPlayer1, zoneIndex } = context;
+    const opponentField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    let bestIdx = -1;
+    let bestDef = Number.NEGATIVE_INFINITY;
+    for (let i = 0; i < (opponentField?.monsters?.length || 0); i++) {
+      const m = opponentField.monsters[i];
+      if (!isFaceUpMonster(m)) continue;
+      const def = Number(m.def ?? m.DEF ?? 0);
+      if (def > bestDef) {
+        bestDef = def;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx >= 0) {
+      const destroyedCard = opponentField.monsters[bestIdx];
+      await (duelsService as any).handleEquipmentDestruction(duelId, duel, !isPlayer1, destroyedCard);
+      opponentField.monsters[bestIdx] = null;
+      if (!opponentField.graveyard) opponentField.graveyard = [];
+      opponentField.graveyard.push(destroyedCard);
+      if (!opponentField.monsterDestroyedThisTurn) opponentField.monsterDestroyedThisTurn = true;
+      await (duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
+    }
+    if (playerField?.spellTrap?.[zoneIndex]) {
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
+      playerField.spellTrap[zoneIndex] = null;
+    }
+    await (duelsService as any).syncDuelState(duelId, duel, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    });
+    await (duelsService as any).recalculateMagePowerAtk(duelId, duel, isPlayer1);
+    return { success: true, createdPendingChoice: false, message: 'Smashing Ground resolvido' };
+  };
+};
+
+/**
+ * Hammer Shot — Destrói 1 monstro em Posição de Ataque com face para cima com o maior ATK (empate: menor índice).
+ */
+export const createHammerShotEffect = (duelsService: any): SimpleCardEffectFunction => {
+  return async (context: CardEffectContext): Promise<CardEffectResult> => {
+    const { duelId, duel, isPlayer1, zoneIndex } = context;
+    const opponentField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    let bestIdx = -1;
+    let bestAtk = Number.NEGATIVE_INFINITY;
+    for (let i = 0; i < (opponentField?.monsters?.length || 0); i++) {
+      const m = opponentField.monsters[i];
+      if (!m || m === null || m.position !== 'attack') continue;
+      const atk = Number(m.atk ?? m.ATK ?? 0);
+      if (atk > bestAtk) {
+        bestAtk = atk;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx >= 0) {
+      const destroyedCard = opponentField.monsters[bestIdx];
+      await (duelsService as any).handleEquipmentDestruction(duelId, duel, !isPlayer1, destroyedCard);
+      opponentField.monsters[bestIdx] = null;
+      if (!opponentField.graveyard) opponentField.graveyard = [];
+      opponentField.graveyard.push(destroyedCard);
+      if (!opponentField.monsterDestroyedThisTurn) opponentField.monsterDestroyedThisTurn = true;
+      await (duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
+    }
+    if (playerField?.spellTrap?.[zoneIndex]) {
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
+      playerField.spellTrap[zoneIndex] = null;
+    }
+    await (duelsService as any).syncDuelState(duelId, duel, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    });
+    await (duelsService as any).recalculateMagePowerAtk(duelId, duel, isPlayer1);
+    return { success: true, createdPendingChoice: false, message: 'Hammer Shot resolvido' };
+  };
+};
+
+/**
+ * Shield Crush — Destrói 1 monstro em Posição de Defesa no campo (prioriza oponente; empate de zona: menor índice).
+ */
+export const createShieldCrushEffect = (duelsService: any): SimpleCardEffectFunction => {
+  return async (context: CardEffectContext): Promise<CardEffectResult> => {
+    const { duelId, duel, isPlayer1, zoneIndex } = context;
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    const opponentField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+
+    const findDefZone = (field: any): number => {
+      if (!field?.monsters) return -1;
+      for (let i = 0; i < field.monsters.length; i++) {
+        if (isDefensePositionMonster(field.monsters[i])) return i;
+      }
+      return -1;
+    };
+
+    let targetIsPlayer1 = !isPlayer1;
+    let zi = findDefZone(opponentField);
+    if (zi < 0) {
+      targetIsPlayer1 = isPlayer1;
+      zi = findDefZone(playerField);
+    }
+    if (zi >= 0) {
+      const field = targetIsPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+      const destroyedCard = field.monsters[zi];
+      await (duelsService as any).handleEquipmentDestruction(duelId, duel, targetIsPlayer1, destroyedCard);
+      field.monsters[zi] = null;
+      if (!field.graveyard) field.graveyard = [];
+      field.graveyard.push(destroyedCard);
+      if (!field.monsterDestroyedThisTurn) field.monsterDestroyedThisTurn = true;
+      await (duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
+    }
+
+    if (playerField?.spellTrap?.[zoneIndex]) {
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
+      playerField.spellTrap[zoneIndex] = null;
+    }
+    await (duelsService as any).syncDuelState(duelId, duel, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    });
+    await (duelsService as any).recalculateMagePowerAtk(duelId, duel, isPlayer1);
+    return { success: true, createdPendingChoice: false, message: 'Shield Crush resolvido' };
+  };
+};
+
+/**
+ * Giant Trunade — Devolve todas as Magias/Armadilhas do campo para a mão dos donos.
+ */
+export const createGiantTrunadeEffect = (duelsService: any): SimpleCardEffectFunction => {
+  return async (context: CardEffectContext): Promise<CardEffectResult> => {
+    const { duelId, duel, isPlayer1, zoneIndex } = context;
+    const isExactCard = (card: any, cardId: string): boolean => {
+      const cardIdCheck = card?.idCarta || card?.id || card?.cardId;
+      return (
+        cardIdCheck === cardId ||
+        (typeof cardIdCheck === 'string' && cardIdCheck.toLowerCase() === cardId.toLowerCase())
+      );
+    };
+
+    const returnAllSpellTraps = async (field: any, isPlayer1Field: boolean): Promise<number> => {
+      if (!field?.spellTrap) return 0;
+      if (!Array.isArray(field.spellTrap)) field.spellTrap = [null, null, null, null, null];
+      while (field.spellTrap.length < 5) field.spellTrap.push(null);
+      field.spellTrap = field.spellTrap.slice(0, 5);
+      if (!field.hand) field.hand = [];
+
+      const toProcess: Array<{ card: any; zoneIndex: number }> = [];
+      for (let i = 0; i < field.spellTrap.length; i++) {
+        const c = field.spellTrap[i];
+        if (c !== null && c !== undefined) toProcess.push({ card: c, zoneIndex: i });
+      }
+      if (toProcess.length === 0) return 0;
+
+      for (const { card, zoneIndex: zi } of toProcess) {
+        const isChangeOrBrain =
+          (duelsService as any).isExactCard?.(card, 'ChangeOfHeart') ||
+          (duelsService as any).isExactCard?.(card, 'BrainControl') ||
+          isExactCard(card, 'ChangeOfHeart') ||
+          isExactCard(card, 'BrainControl');
+        if (isChangeOrBrain) {
+          await (duelsService as any).returnChangeOfHeartMonsters(duelId, duel, isPlayer1Field);
+        } else if (isExactCard(card, 'UnitedWeStand') || isExactCard(card, 'MagePower')) {
+          await (duelsService as any).handleEquipmentDestruction(duelId, duel, isPlayer1Field, undefined, card, zi);
+        }
+      }
+      await (duelsService as any).recalculateMagePowerAtk(duelId, duel, isPlayer1Field);
+
+      let n = 0;
+      for (const { zoneIndex: zi } of toProcess) {
+        await (duelsService as any).onSpellTrapRemovedFromField(duelId, duel, isPlayer1Field, zi);
+        const c = field.spellTrap[zi];
+        if (c !== null && c !== undefined) {
+          field.hand.push(c);
+          field.spellTrap[zi] = null;
+          n++;
+        }
+      }
+      return n;
+    };
+
+    const p1 = (duel as any).player1Field;
+    const p2 = (duel as any).player2Field;
+    const a = await returnAllSpellTraps(p1, true);
+    const b = await returnAllSpellTraps(p2, false);
+    logger.info(`✨ [GiantTrunade] Retornou ${a + b} Magia(s)/Armadilha(s) às mãos`);
+
+    await (duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
+
+    const playerField = isPlayer1 ? p1 : p2;
+    if (playerField?.spellTrap?.[zoneIndex]) {
+      if (!playerField.hand) playerField.hand = [];
+      playerField.hand.push(playerField.spellTrap[zoneIndex]);
+      playerField.spellTrap[zoneIndex] = null;
+    }
+
+    await (duelsService as any).syncDuelState(duelId, duel, {
+      player1Field: p1,
+      player2Field: p2,
+    });
+    return {
+      success: true,
+      createdPendingChoice: false,
+      message: `Giant Trunade: ${a + b} carta(s) voltaram às mãos`,
+    };
+  };
+};
+
+const findFirstEmptyMonsterZone = (monsters: any[] | undefined): number => {
+  if (!monsters || !Array.isArray(monsters)) return -1;
+  for (let i = 0; i < 5; i++) {
+    if (monsters[i] === null || monsters[i] === undefined) return i;
+  }
+  return -1;
+};
+
+const isNormalMonsterCard = (c: any): boolean => {
+  if (!c) return false;
+  const t = c.type || c.cardType;
+  if (String(t) !== 'Monster' && String(t) !== 'MONSTER') return false;
+  const mt = c.monsterType || c.monster_type;
+  return String(mt).toLowerCase() === 'normal';
+};
+
+const fieldHasDragonMonster = (field: any): boolean => {
+  if (!field?.monsters) return false;
+  for (const m of field.monsters) {
+    if (!m) continue;
+    const race = String(m.race || '').toLowerCase();
+    if (race.includes('dragon')) return true;
+  }
+  return false;
+};
+
+async function destroyOpponentSpellTrapZone(
+  duelsService: any,
+  duelId: string,
+  duel: any,
+  isPlayer1: boolean,
+  opponentField: any,
+): Promise<boolean> {
+  if (!opponentField?.spellTrap) return false;
+  const isExactCard = (card: any, cardId: string): boolean => {
+    const cardIdCheck = card?.idCarta || card?.id || card?.cardId;
+    return (
+      cardIdCheck === cardId ||
+      (typeof cardIdCheck === 'string' && cardIdCheck.toLowerCase() === cardId.toLowerCase())
+    );
+  };
+  for (let i = 0; i < opponentField.spellTrap.length; i++) {
+    const destroyedCard = opponentField.spellTrap[i];
+    if (destroyedCard === null || destroyedCard === undefined) continue;
+    const isChangeOrBrain =
+      (duelsService as any).isExactCard?.(destroyedCard, 'ChangeOfHeart') ||
+      (duelsService as any).isExactCard?.(destroyedCard, 'BrainControl') ||
+      isExactCard(destroyedCard, 'ChangeOfHeart') ||
+      isExactCard(destroyedCard, 'BrainControl');
+    if (isChangeOrBrain) {
+      await (duelsService as any).returnChangeOfHeartMonsters(duelId, duel, !isPlayer1);
+    } else if (isExactCard(destroyedCard, 'UnitedWeStand') || isExactCard(destroyedCard, 'MagePower')) {
+      await (duelsService as any).handleEquipmentDestruction(duelId, duel, !isPlayer1, undefined, destroyedCard, i);
+    }
+    await (duelsService as any).onSpellTrapRemovedFromField(duelId, duel, !isPlayer1, i);
+    if (opponentField.spellTrap[i] !== null && opponentField.spellTrap[i] !== undefined) {
+      if (!opponentField.graveyard) opponentField.graveyard = [];
+      opponentField.graveyard.push(opponentField.spellTrap[i]);
+      opponentField.spellTrap[i] = null;
+      await (duelsService as any).recalculateMagePowerAtk(duelId, duel, !isPlayer1);
+      await (duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
+      return true;
+    }
+  }
+  return false;
+}
+
+async function placeSpecialSummonedFromCard(
+  duelsService: any,
+  duelId: string,
+  duel: any,
+  isPlayer1: boolean,
+  playerField: any,
+  card: any,
+  zoneIndex: number,
+  position: 'attack' | 'defense',
+): Promise<void> {
+  const currentTurnCounter = playerField?.turnCounter || duel.turnCounter || 1;
+  playerField.monsters[zoneIndex] = {
+    ...card,
+    position,
+    summonedTurnNumber: currentTurnCounter,
+    summonedByPlayer: duel.currentTurn,
+    positionChangedThisTurn: false,
+    attackedThisTurn: false,
+    attacksThisTurn: 0,
+    specialSummoned: true,
+  };
+  const placed = playerField.monsters[zoneIndex];
+  if (placed && typeof (duelsService as any).checkTrapsOnMonsterSummon === 'function') {
+    const destroyed = await (duelsService as any).checkTrapsOnMonsterSummon(
+      duelId,
+      duel,
+      isPlayer1,
+      zoneIndex,
+      placed,
+      position,
+    );
+    if (destroyed) return;
+  }
+  if (position === 'attack' && typeof (duelsService as any).applySliferEffectOnOpponentSummon === 'function') {
+    await (duelsService as any).applySliferEffectOnOpponentSummon(duelId, duel, isPlayer1, zoneIndex);
+  }
+}
+
+/**
+ * Lightning Vortex — Descarte 1 carta aleatória da mão (se houver); destrua todos os monstros com face para cima que o oponente controla.
+ */
+export const createLightningVortexEffect = (duelsService: any): SimpleCardEffectFunction => {
+  return async (context: CardEffectContext): Promise<CardEffectResult> => {
+    const { duelId, duel, isPlayer1, zoneIndex } = context;
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    const opponentField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+    let paidCost = false;
+    if (playerField?.hand?.length > 0) {
+      const ri = Math.floor(Math.random() * playerField.hand.length);
+      const discarded = playerField.hand.splice(ri, 1)[0];
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(discarded);
+      paidCost = true;
+    }
+    let n = 0;
+    if (paidCost && opponentField?.monsters) {
+      for (let i = 0; i < opponentField.monsters.length; i++) {
+        const m = opponentField.monsters[i];
+        if (!isFaceUpMonster(m)) continue;
+        await (duelsService as any).handleEquipmentDestruction(duelId, duel, !isPlayer1, m);
+        if (!opponentField.graveyard) opponentField.graveyard = [];
+        opponentField.graveyard.push(m);
+        opponentField.monsters[i] = null;
+        n++;
+        if (!opponentField.monsterDestroyedThisTurn) opponentField.monsterDestroyedThisTurn = true;
+      }
+    }
+    if (n > 0) await (duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
+    if (playerField?.spellTrap?.[zoneIndex]) {
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
+      playerField.spellTrap[zoneIndex] = null;
+    }
+    await (duelsService as any).syncDuelState(duelId, duel, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    });
+    await (duelsService as any).recalculateMagePowerAtk(duelId, duel, isPlayer1);
+    return { success: true, createdPendingChoice: false, message: `Lightning Vortex: ${n} monstro(s)` };
+  };
+};
+
+/**
+ * Trade-In — Descarte 1 monstro de Nível 8 da mão; compre 2 cartas.
+ */
+export const createTradeInEffect = (duelsService: any): SimpleCardEffectFunction => {
+  return async (context: CardEffectContext): Promise<CardEffectResult> => {
+    const { duelId, duel, isPlayer1, zoneIndex } = context;
+    const userId = isPlayer1 ? duel.player1Id : duel.player2Id;
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    if (!playerField?.hand) playerField.hand = [];
+    let idx = playerField.hand.findIndex((c: any) => {
+      const lv = Number(c?.level ?? 0);
+      const isM = String(c?.type || c?.cardType) === 'Monster' || String(c?.type || c?.cardType) === 'MONSTER';
+      return isM && lv >= 8;
+    });
+    if (idx === -1) idx = playerField.hand.findIndex((c: any) => Number(c?.level ?? 0) >= 8);
+    if (idx >= 0) {
+      const d = playerField.hand.splice(idx, 1)[0];
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(d);
+      await duelsService.drawCard(duelId, userId);
+      await duelsService.drawCard(duelId, userId);
+    }
+    if (playerField?.spellTrap?.[zoneIndex]) {
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
+      playerField.spellTrap[zoneIndex] = null;
+    }
+    await (duelsService as any).syncDuelState(duelId, duel, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    });
+    return { success: true, createdPendingChoice: false, message: 'Trade-In resolvido' };
+  };
+};
+
+/**
+ * Dark Eruption — Adiciona 1 monstro de TREVAS com 1500 ou menos de ATK do seu Cemitério à sua mão.
+ */
+export const createDarkEruptionEffect = (duelsService: any): SimpleCardEffectFunction => {
+  return async (context: CardEffectContext): Promise<CardEffectResult> => {
+    const { duelId, duel, isPlayer1, zoneIndex } = context;
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    if (!playerField?.graveyard) playerField.graveyard = [];
+    const gy = playerField.graveyard;
+    let gi = -1;
+    for (let i = 0; i < gy.length; i++) {
+      const c = gy[i];
+      const attr = String(c?.attribute || '').toUpperCase();
+      const atk = Number(c?.atk ?? 0);
+      const isM = String(c?.type || c?.cardType).toLowerCase().includes('monster');
+      if (isM && (attr === 'DARK' || attr === 'TREVAS') && atk <= 1500) {
+        gi = i;
+        break;
+      }
+    }
+    if (gi >= 0) {
+      const [card] = gy.splice(gi, 1);
+      if (!playerField.hand) playerField.hand = [];
+      playerField.hand.push(card);
+    }
+    if (playerField?.spellTrap?.[zoneIndex]) {
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
+      playerField.spellTrap[zoneIndex] = null;
+    }
+    await (duelsService as any).syncDuelState(duelId, duel, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    });
+    await (duelsService as any).recalculateMagePowerAtk(duelId, duel, isPlayer1);
+    return { success: true, createdPendingChoice: false, message: 'Dark Eruption resolvido' };
+  };
+};
+
+/**
+ * Stamping Destruction — Se você controlar um monstro Dragão: destrua 1 Magia/Armadilha no campo e, se o fizer, cause 500 de dano ao controlador dela.
+ */
+export const createStampingDestructionEffect = (duelsService: any): SimpleCardEffectFunction => {
+  return async (context: CardEffectContext): Promise<CardEffectResult> => {
+    const { duelId, duel, isPlayer1, zoneIndex } = context;
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    const opponentField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+    if (!fieldHasDragonMonster(playerField)) {
+      if (playerField?.spellTrap?.[zoneIndex]) {
+        if (!playerField.graveyard) playerField.graveyard = [];
+        playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
+        playerField.spellTrap[zoneIndex] = null;
+      }
+      await (duelsService as any).syncDuelState(duelId, duel, {
+        player1Field: (duel as any).player1Field,
+        player2Field: (duel as any).player2Field,
+      });
+      return { success: false, createdPendingChoice: false, message: 'Stamping Destruction: sem Dragão no campo' };
+    }
+    const destroyedOpp = await destroyOpponentSpellTrapZone(duelsService, String(duelId), duel, isPlayer1, opponentField);
+    let destroyedOwn = false;
+    if (!destroyedOpp) {
+      destroyedOwn = await destroyOpponentSpellTrapZone(duelsService, String(duelId), duel, !isPlayer1, playerField);
+    }
+    if (destroyedOpp || destroyedOwn) {
+      const damage = 500;
+      if (destroyedOpp) {
+        if (isPlayer1) duel.player2LifePoints = Math.max(0, (duel.player2LifePoints || 0) - damage);
+        else duel.player1LifePoints = Math.max(0, (duel.player1LifePoints || 0) - damage);
+      } else {
+        if (isPlayer1) duel.player1LifePoints = Math.max(0, (duel.player1LifePoints || 0) - damage);
+        else duel.player2LifePoints = Math.max(0, (duel.player2LifePoints || 0) - damage);
+      }
+      if (duel.player1LifePoints <= 0 || duel.player2LifePoints <= 0) {
+        const winnerId = duel.player1LifePoints <= 0 ? duel.player2Id : duel.player1Id;
+        await duelsService.finishDuel(
+          duelId,
+          duel.player1LifePoints <= 0 ? 'PLAYER2_WIN' : 'PLAYER1_WIN',
+          winnerId,
+        );
+      }
+    }
+    if (playerField?.spellTrap?.[zoneIndex]) {
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
+      playerField.spellTrap[zoneIndex] = null;
+    }
+    await (duelsService as any).syncDuelState(duelId, duel, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+      player1LifePoints: duel.player1LifePoints,
+      player2LifePoints: duel.player2LifePoints,
+    });
+    await (duelsService as any).recalculateMagePowerAtk(duelId, duel, isPlayer1);
+    return { success: true, createdPendingChoice: false, message: 'Stamping Destruction resolvido' };
+  };
+};
+
+/**
+ * Tribute to the Doomed — Descarte 1 carta aleatória da mão; destrua 1 monstro no campo do oponente (prioriza com face para cima).
+ */
+export const createTributeToTheDoomedEffect = (duelsService: any): SimpleCardEffectFunction => {
+  return async (context: CardEffectContext): Promise<CardEffectResult> => {
+    const { duelId, duel, isPlayer1, zoneIndex } = context;
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    const opponentField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+    let discarded = false;
+    if (playerField?.hand?.length > 0) {
+      const ri = Math.floor(Math.random() * playerField.hand.length);
+      const d = playerField.hand.splice(ri, 1)[0];
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(d);
+      discarded = true;
+    }
+    let zi = -1;
+    if (discarded && opponentField?.monsters) {
+      for (let i = 0; i < opponentField.monsters.length; i++) {
+        const m = opponentField.monsters[i];
+        if (m && isFaceUpMonster(m)) {
+          zi = i;
+          break;
+        }
+      }
+      if (zi < 0) {
+        for (let i = 0; i < opponentField.monsters.length; i++) {
+          if (opponentField.monsters[i]) {
+            zi = i;
+            break;
+          }
+        }
+      }
+    }
+    if (zi >= 0) {
+      const m = opponentField.monsters[zi];
+      await (duelsService as any).handleEquipmentDestruction(duelId, duel, !isPlayer1, m);
+      opponentField.monsters[zi] = null;
+      if (!opponentField.graveyard) opponentField.graveyard = [];
+      opponentField.graveyard.push(m);
+      if (!opponentField.monsterDestroyedThisTurn) opponentField.monsterDestroyedThisTurn = true;
+      await (duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
+    }
+    if (playerField?.spellTrap?.[zoneIndex]) {
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
+      playerField.spellTrap[zoneIndex] = null;
+    }
+    await (duelsService as any).syncDuelState(duelId, duel, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    });
+    await (duelsService as any).recalculateMagePowerAtk(duelId, duel, isPlayer1);
+    return { success: true, createdPendingChoice: false, message: 'Tribute to the Doomed resolvido' };
+  };
+};
+
+/**
+ * Ancient Rules — Invocação Especial de 1 Monstro Normal de Nível 5 ou mais da sua mão.
+ */
+export const createAncientRulesEffect = (duelsService: any): SimpleCardEffectFunction => {
+  return async (context: CardEffectContext): Promise<CardEffectResult> => {
+    const { duelId, duel, isPlayer1, zoneIndex } = context;
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    if (!playerField?.hand) playerField.hand = [];
+    if (!playerField.monsters) playerField.monsters = [null, null, null, null, null];
+    const hi = playerField.hand.findIndex((c: any) => {
+      if (!isNormalMonsterCard(c)) return false;
+      return Number(c.level ?? 0) >= 5;
+    });
+    const emptyZ = findFirstEmptyMonsterZone(playerField.monsters);
+    if (hi >= 0 && emptyZ >= 0) {
+      const card = playerField.hand.splice(hi, 1)[0];
+      await placeSpecialSummonedFromCard(duelsService, String(duelId), duel, isPlayer1, playerField, card, emptyZ, 'attack');
+    }
+    if (playerField?.spellTrap?.[zoneIndex]) {
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
+      playerField.spellTrap[zoneIndex] = null;
+    }
+    await (duelsService as any).syncDuelState(duelId, duel, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    });
+    await (duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
+    await (duelsService as any).recalculateMagePowerAtk(duelId, duel, isPlayer1);
+    return { success: true, createdPendingChoice: false, message: 'Ancient Rules resolvido' };
+  };
+};
+
+/**
+ * Silver's Cry — Invocação Especial de 1 Monstro Normal Dragão do seu Cemitério.
+ */
+export const createSilversCryEffect = (duelsService: any): SimpleCardEffectFunction => {
+  return async (context: CardEffectContext): Promise<CardEffectResult> => {
+    const { duelId, duel, isPlayer1, zoneIndex } = context;
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    if (!playerField?.graveyard) playerField.graveyard = [];
+    if (!playerField.monsters) playerField.monsters = [null, null, null, null, null];
+    let gi = -1;
+    for (let i = 0; i < playerField.graveyard.length; i++) {
+      const c = playerField.graveyard[i];
+      const race = String(c?.race || '').toLowerCase();
+      if (isNormalMonsterCard(c) && race.includes('dragon')) {
+        gi = i;
+        break;
+      }
+    }
+    const emptyZ = findFirstEmptyMonsterZone(playerField.monsters);
+    if (gi >= 0 && emptyZ >= 0) {
+      const card = playerField.graveyard.splice(gi, 1)[0];
+      await placeSpecialSummonedFromCard(duelsService, String(duelId), duel, isPlayer1, playerField, card, emptyZ, 'attack');
+    }
+    if (playerField?.spellTrap?.[zoneIndex]) {
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
+      playerField.spellTrap[zoneIndex] = null;
+    }
+    await (duelsService as any).syncDuelState(duelId, duel, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    });
+    await (duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
+    await (duelsService as any).recalculateMagePowerAtk(duelId, duel, isPlayer1);
+    return { success: true, createdPendingChoice: false, message: "Silver's Cry resolvido" };
+  };
+};
+
+/**
+ * Double Summon — Neste turno você pode fazer 2 Invocações-Normais (não apenas 1).
+ */
+export const createDoubleSummonEffect = (duelsService: any): SimpleCardEffectFunction => {
+  return async (context: CardEffectContext): Promise<CardEffectResult> => {
+    const { duelId, duel, isPlayer1, zoneIndex } = context;
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    const prev = typeof playerField.bonusNormalSummonsRemaining === 'number' ? playerField.bonusNormalSummonsRemaining : 0;
+    playerField.bonusNormalSummonsRemaining = prev + 1;
+    logger.info(`✨ [DoubleSummon] bonusNormalSummonsRemaining=${playerField.bonusNormalSummonsRemaining}`);
+    if (playerField?.spellTrap?.[zoneIndex]) {
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
+      playerField.spellTrap[zoneIndex] = null;
+    }
+    await (duelsService as any).syncDuelState(duelId, duel, {
+      player1Field: (duel as any).player1Field,
+      player2Field: (duel as any).player2Field,
+    });
+    await (duelsService as any).recalculateMagePowerAtk(duelId, duel, isPlayer1);
+    return { success: true, createdPendingChoice: false, message: 'Double Summon: +1 invocação normal neste turno' };
   };
 };
 

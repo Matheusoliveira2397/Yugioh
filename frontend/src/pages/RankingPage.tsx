@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
-import axios from 'axios';
+import { api } from '../api/axios';
+import { getApiErrorMessage } from '../utils/api-error';
 import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { getDivisionDisplayName, getDivisionImagePath } from '../utils/divisionDisplay';
 import { formatScore } from '../utils/formatScore';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+/** Ranking por classe (torneio): oculto na UI até reativar. */
+const SHOW_CLASS_RANKING_TAB = false;
 
 interface RankedPlayer {
   id: string;
@@ -94,14 +96,15 @@ export default function RankingPage() {
     seasonEndsAt: string | null;
   } | null>(null);
   const [countdownTick, setCountdownTick] = useState(0);
-  const { token, user } = useAuthStore();
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const { user } = useAuthStore();
 
   useEffect(() => {
-    axios
+    api
       .get<{
         currentSeasonNumber?: number;
         seasonEndsAt?: string | null;
-      }>(`${API_URL}/public/stats`)
+      }>('/public/stats')
       .then((r) => {
         setPublicSeason({
           currentSeasonNumber: typeof r.data?.currentSeasonNumber === 'number' ? r.data.currentSeasonNumber : 0,
@@ -154,19 +157,19 @@ export default function RankingPage() {
   const fetchClassRanking = useCallback(async () => {
     setClassRankingLoading(true);
     try {
-      const response = await axios.get<{ classes?: unknown[]; ranking: ClassRankingEntry[] }>(
-        `${API_URL}/tournaments/ranking/list`,
-        { headers: token ? { Authorization: `Bearer ${token}` } : {}, params: { limit: 500 } }
+      const response = await api.get<{ classes?: unknown[]; ranking: ClassRankingEntry[] }>(
+        '/tournaments/ranking/list',
+        { params: { limit: 500 } }
       );
       const data = response.data;
       setClassRanking(Array.isArray(data?.ranking) ? data.ranking : []);
-    } catch (error) {
-      console.error('Erro ao buscar ranking de classes:', error);
+    } catch (error: unknown) {
+      console.error('Erro ao buscar ranking de classes:', getApiErrorMessage(error));
       setClassRanking([]);
     } finally {
       setClassRankingLoading(false);
     }
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     if (rankingType === 'classe') {
@@ -182,12 +185,10 @@ export default function RankingPage() {
 
   const fetchSeasons = async () => {
     try {
-      const response = await axios.get(`${API_URL}/seasons/all`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const response = await api.get('/seasons/all');
       setSeasons(Array.isArray(response.data) ? response.data : []);
-    } catch (error) {
-      console.error('Erro ao buscar seasons:', error);
+    } catch (error: unknown) {
+      console.error('Erro ao buscar seasons:', getApiErrorMessage(error));
       setSeasons([]);
     }
   };
@@ -195,7 +196,7 @@ export default function RankingPage() {
   const fetchAvailableDivisions = async () => {
     try {
       // Usar endpoint público que não requer autenticação
-      const response = await axios.get(`${API_URL}/public/divisions/available`);
+      const response = await api.get('/public/divisions/available');
       const available = response.data || [];
       setAvailableDivisions(available);
       
@@ -203,8 +204,8 @@ export default function RankingPage() {
       if (activeTab === 'season' && available.length > 0 && !selectedDivision) {
         setSelectedDivision(available[0].name);
       }
-    } catch (error) {
-      console.error('Erro ao buscar divisões disponíveis:', error);
+    } catch (error: unknown) {
+      console.error('Erro ao buscar divisões disponíveis:', getApiErrorMessage(error));
       // Em caso de erro, usar todas as divisões padrão
       setAvailableDivisions([
         { id: '1', name: 'Legendary', order: 7, isAvailable: true },
@@ -340,18 +341,16 @@ export default function RankingPage() {
 
   const fetchRanking = async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       if (rankingType === 'clan') {
         // Buscar ranking de clãs
-        const endpoint = activeTab === 'season' 
-          ? `${API_URL}/groups/ranking/season`
-          : `${API_URL}/groups/ranking/general`;
+        const path =
+          activeTab === 'season' ? '/groups/ranking/season' : '/groups/ranking/general';
 
-        console.log(`🔍 [RankingPage] Buscando ranking de clãs de: ${endpoint}`);
-        
-        const response = await axios.get(endpoint, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        console.log(`🔍 [RankingPage] Buscando ranking de clãs: ${path}`);
+
+        const response = await api.get(path);
         
         if (Array.isArray(response.data)) {
           setGroups(response.data);
@@ -361,20 +360,16 @@ export default function RankingPage() {
         }
       } else {
         // Buscar ranking de duelistas
-        const endpoint = activeTab === 'season' 
-          ? `${API_URL}/users/ranking/season`
-          : `${API_URL}/users/ranking/general`;
+        const path =
+          activeTab === 'season' ? '/users/ranking/season' : '/users/ranking/general';
 
         const params = activeTab === 'season' && selectedSeasonId
           ? { seasonId: selectedSeasonId }
           : {};
 
-        console.log(`🔍 [RankingPage] Buscando ranking de: ${endpoint}`, params);
-        
-        const response = await axios.get(endpoint, {
-          headers: { Authorization: `Bearer ${token}` },
-          params,
-        });
+        console.log(`🔍 [RankingPage] Buscando ranking de: ${path}`, params);
+
+        const response = await api.get(path, { params });
         
         if (Array.isArray(response.data)) {
           const normalizedData = response.data.map((p: any) => {
@@ -411,8 +406,10 @@ export default function RankingPage() {
           setPlayers([]);
         }
       }
-    } catch (error: any) {
-      console.error('❌ [RankingPage] Erro ao buscar ranking:', error);
+    } catch (error: unknown) {
+      const msg = getApiErrorMessage(error);
+      console.error('❌ [RankingPage] Erro ao buscar ranking:', msg);
+      setFetchError(msg);
       if (rankingType === 'clan') {
         setGroups([]);
       } else {
@@ -458,28 +455,54 @@ export default function RankingPage() {
   });
 
   return (
-    <div className="min-h-screen p-2 sm:p-4 md:p-8 relative z-10 flex flex-col items-center">
+    <div className="min-h-screen px-2 pt-1 pb-3 sm:px-4 sm:pt-2 md:px-6 md:pt-3 md:pb-6 relative z-10 flex flex-col items-center">
       <div className="max-w-7xl w-full mx-auto">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-4 md:mb-8 text-center"
+          className="mb-2 md:mb-3 text-center"
         >
-          <h1 className="text-2xl sm:text-3xl md:text-5xl font-bold text-white mb-2 flex items-center justify-center gap-2 md:gap-3">
-            <span className="text-3xl sm:text-4xl md:text-6xl">📊</span>
+          <h1 className="text-xl sm:text-2xl md:text-4xl font-bold text-white mb-1 flex items-center justify-center gap-2 md:gap-3">
+            <span className="text-2xl sm:text-3xl md:text-5xl">📊</span>
             <span className="hidden sm:inline">Ranking</span>
             <span className="sm:hidden">Ranking</span>
           </h1>
-          <p className="text-slate-400 text-sm md:text-lg">
+          <p className="text-slate-400 text-xs md:text-sm">
             {rankingType === 'duelista' && 'Veja os melhores duelistas do jogo'}
             {rankingType === 'clan' && 'Veja os melhores clãs do jogo'}
-            {rankingType === 'classe' && 'Ranking por classes Obelisco, Rá e Slifer (pontos de torneio)'}
+            {SHOW_CLASS_RANKING_TAB && rankingType === 'classe' && 'Ranking por classes Obelisco, Rá e Slifer (pontos de torneio)'}
           </p>
         </motion.div>
 
+        {fetchError && (
+          <div
+            className="mb-3 max-w-2xl mx-auto p-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-200 text-sm text-center flex flex-wrap items-center justify-center gap-2"
+            role="alert"
+          >
+            <span>{fetchError}</span>
+            <button
+              type="button"
+              className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold"
+              onClick={() => {
+                setFetchError(null);
+                fetchRanking();
+              }}
+            >
+              Tentar de novo
+            </button>
+            <button
+              type="button"
+              className="px-3 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-xs text-slate-300"
+              onClick={() => setFetchError(null)}
+            >
+              Fechar
+            </button>
+          </div>
+        )}
+
         {/* Tabs Duelista/Clã - Season e Geral */}
-        <div className="flex gap-2 md:gap-4 mb-4 md:mb-6 justify-center">
+        <div className="flex gap-2 md:gap-3 mb-2 md:mb-3 justify-center">
           <button
             onClick={() => {
               setRankingType('duelista');
@@ -509,25 +532,27 @@ export default function RankingPage() {
             <span className="hidden sm:inline">🏰 Clã</span>
             <span className="sm:hidden">🏰 Clã</span>
           </button>
-          <button
-            onClick={() => {
-              setRankingType('classe');
-              setSelectedDivision(null);
-            }}
-            className={`flex-1 sm:flex-none px-4 sm:px-8 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 text-sm sm:text-lg ${
-              rankingType === 'classe'
-                ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-yellow-600 text-white shadow-lg shadow-amber-500/50 scale-105'
-                : 'text-slate-400 hover:bg-white/10 hover:text-white hover:scale-105 border border-white/20'
-            }`}
-          >
-            <span className="hidden sm:inline">🏅 Classe</span>
-            <span className="sm:hidden">🏅 Classe</span>
-          </button>
+          {SHOW_CLASS_RANKING_TAB && (
+            <button
+              onClick={() => {
+                setRankingType('classe');
+                setSelectedDivision(null);
+              }}
+              className={`flex-1 sm:flex-none px-4 sm:px-8 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 text-sm sm:text-lg ${
+                rankingType === 'classe'
+                  ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-yellow-600 text-white shadow-lg shadow-amber-500/50 scale-105'
+                  : 'text-slate-400 hover:bg-white/10 hover:text-white hover:scale-105 border border-white/20'
+              }`}
+            >
+              <span className="hidden sm:inline">🏅 Classe</span>
+              <span className="sm:hidden">🏅 Classe</span>
+            </button>
+          )}
         </div>
 
         {/* Tabs Season/Geral - ocultar quando for ranking por Classe */}
-        {rankingType !== 'classe' && (
-        <div className="flex gap-2 md:gap-4 mb-4 md:mb-8 justify-center">
+        {(!SHOW_CLASS_RANKING_TAB || rankingType !== 'classe') && (
+        <div className="flex gap-2 md:gap-3 mb-2 md:mb-4 justify-center">
           <button
             onClick={() => {
               setActiveTab('season');
@@ -564,101 +589,61 @@ export default function RankingPage() {
         </div>
         )}
 
-        {rankingType !== 'classe' && activeTab === 'season' && (
+        {(!SHOW_CLASS_RANKING_TAB || rankingType !== 'classe') && activeTab === 'season' && (
           <motion.div
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-6 md:mb-8 max-w-3xl mx-auto rounded-2xl border border-amber-500/35 bg-gradient-to-br from-slate-900/95 via-purple-950/50 to-slate-900/95 p-4 sm:p-6 shadow-xl shadow-amber-950/30"
+            className="mb-1.5 max-w-5xl mx-auto rounded-md border border-white/[0.08] bg-slate-950/20 backdrop-blur-[3px] px-2 py-1 sm:px-2.5 sm:py-1"
           >
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 pb-4 border-b border-white/10">
-              <div className="flex items-start gap-3">
-                <span className="text-3xl sm:text-4xl shrink-0" aria-hidden>
-                  🏆
-                </span>
-                <div>
-                  <p className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-amber-300/90 font-semibold mb-1">
-                    Season atual
-                  </p>
-                  <h2 className="text-lg sm:text-2xl font-bold text-white leading-tight">
-                    {publicSeason === null ? (
-                      <span className="text-slate-400">Carregando season…</span>
-                    ) : (
-                      activeSeasonDisplay.name
-                    )}
-                  </h2>
-                  {publicSeason != null && activeSeasonDisplay.number != null && (
-                    <p className="text-sm text-slate-400 mt-1">Temporada nº {activeSeasonDisplay.number}</p>
+            <div
+              className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-[10px] sm:text-[11px] text-slate-400"
+              aria-live="polite"
+            >
+              <span className="text-sm leading-none shrink-0" aria-hidden>
+                🏆
+              </span>
+              <span className="text-[9px] uppercase tracking-wider text-amber-200/50 hidden sm:inline">
+                Season
+              </span>
+              {publicSeason === null ? (
+                <span className="text-slate-500">Carregando…</span>
+              ) : (
+                <>
+                  <span className="font-semibold text-slate-200/90 truncate max-w-[42vw] sm:max-w-none">
+                    {activeSeasonDisplay.name}
+                  </span>
+                  {activeSeasonDisplay.number != null && (
+                    <span className="text-slate-500 shrink-0">· nº {activeSeasonDisplay.number}</span>
                   )}
-                </div>
-              </div>
-              {publicSeason?.seasonEndsAt && (
-                <div className="text-left sm:text-right text-sm text-slate-400 sm:shrink-0">
-                  <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-0.5">Término previsto</p>
-                  <p className="text-white font-medium tabular-nums">
-                    {new Date(publicSeason.seasonEndsAt).toLocaleString('pt-BR', {
-                      dateStyle: 'short',
-                      timeStyle: 'short',
-                    })}
-                  </p>
-                </div>
+                  {publicSeason.seasonEndsAt && (
+                    <span className="text-slate-500/90 tabular-nums shrink-0 hidden md:inline">
+                      · fim {new Date(publicSeason.seasonEndsAt).toLocaleDateString('pt-BR', { dateStyle: 'short' })}
+                    </span>
+                  )}
+                  <span className="text-slate-500 shrink-0">·</span>
+                  {!publicSeason.seasonEndsAt ? (
+                    <span className="text-slate-500">sem data de término</span>
+                  ) : seasonCountdownParts?.ended ? (
+                    <span className="text-amber-200/70">tempo esgotado</span>
+                  ) : seasonCountdownParts ? (
+                    <span className="font-mono tabular-nums text-amber-100/75 text-[10px] sm:text-[11px]">
+                      {seasonCountdownParts.d}d {String(seasonCountdownParts.h).padStart(2, '0')}:
+                      {String(seasonCountdownParts.m).padStart(2, '0')}:{String(seasonCountdownParts.s).padStart(2, '0')}
+                    </span>
+                  ) : null}
+                </>
               )}
             </div>
-
-            <p className="text-center text-slate-400 text-xs sm:text-sm mt-4 mb-3">Contagem regressiva até o fim da season</p>
-
-            {publicSeason === null ? (
-              <div className="flex justify-center gap-2 sm:gap-3 flex-wrap opacity-60">
-                {(['Dias', 'Horas', 'Min', 'Seg'] as const).map((label) => (
-                  <div
-                    key={label}
-                    className="flex flex-col items-center rounded-xl bg-black/30 border border-white/5 px-4 py-3 min-w-[4.25rem] sm:min-w-[5rem]"
-                  >
-                    <span className="text-xl font-mono font-bold text-slate-500">—</span>
-                    <span className="text-[10px] uppercase text-slate-500 mt-1">{label}</span>
-                  </div>
-                ))}
-              </div>
-            ) : !publicSeason.seasonEndsAt ? (
-              <p className="text-center text-slate-500 text-sm py-2">Data de término da season ainda não está definida.</p>
-            ) : seasonCountdownParts?.ended ? (
-              <p className="text-center text-amber-200/95 font-medium py-3">
-                A season atual chegou ao fim ou está no último instante.
-              </p>
-            ) : (
-              seasonCountdownParts && (
-                <div className="flex justify-center gap-2 sm:gap-3 md:gap-4 flex-wrap" aria-live="polite">
-                  {(
-                    [
-                      ['Dias', seasonCountdownParts.d],
-                      ['Horas', seasonCountdownParts.h],
-                      ['Min', seasonCountdownParts.m],
-                      ['Seg', seasonCountdownParts.s],
-                    ] as const
-                  ).map(([label, value]) => (
-                    <div
-                      key={label}
-                      className="flex flex-col items-center justify-center rounded-xl bg-black/45 border border-amber-500/20 px-3 py-2 sm:px-5 sm:py-3 min-w-[4.25rem] sm:min-w-[5.25rem] shadow-inner"
-                    >
-                      <span className="text-xl sm:text-2xl md:text-3xl font-bold font-mono text-amber-100 tabular-nums leading-none">
-                        {label === 'Dias' ? value : String(value).padStart(2, '0')}
-                      </span>
-                      <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-slate-400 mt-1.5">{label}</span>
-                    </div>
-                  ))}
-                </div>
-              )
-            )}
-
             {rankingType === 'duelista' && selectedSeasonId && (
-              <p className="text-center text-slate-500 text-[11px] sm:text-xs mt-4 pt-3 border-t border-white/5">
-                Você está vendo o ranking de uma season anterior. A contagem acima é sempre da <strong className="text-slate-400">season atual</strong>.
+              <p className="text-center text-slate-500/90 text-[9px] sm:text-[10px] mt-0.5 pt-0.5 border-t border-white/[0.06] leading-tight">
+                Ranking de season antiga · contagem = season atual
               </p>
             )}
           </motion.div>
         )}
 
         {/* Descrição do ranking por Classe */}
-        {rankingType === 'classe' && (
+        {SHOW_CLASS_RANKING_TAB && rankingType === 'classe' && (
           <p className="text-slate-400 text-sm md:text-base text-center mb-4 md:mb-6 max-w-2xl mx-auto">
             Ranking por pontos de torneio. As classes Obelisco, Rá e Slifer são definidas pelos melhores colocados.
           </p>
@@ -669,7 +654,7 @@ export default function RankingPage() {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-4"
+            className="mb-2"
           >
             <div className="flex flex-wrap gap-2 justify-center items-center">
               <label className="text-slate-300 text-sm font-medium whitespace-nowrap">Season:</label>
@@ -697,9 +682,9 @@ export default function RankingPage() {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-6 md:mb-8"
+            className="mb-3 md:mb-4"
           >
-            <div className="flex gap-1 sm:gap-2 md:gap-3 lg:gap-4 justify-center items-center w-full">
+            <div className="flex gap-1 sm:gap-2 md:gap-3 lg:gap-4 justify-center items-end w-full">
               {/* Divisões com logos - Apenas divisões disponíveis */}
               {availableDivisions.map((division) => {
                 const divisionName = typeof division === 'object' && 'name' in division ? division.name : division;
@@ -738,8 +723,8 @@ export default function RankingPage() {
                         alt={displayName}
                         className="object-contain"
                         style={{
-                          width: 'clamp(12rem, 20vw, 30rem)',
-                          height: 'clamp(12rem, 20vw, 30rem)',
+                          width: 'clamp(5.25rem, 16vw, 8.5rem)',
+                          height: 'clamp(5.25rem, 16vw, 8.5rem)',
                         }}
                         onLoad={() => {
                           console.log('✅ Imagem carregada:', imagePath);
@@ -750,7 +735,7 @@ export default function RankingPage() {
                         }}
                       />
                     )}
-                    <span className="text-white font-semibold text-[10px] sm:text-xs md:text-sm whitespace-nowrap" style={{ marginTop: '-6rem' }}>{displayName}</span>
+                    <span className="text-white font-semibold text-[9px] sm:text-[10px] md:text-xs whitespace-nowrap mt-0.5">{displayName}</span>
                   </button>
                 );
               })}
@@ -759,7 +744,7 @@ export default function RankingPage() {
         )}
 
         {/* Ranking - Desktop Table / Mobile Cards */}
-        {rankingType === 'classe' ? (
+        {SHOW_CLASS_RANKING_TAB && rankingType === 'classe' ? (
           /* Ranking por Classe (Obelisco, Rá, Slifer) */
           <div className="rounded-2xl border border-amber-500/30 overflow-hidden mx-auto max-w-6xl bg-slate-900/40">
             <div className="hidden md:block overflow-x-auto">

@@ -13,17 +13,19 @@ import {
   DUEL_FIELD_DESKTOP_CARD_VISUAL_MULT,
 } from '../constants/duelLayout';
 import CardImage from '../components/CardImage';
-import { getCardImage } from '../utils/cardImage';
+import { getCardImage, getAllCardImagePaths } from '../utils/cardImage';
 import { getCardDescription } from '../utils/cardDescription';
 import {
   getProfileImageUrl,
   DEFAULT_PROFILE_IMAGE_PATH,
   getCosmeticImageUrl,
   getDefaultSkinCardImageUrl,
+  getCardImageDisplayUrl,
 } from '../utils/imageUrl';
 import TributeSelectionModal from '../components/duel/TributeSelectionModal';
 import ArenaFullBleedBackground from '../components/ArenaFullBleedBackground';
 import { getSpellActivationLpCost } from '../utils/spellActivationLpCost';
+import { requestActiveDuelRefresh } from '../utils/activeDuelRefresh';
 
 /** IDs no duelo podem ser UUID (string) ou número — nunca usar parseInt em UUID. */
 function duelIdsEqual(a: unknown, b: unknown): boolean {
@@ -213,119 +215,127 @@ function DuelEndedOverlay({
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center pointer-events-auto bg-transparent">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center pointer-events-auto overflow-hidden p-2 sm:p-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      {/* Desfoca o campo do duelo atrás; mantém leitura do modal */}
+      <div
+        className="absolute inset-0 bg-slate-950/40 backdrop-blur-2xl"
+        aria-hidden
+      />
       <motion.div
-        initial={{ opacity: 0, scale: 0.8 }}
+        initial={{ opacity: 0, scale: 0.92 }}
         animate={{ opacity: 1, scale: 1 }}
-        className={`rounded-3xl border-4 shadow-2xl px-8 py-10 max-w-lg w-full mx-4 pointer-events-auto max-h-[min(90dvh,calc(100dvh-2rem))] overflow-y-auto ${
+        transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+        className={`relative z-10 w-full max-w-[min(100%,22rem)] sm:max-w-md rounded-2xl border-2 sm:border-[3px] shadow-2xl px-4 py-3 sm:px-5 sm:py-4 pointer-events-auto max-h-[min(100dvh-1rem,100svh-1rem)] overflow-hidden flex flex-col ${
           isWinner
-            ? 'bg-gradient-to-br from-yellow-900/95 via-yellow-800/95 to-yellow-900/95 border-yellow-400 backdrop-blur-md'
+            ? 'bg-gradient-to-br from-yellow-900/92 via-yellow-950/88 to-yellow-900/92 border-yellow-400/90'
             : isDraw
-              ? 'bg-gradient-to-br from-gray-900/95 via-gray-800/95 to-gray-900/95 border-gray-400 backdrop-blur-md'
-              : 'bg-gradient-to-br from-red-900/95 via-red-800/95 to-red-900/95 border-red-400 backdrop-blur-md'
+              ? 'bg-gradient-to-br from-gray-900/92 via-slate-950/88 to-gray-900/92 border-gray-400/90'
+              : 'bg-gradient-to-br from-red-900/92 via-red-950/88 to-red-900/92 border-red-400/90'
         }`}
       >
-        <div className="text-center">
+        <div className="text-center flex flex-col min-h-0 min-w-0">
           <h2
-            className={`text-4xl font-bold mb-6 ${
+            className={`text-xl sm:text-2xl font-bold mb-2 shrink-0 ${
               isWinner ? 'text-yellow-300' : isDraw ? 'text-gray-300' : 'text-red-300'
             }`}
           >
             {isWinner ? '🏆 WINNER' : isDraw ? '🤝 EMPATE' : '❌ DERROTA'}
           </h2>
 
-          <div className="mb-6">
+          <div className="mb-2 shrink-0">
             <div className="relative inline-block">
               <div
-                className={`absolute inset-0 rounded-full blur-xl opacity-50 ${
-                  isWinner ? 'bg-yellow-500' : 'bg-red-500'
+                className={`absolute inset-0 rounded-full blur-lg opacity-40 scale-110 ${
+                  isWinner ? 'bg-yellow-500' : isDraw ? 'bg-gray-500' : 'bg-red-500'
                 }`}
               />
               <img
                 src={getProfileImageUrl(myPlayer?.profileImage)}
                 alt={myPlayer?.nickname}
-                className="relative w-32 h-32 rounded-full border-4 border-white shadow-lg object-cover mx-auto"
+                className="relative w-[4.5rem] h-[4.5rem] sm:w-24 sm:h-24 rounded-full border-[3px] border-white shadow-lg object-cover mx-auto"
                 onError={(e) => {
                   e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                 }}
               />
             </div>
-            <h3 className="text-2xl font-bold text-white mt-4 mb-1">
+            <h3 className="text-sm sm:text-base font-bold text-white mt-1.5 mb-0 line-clamp-2 px-1">
               {myPlayer?.clanTag ? `|${myPlayer.clanTag}| ` : ''}
               {myPlayer?.nickname || 'Jogador'}
             </h3>
             <p
-              className={`text-xl font-bold ${
+              className={`text-sm sm:text-base font-bold ${
                 isWinner ? 'text-yellow-400' : isDraw ? 'text-gray-400' : 'text-red-400'
               }`}
             >
               {isWinner ? 'VITÓRIA' : isDraw ? 'EMPATE' : 'DERROTA'}
             </p>
             {isPerfect && (
-              <p className="text-2xl font-bold text-yellow-300 mt-2 animate-pulse">✨ PERFECT ✨</p>
+              <p className="text-sm sm:text-base font-bold text-yellow-300 mt-0.5 animate-pulse">✨ PERFECT ✨</p>
             )}
           </div>
 
-          <div className="mb-6">
-            <p className="text-lg text-gray-300 mb-2">vs</p>
-            <div className="flex flex-col items-center gap-2">
+          <div className="mb-2 shrink-0">
+            <p className="text-[10px] sm:text-xs text-gray-400 mb-1">vs</p>
+            <div className="flex flex-col items-center gap-0.5">
               <img
                 src={getProfileImageUrl(opponentPlayer?.profileImage)}
                 alt={opponentPlayer?.nickname || 'Oponente'}
-                className="w-24 h-24 rounded-full border-4 border-white/40 shadow-lg object-cover"
+                className="w-14 h-14 sm:w-[4.5rem] sm:h-[4.5rem] rounded-full border-2 border-white/40 shadow-md object-cover"
                 onError={(e) => {
                   e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
                 }}
               />
-              <p className="text-xl font-bold text-white">
+              <p className="text-xs sm:text-sm font-bold text-white line-clamp-2 px-1 max-w-full">
                 {opponentPlayer?.clanTag ? `|${opponentPlayer.clanTag}| ` : ''}
                 {opponentPlayer?.nickname || 'Oponente'}
               </p>
             </div>
           </div>
 
-          <div className="bg-black/30 rounded-xl p-6 mb-6 space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-300">TURNOS:</span>
-              <span className="text-white font-bold text-lg">{totalTurns}</span>
+          <div className="bg-black/35 rounded-lg p-2.5 sm:p-3 mb-2 space-y-1.5 text-left shrink-0">
+            <div className="flex justify-between items-center gap-2 text-[11px] sm:text-xs">
+              <span className="text-gray-400 shrink-0">Turnos</span>
+              <span className="text-white font-bold tabular-nums">{totalTurns}</span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-300">DURAÇÃO:</span>
-              <span className="text-white font-bold text-lg">
+            <div className="flex justify-between items-center gap-2 text-[11px] sm:text-xs">
+              <span className="text-gray-400 shrink-0">Duração</span>
+              <span className="text-white font-bold tabular-nums">
                 {minutes > 0 ? `${minutes}m ` : ''}
                 {seconds}s
               </span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-300">MOTIVO:</span>
-              <span className="text-white font-bold text-lg">{getWinReason()}</span>
+            <div className="flex justify-between items-start gap-2 text-[11px] sm:text-xs">
+              <span className="text-gray-400 shrink-0 pt-0.5">Motivo</span>
+              <span className="text-white font-semibold text-right leading-snug">{getWinReason()}</span>
             </div>
             {isWinner && (
-              <div className="flex justify-between items-center pt-2 border-t border-gray-600">
-                <span className="text-gray-300">RECOMPENSA:</span>
-                <span className="text-yellow-400 font-bold text-lg">+300 Gold | +1.7 Score</span>
+              <div className="flex justify-between items-center gap-2 pt-1.5 border-t border-white/10 text-[11px] sm:text-xs">
+                <span className="text-gray-400 shrink-0">Recompensa</span>
+                <span className="text-yellow-400 font-bold text-right">+300 Gold · +1.7 Score</span>
               </div>
             )}
           </div>
 
-          <p className="text-xs text-gray-400 mb-6">Duelo finalizado em {new Date().toLocaleString('pt-BR')}</p>
+          <p className="text-[9px] sm:text-[10px] text-gray-500 mb-2 shrink-0 leading-tight px-0.5">
+            {new Date().toLocaleString('pt-BR')}
+          </p>
 
-          <div className="flex gap-4 justify-center flex-wrap">
+          <div className="flex gap-2 justify-center flex-wrap shrink-0 mt-auto">
             <button
               type="button"
               onClick={() => {
                 window.location.href = '/random-duel';
               }}
-              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 rounded-lg font-bold text-white transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+              className="px-3 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 rounded-lg font-bold text-white transition-colors shadow-md"
             >
-              🎮 Jogar Novamente
+              🎮 Novamente
             </button>
             <button
               type="button"
               onClick={() => {
                 window.location.href = '/';
               }}
-              className="px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg font-bold text-white transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+              className="px-3 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-sm bg-gray-800 hover:bg-gray-700 rounded-lg font-bold text-white transition-colors shadow-md border border-white/10"
             >
               Sair
             </button>
@@ -880,6 +890,11 @@ const DuelArena: React.FC = () => {
   } | null>(null);
   const [selectedSoulTakerMonster, setSelectedSoulTakerMonster] = useState<number | null>(null);
 
+  /** Modal unificado: Lightning Vortex, Trade-In, Dark Eruption, Stamping, Tribute, Ancient Rules, Silver's Cry, Shield Crush, Fissure (empate) */
+  const [showPlayerTargetSpellModal, setShowPlayerTargetSpellModal] = useState(false);
+  const [playerTargetSpellData, setPlayerTargetSpellData] = useState<any | null>(null);
+  const [playerTargetSpellPick, setPlayerTargetSpellPick] = useState<any>(null);
+
   // Estado para Lightning Storm (escolher 1 efeito)
   const [showLightningStormModal, setShowLightningStormModal] = useState(false);
   
@@ -1050,6 +1065,7 @@ const DuelArena: React.FC = () => {
     currentPendingChoice != null ||
     showOpponentHandRevealed ||
     showGracefulCharityModal ||
+    showPlayerTargetSpellModal ||
     showUnitedWeStandModal ||
     showMagePowerModal ||
     showObeliskEffectModal ||
@@ -1492,6 +1508,22 @@ const DuelArena: React.FC = () => {
             setMagePowerData({ availableMonsters: monsters });
             setShowMagePowerModal(true);
             setSelectedMagePowerMonster(null);
+          } else if (pendingChoice.type === 'PLAYER_TARGET_SPELL' && pendingChoice.data) {
+            const d = pendingChoice.data;
+            setPlayerTargetSpellData({
+              duelId: data.id,
+              spellKind: d.spellKind,
+              step: d.step ?? 1,
+              title: d.title,
+              selectableHand: d.selectableHand,
+              graveyardChoices: d.graveyardChoices,
+              spellTrapChoices: d.spellTrapChoices,
+              opponentMonsters: d.opponentMonsters,
+              defenseMonsters: d.defenseMonsters,
+              emptyMonsterZones: d.emptyMonsterZones,
+            });
+            setPlayerTargetSpellPick(null);
+            setShowPlayerTargetSpellModal(true);
           } else {
             console.warn(`⚠️ [handleDuelUpdate] Tipo de escolha pendente desconhecido ou dados faltando:`, pendingChoice);
           }
@@ -1705,6 +1737,7 @@ const DuelArena: React.FC = () => {
           },
         );
         setLoading(false);
+        requestActiveDuelRefresh();
       };
       socket.on('duelEnded', duelEndedListener);
       
@@ -1920,6 +1953,16 @@ const DuelArena: React.FC = () => {
       };
       socket.on('soulTakerShowOpponentMonsters', soulTakerListener);
       console.log('✅ [DuelArena] Listener soulTakerShowOpponentMonsters registrado');
+
+      const playerTargetSpellListener = (data: any) => {
+        if (data.duelId === duelId || String(data.duelId) === String(duelId)) {
+          setPlayerTargetSpellData(data);
+          setPlayerTargetSpellPick(null);
+          setShowPlayerTargetSpellModal(true);
+        }
+      };
+      socket.on('playerTargetSpellShow', playerTargetSpellListener);
+      console.log('✅ [DuelArena] Listener playerTargetSpellShow registrado');
 
       // Listener para Lightning Storm (escolher 1 efeito: destruir monstros em ataque OU magias/armadilhas do oponente)
       const lightningStormListener = (data: { duelId: string | number }) => {
@@ -2443,6 +2486,11 @@ const DuelArena: React.FC = () => {
             setSoulTakerData(null);
             setSelectedSoulTakerMonster(null);
           }
+          if (showPlayerTargetSpellModal) {
+            setShowPlayerTargetSpellModal(false);
+            setPlayerTargetSpellData(null);
+            setPlayerTargetSpellPick(null);
+          }
           if (showLightningStormModal) {
             console.log('🔒 [closePendingChoiceModal] Fechando modal Lightning Storm');
             setShowLightningStormModal(false);
@@ -2632,6 +2680,7 @@ const DuelArena: React.FC = () => {
         currentSocket.off('mysticalSpaceTyphoonShowTargets', mysticalSpaceTyphoonListener);
         currentSocket.off('snowmanEaterShowTargets', snowmanEaterListener);
         currentSocket.off('soulTakerShowOpponentMonsters', soulTakerListener);
+        currentSocket.off('playerTargetSpellShow', playerTargetSpellListener);
         currentSocket.off('lightningStormShowOptions', lightningStormListener);
         currentSocket.off('exiledForceShowTargets', exiledForceListener);
         currentSocket.off('monsterRebornShowGraveyards', monsterRebornListener);
@@ -8408,7 +8457,12 @@ const DuelArena: React.FC = () => {
                           } transition-all duration-200`}
                         >
                           <img
-                            src={card.imageUrl || card.cardImage || '/card-back.jpg'}
+                            src={
+                              getCardImageDisplayUrl(getAllCardImagePaths(card)[0] ?? '') ||
+                              card.imageUrl ||
+                              card.cardImage ||
+                              '/card-back.jpg'
+                            }
                             alt={card.name || card.cardName || 'Carta'}
                             className="w-full h-auto rounded-lg shadow-lg"
                           />
@@ -8539,7 +8593,12 @@ const DuelArena: React.FC = () => {
                           } transition-all duration-200`}
                         >
                           <img
-                            src={monster.imageUrl || monster.cardImage || '/card-back.jpg'}
+                            src={
+                              getCardImageDisplayUrl(getAllCardImagePaths(monster)[0] ?? '') ||
+                              monster.imageUrl ||
+                              monster.cardImage ||
+                              '/card-back.jpg'
+                            }
                             alt={monster.name || monster.cardName || 'Monstro'}
                             className="w-full h-auto rounded-lg shadow-lg"
                           />
@@ -10754,6 +10813,276 @@ const DuelArena: React.FC = () => {
                     </button>
                   </div>
                 ) : null}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showPlayerTargetSpellModal && playerTargetSpellData && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-lg"
+            style={{ zIndex: 9999, pointerEvents: 'auto' } as React.CSSProperties}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-slate-900/95 rounded-2xl border-2 border-cyan-500/40 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto p-6"
+            >
+              <div className="flex justify-between items-start mb-4 border-b border-cyan-500/30 pb-3">
+                <div>
+                  <h2 className="text-2xl font-bold text-cyan-300">Escolha do duelista</h2>
+                  <p className="text-gray-300 mt-1">{playerTargetSpellData.title}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (duelId && user?.id) performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                    setShowPlayerTargetSpellModal(false);
+                    setPlayerTargetSpellData(null);
+                    setPlayerTargetSpellPick(null);
+                  }}
+                  className="text-gray-400 hover:text-white text-2xl font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {playerTargetSpellData.selectableHand?.length ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                  {playerTargetSpellData.selectableHand.map((c: any) => {
+                    const sel =
+                      playerTargetSpellPick?.kind === 'hand' &&
+                      playerTargetSpellPick.instanceId === c.instanceId;
+                    const src = getCardImage(c) || c.cardImage || c.imageUrl || '/card-back.jpg';
+                    return (
+                      <button
+                        key={String(c.instanceId || c.idCarta || Math.random())}
+                        type="button"
+                        onClick={() =>
+                          setPlayerTargetSpellPick({ kind: 'hand', instanceId: c.instanceId })
+                        }
+                        className={`rounded-lg border-2 overflow-hidden ${
+                          sel ? 'border-cyan-400 ring-2 ring-cyan-400/50' : 'border-gray-600'
+                        }`}
+                      >
+                        <img src={src} alt="" className="w-full h-auto object-contain max-h-44" />
+                        <div className="text-xs text-center text-white bg-black/60 py-1 truncate">
+                          {c.name || c.cardName}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {playerTargetSpellData.graveyardChoices?.length ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                  {playerTargetSpellData.graveyardChoices.map((row: any) => {
+                    const idx = row.index;
+                    const c = row.card;
+                    const sel =
+                      playerTargetSpellPick?.kind === 'gy' && playerTargetSpellPick.index === idx;
+                    const src = getCardImage(c) || c?.cardImage || c?.imageUrl || '/card-back.jpg';
+                    return (
+                      <button
+                        key={`gy-${idx}`}
+                        type="button"
+                        onClick={() => setPlayerTargetSpellPick({ kind: 'gy', index: idx })}
+                        className={`rounded-lg border-2 overflow-hidden ${
+                          sel ? 'border-cyan-400 ring-2 ring-cyan-400/50' : 'border-gray-600'
+                        }`}
+                      >
+                        <img src={src} alt="" className="w-full h-auto object-contain max-h-44" />
+                        <div className="text-xs text-center text-white bg-black/60 py-1 truncate">
+                          {c?.name || c?.cardName} (#{idx + 1})
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {playerTargetSpellData.spellTrapChoices?.length ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                  {playerTargetSpellData.spellTrapChoices.map((row: any, i: number) => {
+                    const sel =
+                      playerTargetSpellPick?.kind === 'st' &&
+                      playerTargetSpellPick.zoneIndex === row.zoneIndex &&
+                      playerTargetSpellPick.isOpponent === row.isOpponent;
+                    const c = row.card;
+                    const src = getCardImage(c) || c?.cardImage || c?.imageUrl || '/card-back.jpg';
+                    return (
+                      <button
+                        key={`st-${row.isOpponent ? 'o' : 'p'}-${row.zoneIndex}-${i}`}
+                        type="button"
+                        onClick={() =>
+                          setPlayerTargetSpellPick({
+                            kind: 'st',
+                            zoneIndex: row.zoneIndex,
+                            isOpponent: row.isOpponent,
+                          })
+                        }
+                        className={`rounded-lg border-2 overflow-hidden ${
+                          sel ? 'border-cyan-400 ring-2 ring-cyan-400/50' : 'border-gray-600'
+                        }`}
+                      >
+                        <img src={src} alt="" className="w-full h-auto object-contain max-h-44" />
+                        <div className="text-xs text-center text-white bg-black/60 py-1 truncate">
+                          {(c?.name || c?.cardName) + (row.isOpponent ? ' (oponente)' : ' (seu)')}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {playerTargetSpellData.opponentMonsters?.length ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                  {playerTargetSpellData.opponentMonsters.map((m: any, i: number) => {
+                    const zi = m.zoneIndex !== undefined ? m.zoneIndex : i;
+                    const sel =
+                      playerTargetSpellPick?.kind === 'om' && playerTargetSpellPick.zoneIndex === zi;
+                    const src = getCardImage(m) || m.cardImage || m.imageUrl || '/card-back.jpg';
+                    return (
+                      <button
+                        key={`om-${zi}`}
+                        type="button"
+                        onClick={() => setPlayerTargetSpellPick({ kind: 'om', zoneIndex: zi })}
+                        className={`rounded-lg border-2 overflow-hidden ${
+                          sel ? 'border-cyan-400 ring-2 ring-cyan-400/50' : 'border-gray-600'
+                        }`}
+                      >
+                        <img src={src} alt="" className="w-full h-auto object-contain max-h-44" />
+                        <div className="text-xs text-center text-white bg-black/60 py-1 truncate">
+                          {m.name || m.cardName} (z{zi + 1})
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {playerTargetSpellData.defenseMonsters?.length ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                  {playerTargetSpellData.defenseMonsters.map((row: any, i: number) => {
+                    const sel =
+                      playerTargetSpellPick?.kind === 'df' &&
+                      playerTargetSpellPick.zoneIndex === row.zoneIndex &&
+                      playerTargetSpellPick.isOpponent === row.isOpponent;
+                    const m = row.monster;
+                    const src = getCardImage(m) || m?.cardImage || m?.imageUrl || '/card-back.jpg';
+                    return (
+                      <button
+                        key={`df-${row.isOpponent ? 'o' : 'p'}-${row.zoneIndex}-${i}`}
+                        type="button"
+                        onClick={() =>
+                          setPlayerTargetSpellPick({
+                            kind: 'df',
+                            zoneIndex: row.zoneIndex,
+                            isOpponent: row.isOpponent,
+                          })
+                        }
+                        className={`rounded-lg border-2 overflow-hidden ${
+                          sel ? 'border-cyan-400 ring-2 ring-cyan-400/50' : 'border-gray-600'
+                        }`}
+                      >
+                        <img src={src} alt="" className="w-full h-auto object-contain max-h-44" />
+                        <div className="text-xs text-center text-white bg-black/60 py-1 truncate">
+                          {(m?.name || m?.cardName) + (row.isOpponent ? ' (oponente)' : ' (seu)')}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {playerTargetSpellData.emptyMonsterZones?.length ? (
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {playerTargetSpellData.emptyMonsterZones.map((z: number) => {
+                    const sel =
+                      playerTargetSpellPick?.kind === 'ez' && playerTargetSpellPick.zoneIndex === z;
+                    return (
+                      <button
+                        key={`ez-${z}`}
+                        type="button"
+                        onClick={() => setPlayerTargetSpellPick({ kind: 'ez', zoneIndex: z })}
+                        className={`px-4 py-3 rounded-lg font-bold border-2 ${
+                          sel
+                            ? 'border-cyan-400 bg-cyan-500/20 text-white'
+                            : 'border-gray-600 text-gray-200'
+                        }`}
+                      >
+                        Zona monstro {z + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              <div className="flex justify-center gap-3 mt-6 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (duelId && user?.id) performAction(duelId, user.id, 'CANCEL_CARD_ACTIVATION', {});
+                    setShowPlayerTargetSpellModal(false);
+                    setPlayerTargetSpellData(null);
+                    setPlayerTargetSpellPick(null);
+                  }}
+                  className="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const d = playerTargetSpellData;
+                    const ad: Record<string, unknown> = {};
+                    if (d.selectableHand?.length) {
+                      if (
+                        !playerTargetSpellPick ||
+                        playerTargetSpellPick.kind !== 'hand' ||
+                        !playerTargetSpellPick.instanceId
+                      ) {
+                        return;
+                      }
+                      ad.instanceIdToDiscard = playerTargetSpellPick.instanceId;
+                    } else if (d.graveyardChoices?.length) {
+                      if (playerTargetSpellPick?.kind !== 'gy' || playerTargetSpellPick.index === undefined) {
+                        return;
+                      }
+                      ad.graveyardIndex = playerTargetSpellPick.index;
+                    } else if (d.spellTrapChoices?.length) {
+                      if (playerTargetSpellPick?.kind !== 'st') return;
+                      ad.spellTrapZoneIndex = playerTargetSpellPick.zoneIndex;
+                      ad.spellTrapTargetIsOpponent = playerTargetSpellPick.isOpponent;
+                    } else if (d.opponentMonsters?.length) {
+                      if (playerTargetSpellPick?.kind !== 'om') return;
+                      ad.monsterZoneIndex = playerTargetSpellPick.zoneIndex;
+                    } else if (d.defenseMonsters?.length) {
+                      if (playerTargetSpellPick?.kind !== 'df') return;
+                      ad.monsterZoneIndex = playerTargetSpellPick.zoneIndex;
+                      ad.monsterTargetIsOpponent = playerTargetSpellPick.isOpponent;
+                    } else if (d.emptyMonsterZones?.length) {
+                      if (playerTargetSpellPick?.kind !== 'ez') return;
+                      ad.emptyMonsterZoneIndex = playerTargetSpellPick.zoneIndex;
+                    } else {
+                      return;
+                    }
+                    if (duelId && user?.id) {
+                      performAction(duelId, user.id, 'PLAYER_TARGET_SPELL_RESOLVE', ad);
+                    }
+                    setShowPlayerTargetSpellModal(false);
+                    setPlayerTargetSpellData(null);
+                    setPlayerTargetSpellPick(null);
+                  }}
+                  className="px-6 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-bold"
+                >
+                  Confirmar
+                </button>
               </div>
             </motion.div>
           </div>

@@ -379,25 +379,29 @@ export default function HomePage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-2xl">Carregando...</div>
+      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3 text-slate-300">
+        <div className="h-9 w-9 rounded-full border-2 border-violet-500/30 border-t-violet-400 animate-spin" aria-hidden />
+        <p className="text-sm font-medium">Carregando…</p>
       </div>
     );
   }
 
+  const homePanel =
+    'rounded-xl border border-white/10 bg-gradient-to-b from-slate-950/60 via-slate-950/45 to-slate-950/55 backdrop-blur-md shadow-lg shadow-black/30 ring-1 ring-white/[0.06] overflow-hidden';
+
   return (
-    <div className="max-w-7xl mx-auto px-2 sm:px-3 md:px-4 py-2 sm:py-3 md:py-4">
-      {/* Grid Principal */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-3 md:gap-4">
-        {/* Coluna Esquerda - Rankings (largura limitada para não ficar espaço vazio) */}
-        <div className="lg:col-span-4 lg:max-w-[420px] space-y-2 sm:space-y-3">
+    <div className="w-full min-w-0 max-w-[min(100%,90rem)] mx-auto px-[clamp(0.75rem,2.5vw,1.75rem)] py-[clamp(0.5rem,2vw,1.5rem)] pb-6 sm:pb-8">
+      {/* Grid principal: sidebar fluida + coluna principal */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 lg:gap-6 lg:items-start">
+        {/* Sidebar — rankings & arena */}
+        <aside className="lg:col-span-4 xl:col-span-4 min-w-0 flex flex-col gap-4 sm:gap-5">
           {/* Contador próxima arena */}
           {nextArena && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               onClick={() => navigate('/arena')}
-              className="rounded-lg p-2 sm:p-2.5 border border-amber-500/40 bg-gradient-to-r from-amber-900/30 to-orange-900/30 hover:border-amber-400/60 transition-all cursor-pointer"
+              className={`${homePanel} p-3 sm:p-3.5 border-amber-500/35 bg-gradient-to-br from-amber-950/50 via-slate-950/40 to-orange-950/35 hover:border-amber-400/55 transition-all cursor-pointer`}
             >
               <h2 className="text-[10px] sm:text-xs font-bold mb-0.5 flex items-center gap-1 text-amber-200 drop-shadow-lg">
                 ⏰ Próxima Arena
@@ -413,88 +417,18 @@ export default function HomePage() {
             </motion.div>
           )}
 
-          {/* Estatísticas globais (igual login) */}
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            className="rounded-lg border border-white/20 bg-black/20 backdrop-blur-sm overflow-hidden shadow-lg"
-          >
-            <div className="px-2 sm:px-3 py-2 border-b border-white/10 bg-gradient-to-r from-emerald-500/20 to-transparent">
-              <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5">
-                <span className="text-base sm:text-lg">📊</span> Estatísticas
-              </h2>
-            </div>
-            {publicStats === null ? (
-              <div className="p-3">
-                <p className="text-white/50 text-xs">Estatísticas indisponíveis no momento.</p>
-              </div>
-            ) : (
-              <div className="p-2 sm:p-3 grid grid-cols-2 gap-2 sm:gap-3">
-                <div className="px-2 py-1.5 rounded-md bg-white/5">
-                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Temporada</p>
-                  <p className="text-white font-bold text-xs sm:text-sm">{publicStats.currentSeasonNumber}º</p>
-                </div>
-                {publicStats.seasonEndsInDays != null && (
-                  <div className="px-2 py-1.5 rounded-md bg-white/5">
-                    <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Termina em</p>
-                    <p className="text-amber-300 font-bold text-xs sm:text-sm">
-                      {publicStats.seasonEndsInDays} dia{publicStats.seasonEndsInDays === 1 ? '' : 's'}
-                    </p>
-                  </div>
-                )}
-                <div className="px-2 py-1.5 rounded-md bg-white/5">
-                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Duelistas</p>
-                  <p className="text-white font-bold text-xs sm:text-sm">{publicStats.totalDuelists.toLocaleString('pt-BR')}</p>
-                </div>
-                <div className="px-2 py-1.5 rounded-md bg-white/5">
-                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Duelos</p>
-                  <p className="text-white font-bold text-xs sm:text-sm">{publicStats.totalDuels.toLocaleString('pt-BR')}</p>
-                </div>
-                <div className="px-2 py-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 col-span-2">
-                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Online agora</p>
-                  <p className="text-emerald-400 font-bold text-base sm:text-lg">{publicStats.playersOnline.toLocaleString('pt-BR')}</p>
-                </div>
-                <div className="px-2 py-1.5 rounded-md bg-white/5">
-                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Torneios</p>
-                  <p className="text-white font-bold text-xs sm:text-sm">{publicStats.tournamentsFinished.toLocaleString('pt-BR')}</p>
-                </div>
-                <div className="px-2 py-1.5 rounded-md bg-white/5">
-                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Cartas</p>
-                  <p className="text-white font-bold text-xs sm:text-sm">{publicStats.cardsRegistered.toLocaleString('pt-BR')}</p>
-                </div>
-                {(publicStats.maxOnlineToday > 0 || publicStats.maxOnlineYesterday > 0) && (
-                  <>
-                    {publicStats.maxOnlineToday > 0 && (
-                      <div className="px-2 py-1.5 rounded-md bg-white/5">
-                        <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Pico hoje</p>
-                        <p className="text-white font-bold text-xs sm:text-sm">{publicStats.maxOnlineToday.toLocaleString('pt-BR')}</p>
-                      </div>
-                    )}
-                    {publicStats.maxOnlineYesterday > 0 && (
-                      <div className="px-2 py-1.5 rounded-md bg-white/5">
-                        <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/50">Pico ontem</p>
-                        <p className="text-white font-bold text-xs sm:text-sm">{publicStats.maxOnlineYesterday.toLocaleString('pt-BR')}</p>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-          </motion.div>
-
           {/* Card único: Top 5 Duelistas (Geral + Season lado a lado, igual ao login) */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-lg p-2 sm:p-3 md:p-4 border border-white/20 bg-black/20 backdrop-blur-sm overflow-hidden"
+            className={homePanel}
           >
-            <div className="px-2 sm:px-3 py-2 border-b border-white/10 bg-gradient-to-r from-amber-500/20 to-transparent mb-2 sm:mb-3">
-              <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1">
-                <span className="text-base sm:text-lg">🏆</span> Top 5 Duelistas
+            <div className="px-3 sm:px-4 py-2.5 border-b border-white/10 bg-gradient-to-r from-amber-500/25 to-transparent">
+              <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5">
+                <span className="text-base sm:text-lg" aria-hidden>🏆</span> Top 5 Duelistas
               </h2>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:gap-4 min-h-[140px]">
+            <div className="p-3 sm:p-4 grid grid-cols-2 gap-3 sm:gap-4 min-h-[132px]">
               {/* Coluna Geral */}
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-amber-400/90 font-semibold mb-1.5 sm:mb-2">Geral</p>
@@ -540,12 +474,15 @@ export default function HomePage() {
                 )}
               </div>
             </div>
-            <button
-              onClick={() => navigate('/ranking')}
-              className="mt-2 sm:mt-3 w-full bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold py-1.5 text-xs rounded-md transition-all"
-            >
-              Ver ranking completo
-            </button>
+            <div className="px-3 sm:px-4 pb-3 pt-0">
+              <button
+                type="button"
+                onClick={() => navigate('/ranking')}
+                className="w-full bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 text-white font-semibold py-2 text-xs rounded-lg transition-colors"
+              >
+                Ver ranking completo
+              </button>
+            </div>
           </motion.div>
 
           {/* Card único: Top 5 Clãs (Geral + Season lado a lado, igual ao login) */}
@@ -553,14 +490,14 @@ export default function HomePage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.05 }}
-            className="rounded-lg p-2 sm:p-3 md:p-4 border border-white/20 bg-black/20 backdrop-blur-sm overflow-hidden"
+            className={homePanel}
           >
-            <div className="px-2 sm:px-3 py-2 border-b border-white/10 bg-gradient-to-r from-rose-500/20 to-transparent mb-2 sm:mb-3">
-              <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1">
-                <span className="text-base sm:text-lg">⚔️</span> Top 5 Clãs
+            <div className="px-3 sm:px-4 py-2.5 border-b border-white/10 bg-gradient-to-r from-rose-500/25 to-transparent">
+              <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5">
+                <span className="text-base sm:text-lg" aria-hidden>⚔️</span> Top 5 Clãs
               </h2>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:gap-4 min-h-[140px]">
+            <div className="p-3 sm:p-4 grid grid-cols-2 gap-3 sm:gap-4 min-h-[132px]">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-amber-400/90 font-semibold mb-1.5 sm:mb-2">Geral</p>
                 {topClansGeneral.length === 0 ? (
@@ -608,28 +545,33 @@ export default function HomePage() {
                 )}
               </div>
             </div>
-            <button
-              onClick={() => navigate('/groups')}
-              className="mt-2 sm:mt-3 w-full bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold py-1.5 text-xs rounded-md transition-all"
-            >
-              Ver Todos os Clãs
-            </button>
+            <div className="px-3 sm:px-4 pb-3 pt-0">
+              <button
+                type="button"
+                onClick={() => navigate('/groups')}
+                className="w-full bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 text-white font-semibold py-2 text-xs rounded-lg transition-colors"
+              >
+                Ver Todos os Clãs
+              </button>
+            </div>
           </motion.div>
-        </div>
+        </aside>
 
-        {/* Coluna Central - Notícias e Cartas */}
-        <div className="lg:col-span-8 space-y-2 sm:space-y-3 min-w-0">
+        {/* Coluna principal — notícias, cartas, estatísticas */}
+        <div className="lg:col-span-8 xl:col-span-8 min-w-0 flex flex-col gap-4 sm:gap-5">
           {/* Notícias */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className="bg-transparent backdrop-blur-sm rounded-lg p-2 sm:p-3 md:p-4 border border-blue-700/30"
+            className={`${homePanel} ring-1 ring-blue-500/25`}
           >
-            <h2 className="text-base sm:text-lg md:text-xl font-bold mb-2 sm:mb-3 flex items-center gap-1.5 text-white drop-shadow-lg">
-              📰 Últimas Notícias
-            </h2>
-            <div className="space-y-2 sm:space-y-3 max-h-[260px] sm:max-h-[340px] md:max-h-[420px] overflow-y-auto custom-scrollbar">
+            <div className="px-3 sm:px-4 py-2.5 border-b border-white/10 bg-gradient-to-r from-blue-600/20 to-transparent">
+              <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                <span aria-hidden>📰</span> Últimas Notícias
+              </h2>
+            </div>
+            <div className="p-3 sm:p-4 space-y-2 sm:space-y-2.5 max-h-[min(42vh,22rem)] sm:max-h-[min(45vh,26rem)] md:max-h-[min(48vh,28rem)] overflow-y-auto custom-scrollbar min-h-0">
               {news.length > 0 ? (
                 news.map((item) => {
                   // Limitar o conteúdo a um preview (primeiras 150 caracteres)
@@ -640,14 +582,15 @@ export default function HomePage() {
                   return (
                     <motion.div
                       key={item.id}
-                      initial={{ opacity: 0, y: 10 }}
+                      initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
-                      whileHover={{ scale: 1.01, x: 4 }}
+                      whileHover={{ y: -1 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 28 }}
                       onClick={() => setSelectedNewsModal(item)}
-                      className={`rounded-lg p-2 sm:p-3 border-l-4 transition-all duration-200 cursor-pointer ${
+                      className={`rounded-lg p-2.5 sm:p-3 border-l-[3px] transition-colors duration-200 cursor-pointer ${
                         item.isPinned
-                          ? 'bg-transparent border-blue-500/30 shadow-md'
-                          : 'bg-transparent border-blue-600/20 shadow-sm hover:border-red-600/30'
+                          ? 'bg-white/[0.04] border-blue-400/50 hover:bg-white/[0.06]'
+                          : 'bg-white/[0.02] border-blue-500/35 hover:bg-white/[0.06] hover:border-rose-500/40'
                       }`}
                     >
                       <div className="flex items-center gap-1.5 mb-1 sm:mb-1.5 flex-wrap">
@@ -677,6 +620,77 @@ export default function HomePage() {
           </motion.div>
 
           <LatestCardsMarquee cards={shopCards} showVerLoja />
+
+          {/* Estatísticas — faixa alinhada ao bloco das cartas */}
+          <div className="w-full flex justify-center min-w-0">
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25 }}
+              className={`${homePanel} w-fit max-w-full ring-1 ring-emerald-500/30`}
+            >
+            <div className="px-3 py-2 border-b border-white/10 bg-gradient-to-r from-emerald-600/15 to-transparent">
+              <h2 className="text-[10px] sm:text-xs font-bold text-white flex items-center gap-1.5">
+                <span className="text-sm leading-none" aria-hidden>📊</span>
+                Estatísticas
+              </h2>
+            </div>
+            {publicStats === null ? (
+              <div className="px-3 py-2.5">
+                <p className="text-white/45 text-[10px]">Indisponíveis no momento.</p>
+              </div>
+            ) : (
+              <div className="px-2 py-2 sm:px-2.5 sm:py-2 inline-grid gap-x-1.5 gap-y-1 [grid-template-columns:repeat(3,minmax(0,max-content))] sm:[grid-template-columns:repeat(4,minmax(0,max-content))]">
+                <div className="px-1.5 py-1 rounded bg-white/[0.06] text-center whitespace-nowrap">
+                  <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Temp.</p>
+                  <p className="text-white font-semibold text-[10px] sm:text-[11px] tabular-nums">{publicStats.currentSeasonNumber}º</p>
+                </div>
+                {publicStats.seasonEndsInDays != null && (
+                  <div className="px-1.5 py-1 rounded bg-white/[0.06] text-center whitespace-nowrap">
+                    <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Fim</p>
+                    <p className="text-amber-300/95 font-semibold text-[10px] sm:text-[11px] tabular-nums">
+                      {publicStats.seasonEndsInDays}d
+                    </p>
+                  </div>
+                )}
+                <div className="px-1.5 py-1 rounded bg-white/[0.06] text-center whitespace-nowrap">
+                  <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Duelistas</p>
+                  <p className="text-white font-semibold text-[10px] sm:text-[11px] tabular-nums">{publicStats.totalDuelists.toLocaleString('pt-BR')}</p>
+                </div>
+                <div className="px-1.5 py-1 rounded bg-white/[0.06] text-center whitespace-nowrap">
+                  <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Duelos</p>
+                  <p className="text-white font-semibold text-[10px] sm:text-[11px] tabular-nums">{publicStats.totalDuels.toLocaleString('pt-BR')}</p>
+                </div>
+                <div className="px-1.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/15 col-span-3 sm:col-span-2 text-center whitespace-nowrap">
+                  <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Online</p>
+                  <p className="text-emerald-400 font-bold text-xs sm:text-sm tabular-nums leading-tight">
+                    {publicStats.playersOnline.toLocaleString('pt-BR')}
+                  </p>
+                </div>
+                <div className="px-1.5 py-1 rounded bg-white/[0.06] text-center whitespace-nowrap">
+                  <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Torneios</p>
+                  <p className="text-white font-semibold text-[10px] sm:text-[11px] tabular-nums">{publicStats.tournamentsFinished.toLocaleString('pt-BR')}</p>
+                </div>
+                <div className="px-1.5 py-1 rounded bg-white/[0.06] text-center whitespace-nowrap">
+                  <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Cartas</p>
+                  <p className="text-white font-semibold text-[10px] sm:text-[11px] tabular-nums">{publicStats.cardsRegistered.toLocaleString('pt-BR')}</p>
+                </div>
+                {publicStats.maxOnlineToday > 0 && (
+                  <div className="px-1.5 py-1 rounded bg-white/[0.06] text-center whitespace-nowrap">
+                    <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Pico hoje</p>
+                    <p className="text-white font-semibold text-[10px] sm:text-[11px] tabular-nums">{publicStats.maxOnlineToday.toLocaleString('pt-BR')}</p>
+                  </div>
+                )}
+                {publicStats.maxOnlineYesterday > 0 && (
+                  <div className="px-1.5 py-1 rounded bg-white/[0.06] text-center whitespace-nowrap">
+                    <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Pico ontem</p>
+                    <p className="text-white font-semibold text-[10px] sm:text-[11px] tabular-nums">{publicStats.maxOnlineYesterday.toLocaleString('pt-BR')}</p>
+                  </div>
+                )}
+              </div>
+            )}
+            </motion.div>
+          </div>
         </div>
       </div>
 

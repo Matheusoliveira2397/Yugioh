@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../api/axios';
 import { useAuthStore } from '../stores/authStore';
+import { ACTIVE_DUEL_REFRESH_EVENT } from '../utils/activeDuelRefresh';
 
 interface ActiveDuel {
   id: string;
@@ -15,6 +16,37 @@ export default function ActiveDuelBanner() {
   const [loading, setLoading] = useState(true);
   const { user } = useAuthStore();
 
+  const checkActiveDuel = useCallback(async () => {
+    if (!user) {
+      setActiveDuel(null);
+      setLoading(false);
+      return;
+    }
+    try {
+      const response = await api.get('/duels/my-active-duel');
+      if (
+        response.data &&
+        response.data !== null &&
+        typeof response.data === 'object' &&
+        response.data.id &&
+        response.data.status === 'IN_PROGRESS'
+      ) {
+        setActiveDuel(response.data);
+      } else {
+        setActiveDuel(null);
+      }
+    } catch (error: any) {
+      if (error?.response?.status === 404 || !error?.response?.data || error?.response?.status === 400) {
+        setActiveDuel(null);
+      } else {
+        console.error('Erro ao verificar duelo ativo:', error);
+        setActiveDuel(null);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!user) {
       setActiveDuel(null);
@@ -22,37 +54,31 @@ export default function ActiveDuelBanner() {
       return;
     }
 
-    const checkActiveDuel = async () => {
-      try {
-        const response = await api.get('/duels/my-active-duel');
-        // Verificar se realmente há um duelo ativo com status IN_PROGRESS
-        // O endpoint retorna null quando não há duelo ativo
-        if (response.data && response.data !== null && typeof response.data === 'object' && response.data.id && response.data.status === 'IN_PROGRESS') {
-          setActiveDuel(response.data);
-        } else {
-          setActiveDuel(null);
-        }
-      } catch (error: any) {
-        // Se o erro for 404 ou não houver dados, não há duelo ativo
-        if (error?.response?.status === 404 || !error?.response?.data || error?.response?.status === 400) {
-          setActiveDuel(null);
-        } else {
-          console.error('Erro ao verificar duelo ativo:', error);
-          setActiveDuel(null);
-        }
-      } finally {
-        setLoading(false);
-      }
+    setLoading(true);
+    void checkActiveDuel();
+
+    const onRefresh = () => {
+      void checkActiveDuel();
     };
+    window.addEventListener(ACTIVE_DUEL_REFRESH_EVENT, onRefresh);
 
-    // Verificar imediatamente
-    checkActiveDuel();
+    let visibilityTimer: ReturnType<typeof setTimeout> | null = null;
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (visibilityTimer) clearTimeout(visibilityTimer);
+      visibilityTimer = setTimeout(() => {
+        visibilityTimer = null;
+        void checkActiveDuel();
+      }, 400);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
 
-    // Verificar a cada 5 segundos
-    const interval = setInterval(checkActiveDuel, 5000);
-
-    return () => clearInterval(interval);
-  }, [user]);
+    return () => {
+      window.removeEventListener(ACTIVE_DUEL_REFRESH_EVENT, onRefresh);
+      document.removeEventListener('visibilitychange', onVisibility);
+      if (visibilityTimer) clearTimeout(visibilityTimer);
+    };
+  }, [user, checkActiveDuel]);
 
   // Ajustar posição do nav e sidebar quando a barra aparecer/desaparecer
   useEffect(() => {

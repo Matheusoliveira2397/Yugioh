@@ -66,7 +66,7 @@ export default function NotificationBell() {
 
   // Buscar solicitações pendentes
   const fetchPendingRequests = async () => {
-    if (!token) return;
+    if (!token?.trim()) return;
     try {
       setLoading(true);
       const response = await api.get('/friends/pending');

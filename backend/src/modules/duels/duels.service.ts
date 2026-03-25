@@ -23,6 +23,7 @@ import { logger } from '../../common/utils/logger.util';
 import { CardEffectsService } from './services/card-effects.service';
 import { DuelUtilsService } from './services/duel-utils.service';
 import { CardEffectHandlersService } from './services/card-effect-handlers.service';
+import * as Pts from './services/player-target-spell.helpers';
 
 @Injectable()
 export class DuelsService implements OnModuleInit {
@@ -2806,9 +2807,20 @@ export class DuelsService implements OnModuleInit {
       return { success: false, message: 'Campo do jogador não encontrado' };
     }
 
-    // Verificar se já fez invocação normal neste turno
+    // Verificar se já fez invocação normal neste turno (Double Summon: +1 invocação extra)
     if (playerField.normalSummonUsed === true) {
-      return { success: false, message: 'Você já usou sua invocação normal neste turno' };
+      const bonus =
+        typeof playerField.bonusNormalSummonsRemaining === 'number'
+          ? playerField.bonusNormalSummonsRemaining
+          : 0;
+      if (bonus > 0) {
+        playerField.bonusNormalSummonsRemaining = bonus - 1;
+        logger.info(
+          `✨ [normalSummonMonster] Invocação normal extra (Double Summon). Restam ${playerField.bonusNormalSummonsRemaining} bônus`,
+        );
+      } else {
+        return { success: false, message: 'Você já usou sua invocação normal neste turno' };
+      }
     }
 
     // Buscar a carta na mão - cartas com mesmo nome são tratadas como iguais
@@ -3890,7 +3902,7 @@ export class DuelsService implements OnModuleInit {
       // Se a spell precisa de modal, NÃO colocar no campo ainda - apenas criar pendingChoice
       // A carta permanece na mão até o modal ser confirmado
       // OU se está no campo em "set", permanece em "set" até o modal ser confirmado
-      if (position === 'face-up' && this.needsModalBeforeReveal(cardToPlace)) {
+      if (position === 'face-up' && this.needsModalBeforeReveal(cardToPlace, duel, isPlayer1)) {
         if (!cardIsOnField) {
           // Carta estava na mão - não colocar no campo ainda
         logger.info(`🔒 [placeCardOnField] Spell ${cardToPlace.name || cardToPlace.cardName} precisa de modal - NÃO colocando no campo, criando pendingChoice`);
@@ -4062,7 +4074,7 @@ export class DuelsService implements OnModuleInit {
    * Retorna true se precisa de modal, false caso contrário
    * Exceções: Confiscation, Graceful Charity e Forceful Sentry são ativadas imediatamente
    */
-  needsModalBeforeReveal(card: any): boolean {
+  needsModalBeforeReveal(card: any, duel?: Duel, activatorIsPlayer1?: boolean): boolean {
     const cardId = card.idCarta || card.id || card.cardId;
     const cardName = (card.name || card.cardName || '').trim().toLowerCase();
     const cardType = card.type || card.cardType;
@@ -4076,6 +4088,11 @@ export class DuelsService implements OnModuleInit {
       if (cardIdLower.includes(immediateCard) || cardName.includes(immediateCard)) {
         return false; // Não precisa de modal, ativa imediatamente
       }
+    }
+
+    if (duel && activatorIsPlayer1 !== undefined) {
+      const ptsKind = Pts.detectPlayerTargetSpellKind(card, duel, activatorIsPlayer1);
+      if (ptsKind) return true;
     }
     
     // Spells Equip precisam de modal para selecionar o monstro
@@ -7576,7 +7593,7 @@ export class DuelsService implements OnModuleInit {
     // Só remover se estiver em 'set' (foi colocada temporariamente)
     if (spellCard.position === 'set') {
       // Verificar se precisa de modal (se não precisar, não deve estar em 'set')
-      if (this.needsModalBeforeReveal(spellCard)) {
+      if (this.needsModalBeforeReveal(spellCard, duel, isPlayer1)) {
         // Remover do campo e devolver para a mão
         if (!playerField.hand) {
           playerField.hand = [];
@@ -14146,6 +14163,7 @@ export class DuelsService implements OnModuleInit {
       logger.info(`⚠️ [nextPhase] advanceToNextTurn não retornou duelo, fazendo mudança manual`);
       if ((duel as any).player1Field) {
         (duel as any).player1Field.normalSummonUsed = false;
+        (duel as any).player1Field.bonusNormalSummonsRemaining = 0;
         (duel as any).player1Field.monsterDestroyedThisTurn = false; // Resetar flag para Last Will
         if ((duel as any).player1Field.monsters && Array.isArray((duel as any).player1Field.monsters)) {
           (duel as any).player1Field.monsters.forEach((monster: any) => {
@@ -14159,6 +14177,7 @@ export class DuelsService implements OnModuleInit {
       }
       if ((duel as any).player2Field) {
         (duel as any).player2Field.normalSummonUsed = false;
+        (duel as any).player2Field.bonusNormalSummonsRemaining = 0;
         if ((duel as any).player2Field.monsters && Array.isArray((duel as any).player2Field.monsters)) {
           (duel as any).player2Field.monsters.forEach((monster: any) => {
             if (monster) {
@@ -14563,6 +14582,7 @@ export class DuelsService implements OnModuleInit {
     
     if ((duel as any).player1Field) {
       (duel as any).player1Field.normalSummonUsed = false;
+      (duel as any).player1Field.bonusNormalSummonsRemaining = 0;
       // Limpar efeito do Waboku no final do turno
       if ((duel as any).player1Field.wabokuActiveThisTurn === true) {
         (duel as any).player1Field.wabokuActiveThisTurn = false;
@@ -14616,6 +14636,7 @@ export class DuelsService implements OnModuleInit {
     }
     if ((duel as any).player2Field) {
       (duel as any).player2Field.normalSummonUsed = false;
+      (duel as any).player2Field.bonusNormalSummonsRemaining = 0;
       (duel as any).player2Field.monsterDestroyedThisTurn = false; // Resetar flag para Last Will
       // Limpar efeito do Waboku no final do turno
       if ((duel as any).player2Field.wabokuActiveThisTurn === true) {
@@ -16916,6 +16937,7 @@ export class DuelsService implements OnModuleInit {
       spellTrap: [null, null, null, null, null], // Array de 5 elementos inicializado com null
       graveyard: [],
       normalSummonUsed: false,
+      bonusNormalSummonsRemaining: 0,
       positionChangedThisTurn: false,
     };
   }
@@ -17086,7 +17108,7 @@ export class DuelsService implements OnModuleInit {
    * IMPORTANTE: Apenas CONFISCATION, GRACEFUL_CHARITY e FORCEFUL_SENTRY criam pendingChoice persistente
    */
   async setPendingChoice(duelId: string | number, choice: {
-    type: 'CONFISCATION' | 'GRACEFUL_CHARITY' | 'FORCEFUL_SENTRY' | 'BRAIN_CONTROL' | 'SOUL_TAKER' | 'UNITED_WE_STAND' | 'MAGE_POWER' | 'AUTONOMOUS_ACTION_UNIT' | 'MONSTER_REBORN' | 'CHANGE_OF_HEART' | 'CYBER_STEIN' | 'MYSTICAL_SPACE_TYPHOON' | 'SNOWMAN_EATER' | 'CHAOS_SORCERER' | 'DARK_ARMED_DRAGON' | 'RED_EYES_DARKNESS_METAL_DRAGON' | 'REINFORCEMENT_OF_THE_ARMY' | 'LAST_WILL' | 'MONSTER_REINCARNATION' | 'PREMATURE_BURIAL' | 'LIGHTNING_STORM';
+    type: 'CONFISCATION' | 'GRACEFUL_CHARITY' | 'FORCEFUL_SENTRY' | 'BRAIN_CONTROL' | 'SOUL_TAKER' | 'UNITED_WE_STAND' | 'MAGE_POWER' | 'AUTONOMOUS_ACTION_UNIT' | 'MONSTER_REBORN' | 'CHANGE_OF_HEART' | 'CYBER_STEIN' | 'MYSTICAL_SPACE_TYPHOON' | 'SNOWMAN_EATER' | 'CHAOS_SORCERER' | 'DARK_ARMED_DRAGON' | 'RED_EYES_DARKNESS_METAL_DRAGON' | 'REINFORCEMENT_OF_THE_ARMY' | 'LAST_WILL' | 'MONSTER_REINCARNATION' | 'PREMATURE_BURIAL' | 'LIGHTNING_STORM' | 'PLAYER_TARGET_SPELL';
     userId: number;
     turnWhenStarted: number;
     phaseWhenStarted: string;
@@ -17389,6 +17411,647 @@ export class DuelsService implements OnModuleInit {
       winRate: Math.round(winRate * 100) / 100, // Arredondar para 2 casas decimais
       recentHistory: history,
     };
+  }
+
+  detectPlayerTargetSpellKindForDuel(card: any, duel: any, isPlayer1: boolean): string | null {
+    return Pts.detectPlayerTargetSpellKind(card, duel, isPlayer1);
+  }
+
+  private popActivatingPlayerTargetSpell(duel: any, isPlayer1: boolean, d: any): { card: any | null; error?: string } {
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    if (!d.cardWasOnField) {
+      const hand = playerField.hand || [];
+      const hi = hand.findIndex((c: any) => {
+        if (d.cardInstanceId && c?.instanceId) return c.instanceId === d.cardInstanceId;
+        const cid = c?.idCarta || c?.id || c?.cardId;
+        return cid && d.cardId && String(cid) === String(d.cardId);
+      });
+      if (hi < 0) return { card: null, error: 'Magia ativada não encontrada na mão' };
+      return { card: playerField.hand.splice(hi, 1)[0] };
+    }
+    const z = d.zoneIndex;
+    if (z === undefined || z === null || !playerField.spellTrap?.[z]) {
+      return { card: null, error: 'Magia ativada não encontrada no campo' };
+    }
+    const c = playerField.spellTrap[z];
+    playerField.spellTrap[z] = null;
+    return { card: c };
+  }
+
+  private pushActivatorGraveyard(duel: any, isPlayer1: boolean, card: any) {
+    const pf = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    if (!pf.graveyard) pf.graveyard = [];
+    pf.graveyard.push(card);
+  }
+
+  private async ptsPlaceSpecialSummoned(
+    duelIdStr: string,
+    duel: any,
+    isPlayer1: boolean,
+    playerField: any,
+    card: any,
+    zoneIndex: number,
+    position: 'attack' | 'defense',
+  ) {
+    const currentTurnCounter = playerField?.turnCounter || duel.turnCounter || 1;
+    playerField.monsters[zoneIndex] = {
+      ...card,
+      position,
+      summonedTurnNumber: currentTurnCounter,
+      summonedByPlayer: duel.currentTurn,
+      positionChangedThisTurn: false,
+      attackedThisTurn: false,
+      attacksThisTurn: 0,
+      specialSummoned: true,
+    };
+    const placed = playerField.monsters[zoneIndex];
+    if (placed && typeof (this as any).checkTrapsOnMonsterSummon === 'function') {
+      const destroyed = await (this as any).checkTrapsOnMonsterSummon(duelIdStr, duel, isPlayer1, zoneIndex, placed, position);
+      if (destroyed) return;
+    }
+    if (position === 'attack' && typeof (this as any).applySliferEffectOnOpponentSummon === 'function') {
+      await (this as any).applySliferEffectOnOpponentSummon(duelIdStr, duel, isPlayer1, zoneIndex);
+    }
+  }
+
+  private async ptsDestroySpellTrapZone(duelIdStr: string, duel: any, fieldOwnerIsPlayer1: boolean, zoneIndex: number): Promise<boolean> {
+    const field = fieldOwnerIsPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    if (!field?.spellTrap) return false;
+    const destroyedCard = field.spellTrap[zoneIndex];
+    if (destroyedCard === null || destroyedCard === undefined) return false;
+    const isChg =
+      this.isExactCard(destroyedCard, 'ChangeOfHeart') || this.isExactCard(destroyedCard, 'BrainControl');
+    if (isChg) {
+      await (this as any).returnChangeOfHeartMonsters(duelIdStr, duel, fieldOwnerIsPlayer1);
+    } else if (this.isExactCard(destroyedCard, 'UnitedWeStand') || this.isExactCard(destroyedCard, 'MagePower')) {
+      await this.handleEquipmentDestruction(duelIdStr, duel, fieldOwnerIsPlayer1, undefined, destroyedCard, zoneIndex);
+    }
+    await (this as any).onSpellTrapRemovedFromField(duelIdStr, duel, fieldOwnerIsPlayer1, zoneIndex);
+    if (field.spellTrap[zoneIndex] !== null && field.spellTrap[zoneIndex] !== undefined) {
+      if (!field.graveyard) field.graveyard = [];
+      field.graveyard.push(field.spellTrap[zoneIndex]);
+      field.spellTrap[zoneIndex] = null;
+      await (this as any).recalculateMagePowerAtk(duelIdStr, duel, fieldOwnerIsPlayer1);
+      await (this as any).recalculateUnitedWeStandForBothPlayers(duelIdStr, duel);
+      return true;
+    }
+    return false;
+  }
+
+  async openPlayerTargetSpellChoice(
+    duelId: string | number,
+    userId: number,
+    duelIn: any,
+    cardToProcess: any,
+    cardIsOnField: boolean,
+    zoneIndex: number,
+    spellKind: string,
+  ): Promise<{ ok: true; emitPayload: any } | { ok: false; message: string }> {
+    const duelIdStr = String(duelId);
+    let duel = duelIn;
+    const isPlayer1 = Number(duel.player1Id) === Number(userId);
+    const playerField = isPlayer1 ? duel.player1Field : duel.player2Field;
+    const opponentField = isPlayer1 ? duel.player2Field : duel.player1Field;
+    const zoneIndexForPending = cardIsOnField ? zoneIndex : null;
+
+    if (!cardIsOnField) {
+      if (duel.currentPhase === TurnPhase.BATTLE) {
+        duel = await this.goToPhase(duelIdStr, TurnPhase.MAIN2);
+      } else if (duel.currentPhase === TurnPhase.STANDBY) {
+        duel = await this.goToPhase(duelIdStr, TurnPhase.MAIN1);
+      }
+    }
+
+    const pf = isPlayer1 ? duel.player1Field : duel.player2Field;
+    const of = isPlayer1 ? duel.player2Field : duel.player1Field;
+
+    const excludeActivating = (hand: any[]) => {
+      if (!hand) return [];
+      if (cardIsOnField) return [...hand];
+      return hand.filter((c: any) => {
+        if (c?.instanceId && cardToProcess?.instanceId) return c.instanceId !== cardToProcess.instanceId;
+        return c !== cardToProcess;
+      });
+    };
+
+    const base = {
+      spellKind,
+      step: 1,
+      zoneIndex: zoneIndexForPending,
+      cardWasOnField: cardIsOnField,
+      originalPosition: cardIsOnField ? (cardToProcess.position || 'set') : null,
+      cardInstanceId: cardToProcess.instanceId,
+      cardData: cardToProcess,
+      cardId: cardToProcess.idCarta || cardToProcess.id || cardToProcess.cardId,
+      cardName: cardToProcess.name || cardToProcess.cardName,
+    };
+
+    let title = '';
+    let selectableHand: any[] | undefined;
+    let graveyardChoices: { index: number; card: any }[] | undefined;
+    let spellTrapChoices: { zoneIndex: number; isOpponent: boolean; card: any }[] | undefined;
+    let opponentMonsters: any[] | undefined;
+    let defenseMonsters: { zoneIndex: number; isOpponent: boolean; monster: any }[] | undefined;
+    let emptyMonsterZones: number[] | undefined;
+
+    if (spellKind === 'LIGHTNING_VORTEX') {
+      selectableHand = excludeActivating(pf.hand || []);
+      if (selectableHand.length < 1) {
+        return { ok: false, message: 'Descarte 1 carta da sua mão como custo (é preciso ter outra carta além desta).' };
+      }
+      title = 'Lightning Vortex — escolha a carta da mão para descartar';
+    } else if (spellKind === 'TRADE_IN') {
+      selectableHand = (pf.hand || []).filter((c: any) => {
+        if (!c) return false;
+        if (!cardIsOnField && cardToProcess?.instanceId && c.instanceId === cardToProcess.instanceId) return false;
+        const isM = String(c.type || c.cardType) === 'Monster' || String(c.type || c.cardType) === 'MONSTER';
+        return isM && Number(c.level ?? 0) >= 8;
+      });
+      if (!selectableHand || selectableHand.length < 1) {
+        return { ok: false, message: 'Você precisa de um monstro de Nível 8 ou mais na mão para descartar.' };
+      }
+      title = "Trade-In — escolha o monstro de Nível 8+ para descartar";
+    } else if (spellKind === 'DARK_ERUPTION') {
+      const gy = pf.graveyard || [];
+      graveyardChoices = [];
+      for (let i = 0; i < gy.length; i++) {
+        const c = gy[i];
+        const attr = String(c?.attribute || '').toUpperCase();
+        const atk = Number(c?.atk ?? 0);
+        const isM = String(c?.type || c?.cardType || '').toLowerCase().includes('monster');
+        if (isM && (attr === 'DARK' || attr === 'TREVAS') && atk <= 1500) {
+          graveyardChoices.push({ index: i, card: c });
+        }
+      }
+      if (graveyardChoices.length < 1) {
+        return { ok: false, message: 'Nenhum monstro de TREVAS com 1500 ou menos de ATK no seu Cemitério.' };
+      }
+      title = 'Dark Eruption — escolha o monstro no Cemitério para adicionar à mão';
+    } else if (spellKind === 'STAMPING_DESTRUCTION') {
+      if (!Pts.fieldHasDragonMonster(pf)) {
+        return { ok: false, message: 'Você precisa controlar um monstro Dragão.' };
+      }
+      spellTrapChoices = Pts.collectSpellTrapTargetsBothSides(pf, of);
+      if (spellTrapChoices.length < 1) {
+        return { ok: false, message: 'Não há Magias/Armadilhas no campo para destruir.' };
+      }
+      title = 'Stamping Destruction — escolha 1 Magia ou Armadilha no campo';
+    } else if (spellKind === 'TRIBUTE_TO_THE_DOOMED') {
+      let hasOppMonster = false;
+      (of.monsters || []).forEach((m: any) => {
+        if (m) hasOppMonster = true;
+      });
+      if (!hasOppMonster) {
+        return { ok: false, message: 'O oponente não tem monstros no campo.' };
+      }
+      selectableHand = excludeActivating(pf.hand || []);
+      if (selectableHand.length < 1) {
+        return { ok: false, message: 'Você precisa de uma carta na mão para descartar.' };
+      }
+      title = 'Tribute to the Doomed — passo 1: escolha a carta da mão para descartar';
+    } else if (spellKind === 'ANCIENT_RULES') {
+      selectableHand = (pf.hand || []).filter((c: any) => {
+        if (!c) return false;
+        if (!cardIsOnField && cardToProcess?.instanceId && c.instanceId === cardToProcess.instanceId) return false;
+        return Pts.isNormalMonsterCard(c) && Number(c.level ?? 0) >= 5;
+      });
+      emptyMonsterZones = Pts.listEmptyMonsterZones(pf.monsters);
+      if (!selectableHand || selectableHand.length < 1) {
+        return { ok: false, message: 'Nenhum Monstro Normal de Nível 5 ou mais na mão.' };
+      }
+      if (emptyMonsterZones.length < 1) {
+        return { ok: false, message: 'Não há zona de monstro vazia.' };
+      }
+      title = "Ancient Rules — passo 1: escolha o Monstro Normal (Nv 5+) na mão";
+    } else if (spellKind === 'SILVERS_CRY') {
+      const gy = pf.graveyard || [];
+      graveyardChoices = [];
+      for (let i = 0; i < gy.length; i++) {
+        const c = gy[i];
+        const race = String(c?.race || '').toLowerCase();
+        if (Pts.isNormalMonsterCard(c) && race.includes('dragon')) {
+          graveyardChoices.push({ index: i, card: c });
+        }
+      }
+      emptyMonsterZones = Pts.listEmptyMonsterZones(pf.monsters);
+      if (graveyardChoices.length < 1) {
+        return { ok: false, message: 'Nenhum Monstro Normal Dragão no seu Cemitério.' };
+      }
+      if (emptyMonsterZones.length < 1) {
+        return { ok: false, message: 'Não há zona de monstro vazia.' };
+      }
+      title = "Silver's Cry — passo 1: escolha o Monstro Normal Dragão no Cemitério";
+    } else if (spellKind === 'SHIELD_CRUSH') {
+      defenseMonsters = Pts.collectDefenseMonstersBothSides(pf, of);
+      if (defenseMonsters.length < 1) {
+        return { ok: false, message: 'Não há monstros em Posição de Defesa no campo.' };
+      }
+      title = 'Shield Crush — escolha 1 monstro em Posição de Defesa';
+    } else if (spellKind === 'FISSURE_CHOOSE') {
+      const tied = Pts.findFissureTiedZoneIndices(of);
+      opponentMonsters = tied.map((z) => ({ ...(of.monsters[z] || {}), zoneIndex: z }));
+      title = 'Fissure — escolha qual monstro com o menor ATK destruir (empate)';
+    } else {
+      return { ok: false, message: 'Tipo de magia desconhecido' };
+    }
+
+    const data: any = {
+      ...base,
+      title,
+      selectableHand,
+      graveyardChoices,
+      spellTrapChoices,
+      opponentMonsters,
+      defenseMonsters,
+      emptyMonsterZones,
+    };
+
+    await this.setPendingChoice(duelIdStr, {
+      type: 'PLAYER_TARGET_SPELL',
+      userId: Number(userId),
+      turnWhenStarted: duel.currentTurn,
+      phaseWhenStarted: duel.currentPhase || 'MAIN1',
+      data,
+    });
+
+    const emitPayload = {
+      duelId: duelIdStr,
+      spellKind,
+      step: 1,
+      title,
+      selectableHand,
+      graveyardChoices,
+      spellTrapChoices,
+      opponentMonsters,
+      defenseMonsters,
+      emptyMonsterZones,
+    };
+
+    return { ok: true, emitPayload };
+  }
+
+  async processPlayerTargetSpellChoice(
+    duelId: string | number,
+    userId: number,
+    actionData: any,
+  ): Promise<{
+    success: boolean;
+    message?: string;
+    needsSecondStep?: boolean;
+    secondEmit?: any;
+  }> {
+    const duelIdStr = String(duelId);
+    let duel = await this.findDuelByIdFromDatabase(duelIdStr, true);
+    if (!duel) return { success: false, message: 'Duelo não encontrado' };
+
+    const pending = (duel as any).pendingChoice;
+    if (!pending || pending.type !== 'PLAYER_TARGET_SPELL' || Number(pending.userId) !== Number(userId)) {
+      return { success: false, message: 'Nenhuma escolha pendente válida' };
+    }
+
+    const d = pending.data;
+    const spellKind = d.spellKind as string;
+    const step = typeof d.step === 'number' ? d.step : 1;
+    const isPlayer1 = Number(duel.player1Id) === Number(userId);
+    const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
+    const opponentField = isPlayer1 ? (duel as any).player2Field : (duel as any).player1Field;
+
+    const matchesActivating = (c: any) => {
+      if (d.cardInstanceId && c?.instanceId) return c.instanceId === d.cardInstanceId;
+      const cid = c?.idCarta || c?.id || c?.cardId;
+      return !!(cid && d.cardId && String(cid) === String(d.cardId));
+    };
+
+    const sync = async (extra: any = {}) => {
+      await (this as any).syncDuelState(duelIdStr, duel, {
+        player1Field: (duel as any).player1Field,
+        player2Field: (duel as any).player2Field,
+        ...extra,
+      });
+      await (this as any).recalculateMagePowerAtk(duelIdStr, duel, true);
+      await (this as any).recalculateMagePowerAtk(duelIdStr, duel, false);
+    };
+
+    const finishSpellToGy = async (extra: any = {}) => {
+      const popped = this.popActivatingPlayerTargetSpell(duel, isPlayer1, d);
+      if (popped.error) return { success: false, message: popped.error };
+      if (!popped.card) return { success: false, message: 'Carta ativada não encontrada' };
+      this.pushActivatorGraveyard(duel, isPlayer1, popped.card);
+      await sync(extra);
+      await (this as any).recalculateUnitedWeStandForBothPlayers(duelIdStr, duel);
+      await this.clearPendingChoice(duelIdStr, false);
+      this.activeDuels.set(duelIdStr, duel);
+      return { success: true };
+    };
+
+    if (spellKind === 'TRIBUTE_TO_THE_DOOMED' && step === 1) {
+      const iid = actionData.instanceIdToDiscard;
+      if (!iid) return { success: false, message: 'Escolha uma carta para descartar' };
+      const hi = (playerField.hand || []).findIndex((c: any) => c?.instanceId === iid);
+      if (hi < 0) return { success: false, message: 'Carta inválida na mão' };
+      if (!d.cardWasOnField && matchesActivating(playerField.hand[hi])) {
+        return { success: false, message: 'Escolha outra carta (não a magia ativada)' };
+      }
+      const [disc] = playerField.hand.splice(hi, 1);
+      if (!playerField.graveyard) playerField.graveyard = [];
+      playerField.graveyard.push(disc);
+
+      const oppMons: any[] = [];
+      (opponentField.monsters || []).forEach((m: any, z: number) => {
+        if (m) oppMons.push({ ...m, zoneIndex: z });
+      });
+
+      const data2 = {
+        ...d,
+        step: 2,
+        selectableHand: undefined,
+        graveyardChoices: undefined,
+        spellTrapChoices: undefined,
+        defenseMonsters: undefined,
+        emptyMonsterZones: undefined,
+        opponentMonsters: oppMons,
+        title: 'Tribute to the Doomed — passo 2: escolha o monstro do oponente para destruir',
+      };
+      await this.setPendingChoice(duelIdStr, {
+        type: 'PLAYER_TARGET_SPELL',
+        userId: Number(userId),
+        turnWhenStarted: pending.turnWhenStarted,
+        phaseWhenStarted: pending.phaseWhenStarted,
+        data: data2,
+      });
+      await sync();
+      this.activeDuels.set(duelIdStr, duel);
+      return {
+        success: true,
+        needsSecondStep: true,
+        secondEmit: {
+          duelId: duelIdStr,
+          spellKind,
+          step: 2,
+          title: data2.title,
+          opponentMonsters: oppMons,
+        },
+      };
+    }
+
+    if (spellKind === 'ANCIENT_RULES' && step === 1) {
+      const iid = actionData.instanceIdToDiscard;
+      if (!iid) return { success: false, message: 'Escolha um monstro na mão' };
+      const hi = (playerField.hand || []).findIndex((c: any) => c?.instanceId === iid);
+      if (hi < 0) return { success: false, message: 'Carta inválida na mão' };
+      const pick = playerField.hand[hi];
+      if (!Pts.isNormalMonsterCard(pick) || Number(pick.level ?? 0) < 5) {
+        return { success: false, message: 'Monstro inválido' };
+      }
+      const [staged] = playerField.hand.splice(hi, 1);
+      const zones = Pts.listEmptyMonsterZones(playerField.monsters);
+      const data2 = {
+        ...d,
+        step: 2,
+        stagedMonster: staged,
+        selectableHand: undefined,
+        graveyardChoices: undefined,
+        spellTrapChoices: undefined,
+        defenseMonsters: undefined,
+        opponentMonsters: undefined,
+        emptyMonsterZones: zones,
+        title: 'Ancient Rules — passo 2: escolha a zona para Invocação-Especial',
+      };
+      await this.setPendingChoice(duelIdStr, {
+        type: 'PLAYER_TARGET_SPELL',
+        userId: Number(userId),
+        turnWhenStarted: pending.turnWhenStarted,
+        phaseWhenStarted: pending.phaseWhenStarted,
+        data: data2,
+      });
+      await sync();
+      this.activeDuels.set(duelIdStr, duel);
+      return {
+        success: true,
+        needsSecondStep: true,
+        secondEmit: {
+          duelId: duelIdStr,
+          spellKind,
+          step: 2,
+          title: data2.title,
+          emptyMonsterZones: zones,
+        },
+      };
+    }
+
+    if (spellKind === 'SILVERS_CRY' && step === 1) {
+      const gi = actionData.graveyardIndex;
+      if (gi === undefined || gi === null || gi < 0) return { success: false, message: 'Escolha uma carta no Cemitério' };
+      const gy = playerField.graveyard || [];
+      if (gi >= gy.length) return { success: false, message: 'Índice do Cemitério inválido' };
+      const c = gy[gi];
+      const race = String(c?.race || '').toLowerCase();
+      if (!Pts.isNormalMonsterCard(c) || !race.includes('dragon')) {
+        return { success: false, message: 'Monstro inválido' };
+      }
+      const [staged] = playerField.graveyard.splice(gi, 1);
+      const zones = Pts.listEmptyMonsterZones(playerField.monsters);
+      const data2 = {
+        ...d,
+        step: 2,
+        stagedMonster: staged,
+        graveyardChoices: undefined,
+        selectableHand: undefined,
+        spellTrapChoices: undefined,
+        defenseMonsters: undefined,
+        opponentMonsters: undefined,
+        emptyMonsterZones: zones,
+        title: "Silver's Cry — passo 2: escolha a zona para Invocação-Especial",
+      };
+      await this.setPendingChoice(duelIdStr, {
+        type: 'PLAYER_TARGET_SPELL',
+        userId: Number(userId),
+        turnWhenStarted: pending.turnWhenStarted,
+        phaseWhenStarted: pending.phaseWhenStarted,
+        data: data2,
+      });
+      await sync();
+      this.activeDuels.set(duelIdStr, duel);
+      return {
+        success: true,
+        needsSecondStep: true,
+        secondEmit: {
+          duelId: duelIdStr,
+          spellKind,
+          step: 2,
+          title: data2.title,
+          emptyMonsterZones: zones,
+        },
+      };
+    }
+
+    try {
+      if (spellKind === 'LIGHTNING_VORTEX') {
+        const iid = actionData.instanceIdToDiscard;
+        if (!iid) return { success: false, message: 'Escolha uma carta para descartar' };
+        const hi = (playerField.hand || []).findIndex((c: any) => c?.instanceId === iid);
+        if (hi < 0) return { success: false, message: 'Carta inválida na mão' };
+        if (!d.cardWasOnField && matchesActivating(playerField.hand[hi])) {
+          return { success: false, message: 'Escolha outra carta como custo' };
+        }
+        const [cost] = playerField.hand.splice(hi, 1);
+        if (!playerField.graveyard) playerField.graveyard = [];
+        playerField.graveyard.push(cost);
+        for (let i = 0; i < (opponentField.monsters || []).length; i++) {
+          const m = opponentField.monsters[i];
+          if (!Pts.isFaceUpMonster(m)) continue;
+          await this.handleEquipmentDestruction(duelIdStr, duel, !isPlayer1, m);
+          if (!opponentField.graveyard) opponentField.graveyard = [];
+          opponentField.graveyard.push(m);
+          opponentField.monsters[i] = null;
+          if (!opponentField.monsterDestroyedThisTurn) opponentField.monsterDestroyedThisTurn = true;
+        }
+        await (this as any).recalculateUnitedWeStandForBothPlayers(duelIdStr, duel);
+        return await finishSpellToGy();
+      }
+
+      if (spellKind === 'TRADE_IN') {
+        const iid = actionData.instanceIdToDiscard;
+        if (!iid) return { success: false, message: 'Escolha um monstro para descartar' };
+        const hi = (playerField.hand || []).findIndex((c: any) => c?.instanceId === iid);
+        if (hi < 0) return { success: false, message: 'Carta inválida na mão' };
+        const c = playerField.hand[hi];
+        const isM = String(c?.type || c?.cardType) === 'Monster' || String(c?.type || c?.cardType) === 'MONSTER';
+        if (!isM || Number(c?.level ?? 0) < 8) return { success: false, message: 'Monstro de Nível 8+ necessário' };
+        const [disc] = playerField.hand.splice(hi, 1);
+        if (!playerField.graveyard) playerField.graveyard = [];
+        playerField.graveyard.push(disc);
+        const uid = isPlayer1 ? duel.player1Id : duel.player2Id;
+        await this.drawCard(duelIdStr, uid as number);
+        await this.drawCard(duelIdStr, uid as number);
+        return await finishSpellToGy();
+      }
+
+      if (spellKind === 'DARK_ERUPTION') {
+        const gi = actionData.graveyardIndex;
+        if (gi === undefined || gi < 0) return { success: false, message: 'Escolha uma carta no Cemitério' };
+        const gy = playerField.graveyard || [];
+        if (gi >= gy.length) return { success: false, message: 'Índice inválido' };
+        const c = gy[gi];
+        const attr = String(c?.attribute || '').toUpperCase();
+        const atk = Number(c?.atk ?? 0);
+        const isM = String(c?.type || c?.cardType || '').toLowerCase().includes('monster');
+        if (!isM || (attr !== 'DARK' && attr !== 'TREVAS') || atk > 1500) {
+          return { success: false, message: 'Alvo inválido' };
+        }
+        const [pickedGy] = playerField.graveyard.splice(gi, 1);
+        if (!playerField.hand) playerField.hand = [];
+        playerField.hand.push(pickedGy);
+        return await finishSpellToGy();
+      }
+
+      if (spellKind === 'STAMPING_DESTRUCTION') {
+        const z = actionData.spellTrapZoneIndex;
+        const isOpp = actionData.spellTrapTargetIsOpponent === true;
+        if (z === undefined || z === null || z < 0 || z >= 5) {
+          return { success: false, message: 'Zona de Magia/Armadilha inválida' };
+        }
+        const ok = await this.ptsDestroySpellTrapZone(duelIdStr, duel, isOpp ? !isPlayer1 : isPlayer1, z);
+        if (!ok) return { success: false, message: 'Não há carta nessa zona' };
+        const damage = 500;
+        if (isOpp) {
+          if (isPlayer1) duel.player2LifePoints = Math.max(0, (duel.player2LifePoints || 0) - damage);
+          else duel.player1LifePoints = Math.max(0, (duel.player1LifePoints || 0) - damage);
+        } else {
+          if (isPlayer1) duel.player1LifePoints = Math.max(0, (duel.player1LifePoints || 0) - damage);
+          else duel.player2LifePoints = Math.max(0, (duel.player2LifePoints || 0) - damage);
+        }
+        const lpSync = {
+          player1LifePoints: duel.player1LifePoints,
+          player2LifePoints: duel.player2LifePoints,
+        };
+        const done = await finishSpellToGy(lpSync);
+        if (!done.success) return done;
+        if (duel.player1LifePoints <= 0 || duel.player2LifePoints <= 0) {
+          const winnerId = duel.player1LifePoints <= 0 ? duel.player2Id : duel.player1Id;
+          await this.finishDuel(
+            duelIdStr,
+            duel.player1LifePoints <= 0 ? DuelResult.PLAYER2_WIN : DuelResult.PLAYER1_WIN,
+            winnerId as number,
+          );
+        }
+        return { success: true };
+      }
+
+      if (spellKind === 'TRIBUTE_TO_THE_DOOMED' && step === 2) {
+        const z = actionData.monsterZoneIndex;
+        if (z === undefined || z < 0 || z >= 5) return { success: false, message: 'Zona de monstro inválida' };
+        const m = opponentField.monsters[z];
+        if (!m) return { success: false, message: 'Nenhum monstro nessa zona' };
+        await this.handleEquipmentDestruction(duelIdStr, duel, !isPlayer1, m);
+        opponentField.monsters[z] = null;
+        if (!opponentField.graveyard) opponentField.graveyard = [];
+        opponentField.graveyard.push(m);
+        if (!opponentField.monsterDestroyedThisTurn) opponentField.monsterDestroyedThisTurn = true;
+        await (this as any).recalculateUnitedWeStandForBothPlayers(duelIdStr, duel);
+        return await finishSpellToGy();
+      }
+
+      if (spellKind === 'ANCIENT_RULES' && step === 2) {
+        const z = actionData.emptyMonsterZoneIndex;
+        const staged = d.stagedMonster;
+        if (!staged) return { success: false, message: 'Estado inválido' };
+        if (z === undefined || z < 0 || z >= 5) return { success: false, message: 'Zona inválida' };
+        if (playerField.monsters[z] != null) return { success: false, message: 'Zona ocupada' };
+        await this.ptsPlaceSpecialSummoned(duelIdStr, duel, isPlayer1, playerField, staged, z, 'attack');
+        await (this as any).recalculateUnitedWeStandForBothPlayers(duelIdStr, duel);
+        return await finishSpellToGy();
+      }
+
+      if (spellKind === 'SILVERS_CRY' && step === 2) {
+        const z = actionData.emptyMonsterZoneIndex;
+        const staged = d.stagedMonster;
+        if (!staged) return { success: false, message: 'Estado inválido' };
+        if (z === undefined || z < 0 || z >= 5) return { success: false, message: 'Zona inválida' };
+        if (playerField.monsters[z] != null) return { success: false, message: 'Zona ocupada' };
+        await this.ptsPlaceSpecialSummoned(duelIdStr, duel, isPlayer1, playerField, staged, z, 'attack');
+        await (this as any).recalculateUnitedWeStandForBothPlayers(duelIdStr, duel);
+        return await finishSpellToGy();
+      }
+
+      if (spellKind === 'SHIELD_CRUSH') {
+        const z = actionData.monsterZoneIndex;
+        const isOpp = actionData.monsterTargetIsOpponent === true;
+        if (z === undefined || z < 0 || z >= 5) return { success: false, message: 'Zona inválida' };
+        const field = isOpp ? opponentField : playerField;
+        const m = field.monsters[z];
+        if (!Pts.isDefensePositionMonster(m)) return { success: false, message: 'Monstro inválido' };
+        const ownerP1 = isOpp ? !isPlayer1 : isPlayer1;
+        await this.handleEquipmentDestruction(duelIdStr, duel, ownerP1, m);
+        field.monsters[z] = null;
+        if (!field.graveyard) field.graveyard = [];
+        field.graveyard.push(m);
+        if (!field.monsterDestroyedThisTurn) field.monsterDestroyedThisTurn = true;
+        await (this as any).recalculateUnitedWeStandForBothPlayers(duelIdStr, duel);
+        return await finishSpellToGy();
+      }
+
+      if (spellKind === 'FISSURE_CHOOSE') {
+        const z = actionData.monsterZoneIndex;
+        if (z === undefined || z < 0 || z >= 5) return { success: false, message: 'Zona inválida' };
+        const tied = Pts.findFissureTiedZoneIndices(opponentField);
+        if (!tied.includes(z)) return { success: false, message: 'Alvo inválido para Fissure' };
+        const m = opponentField.monsters[z];
+        if (!m) return { success: false, message: 'Zona vazia' };
+        await this.handleEquipmentDestruction(duelIdStr, duel, !isPlayer1, m);
+        opponentField.monsters[z] = null;
+        if (!opponentField.graveyard) opponentField.graveyard = [];
+        opponentField.graveyard.push(m);
+        if (!opponentField.monsterDestroyedThisTurn) opponentField.monsterDestroyedThisTurn = true;
+        await (this as any).recalculateUnitedWeStandForBothPlayers(duelIdStr, duel);
+        return await finishSpellToGy();
+      }
+
+      return { success: false, message: 'Passo ou efeito não suportado' };
+    } catch (e) {
+      logger.error('[processPlayerTargetSpellChoice]', e);
+      return { success: false, message: e instanceof Error ? e.message : 'Erro ao resolver efeito' };
+    }
   }
 
   /**

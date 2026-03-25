@@ -2,10 +2,9 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
-import axios from 'axios';
+import api from '../api/axios';
+import { getApiErrorMessage } from '../utils/api-error';
 import { getImageUrl } from '../utils/imageUrl';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 interface Group {
   id: string;
@@ -54,7 +53,7 @@ export default function GroupsPage() {
   const [loadingRankings, setLoadingRankings] = useState(true);
   const [filterPublic, setFilterPublic] = useState<boolean | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  const { token, user } = useAuthStore();
+  const { user } = useAuthStore();
 
   // Form state
   const [formData, setFormData] = useState({
@@ -68,6 +67,7 @@ export default function GroupsPage() {
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
   const [formError, setFormError] = useState('');
+  const [actionBanner, setActionBanner] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     fetchGroups();
@@ -78,24 +78,22 @@ export default function GroupsPage() {
     try {
       setLoadingRankings(true);
       setError(null);
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      
       const [seasonRes, generalRes] = await Promise.all([
-        axios.get(`${API_URL}/groups/ranking/season`, { headers }).catch(err => {
-          console.error('Erro ao buscar ranking season:', err);
+        api.get('/groups/ranking/season').catch((err) => {
+          console.error('Erro ao buscar ranking season:', getApiErrorMessage(err));
           return { data: [] };
         }),
-        axios.get(`${API_URL}/groups/ranking/general`, { headers }).catch(err => {
-          console.error('Erro ao buscar ranking general:', err);
+        api.get('/groups/ranking/general').catch((err) => {
+          console.error('Erro ao buscar ranking general:', getApiErrorMessage(err));
           return { data: [] };
         }),
       ]);
       
       setSeasonRanking(Array.isArray(seasonRes.data) ? seasonRes.data : []);
       setGeneralRanking(Array.isArray(generalRes.data) ? generalRes.data : []);
-    } catch (error: any) {
-      console.error('Erro ao buscar rankings:', error);
-      setError('Erro ao carregar rankings. Tente recarregar a página.');
+    } catch (error: unknown) {
+      console.error('Erro ao buscar rankings:', getApiErrorMessage(error));
+      setError(getApiErrorMessage(error));
       setSeasonRanking([]);
       setGeneralRanking([]);
     } finally {
@@ -108,10 +106,7 @@ export default function GroupsPage() {
       setLoading(true);
       setError(null);
       const params = filterPublic !== undefined ? { public: filterPublic } : {};
-      const response = await axios.get(`${API_URL}/groups/all`, {
-        params,
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const response = await api.get('/groups/all', { params });
       
       // Garantir que a resposta é um array
       if (Array.isArray(response.data)) {
@@ -120,10 +115,9 @@ export default function GroupsPage() {
         console.error('Resposta não é um array:', response.data);
         setGroups([]);
       }
-    } catch (error: any) {
-      console.error('Erro ao buscar grupos:', error);
-      console.error('Detalhes do erro:', error.response?.data || error.message);
-      setError('Erro ao carregar grupos. Tente recarregar a página.');
+    } catch (error: unknown) {
+      console.error('Erro ao buscar grupos:', getApiErrorMessage(error));
+      setError(getApiErrorMessage(error));
       setGroups([]);
     } finally {
       setLoading(false);
@@ -173,25 +167,11 @@ export default function GroupsPage() {
         formDataToSend.append('banner', bannerFile);
       }
 
-      const response = await axios.post(
-        `${API_URL}/groups/create`,
-        formDataToSend,
-        {
-          headers: { 
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data',
-          },
-        }
-      );
+      await api.post('/groups/create', formDataToSend);
 
       // Buscar dados atualizados do usuário após criar o grupo
       try {
-        const userResponse = await axios.get(
-          `${API_URL}/users/me`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
+        const userResponse = await api.get('/users/me');
         
         console.log('🔄 [createGroup] Dados do usuário recebidos:', userResponse.data);
         if (userResponse.data) {
@@ -213,28 +193,16 @@ export default function GroupsPage() {
       setBannerPreview(null);
       setShowCreateModal(false);
       fetchGroups();
-    } catch (error: any) {
-      setFormError(error.response?.data?.message || 'Erro ao criar grupo');
+    } catch (error: unknown) {
+      setFormError(getApiErrorMessage(error));
     }
   };
 
   const handleJoinGroup = async (groupId: string) => {
     try {
-      await axios.post(
-        `${API_URL}/groups/join/${groupId}`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      
-      // Buscar dados atualizados do usuário para pegar o clanTag atualizado
-      const userResponse = await axios.get(
-        `http://localhost:3000/users/me`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      await api.post(`/groups/join/${groupId}`, {});
+
+      const userResponse = await api.get('/users/me');
       
       console.log('🔄 [joinGroup] Dados do usuário recebidos:', userResponse.data);
       // Atualizar o usuário completo no store
@@ -246,10 +214,10 @@ export default function GroupsPage() {
         });
       }
       
-      alert('Você entrou no grupo!');
+      setActionBanner({ type: 'success', text: 'Você entrou no grupo!' });
       fetchGroups();
-    } catch (error: any) {
-      alert(error.response?.data?.message || 'Erro ao entrar no grupo');
+    } catch (error: unknown) {
+      setActionBanner({ type: 'error', text: getApiErrorMessage(error) });
     }
   };
 
@@ -355,6 +323,26 @@ export default function GroupsPage() {
               className="ml-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white font-semibold transition-colors"
             >
               Tentar Novamente
+            </button>
+          </div>
+        )}
+
+        {actionBanner && (
+          <div
+            className={`mb-6 p-4 rounded-xl text-center flex flex-wrap items-center justify-center gap-3 ${
+              actionBanner.type === 'success'
+                ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-300'
+                : 'bg-red-500/15 border border-red-500/40 text-red-300'
+            }`}
+            role="status"
+          >
+            <span>{actionBanner.text}</span>
+            <button
+              type="button"
+              onClick={() => setActionBanner(null)}
+              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-semibold"
+            >
+              Fechar
             </button>
           </div>
         )}

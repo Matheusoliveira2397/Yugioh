@@ -43,6 +43,9 @@ logs/
 coverage/
 *.lcov
 
+# Cartas em massa no frontend (baixadas pelo script; não versionar milhares de JPG/WEBP)
+frontend/public/images/cards/*
+
 # Misc
 .cache/
 

@@ -8,6 +8,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { Card } from './entities/card.entity';
 import { UploadService } from '../upload/upload.service';
 import { CreateCardDto } from './dto/create-card.dto';
+import { BulkImportCardsDto } from './dto/bulk-import-cards.dto';
 import { UpdateCardDto } from './dto/update-card.dto';
 import { AddEffectDto } from './dto/add-effect.dto';
 import { YugiohApiService } from './services/yugioh-api.service';
@@ -31,6 +32,32 @@ export class CardsController {
   @UseGuards(AdminGuard)
   getAllAdmin() {
     return this.cardsService.getAllAdmin();
+  }
+
+  @Get('admin/counts')
+  @UseGuards(AdminGuard)
+  getAdminCounts() {
+    return this.cardsService.getAdminCardCounts();
+  }
+
+  @Get('admin/list')
+  @UseGuards(AdminGuard)
+  getAdminList(
+    @Query('page') pageStr?: string,
+    @Query('limit') limitStr?: string,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+  ) {
+    const page = Math.max(1, parseInt(pageStr || '1', 10) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(limitStr || '48', 10) || 48));
+    const st =
+      status === 'active' || status === 'inactive' || status === 'all' ? status : 'all';
+    return this.cardsService.getAdminListPaginated({
+      page,
+      limit,
+      search: search?.trim() || undefined,
+      status: st,
+    });
   }
 
   /**
@@ -330,5 +357,16 @@ export class CardsController {
       console.error('❌ [CardsController] Erro ao atualizar cartas:', error);
       throw error;
     }
+  }
+
+  /**
+   * Importa o catálogo completo da YGOPRODeck (POST com body JSON).
+   * Ex.: { "dryRun": true, "limit": 50 } para testar sem gravar.
+   */
+  @Post('admin/bulk-import-ygoprodeck')
+  @UseGuards(AdminGuard)
+  async bulkImportYgoprodeck(@Body() body: BulkImportCardsDto, @Request() req: any) {
+    console.log('📥 [CardsController] bulk-import-ygoprodeck', body, 'user:', req.user?.username);
+    return this.cardsService.bulkImportFromYgoprodeck(body ?? {});
   }
 }

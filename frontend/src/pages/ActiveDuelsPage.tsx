@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import api from '../api/axios';
+import { requestActiveDuelRefresh } from '../utils/activeDuelRefresh';
 
 interface Duel {
   id: string;
@@ -33,6 +34,7 @@ export default function ActiveDuelsPage() {
 
   useEffect(() => {
     if (user) {
+      requestActiveDuelRefresh();
       loadActiveDuels();
     }
   }, [user]);

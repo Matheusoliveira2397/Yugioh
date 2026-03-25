@@ -1,5 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { getCardImage, getAllCardImagePaths } from '../utils/cardImage';
+import {
+  getCardImage,
+  getAllCardImagePaths,
+  rememberSuccessfulCardImagePath,
+  type GetAllCardImagePathsOptions,
+} from '../utils/cardImage';
 import { getCardImageDisplayUrl } from '../utils/imageUrl';
 
 interface CardImageProps {
@@ -10,12 +15,40 @@ interface CardImageProps {
   onError?: () => void;
   /** Timestamp para forçar recarregar a imagem (evita cache após atualizar no admin) */
   cacheBuster?: number;
+  /** lazy = melhor em listas grandes (mão, loja). eager = campo / preview prioritário */
+  loading?: 'lazy' | 'eager';
+  /** Grade admin / listas: não gerar fallbacks por nome da carta (muito mais rápido). */
+  omitNameBasedPaths?: boolean;
+  /** Limitar extensões tentadas (ex.: só jpg/webp na grade). */
+  pathExtensions?: GetAllCardImagePathsOptions['extensions'];
+  /** Uma camada só (sem background duplicado) — recomendado em listas. */
+  singleLayerImage?: boolean;
+  sizes?: string;
+  fetchPriority?: 'high' | 'low' | 'auto';
+  /** Com `singleLayerImage`, controla `object-fit` da tag img (modal costuma usar contain). */
+  objectFit?: 'cover' | 'contain';
 }
 
 /**
  * Componente que exibe a imagem de uma carta, tentando diferentes extensões automaticamente
  */
-export default function CardImage({ card, className = '', style = {}, fallback = '/images/fundoCarta.webp', onError, cacheBuster }: CardImageProps) {
+const isDev = import.meta.env.DEV;
+
+export default function CardImage({
+  card,
+  className = '',
+  style = {},
+  fallback = '/images/fundoCarta.webp',
+  onError,
+  cacheBuster,
+  loading = 'lazy',
+  omitNameBasedPaths = false,
+  pathExtensions,
+  singleLayerImage = false,
+  sizes,
+  fetchPriority,
+  objectFit = 'cover',
+}: CardImageProps) {
   // Memoizar o cardId para evitar recálculos desnecessários
   const cardId = useMemo(() => {
     return card?.idCarta || card?.id || card?.cardId;
@@ -28,9 +61,29 @@ export default function CardImage({ card, className = '', style = {}, fallback =
   
   // Memoizar TODOS os caminhos possíveis (incluindo baseados no nome da carta)
   // Isso é importante porque o cardImage pode conter YGOPRO_ mas o arquivo real tem nome diferente
+  const pathListOptions = useMemo(
+    (): GetAllCardImagePathsOptions => ({
+      omitNameBasedPaths,
+      extensions: pathExtensions,
+    }),
+    [omitNameBasedPaths, pathExtensions],
+  );
+
   const possiblePaths = useMemo(() => {
-    return getAllCardImagePaths(card);
-  }, [card?.idCarta, card?.id, card?.cardId, card?.cardImage, card?.name]);
+    return getAllCardImagePaths(card, pathListOptions);
+  }, [
+    card?.idCarta,
+    card?.id,
+    card?.cardId,
+    card?.cardImage,
+    card?.name,
+    pathListOptions,
+  ]);
+
+  const cacheKey = useMemo(
+    () => String(card?.idCarta || card?.cardId || card?.id || '').trim(),
+    [card?.idCarta, card?.cardId, card?.id],
+  );
 
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -66,7 +119,11 @@ export default function CardImage({ card, className = '', style = {}, fallback =
     // O getAllCardImagePaths retorna caminhos na ordem: nome da carta -> idCarta (YGOPRO_ ignorado)
     if (possiblePaths.length > 0) {
       const firstPath = possiblePaths[0];
-      console.log(`[CardImage] 🎯 Tentando primeiro caminho para "${card?.name}":`, firstPath, `(total: ${possiblePaths.length} caminhos)`);
+      if (isDev) {
+        console.log(
+          `[CardImage] 🎯 "${card?.name?.slice(0, 28)}…" → ${firstPath} (+${possiblePaths.length - 1} fallbacks)`,
+        );
+      }
       setImageSrc(firstPath);
       imageSrcRef.current = firstPath;
       lastImageSrcRef.current = firstPath;
@@ -102,7 +159,7 @@ export default function CardImage({ card, className = '', style = {}, fallback =
     imageSrcRef.current = null;
     lastImageSrcRef.current = null;
     setHasError(true);
-  }, [cardId, cardImageUrl, possiblePaths.length, card?.name, card?.cardImage]); // Só executar quando cardId, cardImageUrl ou número de paths mudarem
+  }, [cardId, cardImageUrl, possiblePaths, card?.name, card?.cardImage]);
 
   const handleImageError = () => {
     const currentSrc = imageSrcRef.current;
@@ -112,7 +169,7 @@ export default function CardImage({ card, className = '', style = {}, fallback =
       const newAttempted = new Set(prev);
       if (currentSrc) {
         newAttempted.add(currentSrc);
-        console.log(`[CardImage] ❌ Falhou ao carregar "${card?.name}":`, currentSrc);
+        if (isDev) console.log(`[CardImage] ❌ falhou "${card?.name?.slice(0, 24)}":`, currentSrc);
       }
       
       // Tentar próximo caminho se houver
@@ -121,7 +178,7 @@ export default function CardImage({ card, className = '', style = {}, fallback =
         const nextPath = possiblePaths[nextIndex];
         // Verificar se já tentamos este caminho
         if (!newAttempted.has(nextPath)) {
-          console.log(`[CardImage] 🔄 Tentando próximo caminho (${nextIndex + 1}/${possiblePaths.length}) para "${card?.name}":`, nextPath);
+          if (isDev) console.log(`[CardImage] 🔄 (${nextIndex + 1}/${possiblePaths.length})`, nextPath);
           // Atualizar refs e estado
           currentIndexRef.current = nextIndex;
           imageSrcRef.current = nextPath;
@@ -198,7 +255,36 @@ export default function CardImage({ card, className = '', style = {}, fallback =
     displaySrc += (displaySrc.includes('?') ? '&' : '?') + `t=${cacheBuster}`;
   }
 
-  // Usar div com backgroundImage e img invisível para detectar erro
+  const fp =
+    fetchPriority ?? (loading === 'eager' ? 'high' : 'auto');
+
+  if (singleLayerImage) {
+    const fitClass = objectFit === 'contain' ? 'object-contain' : 'object-cover';
+    return (
+      <div className={`relative overflow-hidden ${className}`} style={style}>
+        <img
+          src={displaySrc}
+          alt=""
+          loading={loading}
+          decoding="async"
+          fetchPriority={fp}
+          sizes={sizes}
+          className={`absolute inset-0 h-full w-full ${fitClass}`}
+          draggable={false}
+          onError={() => {
+            handleImageError();
+          }}
+          onLoad={() => {
+            setHasError(false);
+            if (cacheKey && imageSrcRef.current) {
+              rememberSuccessfulCardImagePath(cacheKey, imageSrcRef.current);
+            }
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       className={className}
@@ -210,11 +296,13 @@ export default function CardImage({ card, className = '', style = {}, fallback =
         ...style,
       }}
     >
-      {/* Imagem invisível para detectar erro de carregamento */}
-      {/* IMPORTANTE: width e height mínimos são necessários para o onError funcionar */}
       <img
         src={displaySrc}
         alt=""
+        loading={loading}
+        decoding="async"
+        fetchPriority={fp}
+        sizes={sizes}
         style={{
           position: 'absolute',
           width: '1px',
@@ -223,26 +311,14 @@ export default function CardImage({ card, className = '', style = {}, fallback =
           pointerEvents: 'none',
           visibility: 'hidden',
         }}
-        onError={async (e) => {
-          // Verificar se a resposta é HTML (index.html do SPA)
-          try {
-            const response = await fetch(displaySrc || '', { method: 'HEAD' });
-            const contentType = response.headers.get('content-type');
-            if (contentType && contentType.includes('text/html')) {
-              // Servidor retornou HTML em vez de imagem - tentar fallback
-              console.warn(`[CardImage] ⚠️ Servidor retornou HTML para "${card?.name}":`, displaySrc);
-              handleImageError();
-              return;
-            }
-          } catch (fetchError) {
-            // Se fetch falhar, continuar com handleImageError normal
-          }
-          // Tentar próximo caminho se houver
+        onError={() => {
           handleImageError();
         }}
         onLoad={() => {
-          // Imagem carregou com sucesso
           setHasError(false);
+          if (cacheKey && imageSrcRef.current) {
+            rememberSuccessfulCardImagePath(cacheKey, imageSrcRef.current);
+          }
         }}
       />
     </div>

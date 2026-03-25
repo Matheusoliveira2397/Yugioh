@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import io, { Socket } from 'socket.io-client';
 import { useAuthStore } from '../stores/authStore';
+import { requestActiveDuelRefresh } from '../utils/activeDuelRefresh';
 
 /** URL do WebSocket: usa env ou em produção same-origin (ws/wss conforme a página) */
 function getSocketUrl(): string {
@@ -387,6 +388,7 @@ export const useSocket = () => {
             };
             console.log(`[${tabId}] Match data preparado (inferido):`, matchData);
             setDuelFound(matchData);
+            requestActiveDuelRefresh();
             return;
           }
         }
@@ -417,6 +419,7 @@ export const useSocket = () => {
         console.log(`[${tabId}] duelId existe?`, !!matchData.duelId);
         
         setDuelFound(matchData);
+        requestActiveDuelRefresh();
         
         // Verificar se foi setado corretamente
         setTimeout(() => {
@@ -446,6 +449,7 @@ export const useSocket = () => {
           console.log(`[${tabId}] Estado atualizado com duelId:`, updated.duelId, '(tipo:', typeof updated.duelId, ')');
           return updated;
         });
+        queueMicrotask(() => requestActiveDuelRefresh());
       };
       
       socket.on('duelFound', duelFoundListener);
@@ -604,6 +608,7 @@ export const useSocket = () => {
   /** Limpa o estado "partida encontrada" para permitir fechar a tela e voltar a procurar. */
   const clearDuelFound = () => {
     setDuelFound(null);
+    queueMicrotask(() => requestActiveDuelRefresh());
   };
 
   const sendChatMessage = (duelId: string, userId: string | number, message: string) => {

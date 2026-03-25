@@ -6,6 +6,7 @@ import { ShopService } from '../shop/shop.service';
 import { CreateCardDto } from './dto/create-card.dto';
 import { UpdateCardDto } from './dto/update-card.dto';
 import { AddEffectDto } from './dto/add-effect.dto';
+import { BulkImportCardsDto } from './dto/bulk-import-cards.dto';
 import { YugiohApiService } from './services/yugioh-api.service';
 import { UploadService } from '../upload/upload.service';
 import { PromotionsService } from '../promotions/promotions.service';
@@ -36,12 +37,15 @@ export class CardsService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    // Executar renomeação de imagens automaticamente na inicialização
-    // Apenas uma vez, com delay para garantir que o módulo está totalmente carregado
+    // Desligado por padrão: carregar ~10k+ linhas no boot quebra pool/conexão (ex.: Supabase).
+    // Rode manualmente: POST /cards/admin/rename-all-images ou defina AUTO_RENAME_CARD_IMAGES_ON_BOOT=true
+    if (process.env.AUTO_RENAME_CARD_IMAGES_ON_BOOT !== 'true') {
+      return;
+    }
     setTimeout(async () => {
       if (!this.renameImagesExecuted) {
         this.renameImagesExecuted = true;
-        console.log('🔄 [CardsService] Iniciando renomeação automática de imagens...');
+        console.log('🔄 [CardsService] Renomeação automática de imagens (AUTO_RENAME_CARD_IMAGES_ON_BOOT)...');
         try {
           await this.renameAllCardImagesInternal(this.uploadService);
         } catch (error: any) {
@@ -49,7 +53,51 @@ export class CardsService implements OnModuleInit {
           console.error('❌ [CardsService] Stack:', error.stack);
         }
       }
-    }, 10000); // Aguardar 10 segundos após inicialização
+    }, 15_000);
+  }
+
+  private isDbConnectionError(err: unknown): boolean {
+    const m = (err as any)?.message?.toString() || '';
+    return (
+      m.includes('Connection terminated') ||
+      m.includes('ECONNRESET') ||
+      m.includes('EPIPE') ||
+      m.includes('Connection closed') ||
+      m.includes('read ECONNRESET')
+    );
+  }
+
+  private async withDbRetry<T>(label: string, fn: () => Promise<T>, retries = 4): Promise<T> {
+    let last: unknown;
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await fn();
+      } catch (e) {
+        last = e;
+        if (!this.isDbConnectionError(e) || i === retries - 1) {
+          throw e;
+        }
+        const wait = 400 * (i + 1);
+        console.warn(`⚠️ [${label}] Conexão caiu, nova tentativa ${i + 2}/${retries} em ${wait}ms...`);
+        await new Promise((r) => setTimeout(r, wait));
+      }
+    }
+    throw last;
+  }
+
+  /** Leve: só colunas necessárias, em páginas (evita SELECT gigante e timeout de pool). */
+  private async loadCardsWithImageSlice(skip: number, take: number): Promise<Card[]> {
+    return this.withDbRetry('loadCardsWithImageSlice', () =>
+      this.cardsRepository
+        .createQueryBuilder('c')
+        .select(['c.id', 'c.idCarta', 'c.name', 'c.cardImage'])
+        .where('c.cardImage IS NOT NULL')
+        .andWhere("btrim(c.cardImage) <> ''")
+        .orderBy('c.id', 'ASC')
+        .skip(skip)
+        .take(take)
+        .getMany(),
+    );
   }
 
   async findAll(search?: string, type?: string): Promise<Card[]> {
@@ -179,10 +227,14 @@ export class CardsService implements OnModuleInit {
             console.warn(`⚠️ Base64 detectado em cardImage. Removendo. Use upload de arquivo.`);
             continue;
           }
-          // Permitir URL do nosso storage (Supabase); rejeitar só URL externa
+          // Permitir URL do nosso storage (Supabase) e imagens oficiais YGOPRODeck (import em massa)
           if (typeof val === 'string' && (val.startsWith('http://') || val.startsWith('https://'))) {
-            if (!val.includes('supabase.co/storage')) {
-              console.warn(`⚠️ URL externa em cardImage ignorada. Use path ou Supabase.`);
+            const allowedHost =
+              val.includes('supabase.co/storage') ||
+              val.includes('images.ygoprodeck.com') ||
+              val.includes('db.ygoprodeck.com');
+            if (!allowedHost) {
+              console.warn(`⚠️ URL externa em cardImage ignorada. Use path, Supabase ou YGOPRODeck.`);
               continue;
             }
           }
@@ -943,6 +995,50 @@ export class CardsService implements OnModuleInit {
     });
   }
 
+  async getAdminCardCounts(): Promise<{ total: number; active: number; inactive: number }> {
+    const [total, active] = await Promise.all([
+      this.cardsRepository.count(),
+      this.cardsRepository.count({ where: { isActive: true } }),
+    ]);
+    return { total, active, inactive: Math.max(0, total - active) };
+  }
+
+  async getAdminListPaginated(params: {
+    page: number;
+    limit: number;
+    search?: string;
+    status: 'all' | 'active' | 'inactive';
+  }): Promise<{
+    items: Card[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const page = Math.max(1, params.page);
+    const limit = Math.min(200, Math.max(1, params.limit));
+    const status = params.status;
+
+    const qb = this.cardsRepository.createQueryBuilder('c');
+    if (status === 'active') {
+      qb.andWhere('c.isActive = :active', { active: true });
+    } else if (status === 'inactive') {
+      qb.andWhere('c.isActive = :active', { active: false });
+    }
+
+    const q = params.search?.trim();
+    if (q) {
+      qb.andWhere('(c.name ILIKE :term OR c.idCarta ILIKE :term)', { term: `%${q}%` });
+    }
+
+    qb.orderBy('c.createdAt', 'DESC');
+    const skip = (page - 1) * limit;
+    const [items, total] = await qb.skip(skip).take(limit).getManyAndCount();
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
+    return { items, total, page, limit, totalPages };
+  }
+
   async getCardsForSale(): Promise<CardForSale[]> {
     // Verificar cache
     const now = Date.now();
@@ -1212,6 +1308,216 @@ export class CardsService implements OnModuleInit {
   }
 
   /**
+   * Importa o catálogo YGOPRODeck (idCarta YGOPRO_<id>).
+   * Pode levar vários minutos na primeira execução. Requer admin.
+   */
+  async bulkImportFromYgoprodeck(dto: BulkImportCardsDto): Promise<{
+    dryRun: boolean;
+    catalogSize: number;
+    totalRows: number;
+    skippedByTypeFilter: number;
+    skippedBySubtypeFilter: number;
+    inserted: number;
+    updated: number;
+    skipped: number;
+    errors: number;
+    errorSamples: { idCarta?: string; name?: string; message: string }[];
+  }> {
+    const dryRun = dto.dryRun === true;
+    const translate = dto.translate === true;
+    const downloadImages = dto.downloadImages === true;
+    const onConflict = dto.onConflict ?? 'skip';
+    const alternateArts = dto.alternateArts === true;
+    const limit = dto.limit;
+    const importAsInactive = dto.importAsInactive === true;
+    const allowedTypes =
+      dto.cardTypes && dto.cardTypes.length > 0 ? new Set(dto.cardTypes) : null;
+    const monsterSubtypeSet =
+      dto.monsterSubtypes?.length ? new Set(dto.monsterSubtypes) : null;
+    const spellSubtypeSet = dto.spellSubtypes?.length ? new Set(dto.spellSubtypes) : null;
+    const trapSubtypeSet = dto.trapSubtypes?.length ? new Set(dto.trapSubtypes) : null;
+
+    const apiCards = await this.yugiohApiService.fetchAllCardData();
+    const catalogSize = apiCards.length;
+
+    type Row = { api: any; artImageId: number; imageUrl: string };
+    const rows: Row[] = [];
+    for (const api of apiCards) {
+      if (api?.id == null || !api?.name) continue;
+      const images = api.card_images as
+        | Array<{ id?: number; image_url?: string; image_url_small?: string }>
+        | undefined;
+      if (alternateArts && images?.length) {
+        for (const img of images) {
+          if (img?.id == null) continue;
+          rows.push({
+            api,
+            artImageId: Number(img.id),
+            imageUrl: img.image_url || img.image_url_small || '',
+          });
+        }
+      } else {
+        const first = images?.[0];
+        rows.push({
+          api,
+          artImageId: Number(api.id),
+          imageUrl: first?.image_url || first?.image_url_small || '',
+        });
+      }
+    }
+
+    const toProcess = limit != null ? rows.slice(0, limit) : rows;
+
+    const existingRows = await this.cardsRepository
+      .createQueryBuilder('c')
+      .select(['c.idCarta'])
+      .where('c.idCarta LIKE :p', { p: 'YGOPRO_%' })
+      .getMany();
+    const existingSet = new Set(existingRows.map((r) => r.idCarta));
+
+    let inserted = 0;
+    let updated = 0;
+    let skipped = 0;
+    let skippedByTypeFilter = 0;
+    let skippedBySubtypeFilter = 0;
+    let errors = 0;
+    const errorSamples: { idCarta?: string; name?: string; message: string }[] = [];
+
+    const pushErr = (e: { idCarta?: string; name?: string; message: string }) => {
+      errors++;
+      if (errorSamples.length < 30) {
+        errorSamples.push(e);
+      }
+    };
+
+    for (let i = 0; i < toProcess.length; i++) {
+      const row = toProcess[i];
+      const name = row.api?.name as string;
+      try {
+        const mainType = this.yugiohApiService.getImportCardTypeFromApi(row.api);
+
+        if (allowedTypes && !allowedTypes.has(mainType)) {
+          skippedByTypeFilter++;
+          continue;
+        }
+
+        if (mainType === 'Monster' && monsterSubtypeSet) {
+          const st = this.yugiohApiService.getImportMonsterSubtypeFromApi(row.api);
+          if (!st || !monsterSubtypeSet.has(st)) {
+            skippedBySubtypeFilter++;
+            continue;
+          }
+        }
+        if (mainType === 'Spell' && spellSubtypeSet) {
+          const st = this.yugiohApiService.getImportSpellSubtypeFromApi(row.api);
+          if (!st || !spellSubtypeSet.has(st)) {
+            skippedBySubtypeFilter++;
+            continue;
+          }
+        }
+        if (mainType === 'Trap' && trapSubtypeSet) {
+          const st = this.yugiohApiService.getImportTrapSubtypeFromApi(row.api);
+          if (!st || !trapSubtypeSet.has(st)) {
+            skippedBySubtypeFilter++;
+            continue;
+          }
+        }
+
+        const partial = this.yugiohApiService.mapApiCardToImportPartial(row.api, {
+          artImageId: row.artImageId,
+          imageUrl: row.imageUrl || undefined,
+        });
+
+        if (importAsInactive) {
+          partial.isActive = false;
+        }
+
+        if (translate && partial.description) {
+          partial.description = await this.yugiohApiService.translateDescription(partial.description);
+        }
+
+        const idCarta = partial.idCarta?.trim();
+        if (!idCarta || !partial.name?.trim()) {
+          pushErr({ name, message: 'idCarta ou nome vazio após mapeamento' });
+          continue;
+        }
+
+        if (downloadImages && partial.cardImage) {
+          try {
+            partial.cardImage = await this.uploadService.downloadAndSaveCardImage(
+              partial.cardImage,
+              partial.name,
+              idCarta,
+            );
+          } catch {
+            /* mantém URL */
+          }
+        }
+
+        if (dryRun) {
+          if (existingSet.has(idCarta)) {
+            if (onConflict === 'skip') skipped++;
+            else updated++;
+          } else {
+            inserted++;
+            existingSet.add(idCarta);
+          }
+          if ((i + 1) % 2000 === 0) {
+            console.log(`📥 [bulkImport] dry-run progress ${i + 1}/${toProcess.length}`);
+          }
+          continue;
+        }
+
+        if (existingSet.has(idCarta)) {
+          if (onConflict === 'skip') {
+            skipped++;
+            continue;
+          }
+          const cleaned = this.cleanCardData(partial as any) as Partial<Card>;
+          const updatePayload: Record<string, unknown> = { ...cleaned };
+          delete updatePayload.idCarta;
+          if (importAsInactive) {
+            updatePayload.isActive = false;
+          }
+          await this.cardsRepository.update({ idCarta }, updatePayload as any);
+          updated++;
+          continue;
+        }
+
+        await this.create(partial as any);
+        existingSet.add(idCarta);
+        inserted++;
+        if ((i + 1) % 500 === 0) {
+          console.log(`📥 [bulkImport] progress ${i + 1}/${toProcess.length} (inseridas/atualizadas até agora)`);
+        }
+      } catch (e: any) {
+        pushErr({
+          idCarta: `YGOPRO_${row.artImageId}`,
+          name,
+          message: e?.message || String(e),
+        });
+      }
+    }
+
+    if (!dryRun && (inserted > 0 || updated > 0)) {
+      this.invalidateShopCache();
+    }
+
+    return {
+      dryRun,
+      catalogSize,
+      totalRows: toProcess.length,
+      skippedByTypeFilter,
+      skippedBySubtypeFilter,
+      inserted,
+      updated,
+      skipped,
+      errors,
+      errorSamples,
+    };
+  }
+
+  /**
    * Atualiza todas as cartas do banco com informações da API YGOPRODeck
    * - Atualiza maxCopiesInDeck baseado na banlist
    * - Traduz descrições para português
@@ -1375,87 +1681,87 @@ export class CardsService implements OnModuleInit {
   }
 
   private async renameAllCardImagesInternal(uploadService: any): Promise<{ success: boolean; total: number; renamed: number; skipped: number; errors: number; message: string }> {
+    const path = require('path');
+    const BATCH = Math.max(50, Math.min(500, parseInt(process.env.RENAME_CARD_IMAGES_BATCH_SIZE || '250', 10) || 250));
+
+    let renamed = 0;
+    let skipped = 0;
+    let errors = 0;
+    let processed = 0;
+    const errorDetails: string[] = [];
+
     try {
-      // Buscar TODAS as cartas (incluindo inativas) com cardImage
-      const allCards = await this.getAllAdmin();
-      const cardsWithImage = allCards.filter(card => card.cardImage && card.cardImage.trim() !== '');
-      
-      console.log(`🔄 [renameAllCardImages] Iniciando renomeação de ${cardsWithImage.length} imagens...`);
-      
-      let renamed = 0;
-      let skipped = 0;
-      let errors = 0;
-      const errorDetails: string[] = [];
-      const path = require('path');
-      
-      for (const card of cardsWithImage) {
-        try {
-          if (!card.idCarta) {
-            const msg = `⚠️ Carta "${card.name}" não tem idCarta, pulando...`;
-            console.warn(msg);
-            errorDetails.push(msg);
-            skipped++;
-            continue;
-          }
-          
-          // Extrair nome do arquivo atual do cardImage
-          const currentImagePath = card.cardImage;
-          if (!currentImagePath || typeof currentImagePath !== 'string') {
-            const msg = `⚠️ Carta "${card.name}" tem cardImage inválido: ${currentImagePath}`;
-            console.warn(msg);
-            errorDetails.push(msg);
-            skipped++;
-            continue;
-          }
-          
-          // Extrair nome do arquivo (pode ser /images/cards/nome.jpg ou apenas nome.jpg)
-          let currentFileName: string;
-          if (currentImagePath.includes('/')) {
-            currentFileName = currentImagePath.split('/').pop() || currentImagePath;
-          } else {
-            currentFileName = currentImagePath;
-          }
-          
-          // Verificar se já está com o nome correto (idCarta)
-          const fileExtension = path.extname(currentFileName);
-          const expectedFileName = `${card.idCarta}${fileExtension}`;
-          
-          if (currentFileName === expectedFileName) {
-            console.log(`✅ Carta "${card.name}" já tem nome correto: ${currentFileName}`);
-            skipped++;
-            continue;
-          }
-          
-          console.log(`🔄 Renomeando carta "${card.name}": ${currentFileName} -> ${expectedFileName}`);
-          
-          // Renomear arquivo FÍSICO na pasta
-          const newPath = await uploadService.renameCardImage(currentImagePath, card.idCarta);
-          
-          if (newPath) {
-            // Atualizar cardImage no banco
-            await this.update(card.id, { cardImage: newPath });
-            console.log(`✅ Carta "${card.name}" renomeada com sucesso: ${currentFileName} -> ${path.basename(newPath)}`);
-            renamed++;
-          } else {
-            const msg = `⚠️ Falha ao renomear arquivo físico da carta "${card.name}" (${currentFileName})`;
-            console.warn(msg);
+      console.log(`🔄 [renameAllCardImages] Processamento em lotes de ${BATCH} (sem SELECT completo em todas as cartas).`);
+
+      for (let skip = 0; ; skip += BATCH) {
+        const slice = await this.loadCardsWithImageSlice(skip, BATCH);
+        if (slice.length === 0) break;
+
+        for (const card of slice) {
+          processed++;
+          try {
+            if (!card.idCarta) {
+              const msg = `⚠️ Carta "${card.name}" não tem idCarta, pulando...`;
+              errorDetails.push(msg);
+              skipped++;
+              continue;
+            }
+
+            const currentImagePath = card.cardImage;
+            if (!currentImagePath || typeof currentImagePath !== 'string') {
+              const msg = `⚠️ Carta "${card.name}" tem cardImage inválido: ${currentImagePath}`;
+              errorDetails.push(msg);
+              skipped++;
+              continue;
+            }
+
+            let currentFileName: string;
+            if (currentImagePath.includes('/')) {
+              currentFileName = (currentImagePath.split('/').pop() || currentImagePath).split('?')[0];
+            } else {
+              currentFileName = currentImagePath.split('?')[0];
+            }
+
+            const fileExtension = path.extname(currentFileName);
+            const expectedFileName = `${card.idCarta}${fileExtension}`;
+
+            if (currentFileName === expectedFileName) {
+              skipped++;
+              continue;
+            }
+
+            const newPath = await uploadService.renameCardImage(currentImagePath, card.idCarta);
+
+            if (newPath) {
+              await this.withDbRetry(`update cardImage ${card.id}`, () =>
+                this.cardsRepository.update(card.id, { cardImage: newPath }),
+              );
+              renamed++;
+            } else {
+              const msg = `⚠️ Falha ao renomear arquivo físico da carta "${card.name}" (${currentFileName})`;
+              errorDetails.push(msg);
+              errors++;
+            }
+          } catch (error: any) {
+            const msg = `❌ Erro ao processar carta "${card.name}": ${error.message}`;
+            console.error(msg);
             errorDetails.push(msg);
             errors++;
           }
-        } catch (error: any) {
-          const msg = `❌ Erro ao processar carta "${card.name}": ${error.message}`;
-          console.error(msg);
-          console.error('Stack:', error.stack);
-          errorDetails.push(msg);
-          errors++;
         }
+
+        if (slice.length < BATCH) break;
+        await new Promise((r) => setTimeout(r, 75));
       }
-      
+
+      this.shopCardsCache = null;
+
       console.log(`\n📊 [renameAllCardImages] Resumo da renomeação:`);
+      console.log(`   📦 Processadas: ${processed}`);
       console.log(`   ✅ Renomeadas: ${renamed}`);
       console.log(`   ⏭️  Puladas: ${skipped}`);
       console.log(`   ❌ Erros: ${errors}`);
-      
+
       if (errorDetails.length > 0 && errorDetails.length <= 20) {
         console.log(`\n⚠️ Detalhes dos erros:`);
         errorDetails.forEach((detail, index) => {
@@ -1467,14 +1773,14 @@ export class CardsService implements OnModuleInit {
           console.log(`   ${index + 1}. ${detail}`);
         });
       }
-      
+
       return {
         success: errors === 0,
-        total: cardsWithImage.length,
+        total: processed,
         renamed,
         skipped,
         errors,
-        message: `Renomeação concluída: ${renamed} renomeadas, ${skipped} puladas, ${errors} erros`
+        message: `Renomeação concluída: ${renamed} renomeadas, ${skipped} puladas, ${errors} erros (${processed} processadas)`,
       };
     } catch (error: any) {
       console.error('❌ [renameAllCardImages] Erro ao renomear imagens:', error);

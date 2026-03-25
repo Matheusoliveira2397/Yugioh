@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { useAuthStore } from '../stores/authStore';
+import { normalizeAxiosErrorMessage } from '../utils/api-error';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -34,8 +35,7 @@ api.interceptors.response.use(
 
     if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
       error.message = 'A requisição demorou muito para responder.';
-    }
-    if (error.code === 'ERR_NETWORK' || !error.response) {
+    } else if (error.code === 'ERR_NETWORK' || !error.response) {
       error.message = 'Não foi possível conectar ao servidor.';
     }
 
@@ -49,6 +49,7 @@ api.interceptors.response.use(
       if (!refreshToken) {
         useAuthStore.getState().logout();
         window.location.href = '/login';
+        normalizeAxiosErrorMessage(error);
         return Promise.reject(error);
       }
 
@@ -79,6 +80,7 @@ api.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${access_token}`;
         return api(originalRequest);
       } catch (refreshErr) {
+        normalizeAxiosErrorMessage(refreshErr);
         processQueue(null, refreshErr);
         useAuthStore.getState().logout();
         window.location.href = '/login';
@@ -88,6 +90,7 @@ api.interceptors.response.use(
       }
     }
 
+    normalizeAxiosErrorMessage(error);
     return Promise.reject(error);
   }
 );

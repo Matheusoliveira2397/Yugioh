@@ -6,6 +6,7 @@ import { useSocketStore } from '../stores/socketStore';
 import { getSocialIcon } from '../components/SocialMediaIcons';
 import axios from 'axios';
 import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
+import { requestActiveDuelRefresh } from '../utils/activeDuelRefresh';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -537,6 +538,7 @@ export default function ChatPage() {
       socket.off('duelError', handleDuelError);
       const duelId = data?.duelId || data?.duel?.id || data?.id;
       if (duelId) {
+        requestActiveDuelRefresh();
         navigate(`/duel/${duelId}`);
       } else {
         alert('Erro: ID do duelo não recebido');

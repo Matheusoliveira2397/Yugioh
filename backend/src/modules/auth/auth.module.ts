@@ -10,6 +10,7 @@ import { LocalStrategy } from './strategies/local.strategy';
 import { LocalMasterStrategy } from './strategies/local-master.strategy';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { AuthDbMigrationService } from './auth-db-migration.service';
+import { getJwtSecret } from './jwt-secret.util';
 import { UsersModule } from '../users/users.module';
 import { MailModule } from '../mail/mail.module';
 import { SeasonsModule } from '../seasons/seasons.module';
@@ -32,7 +33,7 @@ import { CosmeticsModule } from '../cosmetics/cosmetics.module';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get('JWT_SECRET'),
+        secret: getJwtSecret(configService),
         signOptions: {
           expiresIn: configService.get('JWT_ACCESS_EXPIRES_IN', '15m'),
         },

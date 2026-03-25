@@ -34,6 +34,17 @@ function resolveUploadsRoot(): string {
   return path.join(__dirname, '..', '..', '..', 'uploads');
 }
 
+/**
+ * `frontend/public/images/cards` (imagens estáticas sincronizadas pelo script de download).
+ * Quatro níveis acima de `src/modules/upload` ou `dist/modules/upload` = raiz do monorepo.
+ */
+function resolveFrontendPublicCardsDir(): string {
+  if (process.env.FRONTEND_PUBLIC_CARDS_DIR?.trim()) {
+    return path.normalize(process.env.FRONTEND_PUBLIC_CARDS_DIR.trim());
+  }
+  return path.join(__dirname, '..', '..', '..', '..', 'frontend', 'public', 'images', 'cards');
+}
+
 @Injectable()
 export class UploadService {
   private readonly uploadsRoot: string;
@@ -41,6 +52,7 @@ export class UploadService {
   private readonly groupsPath: string;
   private readonly achievementsPath: string;
   private readonly cardsPath: string;
+  private readonly frontendPublicCardsPath: string;
 
   constructor(private readonly supabaseStorage: SupabaseStorageService) {
     this.uploadsRoot = resolveUploadsRoot();
@@ -50,6 +62,7 @@ export class UploadService {
     this.cardsPath = process.env.CARDS_UPLOAD_PATH?.trim()
       ? path.normalize(process.env.CARDS_UPLOAD_PATH.trim())
       : path.join(this.uploadsRoot, 'cards');
+    this.frontendPublicCardsPath = resolveFrontendPublicCardsDir();
 
     // Cria a pasta de uploads se não existir
     if (!fs.existsSync(this.uploadPath)) {
@@ -251,7 +264,31 @@ export class UploadService {
   }
 
   /**
-   * Renomeia uma imagem de carta para usar idCarta como nome
+   * Onde o arquivo antigo está no disco (uploads do backend ou pasta estática do frontend).
+   */
+  private locateCardImageFile(oldFileName: string): { fullPath: string; kind: 'uploads' | 'public' } | null {
+    const safeName = path.basename(oldFileName.split('?')[0]);
+    if (!safeName || safeName === '.' || safeName === '..') return null;
+
+    const inUploads = path.join(this.cardsPath, safeName);
+    if (fs.existsSync(inUploads) && fs.statSync(inUploads).isFile()) {
+      return { fullPath: inUploads, kind: 'uploads' };
+    }
+
+    const inPublic = path.join(this.frontendPublicCardsPath, safeName);
+    if (fs.existsSync(inPublic) && fs.statSync(inPublic).isFile()) {
+      return { fullPath: inPublic, kind: 'public' };
+    }
+
+    return null;
+  }
+
+  /**
+   * Renomeia uma imagem de carta para usar idCarta como nome.
+   * Procura o arquivo em `uploads/cards` e em `frontend/public/images/cards`.
+   *
+   * Se o disco já tiver `{idCarta}.ext` mas o banco ainda referenciar só o ID numérico (ex.: 76080032.jpg),
+   * devolve a URL canônica sem falhar — só falta alinhar o registro no banco.
    */
   async renameCardImage(oldPath: string, idCarta: string): Promise<string | null> {
     try {
@@ -259,60 +296,90 @@ export class UploadService {
         console.warn(`⚠️ Parâmetros inválidos para renomear: oldPath=${oldPath}, idCarta=${idCarta}`);
         return null;
       }
-      
-      // Extrair nome do arquivo antigo do caminho
+
       let oldFileName: string;
-      if (oldPath.includes('/')) {
-        oldFileName = oldPath.split('/').pop() || path.basename(oldPath);
+      if (/^https?:\/\//i.test(oldPath)) {
+        try {
+          const u = new URL(oldPath);
+          oldFileName = path.basename((u.pathname || '').split('?')[0] || '');
+        } catch {
+          oldFileName = '';
+        }
+      } else if (oldPath.includes('/')) {
+        oldFileName = (oldPath.split('/').pop() || path.basename(oldPath)).split('?')[0];
       } else {
-        oldFileName = oldPath;
+        oldFileName = oldPath.split('?')[0];
       }
-      
-      const oldFilePath = path.join(this.cardsPath, oldFileName);
-      
-      // Verificar se arquivo existe
-      if (!fs.existsSync(oldFilePath)) {
-        console.warn(`⚠️ Arquivo não encontrado para renomear: ${oldFilePath}`);
+      oldFileName = path.basename(oldFileName);
+
+      const extFromOld = path.extname(oldFileName);
+      const extCandidates = Array.from(
+        new Set([extFromOld, '.jpg', '.jpeg', '.png', '.webp', '.gif'].filter((e) => e && e.length > 0)),
+      );
+
+      for (const ext of extCandidates) {
+        const canonicalName = `${idCarta}${ext}`;
+        const already = this.locateCardImageFile(canonicalName);
+        if (already) {
+          const prefix = already.kind === 'uploads' ? '/uploads/cards/' : '/images/cards/';
+          return `${prefix}${canonicalName}`;
+        }
+      }
+
+      if (!oldFileName || oldFileName === '.' || oldFileName === '..') {
+        console.warn(`⚠️ Sem arquivo local conhecido para idCarta=${idCarta} (path: ${oldPath})`);
         return null;
       }
-      
-      // Determinar extensão do arquivo antigo
+
+      const located = this.locateCardImageFile(oldFileName);
+      if (!located) {
+        console.warn(
+          `⚠️ Arquivo não encontrado para renomear (${oldFileName}): nem em ${this.cardsPath} nem em ${this.frontendPublicCardsPath}`,
+        );
+        return null;
+      }
+
+      const oldFilePath = located.fullPath;
       const fileExtension = path.extname(oldFileName);
       if (!fileExtension) {
         console.warn(`⚠️ Arquivo sem extensão: ${oldFileName}`);
         return null;
       }
-      
-      // Novo nome do arquivo usando idCarta
+
       const newFileName = `${idCarta}${fileExtension}`;
-      const newFilePath = path.join(this.cardsPath, newFileName);
-      
-      // Se o arquivo novo já existe e é o mesmo arquivo (mesmo tamanho), não renomear
+      const baseDir = located.kind === 'uploads' ? this.cardsPath : this.frontendPublicCardsPath;
+      const newFilePath = path.join(baseDir, newFileName);
+      const urlPrefix = located.kind === 'uploads' ? '/uploads/cards/' : '/images/cards/';
+
+      if (oldFilePath === newFilePath) {
+        return `${urlPrefix}${newFileName}`;
+      }
+
       if (fs.existsSync(newFilePath)) {
         const oldStats = fs.statSync(oldFilePath);
         const newStats = fs.statSync(newFilePath);
         if (oldStats.size === newStats.size) {
-          console.log(`ℹ️ Arquivo já existe com idCarta e mesmo tamanho: ${newFileName}, deletando original`);
-          // Deletar arquivo antigo se o novo já existe
+          console.log(`ℹ️ Arquivo já existe com idCarta e mesmo tamanho: ${newFileName}, removendo duplicata ${oldFileName}`);
           fs.unlinkSync(oldFilePath);
-          return `/uploads/cards/${newFileName}`;
-        } else {
-          console.warn(`⚠️ Arquivo já existe com idCarta mas tamanho diferente: ${newFileName}, mantendo ambos`);
-          return null;
+          return `${urlPrefix}${newFileName}`;
         }
+        console.warn(`⚠️ Arquivo já existe com idCarta mas tamanho diferente: ${newFileName}, mantendo ambos`);
+        return null;
       }
-      
-      // Renomear arquivo físico
+
+      if (located.kind === 'public' && !fs.existsSync(this.frontendPublicCardsPath)) {
+        fs.mkdirSync(this.frontendPublicCardsPath, { recursive: true });
+      }
+
       fs.renameSync(oldFilePath, newFilePath);
-      console.log(`✅ Arquivo FÍSICO renomeado: ${oldFileName} -> ${newFileName} em ${this.cardsPath}`);
-      
-      // Verificar se renomeação foi bem-sucedida
+      console.log(`✅ Arquivo FÍSICO renomeado: ${oldFileName} -> ${newFileName} em ${baseDir}`);
+
       if (!fs.existsSync(newFilePath)) {
         console.error(`❌ Erro: Arquivo não existe após renomeação: ${newFilePath}`);
         return null;
       }
-      
-      return `/uploads/cards/${newFileName}`;
+
+      return `${urlPrefix}${newFileName}`;
     } catch (error: any) {
       console.error(`❌ Erro ao renomear arquivo físico:`, error.message);
       console.error(`❌ Stack:`, error.stack);

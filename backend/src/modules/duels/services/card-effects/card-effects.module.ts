@@ -37,6 +37,14 @@ import {
   createWabokuEffect,
   createBannerOfCourageEffect,
   createSwordsOfRevealingLightEffect,
+  createJarOfGreedEffect,
+  createCardDestructionEffect,
+  createReloadEffect,
+  createFissureEffect,
+  createSmashingGroundEffect,
+  createHammerShotEffect,
+  createGiantTrunadeEffect,
+  createDoubleSummonEffect,
 } from './effects/simple-effects';
 
 /**
@@ -201,6 +209,65 @@ export class CardEffectsModule implements OnModuleInit {
       ['swords of revealing light', 'swordsofrevealinglight'],
       createSwordsOfRevealingLightEffect(this.duelsService),
       ['SwordsOfRevealingLight', 'YGOPRO_72302403'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['jar of greed', 'jarofgreed'],
+      createJarOfGreedEffect(this.duelsService),
+      ['JarOfGreed', 'YGOPRO_83968380'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['card destruction', 'carddestruction'],
+      createCardDestructionEffect(this.duelsService),
+      ['CardDestruction', 'YGOPRO_72892473'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['reload'],
+      createReloadEffect(this.duelsService),
+      ['Reload', 'YGOPRO_22589918'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['fissure'],
+      createFissureEffect(this.duelsService),
+      ['Fissure', 'YGOPRO_66788016'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['smashing ground', 'smashingground'],
+      createSmashingGroundEffect(this.duelsService),
+      ['SmashingGround', 'YGOPRO_97169186'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['hammer shot', 'hammershot'],
+      createHammerShotEffect(this.duelsService),
+      ['HammerShot', 'YGOPRO_26412047'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['giant trunade', 'gianttrunade'],
+      createGiantTrunadeEffect(this.duelsService),
+      ['GiantTrunade', 'YGOPRO_42703248'],
+      this.duelsService,
+    );
+
+    // Lightning Vortex, Trade-In, Dark Eruption, Stamping Destruction, Tribute to the Doomed,
+    // Ancient Rules, Silver's Cry: resolvidos via pendingChoice PLAYER_TARGET_SPELL no gateway (escolha do jogador).
+
+    this.registry.registerSimple(
+      ['double summon', 'doublesummon'],
+      createDoubleSummonEffect(this.duelsService),
+      ['DoubleSummon', 'YGOPRO_43422537'],
       this.duelsService,
     );
     

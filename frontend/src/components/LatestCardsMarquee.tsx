@@ -94,7 +94,7 @@ export default function LatestCardsMarquee({
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
-        className={`rounded-lg p-2 md:p-3 border border-blue-700/30 bg-black/20 text-center max-w-2xl mx-auto ${className}`}
+        className={`rounded-xl p-2 md:p-3 border border-blue-600/25 bg-slate-950/45 backdrop-blur-md text-center w-full max-w-full ${className}`}
       >
         <h2 className="text-xs font-bold flex items-center justify-center gap-1.5 text-white/80 mb-1">
           <span>🎴</span>
@@ -119,7 +119,7 @@ export default function LatestCardsMarquee({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.3 }}
-      className={`rounded-lg p-2 md:p-3 border border-blue-700/30 bg-black/30 overflow-hidden max-w-2xl mx-auto ${className}`}
+      className={`rounded-xl p-2 sm:p-3 md:p-3.5 border border-blue-600/25 bg-slate-950/45 backdrop-blur-md overflow-hidden w-full max-w-full shadow-lg shadow-black/20 ring-1 ring-white/[0.04] ${className}`}
     >
       {!hideTitle && (
       <div className="flex items-center justify-between gap-2 mb-1.5">
