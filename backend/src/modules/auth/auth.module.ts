@@ -35,7 +35,7 @@ import { CosmeticsModule } from '../cosmetics/cosmetics.module';
       useFactory: (configService: ConfigService) => ({
         secret: getJwtSecret(configService),
         signOptions: {
-          expiresIn: configService.get('JWT_ACCESS_EXPIRES_IN', '15m'),
+          expiresIn: configService.get('JWT_ACCESS_EXPIRES_IN', '1h'),
         },
       }),
       inject: [ConfigService],

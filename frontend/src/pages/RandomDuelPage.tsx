@@ -8,13 +8,43 @@ import CardImage from '../components/CardImage';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
+interface AnimeDeckCardEntry {
+  quantity?: number;
+  isExtraDeck?: boolean;
+  card?: { id: string; name: string; cardImage?: string; idCarta?: string } | null;
+}
+
 interface AnimeDeckOption {
   id: string;
   name: string;
   description?: string;
   isActive: boolean;
   coverCard?: { id: string; name: string; cardImage?: string; idCarta?: string } | null;
-  cards?: Array<{ quantity?: number }>;
+  cards?: AnimeDeckCardEntry[];
+}
+
+/** Tipo explícito (evita `ReturnType<>` dentro de JSX — o `<` quebra o parser .tsx). */
+type AnimeDeckExpandedSlots = Array<{ card: AnimeDeckCardEntry['card']; key: string }>;
+
+const animePreviewCardImageProps = {
+  singleLayerImage: true,
+  omitNameBasedPaths: true,
+  pathExtensions: ['.webp', '.jpg', '.jpeg', '.png'] as const,
+  loading: 'lazy' as const,
+  sizes: '(max-width: 640px) 12vw, 64px',
+} as const;
+
+/** Uma entrada por cópia física no deck (para mostrar todas na grade). */
+function expandAnimeDeckEntries(list: AnimeDeckCardEntry[]): AnimeDeckExpandedSlots {
+  const out: AnimeDeckExpandedSlots = [];
+  list.forEach((row, rowIdx) => {
+    const q = Math.max(0, Math.min(99, row.quantity ?? 1));
+    const c = row.card;
+    for (let i = 0; i < q; i++) {
+      out.push({ card: c, key: `${c?.id ?? 'x'}-${rowIdx}-${i}` });
+    }
+  });
+  return out;
 }
 
 interface LevelRange {
@@ -56,6 +86,7 @@ export default function RandomDuelPage() {
   const [showDeckPicker, setShowDeckPicker] = useState(false);
   const [randomStats, setRandomStats] = useState<{ total: number; wins: number; losses: number } | null>(null);
   const [isRandomAnimeEnabled, setIsRandomAnimeEnabled] = useState(true);
+  const [animeDeckPreview, setAnimeDeckPreview] = useState<AnimeDeckOption | null>(null);
   const handlerRef = useRef<((data: any) => void) | null>(null);
   const isOpeningRef = useRef<boolean>(false);
   const searchStartTimeRef = useRef<number | null>(null);
@@ -181,6 +212,15 @@ export default function RandomDuelPage() {
       })
       .finally(() => setAnimeDecksLoading(false));
   }, [duelMode]);
+
+  useEffect(() => {
+    if (!animeDeckPreview) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAnimeDeckPreview(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [animeDeckPreview]);
 
   // Resetar isOpeningRef periodicamente se estiver travado
   useEffect(() => {
@@ -997,34 +1037,50 @@ export default function RandomDuelPage() {
                   ) : (
                     <div className="grid grid-cols-2 sm:grid-cols-2 gap-3 max-h-56 overflow-y-auto">
                       {animeDecks.map((deck) => (
-                        <button
+                        <div
                           key={deck.id}
-                          type="button"
-                          onClick={() => setSelectedAnimeDeckId(deck.id)}
-                          className={`text-center px-2 py-2 rounded-lg border-2 transition-all flex flex-col items-center ${
+                          className={`rounded-lg border-2 transition-all flex flex-col overflow-hidden ${
                             selectedAnimeDeckId === deck.id
                               ? 'bg-purple-600/40 border-purple-400 text-white'
                               : 'bg-gray-700/50 border-gray-600 text-gray-300 hover:border-purple-500/50'
                           }`}
                         >
-                          {deck.coverCard ? (
-                            <div className="flex-shrink-0 w-14 sm:w-16 aspect-[59/86] rounded overflow-hidden border border-white/20 mb-1.5">
-                              <CardImage
-                                card={deck.coverCard}
-                                className="w-full h-full object-cover"
-                                fallback="/images/fundoCarta.webp"
-                              />
-                            </div>
-                          ) : (
-                            <div className="flex-shrink-0 w-14 sm:w-16 aspect-[59/86] rounded bg-gray-700 border border-white/20 flex items-center justify-center text-xl mb-1.5">🃏</div>
-                          )}
-                          <span className="font-semibold text-xs truncate w-full block">{deck.name}</span>
-                          {deck.cards && (
-                            <span className="text-[10px] text-white/60">
-                              {deck.cards.reduce((s, c) => s + (c.quantity ?? 1), 0)} cartas
-                            </span>
-                          )}
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedAnimeDeckId(deck.id)}
+                            className="text-center px-2 pt-2 pb-1 flex flex-col items-center w-full min-h-0"
+                          >
+                            {deck.coverCard ? (
+                              <div className="flex-shrink-0 w-14 sm:w-16 aspect-[59/86] rounded overflow-hidden border border-white/20 mb-1.5">
+                                <CardImage
+                                  {...animePreviewCardImageProps}
+                                  sizes="64px"
+                                  card={deck.coverCard}
+                                  className="w-full h-full object-cover"
+                                  fallback="/images/fundoCarta.webp"
+                                />
+                              </div>
+                            ) : (
+                              <div className="flex-shrink-0 w-14 sm:w-16 aspect-[59/86] rounded bg-gray-700 border border-white/20 flex items-center justify-center text-xl mb-1.5">🃏</div>
+                            )}
+                            <span className="font-semibold text-xs truncate w-full block">{deck.name}</span>
+                            {deck.cards && (
+                              <span className="text-[10px] text-white/60">
+                                {deck.cards.reduce((s, c) => s + (c.quantity ?? 1), 0)} cartas
+                              </span>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            className="mt-auto w-full py-1.5 text-[11px] font-semibold bg-black/35 hover:bg-black/50 border-t border-white/10 text-purple-200 hover:text-white transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setAnimeDeckPreview(deck);
+                            }}
+                          >
+                            Ver cartas
+                          </button>
+                        </div>
                       ))}
                     </div>
                   )}
@@ -1190,6 +1246,13 @@ export default function RandomDuelPage() {
                           <p className="line-clamp-2 w-full text-xs font-semibold leading-tight text-white sm:text-sm">
                             {sel.name}
                           </p>
+                          <button
+                            type="button"
+                            onClick={() => setAnimeDeckPreview(sel)}
+                            className="mt-1 text-[10px] font-semibold text-purple-300 hover:text-purple-100 underline underline-offset-2"
+                          >
+                            Ver cartas do deck
+                          </button>
                         </div>
                       );
                     })()}
@@ -1426,6 +1489,100 @@ export default function RandomDuelPage() {
                   })}
                 </div>
               )}
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Modal: composição do deck anime */}
+      {animeDeckPreview && (
+        <div
+          className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-stretch justify-center p-0 sm:p-2 md:p-3"
+          onClick={() => setAnimeDeckPreview(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="anime-deck-preview-title"
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-gradient-to-br from-gray-900 to-black shadow-2xl border-0 sm:border-2 border-purple-500/50 w-full h-full max-h-[100dvh] sm:max-h-[calc(100dvh-1rem)] sm:max-w-[min(100vw-1rem,1400px)] sm:rounded-xl overflow-hidden flex flex-col sm:my-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-2 py-2 sm:px-4 sm:py-3 border-b border-purple-500/30 flex items-start justify-between gap-2 flex-shrink-0">
+              <div className="min-w-0">
+                <h2 id="anime-deck-preview-title" className="text-base sm:text-xl font-bold text-white truncate">
+                  {animeDeckPreview.name}
+                </h2>
+                {animeDeckPreview.description ? (
+                  <p className="text-xs sm:text-sm text-slate-400 mt-0.5 line-clamp-2 sm:line-clamp-3">{animeDeckPreview.description}</p>
+                ) : null}
+                <p className="text-[10px] sm:text-xs text-white/50 mt-0.5">
+                  {(animeDeckPreview.cards ?? []).reduce((s, c) => s + (c.quantity ?? 1), 0)} cartas no baralho (todas as cópias na grade)
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAnimeDeckPreview(null)}
+                className="flex-shrink-0 text-gray-400 hover:text-white transition-colors text-2xl font-bold leading-none px-2 py-1"
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 sm:p-3 custom-scrollbar">
+              {(() => {
+                const entries = animeDeckPreview.cards ?? [];
+                const main = entries.filter((e) => !e.isExtraDeck);
+                const extra = entries.filter((e) => e.isExtraDeck);
+                const mainExpanded = expandAnimeDeckEntries(main);
+                const extraExpanded = expandAnimeDeckEntries(extra);
+                const gridClass =
+                  'grid gap-1 sm:gap-1.5 [grid-template-columns:repeat(auto-fill,minmax(3.25rem,1fr))] sm:[grid-template-columns:repeat(auto-fill,minmax(3.75rem,1fr))] md:[grid-template-columns:repeat(auto-fill,minmax(4.25rem,1fr))]';
+                const renderSection = (
+                  expanded: AnimeDeckExpandedSlots,
+                  title: string,
+                  titleClass: string,
+                  emptyMsg: string,
+                ) => (
+                  <div className="mb-3 last:mb-0">
+                    <h3 className={`text-xs sm:text-sm font-bold mb-1.5 sticky top-0 z-10 py-1 -mx-1 px-1 bg-gray-950/90 backdrop-blur-sm border-b border-white/5 ${titleClass}`}>
+                      {title}{' '}
+                      <span className="text-white/45 font-normal">({expanded.length})</span>
+                    </h3>
+                    {expanded.length === 0 ? (
+                      <p className="text-slate-500 text-xs sm:text-sm">{emptyMsg}</p>
+                    ) : (
+                      <div className={gridClass}>
+                        {expanded.map(({ card: c, key }) => (
+                          <div
+                            key={key}
+                            className="rounded-md border border-slate-600/50 bg-slate-800/30 p-0.5 sm:p-1"
+                            title={c?.name ?? 'Carta'}
+                          >
+                            {c ? (
+                              <CardImage
+                                {...animePreviewCardImageProps}
+                                card={c}
+                                className="w-full aspect-[59/86] rounded object-cover"
+                                fallback="/images/fundoCarta.webp"
+                              />
+                            ) : (
+                              <div className="w-full aspect-[59/86] rounded bg-slate-700 flex items-center justify-center text-sm">?</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+                return (
+                  <>
+                    {renderSection(mainExpanded, 'Deck principal', 'text-blue-300', 'Nenhuma carta no deck principal.')}
+                    {renderSection(extraExpanded, 'Deck adicional', 'text-violet-300', 'Nenhuma carta no deck adicional.')}
+                  </>
+                );
+              })()}
             </div>
           </motion.div>
         </div>

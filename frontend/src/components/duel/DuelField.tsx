@@ -2,8 +2,8 @@ import React, { useState, useCallback } from 'react';
 import { canPaySpellActivationLp } from '../../utils/spellActivationLpCost';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
-import { getCardImage } from '../../utils/cardImage';
-import { getDefaultSkinCardImageUrl } from '../../utils/imageUrl';
+import { getCardImage, CARD_IMAGE_GRID_PROPS } from '../../utils/cardImage';
+import { getDefaultSkinCardImageUrl, getCardImageDisplayUrl } from '../../utils/imageUrl';
 import CardImage from '../CardImage';
 import { DUEL_PLAYMAT_ASPECT } from '../../constants/duelLayout';
 
@@ -370,6 +370,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                 border: '3px solid rgba(255, 255, 255, 0.5)',
               }}
               fallback={fallbackCard}
+              loading="eager"
+              fetchPriority="high"
             />
           </div>,
           document.body,
@@ -911,6 +913,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                     }}
                   >
                     <CardImage
+                      {...CARD_IMAGE_GRID_PROPS}
+                      sizes="clamp(72px, 16vw, 160px)"
                       card={monster}
                       className="h-full w-full rounded-md"
                       style={{
@@ -1515,6 +1519,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                             }}
                           >
                             <CardImage
+                              {...CARD_IMAGE_GRID_PROPS}
+                              sizes="clamp(72px, 16vw, 160px)"
                               card={monster}
                               className="h-full w-full rounded-md"
                               style={{
@@ -1581,6 +1587,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
                     {/* Imagem da última carta usando CardImage */}
                     <div className="absolute inset-0 overflow-hidden rounded-md">
                       <CardImage
+                        {...CARD_IMAGE_GRID_PROPS}
+                        sizes="clamp(64px, 12vw, 120px)"
                         card={lastCard}
                         className="h-full w-full rounded-md"
                         style={{
@@ -1628,6 +1636,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
               {/* Mostrar a primeira carta do extra deck empilhada */}
               <div className="absolute inset-0 overflow-hidden rounded-md">
                 <CardImage
+                  {...CARD_IMAGE_GRID_PROPS}
+                  sizes="clamp(64px, 12vw, 120px)"
                   card={extraDeck[0]}
                   className="h-full w-full rounded-md"
                   style={{
@@ -1728,8 +1738,9 @@ const DuelField: React.FC<DuelFieldProps> = ({
             >
               <div className="relative h-full w-full overflow-hidden" style={slotVisualScaleStyle}>
               {spellTrap ? (() => {
-                const cardImageUrl = getCardImage(spellTrap);
-                
+                const rawPath = getCardImage(spellTrap);
+                const cardImageUrl = rawPath ? getCardImageDisplayUrl(rawPath) : '';
+
                 return (
                   <>
                     {spellTrap.position === 'face-up' ? (

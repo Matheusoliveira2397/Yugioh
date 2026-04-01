@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { api } from '../api/axios';
 import { useAuthStore } from '../stores/authStore';
 import CardImage from '../components/CardImage';
+import { CARD_IMAGE_GRID_PROPS } from '../utils/cardImage';
 import { getCardDescription } from '../utils/cardDescription';
 
 interface UserCard {
@@ -1113,9 +1114,12 @@ export default function DeckEditPage() {
               {coverCard ? (
                 <div className="flex items-center gap-3 p-2 rounded-lg bg-gray-800/50 border border-gray-600">
                   <CardImage
+                    {...CARD_IMAGE_GRID_PROPS}
                     card={coverCard}
                     className="w-16 aspect-[59/86] rounded object-cover"
                     fallback="/images/fundoCarta.webp"
+                    loading="eager"
+                    fetchPriority="high"
                   />
                   <div>
                     <p className="text-white font-medium text-sm">{coverCard.name}</p>
@@ -1173,6 +1177,7 @@ export default function DeckEditPage() {
                           }`}
                         >
                           <CardImage
+                            {...CARD_IMAGE_GRID_PROPS}
                             card={uc.card!}
                             className="w-full aspect-[59/86] object-cover"
                             fallback="/images/fundoCarta.webp"
@@ -1205,9 +1210,12 @@ export default function DeckEditPage() {
                     <>
                       {/* Card Image */}
                       <CardImage
+                        {...CARD_IMAGE_GRID_PROPS}
                         card={slot.card}
                         className="w-full h-full object-cover rounded-lg"
                         fallback="/images/fundoCarta.webp"
+                        loading={idx < 40 ? 'eager' : 'lazy'}
+                        fetchPriority={idx < 15 ? 'high' : 'auto'}
                       />
                       
                       
@@ -1279,9 +1287,12 @@ export default function DeckEditPage() {
                   {slot && slot.card ? (
                     <>
                       <CardImage
+                        {...CARD_IMAGE_GRID_PROPS}
                         card={slot.card}
                         className="w-full h-full object-cover rounded-lg"
                         fallback="/images/fundoCarta.webp"
+                        loading={idx < 20 ? 'eager' : 'lazy'}
+                        fetchPriority={idx < 8 ? 'high' : 'auto'}
                       />
                       <div className="absolute bottom-0 left-0 right-0 bg-gray-900/80 backdrop-blur-sm text-white text-[8px] px-1 py-0.5 rounded-b-lg line-clamp-1">
                         {slot.card?.name || 'Carta sem nome'}
@@ -1435,7 +1446,7 @@ export default function DeckEditPage() {
                         Mostrando {filteredMaleta.length} de {maleta.length} tipo(s)
                       </p>
                       <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12 gap-4">
-                  {filteredMaleta.map((userCard) => {
+                  {filteredMaleta.map((userCard, maletaIdx) => {
                     if (!userCard.card) {
                       console.warn('⚠️ UserCard sem card:', userCard);
                       return null;
@@ -1469,9 +1480,12 @@ export default function DeckEditPage() {
                         title={`${card.name}\nNa maleta: ${qtyMaleta}\nDeck principal: ${cardsInMainDeck}/${maxCopies}\nExtra deck: ${cardsInExtraDeck}/${maxCopies}\nLimite por seção: ${maxCopies}${isFusion ? '\n\n⭐ Clique para adicionar ao Extra Deck' : ''}`}
                       >
                         <CardImage
+                          {...CARD_IMAGE_GRID_PROPS}
                           card={card}
                           className="w-full h-full object-cover"
                           fallback="/images/fundoCarta.webp"
+                          loading={maletaIdx < 48 ? 'eager' : 'lazy'}
+                          fetchPriority={maletaIdx < 16 ? 'high' : 'auto'}
                         />
                         {qtyMaleta > 0 && (
                           <div className="absolute top-1 left-1 min-w-[20px] h-5 px-1.5 rounded-md bg-amber-900/90 border border-amber-500/50 flex items-center justify-center">
@@ -1515,9 +1529,12 @@ export default function DeckEditPage() {
           >
             <div className="w-full mb-4" style={{ maxHeight: '400px' }}>
               <CardImage
+                {...CARD_IMAGE_GRID_PROPS}
                 card={selectedCard.card}
                 className="w-full h-auto rounded-lg"
                 fallback="/images/fundoCarta.webp"
+                loading="eager"
+                fetchPriority="high"
               />
             </div>
             <h3 className="text-2xl font-bold text-white mb-2">{selectedCard.card?.name || 'Carta sem nome'}</h3>

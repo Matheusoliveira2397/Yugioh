@@ -387,7 +387,7 @@ export default function HomePage() {
   }
 
   const homePanel =
-    'rounded-xl border border-white/10 bg-gradient-to-b from-slate-950/60 via-slate-950/45 to-slate-950/55 backdrop-blur-md shadow-lg shadow-black/30 ring-1 ring-white/[0.06] overflow-hidden';
+    'rounded-xl border border-white/10 bg-gradient-to-b from-slate-950/20 via-slate-950/15 to-slate-950/22 backdrop-blur-xl shadow-lg shadow-black/20 ring-1 ring-white/[0.06] overflow-hidden';
 
   return (
     <div className="w-full min-w-0 max-w-[min(100%,90rem)] mx-auto px-[clamp(0.75rem,2.5vw,1.75rem)] py-[clamp(0.5rem,2vw,1.5rem)] pb-6 sm:pb-8">
@@ -401,7 +401,7 @@ export default function HomePage() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               onClick={() => navigate('/arena')}
-              className={`${homePanel} p-3 sm:p-3.5 border-amber-500/35 bg-gradient-to-br from-amber-950/50 via-slate-950/40 to-orange-950/35 hover:border-amber-400/55 transition-all cursor-pointer`}
+              className={`${homePanel} p-3 sm:p-3.5 border-amber-500/35 bg-gradient-to-br from-amber-950/18 via-slate-950/15 to-orange-950/14 hover:border-amber-400/55 transition-all cursor-pointer`}
             >
               <h2 className="text-[10px] sm:text-xs font-bold mb-0.5 flex items-center gap-1 text-amber-200 drop-shadow-lg">
                 ⏰ Próxima Arena
@@ -423,7 +423,7 @@ export default function HomePage() {
             animate={{ opacity: 1, y: 0 }}
             className={homePanel}
           >
-            <div className="px-3 sm:px-4 py-2.5 border-b border-white/10 bg-gradient-to-r from-amber-500/25 to-transparent">
+            <div className="px-3 sm:px-4 py-2.5 border-b border-white/10 bg-gradient-to-r from-amber-500/12 to-transparent">
               <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5">
                 <span className="text-base sm:text-lg" aria-hidden>🏆</span> Top 5 Duelistas
               </h2>
@@ -478,7 +478,7 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={() => navigate('/ranking')}
-                className="w-full bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 text-white font-semibold py-2 text-xs rounded-lg transition-colors"
+                className="w-full bg-white/[0.05] hover:bg-white/[0.10] border border-white/12 text-white font-semibold py-2 text-xs rounded-lg transition-colors"
               >
                 Ver ranking completo
               </button>
@@ -492,7 +492,7 @@ export default function HomePage() {
             transition={{ delay: 0.05 }}
             className={homePanel}
           >
-            <div className="px-3 sm:px-4 py-2.5 border-b border-white/10 bg-gradient-to-r from-rose-500/25 to-transparent">
+            <div className="px-3 sm:px-4 py-2.5 border-b border-white/10 bg-gradient-to-r from-rose-500/12 to-transparent">
               <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5">
                 <span className="text-base sm:text-lg" aria-hidden>⚔️</span> Top 5 Clãs
               </h2>
@@ -549,7 +549,7 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={() => navigate('/groups')}
-                className="w-full bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 text-white font-semibold py-2 text-xs rounded-lg transition-colors"
+                className="w-full bg-white/[0.05] hover:bg-white/[0.10] border border-white/12 text-white font-semibold py-2 text-xs rounded-lg transition-colors"
               >
                 Ver Todos os Clãs
               </button>
@@ -566,7 +566,7 @@ export default function HomePage() {
             transition={{ delay: 0.2 }}
             className={`${homePanel} ring-1 ring-blue-500/25`}
           >
-            <div className="px-3 sm:px-4 py-2.5 border-b border-white/10 bg-gradient-to-r from-blue-600/20 to-transparent">
+            <div className="px-3 sm:px-4 py-2.5 border-b border-white/10 bg-gradient-to-r from-blue-600/12 to-transparent">
               <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
                 <span aria-hidden>📰</span> Últimas Notícias
               </h2>
@@ -589,8 +589,8 @@ export default function HomePage() {
                       onClick={() => setSelectedNewsModal(item)}
                       className={`rounded-lg p-2.5 sm:p-3 border-l-[3px] transition-colors duration-200 cursor-pointer ${
                         item.isPinned
-                          ? 'bg-white/[0.04] border-blue-400/50 hover:bg-white/[0.06]'
-                          : 'bg-white/[0.02] border-blue-500/35 hover:bg-white/[0.06] hover:border-rose-500/40'
+                          ? 'bg-white/[0.03] border-blue-400/45 hover:bg-white/[0.05]'
+                          : 'bg-white/[0.015] border-blue-500/30 hover:bg-white/[0.05] hover:border-rose-500/40'
                       }`}
                     >
                       <div className="flex items-center gap-1.5 mb-1 sm:mb-1.5 flex-wrap">
@@ -629,62 +629,62 @@ export default function HomePage() {
               transition={{ duration: 0.25 }}
               className={`${homePanel} w-fit max-w-full ring-1 ring-emerald-500/30`}
             >
-            <div className="px-3 py-2 border-b border-white/10 bg-gradient-to-r from-emerald-600/15 to-transparent">
-              <h2 className="text-[10px] sm:text-xs font-bold text-white flex items-center gap-1.5">
-                <span className="text-sm leading-none" aria-hidden>📊</span>
+            <div className="px-3 sm:px-4 py-2.5 border-b border-white/10 bg-gradient-to-r from-emerald-600/10 to-transparent">
+              <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                <span className="text-base sm:text-lg leading-none" aria-hidden>📊</span>
                 Estatísticas
               </h2>
             </div>
             {publicStats === null ? (
-              <div className="px-3 py-2.5">
-                <p className="text-white/45 text-[10px]">Indisponíveis no momento.</p>
+              <div className="px-3 py-3">
+                <p className="text-white/45 text-xs sm:text-sm">Indisponíveis no momento.</p>
               </div>
             ) : (
-              <div className="px-2 py-2 sm:px-2.5 sm:py-2 inline-grid gap-x-1.5 gap-y-1 [grid-template-columns:repeat(3,minmax(0,max-content))] sm:[grid-template-columns:repeat(4,minmax(0,max-content))]">
-                <div className="px-1.5 py-1 rounded bg-white/[0.06] text-center whitespace-nowrap">
-                  <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Temp.</p>
-                  <p className="text-white font-semibold text-[10px] sm:text-[11px] tabular-nums">{publicStats.currentSeasonNumber}º</p>
+              <div className="px-3 py-3 sm:px-4 sm:py-3.5 inline-grid gap-x-2 gap-y-2 sm:gap-x-2.5 sm:gap-y-2.5 [grid-template-columns:repeat(3,minmax(0,max-content))] sm:[grid-template-columns:repeat(4,minmax(0,max-content))]">
+                <div className="px-2.5 py-2 sm:px-3 sm:py-2.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-center whitespace-nowrap">
+                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-white/50 leading-tight">Temp.</p>
+                  <p className="text-white font-semibold text-sm sm:text-base tabular-nums mt-0.5">{publicStats.currentSeasonNumber}º</p>
                 </div>
                 {publicStats.seasonEndsInDays != null && (
-                  <div className="px-1.5 py-1 rounded bg-white/[0.06] text-center whitespace-nowrap">
-                    <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Fim</p>
-                    <p className="text-amber-300/95 font-semibold text-[10px] sm:text-[11px] tabular-nums">
+                  <div className="px-2.5 py-2 sm:px-3 sm:py-2.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-center whitespace-nowrap">
+                    <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-white/50 leading-tight">Fim</p>
+                    <p className="text-amber-300/95 font-semibold text-sm sm:text-base tabular-nums mt-0.5">
                       {publicStats.seasonEndsInDays}d
                     </p>
                   </div>
                 )}
-                <div className="px-1.5 py-1 rounded bg-white/[0.06] text-center whitespace-nowrap">
-                  <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Duelistas</p>
-                  <p className="text-white font-semibold text-[10px] sm:text-[11px] tabular-nums">{publicStats.totalDuelists.toLocaleString('pt-BR')}</p>
+                <div className="px-2.5 py-2 sm:px-3 sm:py-2.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-center whitespace-nowrap">
+                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-white/50 leading-tight">Duelistas</p>
+                  <p className="text-white font-semibold text-sm sm:text-base tabular-nums mt-0.5">{publicStats.totalDuelists.toLocaleString('pt-BR')}</p>
                 </div>
-                <div className="px-1.5 py-1 rounded bg-white/[0.06] text-center whitespace-nowrap">
-                  <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Duelos</p>
-                  <p className="text-white font-semibold text-[10px] sm:text-[11px] tabular-nums">{publicStats.totalDuels.toLocaleString('pt-BR')}</p>
+                <div className="px-2.5 py-2 sm:px-3 sm:py-2.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-center whitespace-nowrap">
+                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-white/50 leading-tight">Duelos</p>
+                  <p className="text-white font-semibold text-sm sm:text-base tabular-nums mt-0.5">{publicStats.totalDuels.toLocaleString('pt-BR')}</p>
                 </div>
-                <div className="px-1.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/15 col-span-3 sm:col-span-2 text-center whitespace-nowrap">
-                  <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Online</p>
-                  <p className="text-emerald-400 font-bold text-xs sm:text-sm tabular-nums leading-tight">
+                <div className="px-2.5 py-2 sm:px-3 sm:py-2.5 rounded-lg bg-emerald-500/[0.08] border border-emerald-500/20 col-span-3 sm:col-span-2 text-center whitespace-nowrap">
+                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-white/50 leading-tight">Online</p>
+                  <p className="text-emerald-400 font-bold text-lg sm:text-xl tabular-nums leading-tight mt-0.5">
                     {publicStats.playersOnline.toLocaleString('pt-BR')}
                   </p>
                 </div>
-                <div className="px-1.5 py-1 rounded bg-white/[0.06] text-center whitespace-nowrap">
-                  <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Torneios</p>
-                  <p className="text-white font-semibold text-[10px] sm:text-[11px] tabular-nums">{publicStats.tournamentsFinished.toLocaleString('pt-BR')}</p>
+                <div className="px-2.5 py-2 sm:px-3 sm:py-2.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-center whitespace-nowrap">
+                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-white/50 leading-tight">Torneios</p>
+                  <p className="text-white font-semibold text-sm sm:text-base tabular-nums mt-0.5">{publicStats.tournamentsFinished.toLocaleString('pt-BR')}</p>
                 </div>
-                <div className="px-1.5 py-1 rounded bg-white/[0.06] text-center whitespace-nowrap">
-                  <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Cartas</p>
-                  <p className="text-white font-semibold text-[10px] sm:text-[11px] tabular-nums">{publicStats.cardsRegistered.toLocaleString('pt-BR')}</p>
+                <div className="px-2.5 py-2 sm:px-3 sm:py-2.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-center whitespace-nowrap">
+                  <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-white/50 leading-tight">Cartas</p>
+                  <p className="text-white font-semibold text-sm sm:text-base tabular-nums mt-0.5">{publicStats.cardsRegistered.toLocaleString('pt-BR')}</p>
                 </div>
                 {publicStats.maxOnlineToday > 0 && (
-                  <div className="px-1.5 py-1 rounded bg-white/[0.06] text-center whitespace-nowrap">
-                    <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Pico hoje</p>
-                    <p className="text-white font-semibold text-[10px] sm:text-[11px] tabular-nums">{publicStats.maxOnlineToday.toLocaleString('pt-BR')}</p>
+                  <div className="px-2.5 py-2 sm:px-3 sm:py-2.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-center whitespace-nowrap">
+                    <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-white/50 leading-tight">Pico hoje</p>
+                    <p className="text-white font-semibold text-sm sm:text-base tabular-nums mt-0.5">{publicStats.maxOnlineToday.toLocaleString('pt-BR')}</p>
                   </div>
                 )}
                 {publicStats.maxOnlineYesterday > 0 && (
-                  <div className="px-1.5 py-1 rounded bg-white/[0.06] text-center whitespace-nowrap">
-                    <p className="text-[7px] sm:text-[8px] uppercase tracking-wide text-white/45 leading-tight">Pico ontem</p>
-                    <p className="text-white font-semibold text-[10px] sm:text-[11px] tabular-nums">{publicStats.maxOnlineYesterday.toLocaleString('pt-BR')}</p>
+                  <div className="px-2.5 py-2 sm:px-3 sm:py-2.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-center whitespace-nowrap">
+                    <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-white/50 leading-tight">Pico ontem</p>
+                    <p className="text-white font-semibold text-sm sm:text-base tabular-nums mt-0.5">{publicStats.maxOnlineYesterday.toLocaleString('pt-BR')}</p>
                   </div>
                 )}
               </div>

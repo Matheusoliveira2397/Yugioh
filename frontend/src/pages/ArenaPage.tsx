@@ -5,6 +5,7 @@ import { useSocket } from '../hooks/useSocket';
 import axios from 'axios';
 import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { arenaBackgroundUrls } from '../utils/arenaBackgroundUrls';
+import { formatScore } from '../utils/formatScore';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -614,7 +615,7 @@ export default function ArenaPage() {
                                 {player.clanTag ? `[${player.clanTag}] ${player.nickname}` : player.nickname}
                               </span>
                             </div>
-                            <span className="text-right font-bold text-amber-300 text-sm tabular-nums pl-2 border-l border-white/20 w-[52px] flex-shrink-0">{player.score}</span>
+                            <span className="text-right font-bold text-amber-300 text-sm tabular-nums pl-2 border-l border-white/20 w-[52px] flex-shrink-0">{formatScore(player.score)}</span>
                             <span className="text-right font-bold text-blue-300 text-sm tabular-nums w-[60px] flex-shrink-0">{dr}</span>
                           </div>
                         );
@@ -792,7 +793,7 @@ export default function ArenaPage() {
                               {player.clanTag ? `[${player.clanTag}] ${player.nickname}` : player.nickname}
                             </div>
                             <div className="text-[10px] sm:text-xs text-gray-300">
-                              <strong className="text-amber-400">AP:</strong> {player.score}
+                              <strong className="text-amber-400">AP:</strong> {formatScore(player.score)}
                             </div>
                           </div>
                         </div>

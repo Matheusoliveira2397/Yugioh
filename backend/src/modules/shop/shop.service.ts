@@ -6,6 +6,8 @@ import { Card, CardRarity } from '../cards/entities/card.entity';
 import { UserCard } from './entities/user-card.entity';
 import { TalismanTemplate } from './entities/talisman-template.entity';
 import { UserTalisman } from './entities/user-talisman.entity';
+import { MaletaTemplate } from './entities/maleta-template.entity';
+import { UserMaleta } from './entities/user-maleta.entity';
 import { User } from '../users/entities/user.entity';
 import { DeckCard } from '../decks/entities/deck-card.entity';
 import { PurchaseCardDto, PaymentMethod } from './dto/purchase-card.dto';
@@ -31,6 +33,10 @@ export class ShopService implements OnModuleInit {
     private talismanTemplateRepository: Repository<TalismanTemplate>,
     @InjectRepository(UserTalisman)
     private userTalismanRepository: Repository<UserTalisman>,
+    @InjectRepository(MaletaTemplate)
+    private maletaTemplateRepository: Repository<MaletaTemplate>,
+    @InjectRepository(UserMaleta)
+    private userMaletaRepository: Repository<UserMaleta>,
     @Inject(EconomyService)
     private economyService: EconomyService,
     private cosmeticsService: CosmeticsService,
@@ -112,6 +118,72 @@ export class ShopService implements OnModuleInit {
       }
     } catch (error: any) {
       console.error('❌ [ShopService] Erro ao criar tabelas de talismãs:', error?.message || error);
+    }
+
+    // ==================== MALJETAS (CAPACIDADE/DECKS POR NÍVEL) ====================
+    try {
+      const maletaTableExists = await this.maletaTemplateRepository.query(`
+        SELECT table_name FROM information_schema.tables WHERE table_name = 'maleta_templates'
+      `);
+
+      if (maletaTableExists.length === 0) {
+        console.log('🔧 [ShopService] Criando tabelas maleta_templates e user_maletas...');
+        await this.maletaTemplateRepository.query(`
+          CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+        `).catch(() => {});
+
+        await this.maletaTemplateRepository.query(`
+          CREATE TABLE "maleta_templates" (
+            "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+            "name" character varying(120) NOT NULL,
+            "description" text,
+            "image" character varying(500),
+            "bonusDecks" integer NOT NULL DEFAULT 1,
+            "bonusMaletaCapacity" integer NOT NULL DEFAULT 100,
+            "priceCredits" integer DEFAULT 0,
+            "priceCash" integer DEFAULT 0,
+            "isActive" boolean NOT NULL DEFAULT true,
+            "isForSale" boolean NOT NULL DEFAULT true,
+            "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
+            "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
+            CONSTRAINT "PK_maleta_templates" PRIMARY KEY ("id")
+          )
+        `);
+
+        await this.maletaTemplateRepository.query(`
+          CREATE TABLE "user_maletas" (
+            "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+            "userId" integer NOT NULL,
+            "maletaTemplateId" uuid NOT NULL,
+            "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
+            "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
+            CONSTRAINT "PK_user_maletas" PRIMARY KEY ("id"),
+            CONSTRAINT "FK_user_maletas_user" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE,
+            CONSTRAINT "FK_user_maletas_template" FOREIGN KEY ("maletaTemplateId") REFERENCES "maleta_templates"("id") ON DELETE CASCADE
+          )
+        `);
+
+        await this.maletaTemplateRepository.query(`CREATE INDEX "IDX_user_maletas_userId" ON "user_maletas" ("userId")`);
+        await this.maletaTemplateRepository.query(`
+          CREATE UNIQUE INDEX IF NOT EXISTS "UQ_user_maletas_userId_templateId"
+          ON "user_maletas"("userId", "maletaTemplateId")
+        `);
+
+        const count = await this.maletaTemplateRepository.count();
+        if (count === 0) {
+          await this.maletaTemplateRepository.query(`
+            INSERT INTO "maleta_templates" ("id", "name", "description", "image", "bonusDecks", "bonusMaletaCapacity", "priceCredits", "priceCash", "isActive", "isForSale")
+            VALUES
+              (uuid_generate_v4(), 'Maleta Inicial', 'Aumenta seus limites para criar mais decks e guardar mais cartas.', NULL, 1, 100, 2500, 250, true, true),
+              (uuid_generate_v4(), 'Maleta Pro', 'Mais espaço para decks e cartas.', NULL, 2, 200, 5000, 500, true, true),
+              (uuid_generate_v4(), 'Maleta Lendária', 'Limites máximos para o colecionador.', NULL, 3, 400, 10000, 1000, true, true)
+          `);
+        }
+
+        console.log('✅ [ShopService] Tabelas de maletas criadas com sucesso.');
+      }
+    } catch (error: any) {
+      console.error('❌ [ShopService] Erro ao criar tabelas de maletas:', error?.message || error);
     }
   }
 
@@ -391,6 +463,27 @@ export class ShopService implements OnModuleInit {
     acquiredBy: 'PURCHASE' | 'REWARD' | 'DROP' | 'GIFT' = 'PURCHASE',
     quantity: number = 1
   ): Promise<UserCard> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'maletaCapacity'],
+    });
+    if (!user) {
+      throw new NotFoundException('Usuário não encontrado');
+    }
+    const maletaCapacity = Math.max(1, Number((user as any).maletaCapacity ?? 500));
+    const totalRow = await this.userCardRepository
+      .createQueryBuilder('uc')
+      .select('COALESCE(SUM(uc.quantity), 0)', 'total')
+      .where('uc.userId = :userId', { userId })
+      .getRawOne<{ total: string }>();
+    const currentTotal = Number(totalRow?.total ?? 0);
+    if (currentTotal + quantity > maletaCapacity) {
+      const available = Math.max(0, maletaCapacity - currentTotal);
+      throw new BadRequestException(
+        `Sua maleta está cheia (${currentTotal}/${maletaCapacity}). Espaço restante: ${available}. Compre uma maleta na loja para aumentar a capacidade.`,
+      );
+    }
+
     // Verificar se usuário já tem esta carta
     const existingUserCard = await this.userCardRepository.findOne({
       where: { userId, cardId },
@@ -413,6 +506,69 @@ export class ShopService implements OnModuleInit {
     return this.userCardRepository.save(userCard);
   }
 
+  async purchaseBriefcase(
+    userId: number,
+    maletaTemplateId: string,
+    paymentMethod: 'credits' | 'cash',
+  ): Promise<{
+    success: boolean;
+    message: string;
+    remainingBalance: { credits: number; cash: number };
+    limits: { maxDecks: number; maletaCapacity: number };
+  }> {
+    const template = await this.maletaTemplateRepository.findOne({ where: { id: maletaTemplateId } });
+    if (!template || !template.isActive || !template.isForSale) {
+      throw new BadRequestException('Esta maleta não está disponível para compra');
+    }
+
+    const price = paymentMethod === 'credits' ? (template.priceCredits ?? 0) : (template.priceCash ?? 0);
+    if (!price || price <= 0) {
+      throw new BadRequestException(`Esta maleta não tem preço definido para ${this.getCurrencyName(paymentMethod)}`);
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'credits', 'cash', 'maxDecks', 'maletaCapacity'],
+    });
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+
+    const balance = paymentMethod === 'credits' ? (user.credits || 0) : (user.cash || 0);
+    if (balance < price) {
+      throw new BadRequestException(
+        `Saldo insuficiente! Precisa de ${price} ${this.getCurrencyName(paymentMethod)}. Você tem ${balance}.`,
+      );
+    }
+
+    const alreadyOwned = await this.userMaletaRepository.findOne({
+      where: { userId, maletaTemplateId },
+    });
+    if (alreadyOwned) {
+      throw new BadRequestException('Você já possui esta maleta');
+    }
+
+    this.deductBalance(user, price, paymentMethod);
+    user.maxDecks = Math.max(1, Number((user as any).maxDecks ?? 3)) + Number(template.bonusDecks ?? 0);
+    user.maletaCapacity =
+      Math.max(1, Number((user as any).maletaCapacity ?? 500)) + Number(template.bonusMaletaCapacity ?? 0);
+    await this.userRepository.save(user);
+
+    const userMaleta = this.userMaletaRepository.create({
+      userId,
+      maletaTemplateId,
+    } as any);
+    await this.userMaletaRepository.save(userMaleta);
+
+    return {
+      success: true,
+      message: `Maleta "${template.name}" comprada! Limites aumentados (+${template.bonusDecks} deck(s), +${template.bonusMaletaCapacity} cartas).`,
+      remainingBalance: { credits: user.credits ?? 0, cash: user.cash ?? 0 },
+      limits: {
+        maxDecks: user.maxDecks,
+        maletaCapacity: user.maletaCapacity,
+      },
+    };
+  }
+
   // ==================== QUANTIDADE DE CARTAS EM DECKS DO USUÁRIO ====================
   /** Retorna quantas cópias da carta estão em decks do usuário (não podem ser vendidas). */
   async getQuantityInDecks(userId: number, cardId: string): Promise<number> {
@@ -426,7 +582,23 @@ export class ShopService implements OnModuleInit {
   }
 
   // ==================== BUSCAR INVENTÁRIO DO USUÁRIO ====================
-  async getUserInventory(userId: number): Promise<{ cards: (UserCard & { quantityInDecks?: number; sellableQuantity?: number })[]; playmats: any[]; skins: any[]; talismans: any[] }> {
+  async getUserInventory(userId: number): Promise<{
+    cards: (UserCard & { quantityInDecks?: number; sellableQuantity?: number })[];
+    playmats: any[];
+    skins: any[];
+    talismans: any[];
+    maletas: Array<{
+      id: string;
+      maletaTemplateId: string;
+      name: string;
+      description: string | null;
+      image: string | null;
+      bonusDecks: number;
+      bonusMaletaCapacity: number;
+      purchasedAt: Date;
+    }>;
+    maletaLimits: { maxDecks: number; maletaCapacity: number };
+  }> {
     try {
       const cards = await Promise.race([
         this.userCardRepository.find({
@@ -467,7 +639,16 @@ export class ShopService implements OnModuleInit {
       // Buscar usuário para obter playmats e sleeves comprados (ownedSleeveIds, ownedPlaymatIds)
       const user = await this.userRepository.findOne({
         where: { id: userId },
-        select: ['equippedPlaymatId', 'equippedPlaymatImage', 'equippedSkinId', 'equippedSkinImage', 'ownedSleeveIds', 'ownedPlaymatIds']
+        select: [
+          'equippedPlaymatId',
+          'equippedPlaymatImage',
+          'equippedSkinId',
+          'equippedSkinImage',
+          'ownedSleeveIds',
+          'ownedPlaymatIds',
+          'maxDecks',
+          'maletaCapacity',
+        ],
       });
 
       const playmats: any[] = [];
@@ -514,10 +695,41 @@ export class ShopService implements OnModuleInit {
         initialCharges: ut.template?.initialCharges ?? 10,
       }));
 
-      return { cards: cardsWithSellable, playmats, skins, talismans };
+      const userMaletas = await this.userMaletaRepository
+        .find({
+          where: { userId },
+          relations: ['template'],
+          order: { createdAt: 'ASC' },
+        })
+        .catch(() => []);
+
+      const maletas = userMaletas.map((um: UserMaleta) => ({
+        id: um.id,
+        maletaTemplateId: um.maletaTemplateId,
+        name: um.template?.name ?? 'Maleta',
+        description: um.template?.description ?? null,
+        image: um.template?.image ?? null,
+        bonusDecks: Number(um.template?.bonusDecks ?? 0),
+        bonusMaletaCapacity: Number(um.template?.bonusMaletaCapacity ?? 0),
+        purchasedAt: um.createdAt,
+      }));
+
+      const maletaLimits = {
+        maxDecks: Math.max(1, Number((user as any)?.maxDecks ?? 3)),
+        maletaCapacity: Math.max(1, Number((user as any)?.maletaCapacity ?? 500)),
+      };
+
+      return { cards: cardsWithSellable, playmats, skins, talismans, maletas, maletaLimits };
     } catch (error) {
       console.error('❌ [getUserInventory] Erro ao buscar inventário:', error);
-      return { cards: [], playmats: [], skins: [], talismans: [] };
+      return {
+        cards: [],
+        playmats: [],
+        skins: [],
+        talismans: [],
+        maletas: [],
+        maletaLimits: { maxDecks: 3, maletaCapacity: 500 },
+      };
     }
   }
 
@@ -604,6 +816,81 @@ export class ShopService implements OnModuleInit {
     const template = await this.talismanTemplateRepository.findOne({ where: { id } });
     if (!template) throw new NotFoundException('Talismã não encontrado');
     await this.talismanTemplateRepository.remove(template);
+  }
+
+  // ==================== MALJETAS (LIMITES) ====================
+  async getMaletaTemplates(): Promise<MaletaTemplate[]> {
+    return this.maletaTemplateRepository.find({
+      where: { isActive: true, isForSale: true },
+      order: { bonusMaletaCapacity: 'ASC', bonusDecks: 'ASC', createdAt: 'ASC' },
+    });
+  }
+
+  async getMaletaTemplatesForAdmin(): Promise<MaletaTemplate[]> {
+    return this.maletaTemplateRepository.find({
+      order: { bonusMaletaCapacity: 'ASC', bonusDecks: 'ASC', createdAt: 'ASC' },
+    });
+  }
+
+  async createMaletaTemplate(dto: {
+    name: string;
+    description?: string | null;
+    image?: string | null;
+    bonusDecks?: number;
+    bonusMaletaCapacity?: number;
+    priceCredits?: number | null;
+    priceCash?: number | null;
+    isActive?: boolean;
+    isForSale?: boolean;
+  }): Promise<MaletaTemplate> {
+    const template = this.maletaTemplateRepository.create({
+      name: dto.name.trim(),
+      description: dto.description?.trim() || null,
+      image: dto.image?.trim() || null,
+      bonusDecks: Math.max(0, Number(dto.bonusDecks ?? 0)),
+      bonusMaletaCapacity: Math.max(0, Number(dto.bonusMaletaCapacity ?? 0)),
+      priceCredits: dto.priceCredits == null ? 0 : Math.max(0, Number(dto.priceCredits)),
+      priceCash: dto.priceCash == null ? 0 : Math.max(0, Number(dto.priceCash)),
+      isActive: dto.isActive ?? true,
+      isForSale: dto.isForSale ?? true,
+    });
+    return this.maletaTemplateRepository.save(template);
+  }
+
+  async updateMaletaTemplate(
+    id: string,
+    dto: Partial<{
+      name: string;
+      description: string | null;
+      image: string | null;
+      bonusDecks: number;
+      bonusMaletaCapacity: number;
+      priceCredits: number | null;
+      priceCash: number | null;
+      isActive: boolean;
+      isForSale: boolean;
+    }>,
+  ): Promise<MaletaTemplate> {
+    const template = await this.maletaTemplateRepository.findOne({ where: { id } });
+    if (!template) throw new NotFoundException('Maleta não encontrada');
+
+    if (dto.name !== undefined) template.name = dto.name.trim();
+    if (dto.description !== undefined) template.description = dto.description?.trim() || null;
+    if (dto.image !== undefined) template.image = dto.image?.trim() || null;
+    if (dto.bonusDecks !== undefined) template.bonusDecks = Math.max(0, Number(dto.bonusDecks));
+    if (dto.bonusMaletaCapacity !== undefined) template.bonusMaletaCapacity = Math.max(0, Number(dto.bonusMaletaCapacity));
+    if (dto.priceCredits !== undefined) template.priceCredits = dto.priceCredits == null ? null : Math.max(0, Number(dto.priceCredits));
+    if (dto.priceCash !== undefined) template.priceCash = dto.priceCash == null ? null : Math.max(0, Number(dto.priceCash));
+    if (dto.isActive !== undefined) template.isActive = dto.isActive;
+    if (dto.isForSale !== undefined) template.isForSale = dto.isForSale;
+
+    return this.maletaTemplateRepository.save(template);
+  }
+
+  async deleteMaletaTemplate(id: string): Promise<void> {
+    const template = await this.maletaTemplateRepository.findOne({ where: { id } });
+    if (!template) throw new NotFoundException('Maleta não encontrada');
+    await this.maletaTemplateRepository.remove(template);
   }
 
   async purchaseTalisman(

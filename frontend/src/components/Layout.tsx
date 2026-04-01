@@ -64,13 +64,24 @@ export default function Layout({ children }: LayoutProps) {
             icon: '📊',
             order: 0,
           });
-          tabs.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
         }
+        const hasHelp = tabs.some((t) => t.route === '/help');
+        if (!hasHelp) {
+          tabs.push({
+            key: 'help-support',
+            label: 'Ajuda',
+            route: '/help',
+            icon: '💬',
+            order: 88,
+          });
+        }
+        tabs.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
         setActiveTabs(tabs);
       } catch (error) {
         console.error('Erro ao buscar abas ativas:', error);
         setActiveTabs([
           { key: 'ranking', label: 'Ranking', route: '/ranking', icon: '📊', order: 0 },
+          { key: 'help-support', label: 'Ajuda', route: '/help', icon: '💬', order: 88 },
         ]);
       }
     };
@@ -146,8 +157,11 @@ export default function Layout({ children }: LayoutProps) {
               <div className="hidden lg:flex items-center justify-center gap-1 md:gap-1.5 flex-nowrap flex-1 min-w-0 overflow-x-auto scrollbar-hide">
                 {activeTabs.length > 0 ? (
                   activeTabs.map((tab) => {
-                    const isActive = location.pathname === tab.route || 
-                                    (tab.route !== '/' && location.pathname.startsWith(tab.route));
+                    const isHelpRoute = tab.route === '/help';
+                    const isActive =
+                      location.pathname === tab.route ||
+                      (tab.route !== '/' && location.pathname.startsWith(tab.route)) ||
+                      (isHelpRoute && location.pathname === '/feedback');
                     
                     // Mapear cores baseado na rota
                     const getColors = (route: string) => {
@@ -163,6 +177,7 @@ export default function Layout({ children }: LayoutProps) {
                       if (route === '/shop') return { from: 'from-purple-600', to: 'to-pink-600', hoverFrom: 'hover:from-purple-700', hoverTo: 'hover:to-pink-700' };
                       if (route === '/marketplace/accounts') return { from: 'from-pink-600', to: 'to-rose-600', hoverFrom: 'hover:from-pink-700', hoverTo: 'hover:to-rose-700' };
                       if (route === '/marketplace/cards') return { from: 'from-rose-600', to: 'to-red-600', hoverFrom: 'hover:from-rose-700', hoverTo: 'hover:to-red-700' };
+                      if (route === '/help') return { from: 'from-teal-600', to: 'to-emerald-600', hoverFrom: 'hover:from-teal-700', hoverTo: 'hover:to-emerald-700' };
                       return { from: 'from-gray-600', to: 'to-gray-500', hoverFrom: 'hover:from-gray-700', hoverTo: 'hover:to-gray-600' };
                     };
 
@@ -216,16 +231,25 @@ export default function Layout({ children }: LayoutProps) {
 
               {/* Abas de navegação - Mobile (scroll horizontal, centralizadas quando couber) */}
               <div className="lg:hidden flex items-center justify-center gap-1 flex-nowrap flex-1 min-w-0 overflow-x-auto scrollbar-hide -mx-2 px-2 py-1">
-                {activeTabs.slice(0, 4).map((tab) => {
-                  const isActive = location.pathname === tab.route || 
-                                  (tab.route !== '/' && location.pathname.startsWith(tab.route));
-                  
+                {activeTabs.map((tab) => {
+                  const isHelpRoute = tab.route === '/help';
+                  const isActive =
+                    location.pathname === tab.route ||
+                    (tab.route !== '/' && location.pathname.startsWith(tab.route)) ||
+                    (isHelpRoute && location.pathname === '/feedback');
+
                   const getColors = (route: string) => {
                     if (route === '/') return { from: 'from-gray-600', to: 'to-gray-500' };
                     if (route === '/chat') return { from: 'from-blue-600', to: 'to-cyan-600' };
                     if (route === '/random-duel') return { from: 'from-red-600', to: 'to-orange-600' };
                     if (route === '/arena') return { from: 'from-red-700', to: 'to-pink-700' };
+                    if (route === '/tournaments') return { from: 'from-yellow-600', to: 'to-amber-600' };
+                    if (route === '/groups') return { from: 'from-cyan-600', to: 'to-teal-600' };
                     if (route === '/ranking') return { from: 'from-orange-600', to: 'to-red-600' };
+                    if (route === '/missions') return { from: 'from-green-600', to: 'to-emerald-600' };
+                    if (route === '/drops') return { from: 'from-indigo-600', to: 'to-purple-600' };
+                    if (route === '/shop') return { from: 'from-purple-600', to: 'to-pink-600' };
+                    if (route === '/help') return { from: 'from-teal-600', to: 'to-emerald-600' };
                     return { from: 'from-gray-600', to: 'to-gray-500' };
                   };
 
@@ -273,8 +297,11 @@ export default function Layout({ children }: LayoutProps) {
               <div className="px-4 py-3 max-h-[60vh] overflow-y-auto">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {activeTabs.map((tab) => {
-                    const isActive = location.pathname === tab.route || 
-                                    (tab.route !== '/' && location.pathname.startsWith(tab.route));
+                    const isHelpRoute = tab.route === '/help';
+                    const isActive =
+                      location.pathname === tab.route ||
+                      (tab.route !== '/' && location.pathname.startsWith(tab.route)) ||
+                      (isHelpRoute && location.pathname === '/feedback');
                     
                     const getColors = (route: string) => {
                       if (route === '/') return { from: 'from-gray-600', to: 'to-gray-500' };
@@ -287,6 +314,7 @@ export default function Layout({ children }: LayoutProps) {
                       if (route === '/missions') return { from: 'from-green-600', to: 'to-emerald-600' };
                       if (route === '/drops') return { from: 'from-indigo-600', to: 'to-purple-600' };
                       if (route === '/shop') return { from: 'from-purple-600', to: 'to-pink-600' };
+                      if (route === '/help') return { from: 'from-teal-600', to: 'to-emerald-600' };
                       return { from: 'from-gray-600', to: 'to-gray-500' };
                     };
 

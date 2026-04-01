@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import api from '../api/axios';
 import { CardType, CardAttribute, CardRarity, MonsterType } from './types';
@@ -36,10 +36,214 @@ interface Card {
   createdAt: string;
 }
 
+type TriState = 'all' | 'yes' | 'no';
+
+interface AdminAdvancedFilters {
+  types: CardType[];
+  rarities: CardRarity[];
+  monsterType: string;
+  attribute: string;
+  race: string;
+  spellType: string;
+  trapType: string;
+  archetype: string;
+  forSale: TriState;
+  banned: TriState;
+  hasImage: TriState;
+  levelMin: string;
+  levelMax: string;
+  rankMin: string;
+  rankMax: string;
+  atkMin: string;
+  atkMax: string;
+  defMin: string;
+  defMax: string;
+  creditsMin: string;
+  creditsMax: string;
+  cashMin: string;
+  cashMax: string;
+  copiesMin: string;
+  copiesMax: string;
+}
+
+const CARD_FILTER_TYPES: CardType[] = ['Monster', 'Spell', 'Trap'];
+
+const CARD_FILTER_RARITIES: CardRarity[] = [
+  'Common',
+  'Rare',
+  'Super Rare',
+  'Ultra Rare',
+  'Secret Rare',
+  'Legendary',
+];
+
+/** Tipos de monstro aceitos pelo backend (admin) */
+const MONSTER_TYPES_ADMIN = [
+  'Normal',
+  'Effect',
+  'Ritual',
+  'Fusion',
+  'Synchro',
+  'Xyz',
+  'Pendulum',
+  'Link',
+] as const;
+
+const ATTRIBUTE_OPTIONS: CardAttribute[] = [
+  'DARK',
+  'LIGHT',
+  'WATER',
+  'FIRE',
+  'EARTH',
+  'WIND',
+  'DIVINE',
+];
+
+const RACE_OPTIONS = [
+  'Warrior',
+  'Spellcaster',
+  'Dragon',
+  'Zombie',
+  'Fiend',
+  'Machine',
+  'Aqua',
+  'Pyro',
+  'Rock',
+  'Winged Beast',
+  'Plant',
+  'Insect',
+  'Thunder',
+  'Beast',
+  'Beast-Warrior',
+  'Dinosaur',
+  'Fish',
+  'Sea Serpent',
+  'Reptile',
+  'Psychic',
+  'Divine-Beast',
+  'Creator God',
+  'Wyrm',
+  'Cyberse',
+  'Fairy',
+] as const;
+
+const SPELL_TYPE_OPTIONS = [
+  'Normal',
+  'Quick-Play',
+  'Continuous',
+  'Equip',
+  'Field',
+  'Ritual',
+] as const;
+
+const TRAP_TYPE_OPTIONS = ['Normal', 'Continuous', 'Counter'] as const;
+
+const SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: 'createdAt_desc', label: 'Cadastro (mais recentes)' },
+  { value: 'createdAt_asc', label: 'Cadastro (mais antigos)' },
+  { value: 'name_asc', label: 'Nome A–Z' },
+  { value: 'name_desc', label: 'Nome Z–A' },
+  { value: 'rarity_asc', label: 'Raridade (menor → maior)' },
+  { value: 'rarity_desc', label: 'Raridade (maior → menor)' },
+  { value: 'priceCredits_asc', label: 'Créditos (menor)' },
+  { value: 'priceCredits_desc', label: 'Créditos (maior)' },
+  { value: 'priceCash_asc', label: 'Cash (menor)' },
+  { value: 'priceCash_desc', label: 'Cash (maior)' },
+  { value: 'atk_desc', label: 'ATK (maior)' },
+  { value: 'atk_asc', label: 'ATK (menor)' },
+  { value: 'level_desc', label: 'Nível (maior)' },
+  { value: 'level_asc', label: 'Nível (menor)' },
+];
+
+function emptyAdminAdvanced(): AdminAdvancedFilters {
+  return {
+    types: [],
+    rarities: [],
+    monsterType: '',
+    attribute: '',
+    race: '',
+    spellType: '',
+    trapType: '',
+    archetype: '',
+    forSale: 'all',
+    banned: 'all',
+    hasImage: 'all',
+    levelMin: '',
+    levelMax: '',
+    rankMin: '',
+    rankMax: '',
+    atkMin: '',
+    atkMax: '',
+    defMin: '',
+    defMax: '',
+    creditsMin: '',
+    creditsMax: '',
+    cashMin: '',
+    cashMax: '',
+    copiesMin: '',
+    copiesMax: '',
+  };
+}
+
+function advancedToQueryParams(a: AdminAdvancedFilters): Record<string, string> {
+  const p: Record<string, string> = {};
+  if (a.types.length) p.type = a.types.join(',');
+  if (a.rarities.length) p.rarity = a.rarities.join(',');
+  if (a.monsterType) p.monsterType = a.monsterType;
+  if (a.attribute) p.attribute = a.attribute;
+  if (a.race) p.race = a.race;
+  if (a.spellType) p.spellType = a.spellType;
+  if (a.trapType) p.trapType = a.trapType;
+  const arch = a.archetype.trim();
+  if (arch) p.archetype = arch;
+  if (a.forSale !== 'all') p.forSale = a.forSale;
+  if (a.banned !== 'all') p.banned = a.banned;
+  if (a.hasImage !== 'all') p.hasImage = a.hasImage;
+  if (a.levelMin.trim()) p.levelMin = a.levelMin.trim();
+  if (a.levelMax.trim()) p.levelMax = a.levelMax.trim();
+  if (a.rankMin.trim()) p.rankMin = a.rankMin.trim();
+  if (a.rankMax.trim()) p.rankMax = a.rankMax.trim();
+  if (a.atkMin.trim()) p.atkMin = a.atkMin.trim();
+  if (a.atkMax.trim()) p.atkMax = a.atkMax.trim();
+  if (a.defMin.trim()) p.defMin = a.defMin.trim();
+  if (a.defMax.trim()) p.defMax = a.defMax.trim();
+  if (a.creditsMin.trim()) p.priceCreditsMin = a.creditsMin.trim();
+  if (a.creditsMax.trim()) p.priceCreditsMax = a.creditsMax.trim();
+  if (a.cashMin.trim()) p.priceCashMin = a.cashMin.trim();
+  if (a.cashMax.trim()) p.priceCashMax = a.cashMax.trim();
+  if (a.copiesMin.trim()) p.maxCopiesMin = a.copiesMin.trim();
+  if (a.copiesMax.trim()) p.maxCopiesMax = a.copiesMax.trim();
+  return p;
+}
+
+function countActiveAdvanced(a: AdminAdvancedFilters): number {
+  let n = 0;
+  if (a.types.length) n++;
+  if (a.rarities.length) n++;
+  if (a.monsterType) n++;
+  if (a.attribute) n++;
+  if (a.race) n++;
+  if (a.spellType) n++;
+  if (a.trapType) n++;
+  if (a.archetype.trim()) n++;
+  if (a.forSale !== 'all') n++;
+  if (a.banned !== 'all') n++;
+  if (a.hasImage !== 'all') n++;
+  if (a.levelMin.trim() || a.levelMax.trim()) n++;
+  if (a.rankMin.trim() || a.rankMax.trim()) n++;
+  if (a.atkMin.trim() || a.atkMax.trim()) n++;
+  if (a.defMin.trim() || a.defMax.trim()) n++;
+  if (a.creditsMin.trim() || a.creditsMax.trim()) n++;
+  if (a.cashMin.trim() || a.cashMax.trim()) n++;
+  if (a.copiesMin.trim() || a.copiesMax.trim()) n++;
+  return n;
+}
+
 export default function AdminCardsPanel() {
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const [editingCard, setEditingCard] = useState<Card | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('active');
   const [searchTerm, setSearchTerm] = useState('');
@@ -48,6 +252,10 @@ export default function AdminCardsPanel() {
   const [listTotal, setListTotal] = useState(0);
   const [cardCounts, setCardCounts] = useState({ total: 0, active: 0, inactive: 0 });
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [listSort, setListSort] = useState('createdAt_desc');
+  const [advancedDraft, setAdvancedDraft] = useState<AdminAdvancedFilters>(() => emptyAdminAdvanced());
+  const [advancedApplied, setAdvancedApplied] = useState<AdminAdvancedFilters>(() => emptyAdminAdvanced());
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>('');
   
@@ -121,6 +329,8 @@ export default function AdminCardsPanel() {
           limit: pageSize,
           search: debouncedSearch || undefined,
           status: filter,
+          sort: listSort,
+          ...advancedToQueryParams(advancedApplied),
         },
       });
       setCards(data.items ?? []);
@@ -132,7 +342,7 @@ export default function AdminCardsPanel() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, debouncedSearch, filter]);
+  }, [page, pageSize, debouncedSearch, filter, listSort, advancedApplied]);
 
   const reloadAdminCards = useCallback(async () => {
     await fetchCounts();
@@ -160,6 +370,23 @@ export default function AdminCardsPanel() {
     const tp = Math.max(1, Math.ceil(listTotal / pageSize) || 1);
     if (page > tp) setPage(tp);
   }, [listTotal, pageSize, page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [listSort]);
+
+  useEffect(() => {
+    if (!showBulkImport) return;
+    const id = requestAnimationFrame(() => {
+      document.getElementById('admin-bulk-ygopro-import')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [showBulkImport]);
+
+  const activeAdvancedCount = useMemo(
+    () => countActiveAdvanced(advancedApplied),
+    [advancedApplied],
+  );
 
   // Função para buscar cartas na API YGOPRODeck
   const searchYugiohCards = async (query: string) => {
@@ -832,15 +1059,19 @@ export default function AdminCardsPanel() {
             <h1 className="text-4xl font-bold mb-2">🎴 Gerenciamento de Cartas</h1>
             <p className="text-gray-300">Crie e gerencie todas as cartas do jogo</p>
             <p className="text-sm text-purple-200/90 mt-2">
-              Use <strong className="text-amber-200">Cadastro em massa</strong> abaixo para importar da YGOPRODeck.
+              Clique em <strong className="text-amber-200">Cadastro em massa</strong> para importar da YGOPRODeck.
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
             <button
               type="button"
-              onClick={() =>
-                document.getElementById('admin-bulk-ygopro-import')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-              }
+              onClick={() => {
+                if (showBulkImport) {
+                  document.getElementById('admin-bulk-ygopro-import')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } else {
+                  setShowBulkImport(true);
+                }
+              }}
               className="bg-amber-600 hover:bg-amber-500 text-black px-5 py-3 rounded-lg font-bold transition-all"
             >
               📥 Cadastro em massa
@@ -858,11 +1089,13 @@ export default function AdminCardsPanel() {
         </div>
       </div>
 
-      <BulkYgoproDeckImportSection
-        defaultExpanded
-        onAfterRealImport={() => void reloadAdminCards()}
-        onNotify={(m) => setMessage(m)}
-      />
+      {showBulkImport && (
+        <BulkYgoproDeckImportSection
+          defaultExpanded
+          onAfterRealImport={() => void reloadAdminCards()}
+          onNotify={(m) => setMessage(m)}
+        />
+      )}
 
       {/* Mensagem */}
       {message && (
@@ -1421,39 +1654,415 @@ export default function AdminCardsPanel() {
       )}
 
       {/* Filtros */}
-      <div className="bg-gray-800 rounded-lg p-4 mb-6 flex gap-4 flex-wrap">
-        <input
-          type="text"
-          placeholder="🔍 Buscar carta..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="flex-1 min-w-[200px] bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
-        />
-        <select
-          value={filter}
-          onChange={(e) => {
-            setPage(1);
-            setFilter(e.target.value as typeof filter);
-          }}
-          className="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
-        >
-          <option value="all">Todas ({cardCounts.total})</option>
-          <option value="active">Ativas ({cardCounts.active})</option>
-          <option value="inactive">Inativas ({cardCounts.inactive})</option>
-        </select>
-        <select
-          value={pageSize}
-          onChange={(e) => {
-            setPageSize(Number(e.target.value));
-            setPage(1);
-          }}
-          className="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 text-sm"
-          aria-label="Itens por página"
-        >
-          <option value={24}>24 / página</option>
-          <option value={48}>48 / página</option>
-          <option value={96}>96 / página</option>
-        </select>
+      <div className="bg-gray-800 rounded-lg p-4 mb-6 space-y-4 border border-gray-700/80">
+        <div className="flex flex-col lg:flex-row gap-3 lg:items-end flex-wrap">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs text-gray-400 mb-1">Busca (nome, idCarta, descrição)</label>
+            <input
+              type="text"
+              placeholder="🔍 Buscar..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
+            />
+          </div>
+          <div className="w-full sm:w-auto min-w-[140px]">
+            <label className="block text-xs text-gray-400 mb-1">Status</label>
+            <select
+              value={filter}
+              onChange={(e) => {
+                setPage(1);
+                setFilter(e.target.value as typeof filter);
+              }}
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
+            >
+              <option value="all">Todas ({cardCounts.total})</option>
+              <option value="active">Ativas ({cardCounts.active})</option>
+              <option value="inactive">Inativas ({cardCounts.inactive})</option>
+            </select>
+          </div>
+          <div className="w-full sm:w-auto min-w-[160px]">
+            <label className="block text-xs text-gray-400 mb-1">Ordenar</label>
+            <select
+              value={listSort}
+              onChange={(e) => setListSort(e.target.value)}
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 text-sm"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="w-full sm:w-auto min-w-[120px]">
+            <label className="block text-xs text-gray-400 mb-1">Por página</label>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setPage(1);
+              }}
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 text-sm"
+              aria-label="Itens por página"
+            >
+              <option value={24}>24</option>
+              <option value={48}>48</option>
+              <option value={96}>96</option>
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setShowAdvancedFilters((open) => {
+                if (!open) setAdvancedDraft({ ...advancedApplied });
+                return !open;
+              });
+            }}
+            className="px-4 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-600 border border-indigo-500/50 text-white text-sm font-bold whitespace-nowrap"
+          >
+            {showAdvancedFilters ? '▲ Ocultar filtros' : '▼ Filtros avançados'}
+            {activeAdvancedCount > 0 ? (
+              <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-500 text-black text-xs">
+                {activeAdvancedCount}
+              </span>
+            ) : null}
+          </button>
+        </div>
+
+        {showAdvancedFilters ? (
+          <div className="rounded-lg border border-purple-500/30 bg-gray-900/60 p-4 space-y-5">
+            <p className="text-xs text-gray-400">
+              Ajuste os campos e clique em <strong className="text-purple-300">Aplicar filtros</strong>. Nível, rank,
+              ATK e DEF restringem apenas <strong className="text-amber-200/90">monstros</strong>; magias e armadilhas
+              continuam listadas salvo se você filtrar também por tipo.
+            </p>
+
+            <div>
+              <p className="text-sm font-bold text-purple-300 mb-2">Tipo de carta</p>
+              <div className="flex flex-wrap gap-3">
+                {CARD_FILTER_TYPES.map((t) => (
+                  <label key={t} className="flex items-center gap-2 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked={advancedDraft.types.includes(t)}
+                      onChange={() => {
+                        setAdvancedDraft((d) => ({
+                          ...d,
+                          types: d.types.includes(t) ? d.types.filter((x) => x !== t) : [...d.types, t],
+                        }));
+                      }}
+                      className="rounded border-gray-600 text-purple-600 focus:ring-purple-500"
+                    />
+                    {t}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm font-bold text-purple-300 mb-2">Raridade</p>
+              <div className="flex flex-wrap gap-2">
+                {CARD_FILTER_RARITIES.map((r) => (
+                  <label
+                    key={r}
+                    className={`flex items-center gap-1.5 cursor-pointer text-xs px-2 py-1 rounded border ${
+                      advancedDraft.rarities.includes(r)
+                        ? 'border-amber-400/60 bg-amber-900/20'
+                        : 'border-gray-600'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={advancedDraft.rarities.includes(r)}
+                      onChange={() => {
+                        setAdvancedDraft((d) => ({
+                          ...d,
+                          rarities: d.rarities.includes(r)
+                            ? d.rarities.filter((x) => x !== r)
+                            : [...d.rarities, r],
+                        }));
+                      }}
+                      className="rounded border-gray-600 text-amber-500 focus:ring-amber-500"
+                    />
+                    {r}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Tipo de monstro</label>
+                <select
+                  value={advancedDraft.monsterType}
+                  onChange={(e) => setAdvancedDraft((d) => ({ ...d, monsterType: e.target.value }))}
+                  className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="">Qualquer</option>
+                  {MONSTER_TYPES_ADMIN.map((mt) => (
+                    <option key={mt} value={mt}>
+                      {mt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Atributo</label>
+                <select
+                  value={advancedDraft.attribute}
+                  onChange={(e) => setAdvancedDraft((d) => ({ ...d, attribute: e.target.value }))}
+                  className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="">Qualquer</option>
+                  {ATTRIBUTE_OPTIONS.map((a) => (
+                    <option key={a} value={a}>
+                      {a}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Raça</label>
+                <select
+                  value={advancedDraft.race}
+                  onChange={(e) => setAdvancedDraft((d) => ({ ...d, race: e.target.value }))}
+                  className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="">Qualquer</option>
+                  {RACE_OPTIONS.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Tipo de magia</label>
+                <select
+                  value={advancedDraft.spellType}
+                  onChange={(e) => setAdvancedDraft((d) => ({ ...d, spellType: e.target.value }))}
+                  className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="">Qualquer</option>
+                  {SPELL_TYPE_OPTIONS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Tipo de armadilha</label>
+                <select
+                  value={advancedDraft.trapType}
+                  onChange={(e) => setAdvancedDraft((d) => ({ ...d, trapType: e.target.value }))}
+                  className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="">Qualquer</option>
+                  {TRAP_TYPE_OPTIONS.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs text-gray-400 mb-1">Arquétipo (contém)</label>
+                <input
+                  type="text"
+                  value={advancedDraft.archetype}
+                  onChange={(e) => setAdvancedDraft((d) => ({ ...d, archetype: e.target.value }))}
+                  placeholder="Ex.: Blue-Eyes, Tearlaments"
+                  className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">À venda na loja</label>
+                <select
+                  value={advancedDraft.forSale}
+                  onChange={(e) =>
+                    setAdvancedDraft((d) => ({ ...d, forSale: e.target.value as TriState }))
+                  }
+                  className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="all">Todos</option>
+                  <option value="yes">Sim</option>
+                  <option value="no">Não</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Banidas</label>
+                <select
+                  value={advancedDraft.banned}
+                  onChange={(e) =>
+                    setAdvancedDraft((d) => ({ ...d, banned: e.target.value as TriState }))
+                  }
+                  className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="all">Todos</option>
+                  <option value="yes">Banidas</option>
+                  <option value="no">Não banidas</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Imagem cadastrada</label>
+                <select
+                  value={advancedDraft.hasImage}
+                  onChange={(e) =>
+                    setAdvancedDraft((d) => ({ ...d, hasImage: e.target.value as TriState }))
+                  }
+                  className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="all">Todos</option>
+                  <option value="yes">Com imagem</option>
+                  <option value="no">Sem imagem</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm font-bold text-purple-300 mb-2">Estatísticas (monstros)</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+                {(
+                  [
+                    ['levelMin', 'levelMax', 'Nível min', 'Nível max'],
+                    ['rankMin', 'rankMax', 'Rank min', 'Rank max'],
+                    ['atkMin', 'atkMax', 'ATK min', 'ATK max'],
+                    ['defMin', 'defMax', 'DEF min', 'DEF max'],
+                  ] as const
+                ).map(([a, b, la, lb]) => (
+                  <div key={a} className="contents">
+                    <div>
+                      <label className="block text-[10px] text-gray-500 mb-0.5">{la}</label>
+                      <input
+                        type="number"
+                        value={(advancedDraft as any)[a]}
+                        onChange={(e) => setAdvancedDraft((d) => ({ ...d, [a]: e.target.value }))}
+                        className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs"
+                        placeholder="—"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-500 mb-0.5">{lb}</label>
+                      <input
+                        type="number"
+                        value={(advancedDraft as any)[b]}
+                        onChange={(e) => setAdvancedDraft((d) => ({ ...d, [b]: e.target.value }))}
+                        className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs"
+                        placeholder="—"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm font-bold text-purple-300 mb-2">Preços e cópias</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-0.5">Créditos min</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={advancedDraft.creditsMin}
+                    onChange={(e) => setAdvancedDraft((d) => ({ ...d, creditsMin: e.target.value }))}
+                    className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs"
+                    placeholder="—"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-0.5">Créditos max</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={advancedDraft.creditsMax}
+                    onChange={(e) => setAdvancedDraft((d) => ({ ...d, creditsMax: e.target.value }))}
+                    className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs"
+                    placeholder="—"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-0.5">Cash min</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={advancedDraft.cashMin}
+                    onChange={(e) => setAdvancedDraft((d) => ({ ...d, cashMin: e.target.value }))}
+                    className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs"
+                    placeholder="—"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-0.5">Cash max</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={advancedDraft.cashMax}
+                    onChange={(e) => setAdvancedDraft((d) => ({ ...d, cashMax: e.target.value }))}
+                    className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs"
+                    placeholder="—"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-0.5">Cópias min</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={3}
+                    value={advancedDraft.copiesMin}
+                    onChange={(e) => setAdvancedDraft((d) => ({ ...d, copiesMin: e.target.value }))}
+                    className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs"
+                    placeholder="—"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-0.5">Cópias max</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={3}
+                    value={advancedDraft.copiesMax}
+                    onChange={(e) => setAdvancedDraft((d) => ({ ...d, copiesMax: e.target.value }))}
+                    className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs"
+                    placeholder="—"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-700">
+              <button
+                type="button"
+                onClick={() => {
+                  setAdvancedApplied({ ...advancedDraft });
+                  setPage(1);
+                }}
+                className="px-5 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-sm"
+              >
+                Aplicar filtros
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const e = emptyAdminAdvanced();
+                  setAdvancedDraft(e);
+                  setAdvancedApplied(e);
+                  setPage(1);
+                }}
+                className="px-5 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white font-medium text-sm"
+              >
+                Limpar tudo
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* Listagem de Cartas */}

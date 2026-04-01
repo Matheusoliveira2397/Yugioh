@@ -1,7 +1,8 @@
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n/I18nContext';
 import { motion } from 'framer-motion';
-import { getCardImage } from '../utils/cardImage';
+import CardImage from './CardImage';
+import { CARD_IMAGE_GRID_PROPS } from '../utils/cardImage';
 
 export interface MarqueeCard {
   id: string;
@@ -33,10 +34,13 @@ function CardMarqueeItem({
   card,
   onClick,
   showPromotionBadge = false,
+  priorityLoad,
 }: {
   card: MarqueeCard;
   onClick: (card: MarqueeCard) => void;
   showPromotionBadge?: boolean;
+  /** Primeiras posições do carrossel: carregar antes (menos espera visual). */
+  priorityLoad?: boolean;
 }) {
   return (
     <div
@@ -55,13 +59,13 @@ function CardMarqueeItem({
             -{card.promotionDiscountPercent}%
           </div>
         )}
-        <img
-          src={getCardImage(card) || '/images/fundoCarta.webp'}
-          alt={card.name}
-          className="w-full h-full object-cover"
-          onError={(e) => {
-            e.currentTarget.src = '/images/fundoCarta.webp';
-          }}
+        <CardImage
+          card={card}
+          className="w-full h-full"
+          fallback="/images/fundoCarta.webp"
+          {...CARD_IMAGE_GRID_PROPS}
+          loading={priorityLoad ? 'eager' : 'lazy'}
+          fetchPriority={priorityLoad ? 'high' : 'low'}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
         <div className="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-black/90 to-transparent">
@@ -94,7 +98,7 @@ export default function LatestCardsMarquee({
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
-        className={`rounded-xl p-2 md:p-3 border border-blue-600/25 bg-slate-950/45 backdrop-blur-md text-center w-full max-w-full ${className}`}
+        className={`rounded-xl p-2 md:p-3 border border-blue-600/25 bg-slate-950/18 backdrop-blur-xl text-center w-full max-w-full shadow-lg shadow-black/15 ring-1 ring-white/[0.04] ${className}`}
       >
         <h2 className="text-xs font-bold flex items-center justify-center gap-1.5 text-white/80 mb-1">
           <span>🎴</span>
@@ -119,7 +123,7 @@ export default function LatestCardsMarquee({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.3 }}
-      className={`rounded-xl p-2 sm:p-3 md:p-3.5 border border-blue-600/25 bg-slate-950/45 backdrop-blur-md overflow-hidden w-full max-w-full shadow-lg shadow-black/20 ring-1 ring-white/[0.04] ${className}`}
+      className={`rounded-xl p-2 sm:p-3 md:p-3.5 border border-blue-600/25 bg-slate-950/18 backdrop-blur-xl overflow-hidden w-full max-w-full shadow-lg shadow-black/15 ring-1 ring-white/[0.04] ${className}`}
     >
       {!hideTitle && (
       <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -148,6 +152,7 @@ export default function LatestCardsMarquee({
                 card={card}
                 onClick={handleCardClick}
                 showPromotionBadge={showPromotionBadge}
+                priorityLoad={cards.length > 0 && index % cards.length < 12}
               />
             ))}
           </div>

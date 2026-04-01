@@ -5,6 +5,7 @@ import api from '../api/axios';
 import { useAuthStore } from '../stores/authStore';
 import TournamentBracket from '../components/TournamentBracket';
 import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
+import { formatScore } from '../utils/formatScore';
 
 interface Tournament {
   id: string;
@@ -703,7 +704,7 @@ export default function TournamentPage() {
                           <td className="p-3">
                             <span className="px-2 py-0.5 rounded text-sm font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40">{row.className}</span>
                           </td>
-                          <td className="p-3 text-amber-300 font-semibold">{row.tournamentPoints}</td>
+                          <td className="p-3 text-amber-300 font-semibold">{formatScore(row.tournamentPoints)}</td>
                         </tr>
                       ))}
                     </tbody>

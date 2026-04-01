@@ -19,6 +19,20 @@ export default function InventoryPage() {
     setOwnedSkins,
   } = useCosmeticsStore();
   const [loading, setLoading] = useState(true);
+  const [maletaLimits, setMaletaLimits] = useState<{ maxDecks: number; maletaCapacity: number }>({
+    maxDecks: 3,
+    maletaCapacity: 500,
+  });
+  const [ownedMaletas, setOwnedMaletas] = useState<Array<{
+    id: string;
+    maletaTemplateId: string;
+    name: string;
+    description: string | null;
+    image: string | null;
+    bonusDecks: number;
+    bonusMaletaCapacity: number;
+    purchasedAt?: string;
+  }>>([]);
   const [talismans, setTalismans] = useState<Array<{
     id: string;
     talismanTemplateId: string;
@@ -63,9 +77,18 @@ export default function InventoryPage() {
         const talismansList = Array.isArray(inventoryData.talismans)
           ? inventoryData.talismans
           : [];
+        const maletasList = Array.isArray(inventoryData.maletas) ? inventoryData.maletas : [];
+        const limits = inventoryData.maletaLimits;
         setOwnedPlaymats(playmats);
         setOwnedSkins(skins);
         setTalismans(talismansList);
+        setOwnedMaletas(maletasList);
+        if (limits && typeof limits.maxDecks === 'number' && typeof limits.maletaCapacity === 'number') {
+          setMaletaLimits({
+            maxDecks: limits.maxDecks,
+            maletaCapacity: limits.maletaCapacity,
+          });
+        }
         
         // Buscar dados do usuário para sincronizar playmats e skins equipados
         try {
@@ -176,6 +199,78 @@ export default function InventoryPage() {
           </div>
         </div>
 
+        {/* Maleta: limites atuais e níveis comprados */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-xl p-5 mb-6 border border-amber-500/40 bg-gradient-to-r from-amber-950/40 to-yellow-950/20"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
+            <div>
+              <h2 className="text-2xl font-bold text-amber-200 flex items-center gap-2">🧳 Minha maleta</h2>
+              <p className="text-gray-400 text-sm mt-1">
+                Limites que valem para criar decks e guardar cartas fora dos decks
+              </p>
+            </div>
+            <div className="rounded-lg border border-amber-400/30 bg-black/20 px-4 py-3 text-sm">
+              <p className="text-amber-100 font-bold">
+                {loading ? (user?.maxDecks ?? maletaLimits.maxDecks) : maletaLimits.maxDecks} decks
+                <span className="text-gray-400 font-normal mx-2">•</span>
+                {loading ? (user?.maletaCapacity ?? maletaLimits.maletaCapacity) : maletaLimits.maletaCapacity}{' '}
+                cartas na maleta
+              </p>
+            </div>
+          </div>
+          {loading ? (
+            <p className="text-gray-400 text-sm">Carregando dados da maleta...</p>
+          ) : ownedMaletas.length === 0 ? (
+            <p className="text-gray-400 text-sm">
+              Você ainda não comprou níveis de maleta na loja. Abra a aba{' '}
+              <span className="text-amber-200/90">📦 Itens</span> na loja para aumentar decks e capacidade.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Níveis adquiridos</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {ownedMaletas.map((m) => {
+                  const imageSrc = m.image
+                    ? (m.image.startsWith('http') ? m.image : `${API_URL}${m.image}`)
+                    : '';
+                  return (
+                    <div
+                      key={m.id}
+                      className="flex gap-3 items-center rounded-lg border border-amber-500/25 bg-white/5 p-3"
+                    >
+                      <div className="w-20 h-14 rounded-md overflow-hidden border border-amber-400/40 bg-amber-900/30 flex-shrink-0 flex items-center justify-center">
+                        {imageSrc ? (
+                          <img
+                            src={imageSrc}
+                            alt={m.name}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            decoding="async"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <span className="text-2xl">🧳</span>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-white text-sm truncate">{m.name}</p>
+                        <p className="text-[11px] text-amber-200/80">
+                          +{m.bonusDecks} deck(s) • +{m.bonusMaletaCapacity} cartas (ao comprar)
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </motion.div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Playmats */}
           <motion.div
@@ -228,6 +323,8 @@ export default function InventoryPage() {
                               src={imageSrc}
                               alt={playmat.name}
                               className="w-full h-full object-cover"
+                              loading="lazy"
+                              decoding="async"
                               onError={(e) => {
                                 (e.target as HTMLImageElement).style.display = 'none';
                               }}
@@ -313,6 +410,8 @@ export default function InventoryPage() {
                               src={imageSrc}
                               alt={skin.name}
                               className="w-full h-full object-cover"
+                              loading="lazy"
+                              decoding="async"
                               onError={(e) => {
                                 (e.target as HTMLImageElement).style.display = 'none';
                               }}
@@ -396,6 +495,8 @@ export default function InventoryPage() {
                               src={imageSrc}
                               alt={talisman.name || 'Talismã'}
                               className="w-full h-full object-cover"
+                              loading="lazy"
+                              decoding="async"
                               onError={(e) => {
                                 (e.target as HTMLImageElement).style.display = 'none';
                               }}

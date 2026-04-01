@@ -31,6 +31,7 @@ import AdminNewsPanel from './pages/AdminNewsPanel';
 import AdminPlaymatsPanel from './pages/AdminPlaymatsPanel';
 import AdminSleevesPanel from './pages/AdminSleevesPanel';
 import AdminTalismansPanel from './pages/AdminTalismansPanel';
+import AdminBriefcasesPanel from './pages/AdminBriefcasesPanel';
 import AdminPromotionsPanel from './pages/AdminPromotionsPanel';
 import AdminControlPanel from './pages/AdminControlPanel';
 import AdminInitialDecksPanel from './pages/AdminInitialDecksPanel';
@@ -467,6 +468,19 @@ function App() {
             isAuthenticated ? (
               <Layout>
                 <AdminTalismansPanel />
+              </Layout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/briefcases"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <AdminBriefcasesPanel />
               </Layout>
             ) : (
               <Navigate to="/login" />

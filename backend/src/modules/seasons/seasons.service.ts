@@ -101,6 +101,34 @@ export class SeasonsService implements OnModuleInit {
     } catch (error: any) {
       console.error('⚠️ [SeasonsService] Erro ao verificar/criar coluna division na tabela users:', error.message);
     }
+
+    await this.normalizeSingleActiveSeason();
+  }
+
+  /**
+   * Garante no máximo uma season com isActive=true. Se houver várias, mantém a de maior seasonNumber.
+   */
+  private async normalizeSingleActiveSeason(): Promise<void> {
+    try {
+      const actives = await this.seasonRepository.find({
+        where: { isActive: true },
+        select: ['id', 'seasonNumber'],
+        order: { seasonNumber: 'DESC' },
+      });
+      if (actives.length <= 1) return;
+      const keepId = actives[0].id;
+      await this.seasonRepository.update({ id: Not(keepId) }, { isActive: false });
+      console.log(
+        `✅ [SeasonsService] Normalizado: ${actives.length - 1} season(s) extra(s) desativada(s); ativa: ${keepId}`,
+      );
+    } catch (e: any) {
+      console.warn('⚠️ [SeasonsService] normalizeSingleActiveSeason:', e?.message || e);
+    }
+  }
+
+  /** Desativa todas as seasons exceto a indicada (ao marcar uma como ativa). */
+  private async deactivateAllSeasonsExcept(keepSeasonId: string): Promise<void> {
+    await this.seasonRepository.update({ id: Not(keepSeasonId) }, { isActive: false });
   }
 
   // Criar nova season
@@ -159,6 +187,7 @@ export class SeasonsService implements OnModuleInit {
         .addSelect('s.prizes', 'prizes')
         .addSelect('s.divisionPrizes', 'divisionPrizes')
         .where('s.isActive = :isActive', { isActive: true })
+        .orderBy('s.seasonNumber', 'DESC')
         .getRawOne();
       
       if (!seasonRaw) {
@@ -192,6 +221,7 @@ export class SeasonsService implements OnModuleInit {
           .addSelect('s.isActive', 'isActive')
           .addSelect('s.prizes', 'prizes')
           .where('s.isActive = :isActive', { isActive: true })
+          .orderBy('s.seasonNumber', 'DESC')
           .getRawOne();
         
         if (!seasonRaw) {
@@ -229,6 +259,7 @@ export class SeasonsService implements OnModuleInit {
         .addSelect('s.prizes', 'prizes')
         .addSelect('s.divisionPrizes', 'divisionPrizes')
         .where('s.isActive = :isActive', { isActive: true })
+        .orderBy('s.seasonNumber', 'DESC')
         .getRawOne();
 
       if (!seasonRaw) return null;
@@ -1091,13 +1122,20 @@ export class SeasonsService implements OnModuleInit {
       throw new NotFoundException('Season não encontrada');
     }
 
+    const nextIsActive =
+      updateDto.isActive !== undefined ? updateDto.isActive : seasonRaw.isActive;
+
+    if (nextIsActive === true) {
+      await this.deactivateAllSeasonsExcept(id);
+    }
+
     const season = (this.seasonRepository.create({
       id: seasonRaw.id,
       name: updateDto.name ?? seasonRaw.name,
       seasonNumber: seasonRaw.seasonNumber,
       startDate: updateDto.startDate ? new Date(updateDto.startDate) : seasonRaw.startDate,
       endDate: updateDto.endDate ? new Date(updateDto.endDate) : seasonRaw.endDate,
-      isActive: updateDto.isActive !== undefined ? updateDto.isActive : seasonRaw.isActive,
+      isActive: nextIsActive,
       prizes: updateDto.prizes ?? seasonRaw.prizes,
       divisionPrizes: updateDto.divisionPrizes !== undefined ? updateDto.divisionPrizes : (seasonRaw.divisionPrizes || undefined),
       divisionPromotion: updateDto.divisionPromotion !== undefined ? updateDto.divisionPromotion : (seasonRaw.divisionPromotion || undefined),

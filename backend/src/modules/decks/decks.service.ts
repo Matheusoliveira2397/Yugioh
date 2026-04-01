@@ -61,6 +61,18 @@ export class DecksService implements OnModuleInit {
   }
 
   async create(userId: number, createDeckDto: CreateDeckDto): Promise<Deck> {
+    const user = await this.usersRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'maxDecks'],
+    });
+    const maxDecks = Math.max(1, Number((user as any)?.maxDecks ?? 3));
+    const deckCount = await this.decksRepository.count({ where: { userId } });
+    if (deckCount >= maxDecks) {
+      throw new BadRequestException(
+        `Você atingiu o limite de decks (${maxDecks}). Compre uma maleta na loja para aumentar.`,
+      );
+    }
+
     // Validar tamanho do deck (40-60 cartas no main deck)
     if (createDeckDto.cards.length < 40 || createDeckDto.cards.length > 60) {
       throw new BadRequestException('Deck must have between 40 and 60 cards');
@@ -223,6 +235,18 @@ export class DecksService implements OnModuleInit {
       });
     }
     if (!deck) {
+      const user = await this.usersRepository.findOne({
+        where: { id: userId },
+        select: ['id', 'maxDecks'],
+      });
+      const maxDecks = Math.max(1, Number((user as any)?.maxDecks ?? 3));
+      const deckCount = await this.decksRepository.count({ where: { userId } });
+      if (deckCount >= maxDecks) {
+        throw new BadRequestException(
+          `Você atingiu o limite de decks (${maxDecks}). Compre uma maleta na loja para aumentar.`,
+        );
+      }
+
       deck = this.decksRepository.create({
         name: deckName,
         userId,

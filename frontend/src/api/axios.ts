@@ -17,11 +17,19 @@ function processQueue(token: string | null, err: unknown = null) {
   failedQueue = [];
 }
 
+function isLikelyJwtAccessToken(t: string): boolean {
+  const s = t.trim();
+  if (s.length < 20) return false;
+  const parts = s.split('.');
+  return parts.length === 3 && parts.every((p) => p.length > 0);
+}
+
 api.interceptors.request.use(
   (config) => {
     const token = useAuthStore.getState().token;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    if (token && isLikelyJwtAccessToken(String(token))) {
+      config.headers = config.headers ?? {};
+      config.headers.Authorization = `Bearer ${token.trim()}`;
     }
     return config;
   },
@@ -57,6 +65,7 @@ api.interceptors.response.use(
         return new Promise((resolve, reject) => {
           failedQueue.push({
             resolve: (token: string) => {
+              originalRequest.headers = originalRequest.headers ?? {};
               originalRequest.headers.Authorization = `Bearer ${token}`;
               resolve(api(originalRequest));
             },
@@ -77,6 +86,7 @@ api.interceptors.response.use(
         const { access_token } = res.data;
         useAuthStore.getState().setTokens(access_token, refreshToken);
         processQueue(access_token);
+        originalRequest.headers = originalRequest.headers ?? {};
         originalRequest.headers.Authorization = `Bearer ${access_token}`;
         return api(originalRequest);
       } catch (refreshErr) {

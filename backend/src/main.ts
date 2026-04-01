@@ -102,6 +102,15 @@ async function bootstrap() {
     console.warn('⚠️ frontend/public/images/default.jpg não encontrado — coloque o avatar padrão nesse caminho.');
   }
 
+  // Em produção (Docker) `images/default.jpg` pode faltar se só `avatars` foi populado antes.
+  if (fs.existsSync(defaultAvatarPath) && !fs.existsSync(defaultImagePath)) {
+    try {
+      fs.copyFileSync(defaultAvatarPath, defaultImagePath);
+    } catch {
+      /* ignore */
+    }
+  }
+
   // Servir arquivos estáticos (uploads) com cache para reduzir carga e melhorar carregamento em produção
   app.useStaticAssets(uploadsDir, {
     prefix: '/uploads/',
@@ -186,14 +195,31 @@ async function bootstrap() {
       return fs.createReadStream(filePath).pipe(res);
     }
 
-    if (!fs.existsSync(defaultImagePath)) return next();
-    res.setHeader('Content-Type', 'image/jpeg');
+    const placeholderPath = fs.existsSync(defaultImagePath)
+      ? defaultImagePath
+      : fs.existsSync(defaultAvatarPath)
+        ? defaultAvatarPath
+        : null;
+    if (placeholderPath) {
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=120');
+      if (req.method === 'HEAD') {
+        res.end();
+        return;
+      }
+      return fs.createReadStream(placeholderPath).pipe(res);
+    }
+
+    // Sem nenhum default no disco: ainda evitar 404 no <img> (deploy mínimo / volume vazio).
+    res.setHeader('Content-Type', 'image/svg+xml');
     res.setHeader('Cache-Control', 'public, max-age=120');
     if (req.method === 'HEAD') {
       res.end();
       return;
     }
-    fs.createReadStream(defaultImagePath).pipe(res);
+    res.send(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>',
+    );
   });
 
   // Servir avatares padrão com cache

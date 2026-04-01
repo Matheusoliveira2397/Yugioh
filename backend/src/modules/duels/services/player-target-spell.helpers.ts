@@ -129,6 +129,13 @@ export function matchesPlayerTargetSpellCard(card: any, key: string): boolean {
       return name.includes('shield crush') || id.includes('shieldcrush') || id.includes('ygopro_30683373');
     case 'FISSURE':
       return name.includes('fissure') || id.includes('ygopro_66788016');
+    case 'RING_OF_DESTRUCTION':
+      return (
+        name.includes('ring of destruction') ||
+        id.includes('ringofdestruction') ||
+        id.includes('ygopro_83555666') ||
+        id.includes('83555666')
+      );
     default:
       return false;
   }
@@ -146,6 +153,7 @@ export function detectPlayerTargetSpellKind(card: any, duel: any, isPlayer1: boo
     'SILVERS_CRY',
     'SHIELD_CRUSH',
     'FISSURE',
+    'RING_OF_DESTRUCTION',
   ] as const;
   for (const k of keys) {
     if (!matchesPlayerTargetSpellCard(card, k)) continue;

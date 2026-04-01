@@ -813,7 +813,7 @@ export default function RankingPage() {
                             </span>
                           </td>
                           <td className="px-4 lg:px-6 py-3 lg:py-5 text-right">
-                            <span className="text-lg lg:text-2xl font-bold text-amber-400">{row.tournamentPoints}</span>
+                            <span className="text-lg lg:text-2xl font-bold text-amber-400">{formatScore(row.tournamentPoints)}</span>
                           </td>
                         </motion.tr>
                       );
@@ -867,7 +867,7 @@ export default function RankingPage() {
                       </div>
                       <div className="text-right">
                         <span className="text-slate-400 text-xs">Pontos: </span>
-                        <span className="text-amber-400 font-bold">{row.tournamentPoints}</span>
+                        <span className="text-amber-400 font-bold">{formatScore(row.tournamentPoints)}</span>
                       </div>
                     </motion.div>
                   );

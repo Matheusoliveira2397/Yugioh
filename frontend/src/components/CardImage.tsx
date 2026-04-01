@@ -3,6 +3,7 @@ import {
   getCardImage,
   getAllCardImagePaths,
   rememberSuccessfulCardImagePath,
+  suggestOmitNameBasedPaths,
   type GetAllCardImagePathsOptions,
 } from '../utils/cardImage';
 import { getCardImageDisplayUrl } from '../utils/imageUrl';
@@ -32,8 +33,6 @@ interface CardImageProps {
 /**
  * Componente que exibe a imagem de uma carta, tentando diferentes extensões automaticamente
  */
-const isDev = import.meta.env.DEV;
-
 export default function CardImage({
   card,
   className = '',
@@ -42,9 +41,9 @@ export default function CardImage({
   onError,
   cacheBuster,
   loading = 'lazy',
-  omitNameBasedPaths = false,
+  omitNameBasedPaths,
   pathExtensions,
-  singleLayerImage = false,
+  singleLayerImage = true,
   sizes,
   fetchPriority,
   objectFit = 'cover',
@@ -61,13 +60,22 @@ export default function CardImage({
   
   // Memoizar TODOS os caminhos possíveis (incluindo baseados no nome da carta)
   // Isso é importante porque o cardImage pode conter YGOPRO_ mas o arquivo real tem nome diferente
-  const pathListOptions = useMemo(
-    (): GetAllCardImagePathsOptions => ({
-      omitNameBasedPaths,
+  const pathListOptions = useMemo((): GetAllCardImagePathsOptions => {
+    const c = card;
+    return {
+      omitNameBasedPaths:
+        omitNameBasedPaths !== undefined ? omitNameBasedPaths : suggestOmitNameBasedPaths(c),
       extensions: pathExtensions,
-    }),
-    [omitNameBasedPaths, pathExtensions],
-  );
+    };
+  }, [
+    omitNameBasedPaths,
+    pathExtensions,
+    card?.idCarta,
+    card?.id,
+    card?.cardId,
+    card?.cardImage,
+    card?.name,
+  ]);
 
   const possiblePaths = useMemo(() => {
     return getAllCardImagePaths(card, pathListOptions);
@@ -94,19 +102,24 @@ export default function CardImage({
   const currentIndexRef = useRef(0);
   const imageSrcRef = useRef<string | null>(null);
 
-  // Usar useRef para rastrear o último cardId processado
-  const lastCardIdRef = useRef<string | number | null>(null);
+  const leadPath = possiblePaths[0] ?? '';
+  const imageStateKey = useMemo(
+    () =>
+      `${String(cardId ?? '')}|${String(card?.cardImage ?? '').trim()}|${String(card?.name ?? '').slice(0, 80)}|${leadPath}`,
+    [cardId, card?.cardImage, card?.name, leadPath],
+  );
+
+  const lastImageStateKeyRef = useRef<string | null>(null);
   const lastImageSrcRef = useRef<string | null>(null);
-  
+
   useEffect(() => {
-    // Só processar se o cardId mudou
-    if (cardId === lastCardIdRef.current && lastImageSrcRef.current !== null) {
-      return; // Já processamos esta carta
+    if (imageStateKey === lastImageStateKeyRef.current && lastImageSrcRef.current !== null) {
+      return;
     }
-    
-    // Se o cardId mudou, resetar tudo
-    if (cardId !== lastCardIdRef.current) {
-      lastCardIdRef.current = cardId;
+
+    const identityChanged = imageStateKey !== lastImageStateKeyRef.current;
+    lastImageStateKeyRef.current = imageStateKey;
+    if (identityChanged) {
       setHasError(false);
       setCurrentIndex(0);
       setAttemptedPaths(new Set());
@@ -119,11 +132,6 @@ export default function CardImage({
     // O getAllCardImagePaths retorna caminhos na ordem: nome da carta -> idCarta (YGOPRO_ ignorado)
     if (possiblePaths.length > 0) {
       const firstPath = possiblePaths[0];
-      if (isDev) {
-        console.log(
-          `[CardImage] 🎯 "${card?.name?.slice(0, 28)}…" → ${firstPath} (+${possiblePaths.length - 1} fallbacks)`,
-        );
-      }
       setImageSrc(firstPath);
       imageSrcRef.current = firstPath;
       lastImageSrcRef.current = firstPath;
@@ -159,7 +167,7 @@ export default function CardImage({
     imageSrcRef.current = null;
     lastImageSrcRef.current = null;
     setHasError(true);
-  }, [cardId, cardImageUrl, possiblePaths, card?.name, card?.cardImage]);
+  }, [imageStateKey, cardId, cardImageUrl, possiblePaths, card?.name, card?.cardImage, card]);
 
   const handleImageError = () => {
     const currentSrc = imageSrcRef.current;
@@ -169,7 +177,6 @@ export default function CardImage({
       const newAttempted = new Set(prev);
       if (currentSrc) {
         newAttempted.add(currentSrc);
-        if (isDev) console.log(`[CardImage] ❌ falhou "${card?.name?.slice(0, 24)}":`, currentSrc);
       }
       
       // Tentar próximo caminho se houver
@@ -178,7 +185,6 @@ export default function CardImage({
         const nextPath = possiblePaths[nextIndex];
         // Verificar se já tentamos este caminho
         if (!newAttempted.has(nextPath)) {
-          if (isDev) console.log(`[CardImage] 🔄 (${nextIndex + 1}/${possiblePaths.length})`, nextPath);
           // Atualizar refs e estado
           currentIndexRef.current = nextIndex;
           imageSrcRef.current = nextPath;

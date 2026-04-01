@@ -4,6 +4,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import axios from 'axios';
 import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
+import { formatScore } from '../utils/formatScore';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -582,13 +583,13 @@ export default function GroupDetailPage() {
                           <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
                             <div className="text-xs text-slate-400 mb-1">Score Geral</div>
                             <div className="text-yellow-400 font-bold text-lg">
-                              {group.totalScore?.toLocaleString() || 0}
+                              {formatScore(group.totalScore ?? 0)}
                             </div>
                           </div>
                           <div className="bg-slate-900/30  rounded-lg p-3 border border-white/10">
                             <div className="text-xs text-slate-400 mb-1">Score Season</div>
                             <div className="text-blue-400 font-bold text-lg">
-                              {(group.seasonScore || 0).toLocaleString()}
+                              {formatScore(group.seasonScore || 0)}
                             </div>
                           </div>
                         </div>
@@ -975,7 +976,7 @@ export default function GroupDetailPage() {
                             </div>
                             <div className="flex items-center gap-4 text-sm text-slate-400">
                               <span>Nível {member.user?.level || 0}</span>
-                              <span>Score Total: {member.totalScore?.toLocaleString() || 0}</span>
+                              <span>Score Total: {formatScore(member.totalScore ?? 0)}</span>
                               <span>V/D: <span className="text-green-400">{member.contributedWins || 0}</span> / <span className="text-red-400">{member.contributedLosses || 0}</span></span>
                             </div>
                           </div>
@@ -1027,7 +1028,7 @@ export default function GroupDetailPage() {
 
         {/* Ranking de Membros */}
         {!showRequestsTab && activeTab !== 'members' && (
-        <div className="bg-slate-900/30  rounded-2xl border border-slate-700/50 overflow-hidden">
+          <div className="bg-slate-900/30 rounded-2xl border border-slate-700/50 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-slate-900/30 ">
@@ -1120,9 +1121,13 @@ export default function GroupDetailPage() {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <span className="text-xl font-bold text-yellow-400">
-                          {(activeTab === 'weekly' ? member.weeklyScore :
-                            activeTab === 'season' ? member.seasonScore :
-                            member.totalScore).toLocaleString()}
+                          {formatScore(
+                            activeTab === 'weekly'
+                              ? member.weeklyScore
+                              : activeTab === 'season'
+                                ? member.seasonScore
+                                : member.totalScore
+                          )}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
@@ -1136,7 +1141,7 @@ export default function GroupDetailPage() {
               </tbody>
             </table>
           </div>
-        </div>
+          </div>
         )}
       </div>
 
@@ -1436,18 +1441,27 @@ export default function GroupDetailPage() {
 
             <div className="flex gap-4">
               <button
+                type="button"
                 onClick={() => {
                   setShowDeleteModal(false);
                   setDeletePassword('');
                 }}
-                className="flex-1 py-3 bg-slate-700 text-white rounded-xl font-bold hover:bg-slate-600 transition-colors"
+                className={
+                  'flex-1 py-3 bg-slate-700 text-white rounded-xl font-bold ' +
+                  'hover:bg-slate-600 transition-colors'
+                }
               >
                 Cancelar
               </button>
               <button
+                type="button"
                 onClick={handleDeleteGroup}
                 disabled={!deletePassword}
-                className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors disabled:bg-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                className={
+                  'flex-1 py-3 bg-red-600 text-white rounded-xl font-bold ' +
+                  'hover:bg-red-700 transition-colors disabled:bg-red-900 ' +
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
+                }
               >
                 Excluir
               </button>

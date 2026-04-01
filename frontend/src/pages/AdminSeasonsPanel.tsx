@@ -147,6 +147,27 @@ export default function AdminSeasonsPanel() {
     }
   };
 
+  const handleActivateSeason = async (id: string) => {
+    if (
+      !confirm(
+        'Esta será a única season ativa. Todas as outras serão desativadas. Os jogadores passarão a pontuar nesta temporada. Continuar?',
+      )
+    ) {
+      return;
+    }
+    try {
+      setLoading(true);
+      await api.put(`/seasons/admin/${id}`, { isActive: true });
+      setMessage({ type: 'success', text: '✅ Season ativada. As demais foram desativadas.' });
+      loadSeasons();
+    } catch (error: any) {
+      console.error('Erro ao ativar season:', error);
+      setMessage({ type: 'error', text: `❌ Erro: ${error.response?.data?.message || error.message}` });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       name: '',
@@ -212,6 +233,9 @@ export default function AdminSeasonsPanel() {
             Gerenciar Seasons
           </h1>
           <p className="text-slate-400 text-lg">Configure temporadas, prêmios e divisões</p>
+          <p className="text-amber-200/90 text-sm mt-2">
+            Apenas uma season pode estar <strong>ativa</strong> por vez. Ao ativar uma season, as outras são desativadas automaticamente.
+          </p>
         </motion.div>
 
         {message && (
@@ -281,13 +305,22 @@ export default function AdminSeasonsPanel() {
                     </div>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2 justify-end">
                   {season.isActive && (
                     <button
                       onClick={() => handleEndSeason(season.id)}
                       className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg"
                     >
                       Finalizar
+                    </button>
+                  )}
+                  {!season.isActive && (
+                    <button
+                      type="button"
+                      onClick={() => handleActivateSeason(season.id)}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold"
+                    >
+                      Tornar ativa
                     </button>
                   )}
                   <button

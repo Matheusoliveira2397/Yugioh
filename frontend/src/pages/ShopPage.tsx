@@ -4,11 +4,14 @@ import { useAuthStore } from '../stores/authStore';
 import api from '../api/axios';
 import CardImage from '../components/CardImage';
 import LatestCardsMarquee, { type MarqueeCard } from '../components/LatestCardsMarquee';
+import { CARD_IMAGE_GRID_PROPS } from '../utils/cardImage';
 import { useCosmeticsStore } from '../stores/cosmeticsStore';
 import { getCardDescription } from '../utils/cardDescription';
 
 interface Card {
   id: string;
+  /** ID estável da carta (ex.: YGOPRO_*); necessário para caminho correto da arte no carrossel. */
+  idCarta?: string;
   name: string;
   description: string;
   cardImage: string;
@@ -70,7 +73,20 @@ interface TalismanTemplate {
   isActive: boolean;
   isForSale: boolean;
 }
-type ShopCategory = 'cards' | 'playmats' | 'sleeves' | 'talismans';
+interface MaletaTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  image: string | null;
+  bonusDecks: number;
+  bonusMaletaCapacity: number;
+  priceCredits: number | null;
+  priceCash: number | null;
+  isActive: boolean;
+  isForSale: boolean;
+  createdAt?: string;
+}
+type ShopCategory = 'cards' | 'playmats' | 'sleeves' | 'talismans' | 'items';
 
 export default function ShopPage() {
   const { user } = useAuthStore();
@@ -100,7 +116,7 @@ export default function ShopPage() {
     price: number;
     remainingCredits?: number;
     remainingCash?: number;
-    category: 'cards' | 'playmats' | 'sleeves' | 'talismans';
+    category: 'cards' | 'playmats' | 'sleeves' | 'talismans' | 'items';
   } | {
     type: 'sell';
     cardName: string;
@@ -129,6 +145,10 @@ export default function ShopPage() {
 
   // Estado dos dropdowns
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [maletas, setMaletas] = useState<MaletaTemplate[]>([]);
+  const [loadingMaletas, setLoadingMaletas] = useState(false);
+  const [buyingMaletaTemplateId, setBuyingMaletaTemplateId] = useState<string | null>(null);
+  const [ownedMaletaTemplateIds, setOwnedMaletaTemplateIds] = useState<Set<string>>(new Set());
 
   // Ao entrar na loja, mostrar sempre a aba/tela de destaque
   useEffect(() => {
@@ -307,16 +327,51 @@ export default function ShopPage() {
       }
     };
 
+    const fetchMaletas = async () => {
+      try {
+        setLoadingMaletas(true);
+        const response = await api.get('/shop/maletas');
+        if (!cancelled) {
+          setMaletas(Array.isArray(response.data) ? response.data : []);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar maletas:', error);
+        if (!cancelled) setMaletas([]);
+      } finally {
+        if (!cancelled) setLoadingMaletas(false);
+      }
+    };
+
     if (mode === 'buy') {
       if (category === null || category === 'playmats') fetchPlaymats();
       if (category === null || category === 'sleeves') fetchSleeves();
       if (category === null || category === 'talismans') fetchTalismans();
+      if (category === null || category === 'items') fetchMaletas();
     }
     
     return () => {
       cancelled = true;
     };
   }, [category, mode]);
+
+  // Quais níveis de maleta o usuário já comprou (aba Itens + desabilitar botão)
+  useEffect(() => {
+    if (!user || mode !== 'buy' || category !== 'items') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await api.get('/shop/inventory');
+        if (cancelled) return;
+        const list = Array.isArray(r.data?.maletas) ? r.data.maletas : [];
+        setOwnedMaletaTemplateIds(new Set(list.map((m: { maletaTemplateId: string }) => m.maletaTemplateId)));
+      } catch {
+        if (!cancelled) setOwnedMaletaTemplateIds(new Set());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, mode, category]);
 
   // Novos itens (últimas 8 cartas adicionadas ou featured)
   const newItems = useMemo(() => {
@@ -533,6 +588,8 @@ export default function ShopPage() {
       return playmats;
     } else if (category === 'talismans') {
       return talismans;
+    } else if (category === 'items') {
+      return maletas;
     } else {
       return sleeves;
     }
@@ -653,6 +710,50 @@ export default function ShopPage() {
     setPurchaseItem({ item, method: paymentMethod });
     setPurchaseQuantity(1);
     setShowPurchaseConfirm(true);
+  };
+
+  const handlePurchaseMaleta = async (maletaTemplateId: string, paymentMethod: 'credits' | 'cash') => {
+    if (!user || buyingMaletaTemplateId) return;
+
+    const template = maletas.find(m => m.id === maletaTemplateId);
+    if (!template) return;
+
+    const price = paymentMethod === 'credits' ? (template.priceCredits ?? 0) : (template.priceCash ?? 0);
+    const balance = paymentMethod === 'credits' ? (user.credits || 0) : (user.cash || 0);
+    if (balance < price) {
+      alert(`${paymentMethod === 'credits' ? 'Créditos' : 'Cash'} insuficientes! Você tem ${balance} mas precisa de ${price}`);
+      return;
+    }
+
+    if (!price || price <= 0) {
+      alert('Este modo de pagamento não está disponível para esta maleta.');
+      return;
+    }
+
+    const ok = window.confirm(
+      `Comprar ${template.name} por ${price} ${paymentMethod === 'credits' ? 'créditos' : 'cash'}?` +
+      `\nBônus: +${template.bonusDecks} deck(s) e +${template.bonusMaletaCapacity} cartas na maleta.`,
+    );
+    if (!ok) return;
+
+    try {
+      setBuyingMaletaTemplateId(maletaTemplateId);
+      const response = await api.post('/shop/purchase-briefcase', { maletaTemplateId, paymentMethod });
+      const updatedUser = {
+        ...user,
+        credits: response.data.remainingBalance?.credits ?? user.credits,
+        cash: response.data.remainingBalance?.cash ?? user.cash,
+        maxDecks: response.data.limits?.maxDecks ?? user.maxDecks,
+        maletaCapacity: response.data.limits?.maletaCapacity ?? user.maletaCapacity,
+      };
+      useAuthStore.getState().setUser(updatedUser);
+      setOwnedMaletaTemplateIds((prev) => new Set(prev).add(maletaTemplateId));
+      alert(response.data.message || 'Maleta comprada com sucesso!');
+    } catch (error: any) {
+      alert(`❌ Erro: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setBuyingMaletaTemplateId(null);
+    }
   };
 
   const handlePurchaseConfirm = async () => {
@@ -851,6 +952,7 @@ export default function ShopPage() {
   const newItemsMarqueeCards: MarqueeCard[] = useMemo(() => {
     return newItems.map((c) => ({
       id: c.id,
+      idCarta: c.idCarta,
       name: c.name,
       cardImage: c.cardImage,
       type: c.type,
@@ -872,6 +974,7 @@ export default function ShopPage() {
   const featuredCardsMarquee: MarqueeCard[] = useMemo(() => {
     return featuredCards.map((c) => ({
       id: c.id,
+      idCarta: c.idCarta,
       name: c.name,
       cardImage: c.cardImage,
       type: c.type,
@@ -882,6 +985,7 @@ export default function ShopPage() {
   const featuredPlaymats = useMemo(() => playmats.slice(0, 3), [playmats]);
   const featuredSleeves = useMemo(() => sleeves.slice(0, 3), [sleeves]);
   const featuredTalismans = useMemo(() => talismans.slice(0, 3), [talismans]);
+  const featuredMaletas = useMemo(() => maletas.slice(0, 4), [maletas]);
 
   // Cartas em promoção (com desconto ativo)
   const promotionCards = useMemo(() => {
@@ -890,6 +994,7 @@ export default function ShopPage() {
   const promotionCardsMarquee: MarqueeCard[] = useMemo(() => {
     return promotionCards.map((c) => ({
       id: c.id,
+      idCarta: c.idCarta,
       name: c.name,
       cardImage: c.cardImage,
       type: c.type,
@@ -939,7 +1044,7 @@ export default function ShopPage() {
           </button>
         </div>
 
-        {/* Abas: Destaques | Cartas | Playmats | Sleeves | Talismãs */}
+        {/* Abas: Destaques | Cartas | Itens | Playmats | Sleeves | Talismãs */}
         <div className="mb-6">
           <div className="flex flex-wrap gap-2 rounded-xl p-2">
             <button
@@ -961,6 +1066,16 @@ export default function ShopPage() {
               }`}
             >
               🎴 Cartas
+            </button>
+            <button
+              onClick={() => { setCategory('items'); setCurrentPage(1); }}
+              className={`px-4 py-2.5 text-sm font-bold transition-all rounded-lg ${
+                category === 'items'
+                  ? 'bg-gradient-to-r from-amber-600/80 to-yellow-600/80 text-white shadow-lg'
+                  : 'text-gray-300 hover:bg-white/10'
+              }`}
+            >
+              📦 Itens
             </button>
             <button
               onClick={() => { setCategory('playmats'); setCurrentPage(1); }}
@@ -1119,7 +1234,32 @@ export default function ShopPage() {
                     </div>
                   </div>
                 )}
-                {featuredCardsMarquee.length === 0 && featuredPlaymats.length === 0 && featuredSleeves.length === 0 && featuredTalismans.length === 0 && (
+                {featuredMaletas.length > 0 && (
+                  <div>
+                    <p className="text-sm text-gray-400 mb-2">🧳 Maletas</p>
+                    <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                      {featuredMaletas.map((m) => {
+                        const src = m.image ? (m.image.startsWith('http') ? m.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${m.image}`) : '';
+                        return (
+                          <motion.div
+                            key={m.id}
+                            whileHover={{ scale: 1.03 }}
+                            onClick={() => { setCategory('items'); setMode('buy'); setCurrentPage(1); }}
+                            className="flex-shrink-0 w-28 cursor-pointer rounded-lg overflow-hidden border border-amber-400/40 bg-slate-800/50"
+                          >
+                            {src ? (
+                              <img src={src} alt={m.name} className="w-full aspect-[4/3] object-cover" />
+                            ) : (
+                              <div className="w-full aspect-[4/3] flex items-center justify-center text-2xl bg-amber-900/40">🧳</div>
+                            )}
+                            <p className="text-[10px] text-white truncate p-1">{m.name}</p>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {featuredCardsMarquee.length === 0 && featuredPlaymats.length === 0 && featuredSleeves.length === 0 && featuredTalismans.length === 0 && featuredMaletas.length === 0 && (
                   <p className="text-gray-400 text-sm text-center py-4">Carregando itens em destaque...</p>
                 )}
               </div>
@@ -1388,7 +1528,7 @@ export default function ShopPage() {
             )}
 
             {/* Grid de Itens */}
-            {loading ? (
+            {(mode === 'buy' && category === 'items' ? loadingMaletas : loading) ? (
               <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
                 <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
                 <p className="mt-4 text-gray-200">Carregando...</p>
@@ -1403,7 +1543,7 @@ export default function ShopPage() {
               </div>
             ) : (
               <div className="bg-transparent p-4 mb-6">
-                <div className={category === 'playmats' || category === 'talismans'
+                <div className={category === 'playmats' || category === 'talismans' || category === 'items'
                   ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center"
                   : "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3"
                 }>
@@ -1424,9 +1564,12 @@ export default function ShopPage() {
                             onClick={() => setSelectedCard(card)}
                           >
                             <CardImage
+                              {...CARD_IMAGE_GRID_PROPS}
                               card={card}
                               className="w-full h-full object-cover rounded-lg shadow-lg hover:shadow-xl transition-all"
                               fallback="/images/fundoCarta.webp"
+                              loading={index < 36 ? 'eager' : 'lazy'}
+                              fetchPriority={index < 12 ? 'high' : 'auto'}
                             />
                             {card.promotionDiscountPercent ? (
                               <div
@@ -1616,7 +1759,75 @@ export default function ShopPage() {
                           </div>
                         </motion.div>
                       );
-                    } else {
+                    } else if (category === 'items') {
+                      const m = item as MaletaTemplate;
+                      const imageSrc = m.image
+                        ? (m.image.startsWith('http') ? m.image : `${API_URL}${m.image}`)
+                        : '';
+                      const owned = ownedMaletaTemplateIds.has(m.id);
+                      return (
+                        <motion.div
+                          key={m.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.05 }}
+                          whileHover={{ scale: 1.03, zIndex: 10 }}
+                          className="flex flex-col bg-gradient-to-br from-amber-900/40 to-yellow-900/30 backdrop-blur-sm rounded-xl p-5 border border-amber-500/35 hover:border-amber-400/50 shadow-xl hover:shadow-2xl transition-all w-full max-w-md mx-auto"
+                        >
+                          <div className="relative w-full aspect-[4/3] mb-4 bg-gradient-to-br from-amber-500/25 to-yellow-600/20 rounded-xl overflow-hidden border border-amber-400/40 flex items-center justify-center">
+                            {imageSrc ? (
+                              <img
+                                src={imageSrc}
+                                alt={m.name}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display = 'none';
+                                }}
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-5xl text-amber-200/80">🧳</div>
+                            )}
+                          </div>
+                          <h3 className="text-base font-bold text-white mb-1 truncate" title={m.name}>
+                            {m.name}
+                          </h3>
+                          {m.description ? (
+                            <p className="text-xs text-gray-400 mb-2 line-clamp-2">{m.description}</p>
+                          ) : null}
+                          <p className="text-xs text-amber-100/90 mb-3">
+                            +{m.bonusDecks} deck(s) • +{m.bonusMaletaCapacity} cartas na maleta
+                          </p>
+                          {user ? (
+                            <p className="text-[10px] text-gray-400 mb-2">
+                              Seus limites: {user.maxDecks ?? 3} decks • {user.maletaCapacity ?? 500} cartas
+                            </p>
+                          ) : null}
+                          {owned ? (
+                            <p className="text-xs font-bold text-emerald-300 mb-2">✓ Você já possui este nível</p>
+                          ) : null}
+                          <div className="flex gap-2 mt-auto">
+                            {(m.priceCredits ?? 0) > 0 ? (
+                              <button
+                                onClick={() => handlePurchaseMaleta(m.id, 'credits')}
+                                disabled={buyingMaletaTemplateId !== null || owned}
+                                className="flex-1 px-3 py-2 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-700 hover:to-yellow-700 rounded text-xs font-bold transition-all shadow-lg text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                💰 {m.priceCredits}
+                              </button>
+                            ) : null}
+                            {(m.priceCash ?? 0) > 0 ? (
+                              <button
+                                onClick={() => handlePurchaseMaleta(m.id, 'cash')}
+                                disabled={buyingMaletaTemplateId !== null || owned}
+                                className="flex-1 px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded text-xs font-bold transition-all shadow-lg text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                💵 {Math.floor(Number(m.priceCash ?? 0))}
+                              </button>
+                            ) : null}
+                          </div>
+                        </motion.div>
+                      );
+                    } else if (category === 'sleeves') {
                       const sleeve = item as Sleeve;
                       const sleeveImageSrc = sleeve.image
                         ? (sleeve.image.startsWith('http')
@@ -1736,6 +1947,7 @@ export default function ShopPage() {
                   {category === 'playmats' && ` (${currentItems.length} playmats)`}
                   {category === 'sleeves' && ` (${currentItems.length} sleeves)`}
                   {category === 'talismans' && ` (${currentItems.length} talismãs)`}
+                  {category === 'items' && ` (${currentItems.length} maletas)`}
                 </span>
               </div>
             )}
@@ -1797,9 +2009,12 @@ export default function ShopPage() {
                           >
                             <div className="relative w-full aspect-[2/3] mb-2 rounded-lg overflow-hidden">
                               <CardImage
+                                {...CARD_IMAGE_GRID_PROPS}
                                 card={card}
                                 className="w-full h-full object-cover rounded-lg shadow-lg hover:shadow-xl transition-all"
                                 fallback="/images/fundoCarta.webp"
+                                loading={index < 36 ? 'eager' : 'lazy'}
+                                fetchPriority={index < 12 ? 'high' : 'auto'}
                               />
                               {(() => {
                                 const sellableQty = (userCard as any).sellableQuantity ?? userCard.quantity;
@@ -1919,7 +2134,13 @@ export default function ShopPage() {
               </>
             ) : (
               <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
-                <p className="text-gray-200 text-lg">Venda de {category === 'playmats' ? 'playmats' : 'sleeves'} em breve!</p>
+                <p className="text-gray-200 text-lg">
+                  {category === 'items' || category === 'talismans'
+                    ? 'Esta categoria é só para compra. Use a aba Comprar.'
+                    : category === 'playmats'
+                      ? 'Venda de playmats em breve!'
+                      : 'Venda de sleeves em breve!'}
+                </p>
               </div>
             )}
           </div>
@@ -1960,10 +2181,14 @@ export default function ShopPage() {
               
               <div className="w-full mb-4 relative rounded-lg overflow-hidden border-2 border-white/20 shadow-lg mx-auto" style={{ aspectRatio: '421/614', maxWidth: '200px', maxHeight: '280px' }}>
                 <CardImage
+                  {...CARD_IMAGE_GRID_PROPS}
                   card={selectedCard}
                   className="w-full h-full rounded-lg"
                   style={{ minHeight: '140px' }}
                   fallback="/images/fundoCarta.webp"
+                  loading="eager"
+                  fetchPriority="high"
+                  sizes="200px"
                 />
                 {selectedCard.promotionDiscountPercent ? (
                   <div
@@ -2232,6 +2457,8 @@ export default function ShopPage() {
                           card={{ cardImage: successModal.itemImage, name: successModal.itemName }}
                           className="w-full h-full object-cover"
                           fallback="/images/fundoCarta.webp"
+                          loading="eager"
+                          sizes="120px"
                         />
                       ) : (
                         <img
@@ -2279,6 +2506,8 @@ export default function ShopPage() {
                         card={{ cardImage: successModal.cardImage, name: successModal.cardName }}
                         className="w-full h-full object-cover"
                         fallback="/images/fundoCarta.webp"
+                        loading="eager"
+                        sizes="120px"
                       />
                     </div>
                   )}

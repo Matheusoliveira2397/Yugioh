@@ -77,12 +77,29 @@ export class ShopController {
     return this.shopService.getTalismanTemplates();
   }
 
+  @Get('maletas')
+  async getMaletaTemplates() {
+    this.logRequest('GET', '/maletas');
+    return this.shopService.getMaletaTemplates();
+  }
+
   @Post('purchase-talisman')
   @UseGuards(JwtAuthGuard)
   async purchaseTalisman(@Request() req: any, @Body() dto: PurchaseTalismanDto) {
     this.logRequest('POST', '/purchase-talisman');
     const userId = req.user.id;
     return this.shopService.purchaseTalisman(userId, dto.talismanTemplateId, dto.paymentMethod as 'credits' | 'cash');
+  }
+
+  @Post('purchase-briefcase')
+  @UseGuards(JwtAuthGuard)
+  async purchaseBriefcase(
+    @Request() req: any,
+    @Body() body: { maletaTemplateId: string; paymentMethod: 'credits' | 'cash' },
+  ) {
+    this.logRequest('POST', '/purchase-briefcase');
+    const userId = req.user.id;
+    return this.shopService.purchaseBriefcase(userId, body.maletaTemplateId, body.paymentMethod);
   }
 
   @Post('talisman/equip')
@@ -132,7 +149,8 @@ export class ShopController {
     console.log('🔍 Inventário retornado:', {
       cards: inventory.cards?.length || 0,
       playmats: inventory.playmats?.length || 0,
-      skins: inventory.skins?.length || 0
+      skins: inventory.skins?.length || 0,
+      maletas: inventory.maletas?.length || 0,
     });
     return inventory;
   }

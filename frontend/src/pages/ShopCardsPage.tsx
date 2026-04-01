@@ -3,10 +3,12 @@ import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
 import { api } from '../api/axios';
 import CardImage from '../components/CardImage';
+import { CARD_IMAGE_GRID_PROPS } from '../utils/cardImage';
 import { getCardDescription } from '../utils/cardDescription';
 
 interface Card {
   id: string;
+  idCarta?: string;
   name: string;
   description: string;
   cardImage?: string;
@@ -266,9 +268,12 @@ export default function ShopCardsPage() {
                       <div className={`absolute inset-0 bg-gradient-to-br ${getRarityColor(card.rarity)} opacity-30`}></div>
                       <div className="absolute inset-0 flex items-center justify-center p-4">
                         <CardImage
+                          {...CARD_IMAGE_GRID_PROPS}
                           card={card}
-                          className="h-full object-contain drop-shadow-2xl group-hover:scale-110 transition-transform duration-300"
+                          className="h-full w-full object-contain drop-shadow-2xl group-hover:scale-110 transition-transform duration-300"
                           fallback="linear-gradient(to bottom, #1e3a8a, #7c3aed, #dc2626)"
+                          loading={index < 24 ? 'eager' : 'lazy'}
+                          fetchPriority={index < 8 ? 'high' : 'auto'}
                         />
                       </div>
                       

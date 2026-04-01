@@ -557,6 +557,53 @@ export class AdminController {
     return this.shopService.deleteTalismanTemplate(id);
   }
 
+  // ==================== MALJETAS ====================
+
+  @Get('maletas')
+  getAllMaletas() {
+    return this.shopService.getMaletaTemplatesForAdmin();
+  }
+
+  @Post('maletas')
+  createMaleta(
+    @Body() body: {
+      name: string;
+      description?: string | null;
+      image?: string | null;
+      bonusDecks?: number;
+      bonusMaletaCapacity?: number;
+      priceCredits?: number | null;
+      priceCash?: number | null;
+      isActive?: boolean;
+      isForSale?: boolean;
+    },
+  ) {
+    return this.shopService.createMaletaTemplate(body);
+  }
+
+  @Put('maletas/:id')
+  updateMaleta(
+    @Param('id') id: string,
+    @Body() body: {
+      name?: string;
+      description?: string | null;
+      image?: string | null;
+      bonusDecks?: number;
+      bonusMaletaCapacity?: number;
+      priceCredits?: number | null;
+      priceCash?: number | null;
+      isActive?: boolean;
+      isForSale?: boolean;
+    },
+  ) {
+    return this.shopService.updateMaletaTemplate(id, body);
+  }
+
+  @Delete('maletas/:id')
+  deleteMaleta(@Param('id') id: string) {
+    return this.shopService.deleteMaletaTemplate(id);
+  }
+
   // ==================== PROMOÇÕES (CARTAS) ====================
 
   @Get('promotions')

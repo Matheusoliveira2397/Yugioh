@@ -63,13 +63,22 @@ export class HttpExceptionFilter implements ExceptionFilter {
       }
     }
 
-    console.error('❌ Exception caught:', {
-      status,
-      message,
-      path: request.url,
-      method: request.method,
-      error: exception instanceof Error ? exception.stack : exception,
-    });
+    // 401 em rotas JWT é comum (token expirado, sessão inválida): não spammar stack no log.
+    if (status === 401) {
+      console.warn('⚠️ HTTP 401:', {
+        path: request.url?.split('?')[0],
+        method: request.method,
+        message,
+      });
+    } else {
+      console.error('❌ Exception caught:', {
+        status,
+        message,
+        path: request.url,
+        method: request.method,
+        error: exception instanceof Error ? exception.stack : exception,
+      });
+    }
 
     response.status(status).json({
       statusCode: status,

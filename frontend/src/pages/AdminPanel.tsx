@@ -19,6 +19,7 @@ const defaultCards: AdminCard[] = [
   { id: 'playmats', label: 'Playmats', icon: '🎨', description: 'Tapetes de duelo', route: '/admin/playmats', bg: 'bg-cyan-900/40', iconBg: 'bg-cyan-500/30', accent: 'border-l-cyan-500' },
   { id: 'sleeves', label: 'Sleeves', icon: '🎭', description: 'Sleeves (fundo de carta)', route: '/admin/sleeves', bg: 'bg-teal-900/40', iconBg: 'bg-teal-500/30', accent: 'border-l-cyan-500' },
   { id: 'talismans', label: 'Talismãs', icon: '✨', description: 'Criar e gerenciar talismãs da loja', route: '/admin/talismans', bg: 'bg-amber-900/40', iconBg: 'bg-amber-500/30', accent: 'border-l-amber-500' },
+  { id: 'briefcases', label: 'Maletas', icon: '🧳', description: 'Criar e gerenciar maletas (limites de decks e cartas)', route: '/admin/briefcases', bg: 'bg-amber-900/40', iconBg: 'bg-amber-500/30', accent: 'border-l-amber-400' },
   { id: 'promotions', label: 'Promoções', icon: '🏷️', description: 'Promoções e descontos nas cartas da loja', route: '/admin/promotions', bg: 'bg-rose-900/40', iconBg: 'bg-rose-500/30', accent: 'border-l-rose-500' },
   { id: 'players', label: 'Jogadores', icon: '👤', description: 'Usuários e perfis', route: '/admin/players', bg: 'bg-blue-900/40', iconBg: 'bg-blue-500/30', accent: 'border-l-blue-500' },
   { id: 'arena', label: 'Arena', icon: '🏟️', description: 'Arenas e agendamentos', route: '/admin/arena', bg: 'bg-indigo-900/40', iconBg: 'bg-indigo-500/30', accent: 'border-l-blue-500' },
@@ -41,7 +42,7 @@ const defaultCards: AdminCard[] = [
 const CATEGORIES: { key: string; label: string; ids: string[] }[] = [
   { key: 'contas', label: 'Contas e Acesso', ids: ['create-account', 'admin-control', 'site-tabs', 'new-account-settings'] },
   { key: 'cartas', label: 'Cartas e Decks', ids: ['cards', 'card-ownership', 'initial-decks'] },
-  { key: 'loja', label: 'Loja e Cosméticos', ids: ['playmats', 'sleeves', 'talismans', 'promotions'] },
+  { key: 'loja', label: 'Loja e Cosméticos', ids: ['playmats', 'sleeves', 'talismans', 'briefcases', 'promotions'] },
   { key: 'comunicacao', label: 'Notícias e Comunicação', ids: ['news', 'messages', 'feedback', 'social-media'] },
   { key: 'jogadores', label: 'Jogadores', ids: ['players'] },
   { key: 'duelos', label: 'Duelos e Arena', ids: ['arena', 'active-duels', 'random-duel-level-ranges', 'anime-decks', 'duel-score-settings'] },

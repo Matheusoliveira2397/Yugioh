@@ -82,6 +82,14 @@ export class User {
   @Column({ default: true })
   isOnline: boolean;
 
+  /** Quantidade máxima de decks que o usuário pode criar/salvar. */
+  @Column({ type: 'int', default: 3, name: 'max_decks' })
+  maxDecks: number;
+
+  /** Capacidade máxima de cartas na maleta (soma das quantidades em user_cards). */
+  @Column({ type: 'int', default: 500, name: 'maleta_capacity' })
+  maletaCapacity: number;
+
   // Sistema de Ban e Moderação
   @Column({ default: false })
   isBanned: boolean;

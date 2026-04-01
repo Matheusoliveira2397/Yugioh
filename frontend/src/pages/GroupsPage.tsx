@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/authStore';
 import api from '../api/axios';
 import { getApiErrorMessage } from '../utils/api-error';
 import { getImageUrl } from '../utils/imageUrl';
+import { formatScore } from '../utils/formatScore';
 
 interface Group {
   id: string;
@@ -441,7 +442,7 @@ export default function GroupsPage() {
                           ? 'text-orange-400'
                           : 'text-purple-400'
                       }`}>
-                        {(activeTab === 'season' ? group.seasonScore : group.totalScore)?.toLocaleString() || 0}
+                        {formatScore((activeTab === 'season' ? group.seasonScore : group.totalScore) ?? 0)}
                       </div>
                     </div>
 

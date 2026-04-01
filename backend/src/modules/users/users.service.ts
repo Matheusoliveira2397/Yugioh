@@ -131,6 +131,18 @@ export class UsersService implements OnModuleInit {
     } catch (e: any) {
       console.warn('⚠️ [UsersService] Coluna adminAllowedTabs:', e?.message);
     }
+
+    // Colunas da funcionalidade de maleta (limites)
+    try {
+      await this.usersRepository.query(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS "max_decks" INTEGER NOT NULL DEFAULT 3
+      `);
+      await this.usersRepository.query(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS "maleta_capacity" INTEGER NOT NULL DEFAULT 500
+      `);
+    } catch (e: any) {
+      console.warn('⚠️ [UsersService] Colunas de maleta:', e?.message);
+    }
   }
 
   private normalizeProfileImage(profileImage: string | null | undefined): string | null {
@@ -212,6 +224,8 @@ export class UsersService implements OnModuleInit {
           'createdAt',
           'updatedAt',
           'adminAllowedTabs',
+          'maxDecks',
+          'maletaCapacity',
         ]
       });
       if (!user) {
@@ -298,6 +312,8 @@ export class UsersService implements OnModuleInit {
           'equippedDeckName',
         'createdAt',
         'updatedAt',
+        'maxDecks',
+        'maletaCapacity',
       ]
     });
   }
@@ -339,6 +355,8 @@ export class UsersService implements OnModuleInit {
           'equippedDeckName',
         'createdAt',
         'updatedAt',
+        'maxDecks',
+        'maletaCapacity',
       ]
     });
   }
@@ -378,6 +396,8 @@ export class UsersService implements OnModuleInit {
         'equippedSkinImage',
         'createdAt',
         'updatedAt',
+        'maxDecks',
+        'maletaCapacity',
       ]
     });
   }
@@ -978,6 +998,7 @@ export class UsersService implements OnModuleInit {
           .addSelect('s.name', 'name')
           .addSelect('s.isActive', 'isActive')
           .where('s.isActive = :isActive', { isActive: true })
+          .orderBy('s.seasonNumber', 'DESC')
           .getRawOne();
         
         const activeSeason = activeSeasonRaw ? { id: activeSeasonRaw.id, name: activeSeasonRaw.name, isActive: activeSeasonRaw.isActive } : null;
@@ -1808,6 +1829,8 @@ export class UsersService implements OnModuleInit {
         'createdAt',
         'updatedAt',
         'adminAllowedTabs',
+        'maxDecks',
+        'maletaCapacity',
       ]
     });
     

@@ -82,13 +82,16 @@ export default function FriendsPage() {
 
   // Buscar solicitações pendentes
   const fetchPendingRequests = async () => {
-    if (!token) return;
+    if (!token?.trim() || !user?.id) return;
     try {
       setLoadingRequests(true);
       const response = await api.get('/friends/pending');
       setPendingRequests(response.data.received || []);
-    } catch (error) {
-      console.error('Erro ao carregar solicitações:', error);
+    } catch (error: any) {
+      const st = error?.response?.status;
+      if (st !== 401) {
+        console.error('Erro ao carregar solicitações:', error);
+      }
       setPendingRequests([]);
     } finally {
       setLoadingRequests(false);
@@ -99,7 +102,7 @@ export default function FriendsPage() {
     if (activeTab === 'requests') {
       fetchPendingRequests();
     }
-  }, [token, activeTab]);
+  }, [token, user?.id, activeTab]);
 
   // Atualizar lista quando chegar solicitação em tempo real
   useEffect(() => {

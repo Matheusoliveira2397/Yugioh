@@ -142,7 +142,7 @@ export class AuthService {
   }
 
   private getAccessTokenExpiresInSeconds(): number {
-    const fallback = this.configService.get<string>('JWT_EXPIRES_IN') ?? '15m';
+    const fallback = this.configService.get<string>('JWT_EXPIRES_IN') ?? '1h';
     const exp = this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') ?? fallback;
     if (typeof exp === 'number') return exp;
     const match = String(exp).match(/^(\d+)([smhd])$/);

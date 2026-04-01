@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/axios';
 import CardImage from '../components/CardImage';
+import { CARD_IMAGE_GRID_PROPS } from '../utils/cardImage';
 import { useAuthStore } from '../stores/authStore';
 
 interface DeckCardSummary {
@@ -105,7 +106,7 @@ export default function DeckBuilderPage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-                  {decks.map((deck) => {
+                  {decks.map((deck, deckIndex) => {
                     const cardsCount = deck.cards?.length ?? 0;
                     const mainDeckCount = deck.cards?.filter((c) => !(c as DeckCardSummary).isExtraDeck).length ?? 0;
                     const lastDeckCard =
@@ -145,9 +146,12 @@ export default function DeckBuilderPage() {
                         <div className="w-full max-w-[96px] mx-auto aspect-[2/3] rounded-lg overflow-hidden border border-white/20 mb-3">
                           {displayCard ? (
                             <CardImage
+                              {...CARD_IMAGE_GRID_PROPS}
                               card={displayCard}
                               className="w-full h-full object-cover"
                               fallback="/images/fundoCarta.webp"
+                              loading={deckIndex < 9 ? 'eager' : 'lazy'}
+                              fetchPriority={deckIndex < 3 ? 'high' : 'auto'}
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-gray-500 text-xs">

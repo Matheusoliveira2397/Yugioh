@@ -66,13 +66,16 @@ export default function NotificationBell() {
 
   // Buscar solicitações pendentes
   const fetchPendingRequests = async () => {
-    if (!token?.trim()) return;
+    if (!token?.trim() || !user?.id) return;
     try {
       setLoading(true);
       const response = await api.get('/friends/pending');
       setPendingRequests(response.data.received || []);
-    } catch (error) {
-      console.error('Erro ao carregar solicitações:', error);
+    } catch (error: any) {
+      const st = error?.response?.status;
+      if (st !== 401) {
+        console.error('Erro ao carregar solicitações:', error);
+      }
       setPendingRequests([]);
     } finally {
       setLoading(false);
@@ -118,7 +121,7 @@ export default function NotificationBell() {
     fetchPendingRequests();
     const interval = setInterval(fetchPendingRequests, 30000);
     return () => clearInterval(interval);
-  }, [token]);
+  }, [token, user?.id]);
 
   // Escutar mensagens do sistema via WebSocket
   useEffect(() => {

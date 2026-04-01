@@ -69,29 +69,29 @@ export const getCardImagePaths = (cardId: string | number | undefined | null): s
   // PRIORIDADE: Tentar nome exato primeiro, depois normalizado, depois variações
   const paths: string[] = [];
   
-  // 1. Tentar nome exato primeiro (mais comum - idCarta já está no formato correto)
+  // 1. Tentar nome exato — webp primeiro (comum no build atual), depois jpg
+  paths.push(`/images/cards/${idStr}.webp`);
   paths.push(`/images/cards/${idStr}.jpg`);
   paths.push(`/images/cards/${idStr}.jpeg`);
   paths.push(`/images/cards/${idStr}.png`);
-  paths.push(`/images/cards/${idStr}.webp`);
   
   // 2. Se o nome original tiver espaços ou caracteres especiais, normalizar e tentar
   const normalized = normalizeCardName(idStr);
   if (idStr !== normalized && normalized) {
+    paths.push(`/images/cards/${normalized}.webp`);
     paths.push(`/images/cards/${normalized}.jpg`);
     paths.push(`/images/cards/${normalized}.jpeg`);
     paths.push(`/images/cards/${normalized}.png`);
-    paths.push(`/images/cards/${normalized}.webp`);
   }
   
   // 3. Gerar variações (ex: HarpiesFeatherDuster -> Harpie'sFeatherDuster)
   const variations = generateCardNameVariations(idStr);
   for (const variation of variations) {
     if (variation !== idStr && variation !== normalized) {
+      paths.push(`/images/cards/${variation}.webp`);
       paths.push(`/images/cards/${variation}.jpg`);
       paths.push(`/images/cards/${variation}.jpeg`);
       paths.push(`/images/cards/${variation}.png`);
-      paths.push(`/images/cards/${variation}.webp`);
     }
   }
   
@@ -99,11 +99,15 @@ export const getCardImagePaths = (cardId: string | number | undefined | null): s
   if (normalized) {
     const normalizedVariations = generateCardNameVariations(normalized);
     for (const variation of normalizedVariations) {
-      if (variation !== idStr && variation !== normalized && !paths.includes(`/images/cards/${variation}.jpg`)) {
+      if (
+        variation !== idStr &&
+        variation !== normalized &&
+        !paths.some((p) => p.startsWith(`/images/cards/${variation}.`))
+      ) {
+        paths.push(`/images/cards/${variation}.webp`);
         paths.push(`/images/cards/${variation}.jpg`);
         paths.push(`/images/cards/${variation}.jpeg`);
         paths.push(`/images/cards/${variation}.png`);
-        paths.push(`/images/cards/${variation}.webp`);
       }
     }
   }
@@ -129,7 +133,7 @@ const getCardNameBasedPaths = (cardName: string): string[] => {
   if (!cardName) return [];
   
   const paths: string[] = [];
-  const extensions = ['.jpg', '.jpeg', '.png', '.webp'];
+  const extensions = ['.webp', '.jpg', '.jpeg', '.png'];
   
   // 1. Nome sanitizado (lowercase com underscores) com prefixo "card_" - formato mais comum nos arquivos
   // Formato: card_marshmallon_1769332490741.jpg
@@ -171,17 +175,66 @@ const getCardNameBasedPaths = (cardName: string): string[] => {
   return paths;
 };
 
-/** Cache de sessão: primeiro path que carregou com sucesso por idCarta (evita 404 em duplicatas no duelo/loja). */
+/** Cache: path que carregou com sucesso por idCarta (memória + localStorage — menos 404 e carregamento mais rápido ao voltar na página). */
 const cardImageLoadSuccess = new Map<string, string>();
+
+const CARD_IMG_CACHE_LS_KEY = 'ygo_card_img_path_v1';
+const CARD_IMG_CACHE_LS_MAX = 1000;
+let cardImageCacheHydratedFromLs = false;
+
+function hydrateCardImageCacheFromStorage(): void {
+  if (cardImageCacheHydratedFromLs || typeof localStorage === 'undefined') return;
+  cardImageCacheHydratedFromLs = true;
+  try {
+    const raw = localStorage.getItem(CARD_IMG_CACHE_LS_KEY);
+    if (!raw) return;
+    const obj = JSON.parse(raw) as Record<string, string>;
+    if (!obj || typeof obj !== 'object') return;
+    for (const [k, v] of Object.entries(obj)) {
+      if (k && typeof v === 'string' && v.trim()) cardImageLoadSuccess.set(k.trim(), v.trim());
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+if (typeof window !== 'undefined') {
+  queueMicrotask(() => hydrateCardImageCacheFromStorage());
+}
+
+let persistCardImgTimer: ReturnType<typeof setTimeout> | null = null;
+function schedulePersistCardImageCacheToStorage(): void {
+  if (typeof localStorage === 'undefined') return;
+  if (persistCardImgTimer) return;
+  persistCardImgTimer = setTimeout(() => {
+    persistCardImgTimer = null;
+    try {
+      const obj = Object.fromEntries(cardImageLoadSuccess);
+      let keys = Object.keys(obj);
+      if (keys.length > CARD_IMG_CACHE_LS_MAX) {
+        keys = keys.slice(-CARD_IMG_CACHE_LS_MAX);
+        const trimmed: Record<string, string> = {};
+        for (const k of keys) trimmed[k] = obj[k];
+        localStorage.setItem(CARD_IMG_CACHE_LS_KEY, JSON.stringify(trimmed));
+      } else {
+        localStorage.setItem(CARD_IMG_CACHE_LS_KEY, JSON.stringify(obj));
+      }
+    } catch {
+      /* quota / private mode */
+    }
+  }, 500);
+}
 
 export function rememberSuccessfulCardImagePath(cardKey: string, path: string): void {
   const k = (cardKey || '').trim();
   const p = (path || '').trim();
   if (!k || !p) return;
-  if (!cardImageLoadSuccess.has(k)) cardImageLoadSuccess.set(k, p);
+  cardImageLoadSuccess.set(k, p);
+  schedulePersistCardImageCacheToStorage();
 }
 
 export function peekSuccessfulCardImagePath(cardKey: string): string | null {
+  hydrateCardImageCacheFromStorage();
   return cardImageLoadSuccess.get((cardKey || '').trim()) ?? null;
 }
 
@@ -212,17 +265,22 @@ function isCardImagePath(p: string): boolean {
 }
 
 /**
- * Preferência: arquivos estáticos em `frontend/public/images/cards` (nome = idCarta),
- * alinhado ao script de download — não usar `cardImage` do banco para a primeira URL.
+ * Preferência: `cardImage` do banco quando for caminho/URL válido; depois cache por idCarta,
+ * depois `/images/cards/{idCarta}` (público / build).
  */
 export const getCardImage = (card: any): string | null => {
+  const rawImg = card?.cardImage?.trim();
+  if (rawImg && isCardImagePath(rawImg)) {
+    return rawImg;
+  }
+
   const idCarta = card?.idCarta || card?.cardId;
   if (idCarta != null && String(idCarta).trim() !== '') {
     const id = String(idCarta).trim();
     const hit = peekSuccessfulCardImagePath(id);
     if (hit) return hit;
     const hinted = extFromCardImageField(card?.cardImage);
-    const ext = hinted || '.jpg';
+    const ext = hinted || '.webp';
     return `/images/cards/${id}${ext}`;
   }
 
@@ -232,21 +290,16 @@ export const getCardImage = (card: any): string | null => {
     const hit = peekSuccessfulCardImagePath(lid);
     if (hit) return hit;
     const hinted = extFromCardImageField(card?.cardImage);
-    return `/images/cards/${lid}${hinted || '.jpg'}`;
-  }
-
-  const cardImage = card?.cardImage;
-  if (cardImage && typeof cardImage === 'string' && cardImage.trim() !== '' && isCardImagePath(cardImage)) {
-    return cardImage.trim();
+    return `/images/cards/${lid}${hinted || '.webp'}`;
   }
 
   return null;
 };
 
 /**
- * Ordem: extensões mais comuns no projeto primeiro (menos 404 em sequência).
+ * Ordem: webp costuma ser o formato atual do build; menos 404 antes de acertar a extensão.
  */
-const CARD_IMAGE_EXTS_ORDER = ['.jpg', '.webp', '.jpeg', '.png', '.gif'] as const;
+const CARD_IMAGE_EXTS_ORDER = ['.webp', '.jpg', '.jpeg', '.png', '.gif'] as const;
 
 function orderedExts(preferFirst?: string | null): string[] {
   const hint = preferFirst?.toLowerCase();
@@ -268,6 +321,25 @@ function shouldIncludeNameBasedPaths(card: any): boolean {
   return true;
 }
 
+/**
+ * Para grades/duelo: cartas com id estável (YGOPRO_*, etc.) não precisam de dezenas de fallbacks por nome.
+ * Use em conjunto com CardImage quando `omitNameBasedPaths` não for passado explicitamente.
+ */
+export function suggestOmitNameBasedPaths(card: any): boolean {
+  return !shouldIncludeNameBasedPaths(card);
+}
+
+/**
+ * Props para grades (loja, inventário de cartas): lazy, `sizes`, ordem de extensões.
+ * `omitNameBasedPaths` não vai aqui — cartas sem id ainda precisam de fallbacks por nome; quem tem id estável usa `suggestOmitNameBasedPaths` dentro do CardImage.
+ */
+export const CARD_IMAGE_GRID_PROPS = {
+  singleLayerImage: true as const,
+  pathExtensions: ['.webp', '.jpg', '.jpeg', '.png'] as const,
+  loading: 'lazy' as const,
+  sizes: '(max-width: 640px) 45vw, (max-width: 1024px) 28vw, 240px' as const,
+};
+
 export type GetAllCardImagePathsOptions = {
   /** Listas grandes (ex.: admin em grade): sem dezenas de URLs por nome — menos 404 e menos rede. */
   omitNameBasedPaths?: boolean;
@@ -280,9 +352,18 @@ export type GetAllCardImagePathsOptions = {
  * AGORA: Todas as imagens são salvas com idCarta como nome do arquivo
  */
 export const getAllCardImagePaths = (card: any, options?: GetAllCardImagePathsOptions): string[] => {
+  hydrateCardImageCacheFromStorage();
   const paths: string[] = [];
   const cardImage = card?.cardImage?.trim();
   const idCarta = card?.idCarta || card?.cardId;
+  const legacyIdEarly = card?.id;
+  const cacheKeyForHit =
+    idCarta != null && String(idCarta).trim() !== ''
+      ? String(idCarta).trim()
+      : legacyIdEarly != null && String(legacyIdEarly).trim() !== ''
+        ? String(legacyIdEarly).trim()
+        : '';
+  const hit = cacheKeyForHit ? peekSuccessfulCardImagePath(cacheKeyForHit) : null;
   const hinted = extFromCardImageField(cardImage);
   const exts =
     options?.extensions && options.extensions.length > 0
@@ -290,10 +371,13 @@ export const getAllCardImagePaths = (card: any, options?: GetAllCardImagePathsOp
       : orderedExts(hinted);
   const useExts = exts.length > 0 ? exts : orderedExts(hinted);
 
+  // 1) Caminho salvo no banco (uploads, CDN, etc.) — evita dezenas de 404 em /images/cards antes do arquivo real
+  if (cardImage && isCardImagePath(cardImage)) {
+    paths.push(cardImage);
+  }
+
   if (idCarta != null && String(idCarta).trim() !== '') {
     const id = String(idCarta).trim();
-    const hit = peekSuccessfulCardImagePath(id);
-    if (hit) paths.push(hit);
     for (const ext of useExts) {
       paths.push(`/images/cards/${id}${ext}`);
     }
@@ -310,7 +394,7 @@ export const getAllCardImagePaths = (card: any, options?: GetAllCardImagePathsOp
     }
   }
 
-  const legacyId = card?.id;
+  const legacyId = legacyIdEarly;
   if ((!idCarta || String(idCarta).trim() === '') && legacyId != null && String(legacyId).trim() !== '') {
     const id = String(legacyId).trim();
     for (const ext of useExts) {
@@ -318,10 +402,21 @@ export const getAllCardImagePaths = (card: any, options?: GetAllCardImagePathsOp
     }
   }
 
-  if (cardImage && isCardImagePath(cardImage)) {
-    paths.push(cardImage);
-  }
+  const deduped = Array.from(new Set(paths));
+  if (!hit) return deduped;
 
-  return Array.from(new Set(paths));
+  const withoutHit = deduped.filter((p) => p !== hit);
+  const dbImageFirst =
+    cardImage &&
+    isCardImagePath(cardImage) &&
+    withoutHit[0] === cardImage &&
+    (cardImage.startsWith('http') || cardImage.startsWith('/uploads/'));
+  if (dbImageFirst) {
+    return [cardImage, hit, ...withoutHit.slice(1)];
+  }
+  if (deduped.includes(hit)) {
+    return [hit, ...withoutHit];
+  }
+  return [hit, ...deduped];
 };
 

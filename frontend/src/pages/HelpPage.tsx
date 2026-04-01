@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import ModerationFeedbackPanel from '../components/ModerationFeedbackPanel';
 
 interface HelpSection {
   id: string;
@@ -118,7 +119,25 @@ const helpSections: HelpSection[] = [
 ];
 
 export default function HelpPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const [mainTab, setMainTab] = useState<'guide' | 'moderation'>(() =>
+    tabParam === 'moderation' ? 'moderation' : 'guide'
+  );
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tabParam === 'moderation') setMainTab('moderation');
+  }, [tabParam]);
+
+  const setTab = (next: 'guide' | 'moderation') => {
+    setMainTab(next);
+    if (next === 'moderation') {
+      setSearchParams({ tab: 'moderation' }, { replace: true });
+    } else {
+      setSearchParams({}, { replace: true });
+    }
+  };
 
   const toggleSection = (id: string) => {
     setExpandedSection(expandedSection === id ? null : id);
@@ -137,10 +156,51 @@ export default function HelpPage() {
             ❓ Central de Ajuda
           </h1>
           <p className="text-gray-400 text-lg">
-            Encontre respostas para suas dúvidas sobre o jogo
+            Guia do jogo e canal direto com a moderação
           </p>
         </div>
 
+        {/* Abas: guia vs moderação */}
+        <div className="flex flex-col sm:flex-row justify-center gap-2 sm:gap-3 max-w-xl mx-auto">
+          <button
+            type="button"
+            onClick={() => setTab('guide')}
+            className={`px-5 py-3 rounded-xl font-bold text-sm sm:text-base transition-all ${
+              mainTab === 'guide'
+                ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-lg ring-2 ring-white/20'
+                : 'bg-slate-800/60 text-slate-300 border border-slate-600/50 hover:bg-slate-700/60 hover:text-white'
+            }`}
+          >
+            📚 Guia e dúvidas frequentes
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('moderation')}
+            className={`px-5 py-3 rounded-xl font-bold text-sm sm:text-base transition-all ${
+              mainTab === 'moderation'
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg ring-2 ring-white/20'
+                : 'bg-slate-800/60 text-slate-300 border border-slate-600/50 hover:bg-slate-700/60 hover:text-white'
+            }`}
+          >
+            📬 Mensagem à moderação
+          </button>
+        </div>
+
+        {mainTab === 'moderation' && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-2xl mx-auto"
+          >
+            <p className="text-slate-400 text-center mb-6 text-sm sm:text-base">
+              Envie dúvidas, denúncias ou sugestões. Apenas a equipe (Master/Admin) visualiza estas mensagens.
+            </p>
+            <ModerationFeedbackPanel />
+          </motion.div>
+        )}
+
+        {mainTab === 'guide' && (
+        <>
         {/* Seções de Ajuda */}
         <div className="space-y-4">
           {helpSections.map((section, index) => (
@@ -197,18 +257,21 @@ export default function HelpPage() {
         >
           <h2 className="text-2xl font-bold text-white mb-4">📧 Precisa de Mais Ajuda?</h2>
           <p className="text-gray-300 mb-4">
-            Se você não encontrou a resposta que procurava, envie sua dúvida, opinião ou sugestão. Apenas a equipe (Master/Admin) poderá ver suas mensagens.
+            Se você não encontrou a resposta que procurava, use a aba <strong className="text-white">Mensagem à moderação</strong> acima.
           </p>
-          <Link
-            to="/feedback"
+          <button
+            type="button"
+            onClick={() => setTab('moderation')}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-lg transition-colors"
           >
-            📬 Enviar dúvida ou opinião
-          </Link>
+            📬 Abrir painel da moderação
+          </button>
           <p className="text-gray-400 text-sm mt-4">
             Você também pode entrar em contato pelas redes sociais ou pelo chat do jogo.
           </p>
         </motion.div>
+        </>
+        )}
       </motion.div>
     </div>
   );

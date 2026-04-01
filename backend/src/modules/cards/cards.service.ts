@@ -1,7 +1,16 @@
 import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, ILike } from 'typeorm';
-import { Card } from './entities/card.entity';
+import {
+  Card,
+  CardType,
+  CardRarity,
+  MonsterType,
+  CardAttribute,
+  MonsterRace,
+  SpellType,
+  TrapType,
+} from './entities/card.entity';
 import { ShopService } from '../shop/shop.service';
 import { CreateCardDto } from './dto/create-card.dto';
 import { UpdateCardDto } from './dto/update-card.dto';
@@ -1008,6 +1017,32 @@ export class CardsService implements OnModuleInit {
     limit: number;
     search?: string;
     status: 'all' | 'active' | 'inactive';
+    typeCsv?: string;
+    rarityCsv?: string;
+    monsterType?: string;
+    attribute?: string;
+    race?: string;
+    spellType?: string;
+    trapType?: string;
+    archetype?: string;
+    forSale?: 'yes' | 'no';
+    banned?: 'yes' | 'no';
+    hasImage?: 'yes' | 'no';
+    levelMin?: string;
+    levelMax?: string;
+    rankMin?: string;
+    rankMax?: string;
+    atkMin?: string;
+    atkMax?: string;
+    defMin?: string;
+    defMax?: string;
+    priceCreditsMin?: string;
+    priceCreditsMax?: string;
+    priceCashMin?: string;
+    priceCashMax?: string;
+    maxCopiesMin?: string;
+    maxCopiesMax?: string;
+    sort?: string;
   }): Promise<{
     items: Card[];
     total: number;
@@ -1015,6 +1050,25 @@ export class CardsService implements OnModuleInit {
     limit: number;
     totalPages: number;
   }> {
+    const parseOptInt = (v: string | undefined): number | undefined => {
+      if (v === undefined || v === null || String(v).trim() === '') return undefined;
+      const n = parseInt(String(v), 10);
+      return Number.isFinite(n) ? n : undefined;
+    };
+    const parseOptFloat = (v: string | undefined): number | undefined => {
+      if (v === undefined || v === null || String(v).trim() === '') return undefined;
+      const n = parseFloat(String(v));
+      return Number.isFinite(n) ? n : undefined;
+    };
+
+    const allowedTypes = new Set<string>(Object.values(CardType));
+    const allowedRarities = new Set<string>(Object.values(CardRarity));
+    const allowedMonsterTypes = new Set<string>(Object.values(MonsterType));
+    const allowedAttributes = new Set<string>(Object.values(CardAttribute));
+    const allowedRaces = new Set<string>(Object.values(MonsterRace));
+    const allowedSpellTypes = new Set<string>(Object.values(SpellType));
+    const allowedTrapTypes = new Set<string>(Object.values(TrapType));
+
     const page = Math.max(1, params.page);
     const limit = Math.min(200, Math.max(1, params.limit));
     const status = params.status;
@@ -1028,10 +1082,209 @@ export class CardsService implements OnModuleInit {
 
     const q = params.search?.trim();
     if (q) {
-      qb.andWhere('(c.name ILIKE :term OR c.idCarta ILIKE :term)', { term: `%${q}%` });
+      qb.andWhere(
+        '(c.name ILIKE :term OR c.idCarta ILIKE :term OR CAST(c.description AS text) ILIKE :term)',
+        { term: `%${q}%` },
+      );
     }
 
-    qb.orderBy('c.createdAt', 'DESC');
+    if (params.typeCsv) {
+      const types = params.typeCsv
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => allowedTypes.has(t));
+      if (types.length > 0) {
+        qb.andWhere('c.type IN (:...cardTypes)', { cardTypes: types });
+      }
+    }
+
+    if (params.rarityCsv) {
+      const rarities = params.rarityCsv
+        .split(',')
+        .map((r) => r.trim())
+        .filter((r) => allowedRarities.has(r));
+      if (rarities.length > 0) {
+        qb.andWhere('c.rarity IN (:...rarities)', { rarities });
+      }
+    }
+
+    if (params.monsterType && allowedMonsterTypes.has(params.monsterType)) {
+      qb.andWhere('c.monsterType = :mt', { mt: params.monsterType });
+    }
+
+    if (params.attribute && allowedAttributes.has(params.attribute)) {
+      qb.andWhere('c.attribute = :attr', { attr: params.attribute });
+    }
+
+    if (params.race && allowedRaces.has(params.race)) {
+      qb.andWhere('c.race = :race', { race: params.race });
+    }
+
+    if (params.spellType && allowedSpellTypes.has(params.spellType)) {
+      qb.andWhere('c.spellType = :st', { st: params.spellType });
+    }
+
+    if (params.trapType && allowedTrapTypes.has(params.trapType)) {
+      qb.andWhere('c.trapType = :tt', { tt: params.trapType });
+    }
+
+    const arch = params.archetype?.trim();
+    if (arch) {
+      qb.andWhere('c.archetype ILIKE :archetype', { archetype: `%${arch}%` });
+    }
+
+    if (params.forSale === 'yes') {
+      qb.andWhere('c.isForSale = true');
+    } else if (params.forSale === 'no') {
+      qb.andWhere('c.isForSale = false');
+    }
+
+    if (params.banned === 'yes') {
+      qb.andWhere('c.isBanned = true');
+    } else if (params.banned === 'no') {
+      qb.andWhere('c.isBanned = false');
+    }
+
+    if (params.hasImage === 'yes') {
+      qb.andWhere("c.cardImage IS NOT NULL AND TRIM(c.cardImage) <> ''");
+    } else if (params.hasImage === 'no') {
+      qb.andWhere("(c.cardImage IS NULL OR TRIM(COALESCE(c.cardImage, '')) = '')");
+    }
+
+    const monsterEnum = CardType.MONSTER;
+    const lMin = parseOptInt(params.levelMin);
+    const lMax = parseOptInt(params.levelMax);
+    if (lMin != null || lMax != null) {
+      const mn = lMin ?? 0;
+      const mx = lMax ?? 99;
+      qb.andWhere(
+        '(c.type != :onlyMonster OR (c.level IS NOT NULL AND c.level >= :lvlMin AND c.level <= :lvlMax))',
+        { onlyMonster: monsterEnum, lvlMin: mn, lvlMax: mx },
+      );
+    }
+
+    const rkMin = parseOptInt(params.rankMin);
+    const rkMax = parseOptInt(params.rankMax);
+    if (rkMin != null || rkMax != null) {
+      const mn = rkMin ?? 0;
+      const mx = rkMax ?? 99;
+      qb.andWhere(
+        '(c.type != :onlyMonster OR (c.rank IS NOT NULL AND c.rank >= :rkMin AND c.rank <= :rkMax))',
+        { onlyMonster: monsterEnum, rkMin: mn, rkMax: mx },
+      );
+    }
+
+    const aMin = parseOptInt(params.atkMin);
+    const aMax = parseOptInt(params.atkMax);
+    if (aMin != null || aMax != null) {
+      const mn = aMin ?? -1;
+      const mx = aMax ?? 999999;
+      qb.andWhere(
+        '(c.type != :onlyMonster OR (c.atk IS NOT NULL AND c.atk >= :atkMin AND c.atk <= :atkMax))',
+        { onlyMonster: monsterEnum, atkMin: mn, atkMax: mx },
+      );
+    }
+
+    const dMin = parseOptInt(params.defMin);
+    const dMax = parseOptInt(params.defMax);
+    if (dMin != null || dMax != null) {
+      const mn = dMin ?? -1;
+      const mx = dMax ?? 999999;
+      qb.andWhere(
+        '(c.type != :onlyMonster OR (c.def IS NOT NULL AND c.def >= :defMin AND c.def <= :defMax))',
+        { onlyMonster: monsterEnum, defMin: mn, defMax: mx },
+      );
+    }
+
+    const pcMin = parseOptInt(params.priceCreditsMin);
+    const pcMax = parseOptInt(params.priceCreditsMax);
+    if (pcMin != null) {
+      qb.andWhere('c.priceCredits IS NOT NULL AND c.priceCredits >= :pcMin', { pcMin });
+    }
+    if (pcMax != null) {
+      qb.andWhere('c.priceCredits IS NOT NULL AND c.priceCredits <= :pcMax', { pcMax });
+    }
+
+    const cashMin = parseOptFloat(params.priceCashMin);
+    const cashMax = parseOptFloat(params.priceCashMax);
+    if (cashMin != null) {
+      qb.andWhere('c.priceCash IS NOT NULL AND c.priceCash >= :cashMin', { cashMin });
+    }
+    if (cashMax != null) {
+      qb.andWhere('c.priceCash IS NOT NULL AND c.priceCash <= :cashMax', { cashMax });
+    }
+
+    const mcMin = parseOptInt(params.maxCopiesMin);
+    const mcMax = parseOptInt(params.maxCopiesMax);
+    if (mcMin != null) {
+      qb.andWhere('c.maxCopiesInDeck >= :mcMin', { mcMin });
+    }
+    if (mcMax != null) {
+      qb.andWhere('c.maxCopiesInDeck <= :mcMax', { mcMax });
+    }
+
+    const sortKey = params.sort || 'createdAt_desc';
+    const sortWhitelist: Record<string, [string, 'ASC' | 'DESC'][]> = {
+      createdAt_desc: [['c.createdAt', 'DESC']],
+      createdAt_asc: [['c.createdAt', 'ASC']],
+      name_asc: [
+        ['c.name', 'ASC'],
+        ['c.createdAt', 'DESC'],
+      ],
+      name_desc: [
+        ['c.name', 'DESC'],
+        ['c.createdAt', 'DESC'],
+      ],
+      rarity_asc: [
+        ['c.rarity', 'ASC'],
+        ['c.name', 'ASC'],
+      ],
+      rarity_desc: [
+        ['c.rarity', 'DESC'],
+        ['c.name', 'ASC'],
+      ],
+      priceCredits_asc: [
+        ['c.priceCredits', 'ASC'],
+        ['c.createdAt', 'DESC'],
+      ],
+      priceCredits_desc: [
+        ['c.priceCredits', 'DESC'],
+        ['c.createdAt', 'DESC'],
+      ],
+      priceCash_asc: [
+        ['c.priceCash', 'ASC'],
+        ['c.createdAt', 'DESC'],
+      ],
+      priceCash_desc: [
+        ['c.priceCash', 'DESC'],
+        ['c.createdAt', 'DESC'],
+      ],
+      atk_desc: [
+        ['c.atk', 'DESC'],
+        ['c.name', 'ASC'],
+      ],
+      atk_asc: [
+        ['c.atk', 'ASC'],
+        ['c.name', 'ASC'],
+      ],
+      level_desc: [
+        ['c.level', 'DESC'],
+        ['c.name', 'ASC'],
+      ],
+      level_asc: [
+        ['c.level', 'ASC'],
+        ['c.name', 'ASC'],
+      ],
+    };
+    const orderPairs = sortWhitelist[sortKey] || sortWhitelist.createdAt_desc;
+    orderPairs.forEach(([col, dir], i) => {
+      if (i === 0) {
+        qb.orderBy(col, dir);
+      } else {
+        qb.addOrderBy(col, dir);
+      }
+    });
+
     const skip = (page - 1) * limit;
     const [items, total] = await qb.skip(skip).take(limit).getManyAndCount();
     const totalPages = Math.max(1, Math.ceil(total / limit));

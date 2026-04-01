@@ -31,6 +31,10 @@ interface User {
   equippedDeckName?: string | null;
   /** Estrelas (premiação de torneios e outras recompensas) */
   stars?: number;
+  /** Limite de decks desbloqueado pela maleta */
+  maxDecks?: number;
+  /** Capacidade total de cartas na maleta */
+  maletaCapacity?: number;
   group?: {
     id: string;
     name: string;

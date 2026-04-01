@@ -107,6 +107,8 @@ export class UsersController {
           equippedDeckName: fullProfile.equippedDeckName || null,
           stars: fullProfile.stars ?? 0,
           adminAllowedTabs: fullProfile.adminAllowedTabs ?? null,
+          maxDecks: fullProfile.maxDecks ?? 3,
+          maletaCapacity: fullProfile.maletaCapacity ?? 500,
         };
       })(),
       new Promise((_, reject) => 
@@ -139,6 +141,8 @@ export class UsersController {
         equippedDeckId: (req.user as any).equippedDeckId ?? null,
         equippedDeckName: (req.user as any).equippedDeckName ?? null,
         stars: 0,
+        maxDecks: 3,
+        maletaCapacity: 500,
       };
     });
   }

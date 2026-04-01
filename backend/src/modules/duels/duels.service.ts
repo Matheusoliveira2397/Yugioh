@@ -17651,6 +17651,15 @@ export class DuelsService implements OnModuleInit {
       const tied = Pts.findFissureTiedZoneIndices(of);
       opponentMonsters = tied.map((z) => ({ ...(of.monsters[z] || {}), zoneIndex: z }));
       title = 'Fissure — escolha qual monstro com o menor ATK destruir (empate)';
+    } else if (spellKind === 'RING_OF_DESTRUCTION') {
+      opponentMonsters = [];
+      (of.monsters || []).forEach((m: any, z: number) => {
+        if (Pts.isFaceUpMonster(m)) opponentMonsters!.push({ ...m, zoneIndex: z });
+      });
+      if (!opponentMonsters.length) {
+        return { ok: false, message: 'O oponente não tem monstros com a face para cima.' };
+      }
+      title = 'Ring of Destruction — escolha 1 monstro com a face para cima do oponente';
     } else {
       return { ok: false, message: 'Tipo de magia desconhecido' };
     }
@@ -18045,6 +18054,37 @@ export class DuelsService implements OnModuleInit {
         if (!opponentField.monsterDestroyedThisTurn) opponentField.monsterDestroyedThisTurn = true;
         await (this as any).recalculateUnitedWeStandForBothPlayers(duelIdStr, duel);
         return await finishSpellToGy();
+      }
+
+      if (spellKind === 'RING_OF_DESTRUCTION') {
+        const z = actionData.monsterZoneIndex;
+        if (z === undefined || z < 0 || z >= 5) return { success: false, message: 'Zona de monstro inválida' };
+        const m = opponentField.monsters[z];
+        if (!m || !Pts.isFaceUpMonster(m)) return { success: false, message: 'Escolha um monstro com a face para cima do oponente' };
+        const damage = this.getTotalMonsterAtk(m, duel, !isPlayer1, duel.currentPhase || TurnPhase.MAIN1);
+        await this.handleEquipmentDestruction(duelIdStr, duel, !isPlayer1, m);
+        opponentField.monsters[z] = null;
+        if (!opponentField.graveyard) opponentField.graveyard = [];
+        opponentField.graveyard.push(m);
+        if (!opponentField.monsterDestroyedThisTurn) opponentField.monsterDestroyedThisTurn = true;
+        await (this as any).recalculateUnitedWeStandForBothPlayers(duelIdStr, duel);
+        duel.player1LifePoints = Math.max(0, (duel.player1LifePoints || 0) - damage);
+        duel.player2LifePoints = Math.max(0, (duel.player2LifePoints || 0) - damage);
+        const lpSync = {
+          player1LifePoints: duel.player1LifePoints,
+          player2LifePoints: duel.player2LifePoints,
+        };
+        const done = await finishSpellToGy(lpSync);
+        if (!done.success) return done;
+        if (duel.player1LifePoints <= 0 || duel.player2LifePoints <= 0) {
+          const winnerId = duel.player1LifePoints <= 0 ? duel.player2Id : duel.player1Id;
+          await this.finishDuel(
+            duelIdStr,
+            duel.player1LifePoints <= 0 ? DuelResult.PLAYER2_WIN : DuelResult.PLAYER1_WIN,
+            winnerId as number,
+          );
+        }
+        return { success: true };
       }
 
       return { success: false, message: 'Passo ou efeito não suportado' };

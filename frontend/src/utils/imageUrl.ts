@@ -101,10 +101,9 @@ export function getCosmeticImageUrl(url: string | null | undefined): string | un
 export function getCardImageDisplayUrl(url: string | null | undefined): string {
   if (!url || (typeof url === 'string' && url.trim() === '')) return '';
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  // Imagens estáticas em public/images/cards são servidas pelo mesmo origin do app (Vite em dev, nginx em prod)
-  if (url.startsWith('/images/cards')) {
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    return `${origin}${url.startsWith('/') ? '' : '/'}${url}`;
+  // Mesmo origin: path relativo evita string extra por frame e reutiliza cache igual
+  if (url.startsWith('/images/cards') || url.startsWith('/images/')) {
+    return url.startsWith('/') ? url : `/${url}`;
   }
   // Uploads ficam no backend
   const base = getImageBaseUrl();

@@ -13,7 +13,7 @@ import {
   DUEL_FIELD_DESKTOP_CARD_VISUAL_MULT,
 } from '../constants/duelLayout';
 import CardImage from '../components/CardImage';
-import { getCardImage, getAllCardImagePaths } from '../utils/cardImage';
+import { getCardImage, getAllCardImagePaths, CARD_IMAGE_GRID_PROPS } from '../utils/cardImage';
 import { getCardDescription } from '../utils/cardDescription';
 import {
   getProfileImageUrl,
@@ -10857,7 +10857,6 @@ const DuelArena: React.FC = () => {
                     const sel =
                       playerTargetSpellPick?.kind === 'hand' &&
                       playerTargetSpellPick.instanceId === c.instanceId;
-                    const src = getCardImage(c) || c.cardImage || c.imageUrl || '/card-back.jpg';
                     return (
                       <button
                         key={String(c.instanceId || c.idCarta || Math.random())}
@@ -10869,7 +10868,16 @@ const DuelArena: React.FC = () => {
                           sel ? 'border-cyan-400 ring-2 ring-cyan-400/50' : 'border-gray-600'
                         }`}
                       >
-                        <img src={src} alt="" className="w-full h-auto object-contain max-h-44" />
+                        <div className="relative mx-auto w-full max-h-44 aspect-[59/86] bg-slate-950/40">
+                          <CardImage
+                            {...CARD_IMAGE_GRID_PROPS}
+                            card={c}
+                            className="absolute inset-0 size-full"
+                            loading="eager"
+                            objectFit="contain"
+                            fallback="/images/fundoCarta.webp"
+                          />
+                        </div>
                         <div className="text-xs text-center text-white bg-black/60 py-1 truncate">
                           {c.name || c.cardName}
                         </div>
@@ -10886,7 +10894,6 @@ const DuelArena: React.FC = () => {
                     const c = row.card;
                     const sel =
                       playerTargetSpellPick?.kind === 'gy' && playerTargetSpellPick.index === idx;
-                    const src = getCardImage(c) || c?.cardImage || c?.imageUrl || '/card-back.jpg';
                     return (
                       <button
                         key={`gy-${idx}`}
@@ -10896,7 +10903,16 @@ const DuelArena: React.FC = () => {
                           sel ? 'border-cyan-400 ring-2 ring-cyan-400/50' : 'border-gray-600'
                         }`}
                       >
-                        <img src={src} alt="" className="w-full h-auto object-contain max-h-44" />
+                        <div className="relative mx-auto w-full max-h-44 aspect-[59/86] bg-slate-950/40">
+                          <CardImage
+                            {...CARD_IMAGE_GRID_PROPS}
+                            card={c}
+                            className="absolute inset-0 size-full"
+                            loading="eager"
+                            objectFit="contain"
+                            fallback="/images/fundoCarta.webp"
+                          />
+                        </div>
                         <div className="text-xs text-center text-white bg-black/60 py-1 truncate">
                           {c?.name || c?.cardName} (#{idx + 1})
                         </div>
@@ -10914,7 +10930,6 @@ const DuelArena: React.FC = () => {
                       playerTargetSpellPick.zoneIndex === row.zoneIndex &&
                       playerTargetSpellPick.isOpponent === row.isOpponent;
                     const c = row.card;
-                    const src = getCardImage(c) || c?.cardImage || c?.imageUrl || '/card-back.jpg';
                     return (
                       <button
                         key={`st-${row.isOpponent ? 'o' : 'p'}-${row.zoneIndex}-${i}`}
@@ -10930,7 +10945,16 @@ const DuelArena: React.FC = () => {
                           sel ? 'border-cyan-400 ring-2 ring-cyan-400/50' : 'border-gray-600'
                         }`}
                       >
-                        <img src={src} alt="" className="w-full h-auto object-contain max-h-44" />
+                        <div className="relative mx-auto w-full max-h-44 aspect-[59/86] bg-slate-950/40">
+                          <CardImage
+                            {...CARD_IMAGE_GRID_PROPS}
+                            card={c}
+                            className="absolute inset-0 size-full"
+                            loading="eager"
+                            objectFit="contain"
+                            fallback="/images/fundoCarta.webp"
+                          />
+                        </div>
                         <div className="text-xs text-center text-white bg-black/60 py-1 truncate">
                           {(c?.name || c?.cardName) + (row.isOpponent ? ' (oponente)' : ' (seu)')}
                         </div>
@@ -10946,7 +10970,6 @@ const DuelArena: React.FC = () => {
                     const zi = m.zoneIndex !== undefined ? m.zoneIndex : i;
                     const sel =
                       playerTargetSpellPick?.kind === 'om' && playerTargetSpellPick.zoneIndex === zi;
-                    const src = getCardImage(m) || m.cardImage || m.imageUrl || '/card-back.jpg';
                     return (
                       <button
                         key={`om-${zi}`}
@@ -10956,7 +10979,16 @@ const DuelArena: React.FC = () => {
                           sel ? 'border-cyan-400 ring-2 ring-cyan-400/50' : 'border-gray-600'
                         }`}
                       >
-                        <img src={src} alt="" className="w-full h-auto object-contain max-h-44" />
+                        <div className="relative mx-auto w-full max-h-44 aspect-[59/86] bg-slate-950/40">
+                          <CardImage
+                            {...CARD_IMAGE_GRID_PROPS}
+                            card={m}
+                            className="absolute inset-0 size-full"
+                            loading="eager"
+                            objectFit="contain"
+                            fallback="/images/fundoCarta.webp"
+                          />
+                        </div>
                         <div className="text-xs text-center text-white bg-black/60 py-1 truncate">
                           {m.name || m.cardName} (z{zi + 1})
                         </div>
@@ -10974,7 +11006,6 @@ const DuelArena: React.FC = () => {
                       playerTargetSpellPick.zoneIndex === row.zoneIndex &&
                       playerTargetSpellPick.isOpponent === row.isOpponent;
                     const m = row.monster;
-                    const src = getCardImage(m) || m?.cardImage || m?.imageUrl || '/card-back.jpg';
                     return (
                       <button
                         key={`df-${row.isOpponent ? 'o' : 'p'}-${row.zoneIndex}-${i}`}
@@ -10990,7 +11021,16 @@ const DuelArena: React.FC = () => {
                           sel ? 'border-cyan-400 ring-2 ring-cyan-400/50' : 'border-gray-600'
                         }`}
                       >
-                        <img src={src} alt="" className="w-full h-auto object-contain max-h-44" />
+                        <div className="relative mx-auto w-full max-h-44 aspect-[59/86] bg-slate-950/40">
+                          <CardImage
+                            {...CARD_IMAGE_GRID_PROPS}
+                            card={m}
+                            className="absolute inset-0 size-full"
+                            loading="eager"
+                            objectFit="contain"
+                            fallback="/images/fundoCarta.webp"
+                          />
+                        </div>
                         <div className="text-xs text-center text-white bg-black/60 py-1 truncate">
                           {(m?.name || m?.cardName) + (row.isOpponent ? ' (oponente)' : ' (seu)')}
                         </div>
