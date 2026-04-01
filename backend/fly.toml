@@ -20,9 +20,9 @@ primary_region = 'gru'
   min_machines_running = 1
   processes = ['app']
 
-  # Proxy Fly: tempo maior para conexões ociosas (complementa ping do Socket.IO).
+  # Fly.io: idle_timeout máximo 900s. Socket.IO/ping mantém a conexão viva além disso.
   [http_service.http_options]
-    idle_timeout = 3600
+    idle_timeout = 900
 
 [[vm]]
   memory = '1gb'
