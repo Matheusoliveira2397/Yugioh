@@ -107,7 +107,14 @@ export class BotRunnerService implements OnModuleDestroy {
     const duelId = snapshot.id;
 
     if (snapshot.pendingChoice) {
-      // Never bypass interactive choices. The standard turn timer remains a fallback.
+      // Bot cannot answer interactive card modals yet. Cancel its own unresolved
+      // effect and restore its card rather than blocking the duel indefinitely.
+      if (snapshot.pendingChoice.userId === bot.userId) {
+        await this.duelService.clearPendingChoice(duelId, true);
+        const updated = await this.duelService.findDuelByIdFromDatabase(duelId, true);
+        if (updated) this.gateway.server.to('duel_' + duelId).emit('duelUpdate', updated);
+      }
+      // Never decide on behalf of a human opponent.
       return;
     }
     if (snapshot.currentPhase === TurnPhase.DRAW) {
