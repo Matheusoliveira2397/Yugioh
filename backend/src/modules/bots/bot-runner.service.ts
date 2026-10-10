@@ -40,8 +40,13 @@ export class BotRunnerService implements OnModuleDestroy {
     if (this.running) return;
     this.running = true;
     try {
-      const enabled = await this.bots.find({ where: { enabled: true } });
-      const ids = enabled.map(b => b.userId);
+      const allBots = await this.bots.find();
+      const enabled = allBots.filter(b => b.enabled);
+      const ids = allBots.map(b => b.userId);
+      const activeIds = new Set(enabled.map(b => b.userId));
+      for (const id of this.queuedAt.keys()) {
+        if (!activeIds.has(id)) { this.matchmaking.removeFromQueue(id); this.queuedAt.delete(id); }
+      }
       const active = ids.length ? await this.duels.find({
         where: [
           { player1Id: In(ids), status: In([DuelStatus.WAITING, DuelStatus.IN_PROGRESS]) },
@@ -54,7 +59,7 @@ export class BotRunnerService implements OnModuleDestroy {
         if (ids.includes(duel.player2Id)) busy.add(duel.player2Id);
       }
 
-      for (const bot of enabled) {
+      for (const bot of allBots) {
         if (busy.has(bot.userId)) {
           this.matchmaking.removeFromQueue(bot.userId);
           this.queuedAt.delete(bot.userId);
@@ -65,7 +70,7 @@ export class BotRunnerService implements OnModuleDestroy {
           }
           continue;
         }
-        if (bot.participation !== 'RANDOM') continue;
+        if (!bot.enabled || bot.participation !== 'RANDOM') continue;
         // Do not reset lastQueuedAt while waiting; avoid queue reinsertion.
         if (this.matchmaking.isInQueue(bot.userId)) continue;
         const last = bot.lastQueuedAt?.getTime() || 0;
@@ -120,11 +125,11 @@ export class BotRunnerService implements OnModuleDestroy {
         return type.includes('monster') && Number(c?.level || 0) > 0 && Number(c?.level) <= 4;
       });
       candidates.sort((a,b) => Number(b.atk || b.attack || 0) - Number(a.atk || a.attack || 0));
-      const chosen = candidates[0];
+      const chosen = bot.difficulty === 'EASY' ? candidates[candidates.length - 1] : candidates[0];
       const cardId = chosen?.idCarta || chosen?.id || chosen?.cardId;
       if (free !== undefined && cardId) {
         await this.gateway.handleDuelAction({ duelId, actionType: 'SUMMON_MONSTER',
-          actionData: { cardId, zoneIndex: free, position: 'attack' } }, client);
+          actionData: { cardId, zoneIndex: free, position: bot.difficulty === 'EASY' ? 'defense' : 'attack' } }, client);
       }
       // Advance via the normal handler even if summon was invalid.
       await this.gateway.handleNextPhase({ duelId }, client);
@@ -144,7 +149,7 @@ export class BotRunnerService implements OnModuleDestroy {
           return attack > strength;
         });
         const targetZoneIndex = weak.length ? weak[0].i : defended.length ? undefined : null;
-        if (targetZoneIndex !== undefined) {
+        if (targetZoneIndex !== undefined && this.turnAttempts.get(turnKey) === 1) {
           await this.gateway.handleDuelAction({ duelId, actionType: 'ATTACK',
             actionData: { attackerZoneIndex: attackerIndex, targetZoneIndex } }, client);
           if (!failure) return;
