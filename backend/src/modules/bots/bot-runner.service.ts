@@ -20,7 +20,7 @@ export class BotRunnerService implements OnModuleDestroy {
   private running = false;
   private readonly queuedAt = new Map<number, number>();
   private readonly turnAttempts = new Map<string, number>();
-  private readonly MAX_ATTEMPTS_PER_TURN = 2;
+  private readonly MAX_ATTEMPTS_PER_TURN = 16;
 
   constructor(
     @InjectRepository(ManagedBot) private readonly bots: Repository<ManagedBot>,
@@ -111,7 +111,7 @@ export class BotRunnerService implements OnModuleDestroy {
     }
     if (snapshot.currentPhase === TurnPhase.MAIN1) {
       const field: any = isP1 ? snapshot.player1Field : snapshot.player2Field;
-      const monsters: any[] = Array.isArray(field?.monsterZones) ? field.monsterZones : Array.isArray(field?.monsters) ? field.monsters : [];
+      const monsters: any[] = Array.isArray(field?.monsters) ? field.monsters : [];
       const free = Array.from({ length: 5 }, (_, i) => i).find(i => !monsters[i]);
       const hand: any[] = Array.isArray(field?.hand) ? field.hand : [];
       // Start with uncomplicated low-level monsters; advanced combos remain a future extension.
@@ -121,7 +121,7 @@ export class BotRunnerService implements OnModuleDestroy {
       });
       candidates.sort((a,b) => Number(b.atk || b.attack || 0) - Number(a.atk || a.attack || 0));
       const chosen = candidates[0];
-      const cardId = chosen?.id || chosen?.cardId;
+      const cardId = chosen?.idCarta || chosen?.id || chosen?.cardId;
       if (free !== undefined && cardId) {
         await this.gateway.handleDuelAction({ duelId, actionType: 'SUMMON_MONSTER',
           actionData: { cardId, zoneIndex: free, position: 'attack' } }, client);
@@ -131,8 +131,25 @@ export class BotRunnerService implements OnModuleDestroy {
       return;
     }
     if (snapshot.currentPhase === TurnPhase.BATTLE) {
-      // Attacks are deliberately deferred until attack-target legality can be
-      // evaluated. No direct damage or targeting guesses.
+      const own: any = isP1 ? snapshot.player1Field : snapshot.player2Field;
+      const theirs: any = isP1 ? snapshot.player2Field : snapshot.player1Field;
+      const monsters: any[] = Array.isArray(own?.monsters) ? own.monsters : [];
+      const targets: any[] = Array.isArray(theirs?.monsters) ? theirs.monsters : [];
+      const attackerIndex = monsters.findIndex(m => m && (m.position === 'attack' || m.position === 'face-up-attack') && !m.hasAttacked && !m.hasAttackedThisTurn && !m.attacked);
+      if (attackerIndex >= 0) {
+        const attack = Number(monsters[attackerIndex]?.atk || monsters[attackerIndex]?.attack || 0);
+        const defended = targets.map((m, i) => ({ m, i })).filter(x => x.m);
+        const weak = defended.filter(x => {
+          const strength = String(x.m.position || '').includes('defense') ? Number(x.m.def || x.m.defense || 0) : Number(x.m.atk || x.m.attack || 0);
+          return attack > strength;
+        });
+        const targetZoneIndex = weak.length ? weak[0].i : defended.length ? undefined : null;
+        if (targetZoneIndex !== undefined) {
+          await this.gateway.handleDuelAction({ duelId, actionType: 'ATTACK',
+            actionData: { attackerZoneIndex: attackerIndex, targetZoneIndex } }, client);
+          if (!failure) return;
+        }
+      }
       await this.gateway.handleNextPhase({ duelId }, client);
       return;
     }
