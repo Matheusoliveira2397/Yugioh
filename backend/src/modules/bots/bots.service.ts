@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
+import { Duel, DuelStatus } from '../duels/entities/duel.entity';
 import { randomBytes, randomUUID } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from '../users/entities/user.entity';
@@ -25,6 +26,7 @@ export class BotsService {
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(Deck) private readonly decks: Repository<Deck>,
     @InjectRepository(DeckCard) private readonly cards: Repository<DeckCard>,
+    @InjectRepository(Duel) private readonly duels: Repository<Duel>,
   ) {}
 
   list() { return this.bots.find({ order: { createdAt: 'DESC' } }); }
@@ -119,6 +121,11 @@ export class BotsService {
   async remove(id: string) {
     const bot = await this.bots.findOne({ where: { id } });
     if (!bot) throw new NotFoundException('Bot não encontrado');
+    const active = await this.duels.exist({ where: [
+      { player1Id: bot.userId, status: In([DuelStatus.WAITING, DuelStatus.IN_PROGRESS]) },
+      { player2Id: bot.userId, status: In([DuelStatus.WAITING, DuelStatus.IN_PROGRESS]) },
+    ] });
+    if (active) throw new BadRequestException('Não é possível remover um bot durante um duelo ativo');
     await this.bots.delete(id);
     // Preserve user and duel history references.
     await this.users.update(bot.userId, { isBanned: true, isOnline: false });
