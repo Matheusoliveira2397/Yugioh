@@ -151,7 +151,7 @@ export class BotRunnerService implements OnModuleDestroy {
       const theirs: any = isP1 ? snapshot.player2Field : snapshot.player1Field;
       const monsters: any[] = Array.isArray(own?.monsters) ? own.monsters : [];
       const targets: any[] = Array.isArray(theirs?.monsters) ? theirs.monsters : [];
-      const attackerIndex = monsters.findIndex(m => m && (m.position === 'attack' || m.position === 'face-up-attack') && !m.hasAttacked && !m.hasAttackedThisTurn && !m.attacked);
+      const attackerIndex = monsters.findIndex(m => m && (m.position === 'attack' || m.position === 'face-up-attack') && !m.hasAttacked && !m.hasAttackedThisTurn && !m.attacked && !m.attackedThisTurn);
       if (attackerIndex >= 0) {
         const attack = Number(monsters[attackerIndex]?.atk || monsters[attackerIndex]?.attack || 0);
         const defended = targets.map((m, i) => ({ m, i })).filter(x => x.m);
