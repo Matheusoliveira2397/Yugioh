@@ -9,6 +9,7 @@ const STORAGE_KEY = 'admin-panel-cards-order';
 type AdminCard = { id: string; label: string; icon: string; description: string; route: string; bg: string; iconBg: string; accent: string };
 
 const defaultCards: AdminCard[] = [
+  { id: 'loot-boxes', label: 'Loot Boxes', icon: '🎁', description: 'Configurar cartas, quantidades e chances', route: '/admin/loot-boxes', bg: 'bg-purple-900/40', iconBg: 'bg-purple-500/30', accent: 'border-l-purple-500' },
   { id: 'create-account', label: 'Criar conta', icon: '➕', description: 'Criar conta normal ou admin', route: '/admin/create-account', bg: 'bg-emerald-900/40', iconBg: 'bg-emerald-500/30', accent: 'border-l-emerald-500' },
   { id: 'admin-control', label: 'Controle de Admins', icon: '🛡️', description: 'Definir quais abas cada admin pode ver', route: '/admin/admin-control', bg: 'bg-slate-800/90', iconBg: 'bg-slate-500/30', accent: 'border-l-slate-400' },
   { id: 'site-tabs', label: 'Gerenciar Abas', icon: '🔧', description: 'Ativar/desativar abas do site', route: '/admin/site-tabs', bg: 'bg-slate-800/90', iconBg: 'bg-amber-500/20', accent: 'border-l-amber-500' },
@@ -41,7 +42,7 @@ const defaultCards: AdminCard[] = [
 
 const CATEGORIES: { key: string; label: string; ids: string[] }[] = [
   { key: 'contas', label: 'Contas e Acesso', ids: ['create-account', 'admin-control', 'site-tabs', 'new-account-settings'] },
-  { key: 'cartas', label: 'Cartas e Decks', ids: ['cards', 'card-ownership', 'initial-decks'] },
+  { key: 'cartas', label: 'Cartas e Decks', ids: ['cards', 'card-ownership', 'initial-decks', 'loot-boxes'] },
   { key: 'loja', label: 'Loja e Cosméticos', ids: ['playmats', 'sleeves', 'talismans', 'briefcases', 'promotions'] },
   { key: 'comunicacao', label: 'Notícias e Comunicação', ids: ['news', 'messages', 'feedback', 'social-media'] },
   { key: 'jogadores', label: 'Jogadores', ids: ['players'] },
@@ -97,7 +98,7 @@ export default function AdminPanel() {
     if (user.role === 'MASTER') return orderedCards;
     const allowed = user.adminAllowedTabs;
     if (allowed == null || !Array.isArray(allowed) || allowed.length === 0) return [];
-    return orderedCards.filter((c) => c.id !== 'admin-control' && allowed.includes(c.id));
+    return orderedCards.filter((c) => c.id !== 'admin-control' && c.id !== 'loot-boxes' && allowed.includes(c.id));
   }, [user, orderedCards]);
 
   const filteredCards = useMemo(() => {
