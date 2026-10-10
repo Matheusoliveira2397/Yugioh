@@ -7,7 +7,7 @@ type Difficulty = 'EASY' | 'NORMAL' | 'HARD' | 'EXPERT';
 type Participation = 'NONE' | 'RANDOM';
 interface Bot { id: string; name: string; level: number; difficulty: Difficulty; participation: Participation; intervalMinutes: number; enabled: boolean; sourceDeckId: string; }
 interface Deck { id: string; name: string; }
-const empty = { name: '', deckId: '', level: 1, difficulty: 'NORMAL' as Difficulty, participation: 'RANDOM' as Participation, intervalMinutes: 30 };
+const empty = { name: '', deckId: '', level: 1, difficulty: 'NORMAL' as Difficulty, participation: 'RANDOM' as Participation, intervalMinutes: 30, enabled: false };
 
 export default function AdminBotsPanel() {
   const { user } = useAuthStore();
@@ -41,7 +41,7 @@ export default function AdminBotsPanel() {
     try {
       if (editingId) await api.patch('/admin/bots/' + editingId, form);
       else await api.post('/admin/bots', form);
-      setMessage('Configuração salva. O bot permanece desativado até a integração da IA.');
+      setMessage('Configuração salva. Bots ativos são processados pelo servidor a cada 5 segundos.');
       reset();
       await load();
     } catch (err: any) { setError(err.response?.data?.message || 'Não foi possível salvar o bot.'); }
@@ -49,7 +49,7 @@ export default function AdminBotsPanel() {
   };
   const edit = (bot: Bot) => {
     setEditingId(bot.id);
-    setForm({ name: bot.name, deckId: bot.sourceDeckId, level: bot.level, difficulty: bot.difficulty, participation: bot.participation, intervalMinutes: bot.intervalMinutes });
+    setForm({ name: bot.name, deckId: bot.sourceDeckId, level: bot.level, difficulty: bot.difficulty, participation: bot.participation, intervalMinutes: bot.intervalMinutes, enabled: bot.enabled });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   const remove = async (bot: Bot) => {
@@ -62,7 +62,7 @@ export default function AdminBotsPanel() {
   return <div className="mx-auto max-w-5xl p-5 text-white">
     <button onClick={() => navigate('/admin')} className="mb-5 text-blue-300">← Voltar ao painel</button>
     <h1 className="mb-2 text-3xl font-bold">Gerenciar Bots</h1>
-    <p className="mb-5 text-amber-200">Etapa de configuração: os bots não entram em duelos ainda. O executor de turnos e efeitos precisa ser integrado antes da ativação.</p>
+    <p className="mb-5 text-amber-200">Modo experimental: os bots executam jogadas básicas de monstro e ataques. Efeitos complexos, combos e escolhas especiais ainda não são suportados. Teste em homologação antes de ativar para jogadores.</p>
     {error && <p role="alert" className="mb-3 rounded bg-red-900 p-3">{error}</p>}
     {message && <p role="status" className="mb-3 rounded bg-green-900 p-3">{message}</p>}
     <form onSubmit={save} className="mb-8 grid gap-4 rounded-xl bg-slate-900 p-5 md:grid-cols-2">
@@ -72,12 +72,13 @@ export default function AdminBotsPanel() {
       <label>Dificuldade<select className={field} value={form.difficulty} onChange={e => setForm({ ...form, difficulty: e.target.value as Difficulty })}><option value="EASY">Fácil</option><option value="NORMAL">Normal</option><option value="HARD">Difícil</option><option value="EXPERT">Especialista</option></select></label>
       <label>Participação planejada<select className={field} value={form.participation} onChange={e => setForm({ ...form, participation: e.target.value as Participation })}><option value="NONE">Não participar</option><option value="RANDOM">Random Duel</option></select></label>
       <label>Intervalo planejado (minutos)<input className={field} type="number" min={1} max={10080} value={form.intervalMinutes} onChange={e => setForm({ ...form, intervalMinutes: Number(e.target.value) })} /></label>
+      <label className="flex items-center gap-2 md:col-span-2"><input type="checkbox" checked={form.enabled} onChange={e => setForm({ ...form, enabled: e.target.checked })} /> Ativar participação automática (experimental)</label>
       <div className="flex gap-3 md:col-span-2"><button disabled={saving || !form.deckId} className="rounded bg-blue-600 px-5 py-3 disabled:opacity-50">{saving ? 'Salvando...' : editingId ? 'Salvar alterações' : 'Criar bot'}</button>{editingId && <button type="button" onClick={reset} className="rounded bg-slate-600 px-5 py-3">Cancelar</button>}</div>
     </form>
     <h2 className="mb-3 text-xl font-semibold">Bots cadastrados</h2>
     {loading ? <p>Carregando...</p> : bots.length === 0 ? <p>Nenhum bot cadastrado.</p> :
       <div className="grid gap-3">{bots.map(bot => <div key={bot.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-900 p-4">
-        <div><strong>{bot.name}</strong><p className="text-sm text-slate-300">Nível {bot.level} · {bot.difficulty} · {bot.participation} · a cada {bot.intervalMinutes} min</p><p className="text-xs text-amber-300">Desativado: execução automática pendente</p></div>
+        <div><strong>{bot.name}</strong><p className="text-sm text-slate-300">Nível {bot.level} · {bot.difficulty} · {bot.participation} · a cada {bot.intervalMinutes} min</p><p className={bot.enabled ? 'text-xs text-green-300' : 'text-xs text-amber-300'}>{bot.enabled ? 'Ativo (experimental)' : 'Desativado'}</p></div>
         <div className="flex gap-2"><button className="rounded bg-blue-700 px-3 py-2" onClick={() => edit(bot)}>Editar</button><button className="rounded bg-red-800 px-3 py-2" onClick={() => void remove(bot)}>Remover</button></div>
       </div>)}</div>}
   </div>;
