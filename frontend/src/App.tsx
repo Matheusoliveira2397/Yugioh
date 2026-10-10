@@ -48,6 +48,7 @@ import AdminDivisionsPanel from './pages/AdminDivisionsPanel';
 import AdminCashDivisionPanel from './pages/AdminCashDivisionPanel';
 import AdminPaymentsPanel from './pages/AdminPaymentsPanel';
 import AdminRandomDuelLevelRangesPanel from './pages/AdminRandomDuelLevelRangesPanel';
+import AdminBotsPanel from './pages/AdminBotsPanel';
 import AdminDuelScoreSettingsPanel from './pages/AdminDuelScoreSettingsPanel';
 import AdminSocialMediaPanel from './pages/AdminSocialMediaPanel';
 import AdminNewAccountSettingsPanel from './pages/AdminNewAccountSettingsPanel';
@@ -680,6 +681,14 @@ function App() {
           }
         />
 
+        <Route
+          path="/admin/bots"
+          element={
+            isAuthenticated ? (
+              <Layout><AdminBotsPanel /></Layout>
+            ) : (<Navigate to="/login" />)
+          }
+        />
         <Route
           path="/admin/random-duel-level-ranges"
           element={
