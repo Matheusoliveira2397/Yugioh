@@ -41,7 +41,7 @@ export class BotsService {
       throw new BadRequestException('Dificuldade inválida');
     if (input.participation !== undefined && !Object.values(BotParticipation).includes(input.participation))
       throw new BadRequestException('Modo inválido');
-    if (input.enabled === true) throw new BadRequestException('Habilitação bloqueada até implementação do executor de jogadas');
+
   }
 
   private async source(deckId: string) {
@@ -78,7 +78,7 @@ export class BotsService {
         difficulty: input.difficulty ?? BotDifficulty.NORMAL,
         sourceDeckId: source.id, botDeckId: deck.id,
         participation: input.participation ?? BotParticipation.NONE,
-        intervalMinutes: input.intervalMinutes ?? 30, enabled: false,
+        intervalMinutes: input.intervalMinutes ?? 30, enabled: input.enabled ?? false,
       }));
     } catch (error) {
       await this.users.delete(user.id);
@@ -103,7 +103,7 @@ export class BotsService {
     if (input.difficulty !== undefined) bot.difficulty = input.difficulty;
     if (input.participation !== undefined) bot.participation = input.participation;
     if (input.intervalMinutes !== undefined) bot.intervalMinutes = input.intervalMinutes;
-    if (input.enabled === false) bot.enabled = false;
+    if (input.enabled !== undefined) bot.enabled = input.enabled;
     if (input.deckId && input.deckId !== bot.sourceDeckId) {
       const src = await this.source(input.deckId);
       const deck = await this.duplicate(src, bot.userId);
