@@ -32,6 +32,8 @@ import AdminPlaymatsPanel from './pages/AdminPlaymatsPanel';
 import AdminSleevesPanel from './pages/AdminSleevesPanel';
 import AdminTalismansPanel from './pages/AdminTalismansPanel';
 import AdminBriefcasesPanel from './pages/AdminBriefcasesPanel';
+import AdminLootBoxesPanel from './pages/AdminLootBoxesPanel';
+import LootBoxesPage from './pages/LootBoxesPage';
 import AdminPromotionsPanel from './pages/AdminPromotionsPanel';
 import AdminControlPanel from './pages/AdminControlPanel';
 import AdminInitialDecksPanel from './pages/AdminInitialDecksPanel';
@@ -475,6 +477,14 @@ function App() {
           }
         />
 
+        <Route
+          path="/admin/loot-boxes"
+          element={isAuthenticated ? <Layout><AdminLootBoxesPanel /></Layout> : <Navigate to="/login" />}
+        />
+        <Route
+          path="/loot-boxes"
+          element={isAuthenticated ? <Layout><LootBoxesPage /></Layout> : <Navigate to="/login" />}
+        />
         <Route
           path="/admin/briefcases"
           element={
