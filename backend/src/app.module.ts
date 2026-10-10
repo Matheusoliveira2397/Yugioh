@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { LootBoxesModule } from './modules/loot-boxes/loot-boxes.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import * as path from 'path';
 
@@ -187,6 +188,7 @@ import { ActivityInterceptor } from './common/interceptors/activity.interceptor'
     AnimeDecksModule,
     LevelsModule,
     FeedbackModule,
+    LootBoxesModule,
   ],
   providers: [
     {
