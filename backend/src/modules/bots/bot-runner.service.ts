@@ -110,7 +110,18 @@ export class BotRunnerService implements OnModuleDestroy {
       // Never bypass interactive choices. The standard turn timer remains a fallback.
       return;
     }
-    if (snapshot.currentPhase === TurnPhase.DRAW || snapshot.currentPhase === TurnPhase.STANDBY) {
+    if (snapshot.currentPhase === TurnPhase.DRAW) {
+      const drawn = await this.duelService.processDrawPhase(duelId);
+      if (drawn) {
+        this.gateway.server.to('duel_' + duelId).emit('duelUpdate', {
+          ...drawn,
+          player1Field: drawn.player1Field,
+          player2Field: drawn.player2Field,
+        });
+      }
+      return;
+    }
+    if (snapshot.currentPhase === TurnPhase.STANDBY) {
       await this.gateway.handleNextPhase({ duelId }, client);
       return;
     }
