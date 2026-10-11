@@ -8,6 +8,7 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import ConfirmEmailChangePage from './pages/ConfirmEmailChangePage';
 import HomePage from './pages/NewHomePage';
+import StoryModePage from './pages/StoryModePage';
 import DeckBuilderPage from './pages/DeckBuilderPage';
 import DeckEditPage from './pages/DeckEditPage';
 import DuelPage from './pages/DuelPage';
@@ -32,6 +33,8 @@ import AdminPlaymatsPanel from './pages/AdminPlaymatsPanel';
 import AdminSleevesPanel from './pages/AdminSleevesPanel';
 import AdminTalismansPanel from './pages/AdminTalismansPanel';
 import AdminBriefcasesPanel from './pages/AdminBriefcasesPanel';
+import AdminLootBoxesPanel from './pages/AdminLootBoxesPanel';
+import LootBoxesPage from './pages/LootBoxesPage';
 import AdminPromotionsPanel from './pages/AdminPromotionsPanel';
 import AdminControlPanel from './pages/AdminControlPanel';
 import AdminInitialDecksPanel from './pages/AdminInitialDecksPanel';
@@ -100,6 +103,9 @@ function App() {
           }
         />
 
+        <Route path="/story" element={isAuthenticated ? <Layout><StoryModePage /></Layout> : <Navigate to="/login" />} />
+        <Route path="/admin/loot-boxes" element={isAuthenticated ? <Layout><AdminLootBoxesPanel /></Layout> : <Navigate to="/login" />} />
+        <Route path="/loot-boxes" element={isAuthenticated ? <Layout><LootBoxesPage /></Layout> : <Navigate to="/login" />} />
         <Route
           path="/home"
           element={

@@ -391,6 +391,10 @@ export default function HomePage() {
 
   return (
     <div className="w-full min-w-0 max-w-[min(100%,90rem)] mx-auto px-[clamp(0.75rem,2.5vw,1.75rem)] py-[clamp(0.5rem,2vw,1.5rem)] pb-6 sm:pb-8">
+      <button onClick={() => navigate('/story')} className="mb-4 flex w-full items-center justify-between rounded-xl border border-emerald-500/40 bg-emerald-950/70 px-5 py-4 text-left text-white transition hover:bg-emerald-900/70">
+        <span><strong className="block text-lg">🎮 Modo História — Academia de Duelos</strong><span className="text-sm text-emerald-100">Explore o mapa 2D, movimente seu duelista e converse com personagens</span></span>
+        <span className="ml-4 text-2xl">→</span>
+      </button>
       {/* Grid principal: sidebar fluida + coluna principal */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 lg:gap-6 lg:items-start">
         {/* Sidebar — rankings & arena */}
