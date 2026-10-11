@@ -92,6 +92,7 @@ import { ShopModule } from '../shop/shop.module';
     DuelsService, // CRÍTICO: Exportar DuelsService para CardEffectsModule
     DuelQueueService,
     DuelsGateway,
+    MatchmakingService,
     CardEffectsService,
     DuelUtilsService,
     CardEffectHandlersService,
