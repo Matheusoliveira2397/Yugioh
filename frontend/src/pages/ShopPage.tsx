@@ -1017,6 +1017,7 @@ export default function ShopPage() {
             <img src="/images/Icones/Shop.png" alt="" className="w-12 h-12 sm:w-14 sm:h-14 object-contain flex-shrink-0" aria-hidden />
             Loja
           </h1>
+          <a href="/loot-boxes" className="inline-flex rounded-lg bg-indigo-700 px-4 py-2 mb-3 text-white hover:bg-indigo-600">🎁 Abrir Loot Boxes</a>
           <p className="text-sm text-gray-300">Compre cartas, playmats e sleeves para personalizar seu deck</p>
         </motion.div>
 
