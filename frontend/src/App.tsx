@@ -8,6 +8,7 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import ConfirmEmailChangePage from './pages/ConfirmEmailChangePage';
 import HomePage from './pages/NewHomePage';
+import StoryModePage from './pages/StoryModePage';
 import DeckBuilderPage from './pages/DeckBuilderPage';
 import DeckEditPage from './pages/DeckEditPage';
 import DuelPage from './pages/DuelPage';
@@ -97,6 +98,11 @@ function App() {
               <Navigate to="/login" />
             )
           }
+        />
+
+        <Route
+          path="/story"
+          element={isAuthenticated ? <Layout><StoryModePage /></Layout> : <Navigate to="/login" />}
         />
 
         <Route
