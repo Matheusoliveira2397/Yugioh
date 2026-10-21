@@ -29,6 +29,11 @@ export class AuthDbMigrationService implements OnModuleInit {
     } catch (error) {
       this.logger.error('Erro ao executar migração stars:', error);
     }
+    try {
+      await this.ensureGoogleAuthColumns();
+    } catch (error) {
+      this.logger.error('Erro ao executar migração Google Auth:', error);
+    }
   }
 
   private async ensureRefreshTokensTable() {
@@ -148,6 +153,77 @@ export class AuthDbMigrationService implements OnModuleInit {
           ADD COLUMN "stars" integer NOT NULL DEFAULT 0
         `);
         this.logger.log('Coluna users.stars criada com sucesso (premiação torneios/outros).');
+      }
+    } catch (error: any) {
+      if (error?.code !== '42701' && !error?.message?.includes('already exists')) {
+        throw error;
+      }
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  /** Colunas OAuth Google + senha nullable para contas só-Google. */
+  private async ensureGoogleAuthColumns() {
+    const queryRunner = this.dataSource.createQueryRunner();
+    try {
+      await queryRunner.connect();
+
+      const googleIdCol = await queryRunner.query(`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'googleId'
+      `);
+      if (googleIdCol.length === 0) {
+        await queryRunner.query(`
+          ALTER TABLE "users" ADD COLUMN "googleId" character varying(64) NULL
+        `);
+        await queryRunner.query(`
+          CREATE UNIQUE INDEX IF NOT EXISTS "UQ_users_googleId" ON "users" ("googleId")
+          WHERE "googleId" IS NOT NULL
+        `);
+        this.logger.log('Coluna users.googleId criada com sucesso.');
+      }
+
+      const authProviderCol = await queryRunner.query(`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'authProvider'
+      `);
+      if (authProviderCol.length === 0) {
+        await queryRunner.query(`
+          ALTER TABLE "users" ADD COLUMN "authProvider" character varying(32) NOT NULL DEFAULT 'local'
+        `);
+        this.logger.log('Coluna users.authProvider criada com sucesso.');
+      }
+
+      const passwordNullable = await queryRunner.query(`
+        SELECT is_nullable FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'password'
+      `);
+      if (passwordNullable.length > 0 && passwordNullable[0].is_nullable === 'NO') {
+        await queryRunner.query(`ALTER TABLE "users" ALTER COLUMN "password" DROP NOT NULL`);
+        this.logger.log('Coluna users.password agora aceita NULL (contas OAuth).');
+      }
+
+      const setupCol = await queryRunner.query(`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'profileSetupCompleted'
+      `);
+      if (setupCol.length === 0) {
+        await queryRunner.query(`
+          ALTER TABLE "users" ADD COLUMN "profileSetupCompleted" boolean NOT NULL DEFAULT true
+        `);
+        this.logger.log('Coluna users.profileSetupCompleted criada com sucesso.');
+      }
+
+      const frameCol = await queryRunner.query(`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'equippedAvatarFrame'
+      `);
+      if (frameCol.length === 0) {
+        await queryRunner.query(`
+          ALTER TABLE "users" ADD COLUMN "equippedAvatarFrame" character varying(32) NULL
+        `);
+        this.logger.log('Coluna users.equippedAvatarFrame criada com sucesso.');
       }
     } catch (error: any) {
       if (error?.code !== '42701' && !error?.message?.includes('already exists')) {

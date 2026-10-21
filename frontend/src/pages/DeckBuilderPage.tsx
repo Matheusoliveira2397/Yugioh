@@ -82,6 +82,41 @@ export default function DeckBuilderPage() {
           {/* Conteúdo do Card */}
           <div className="p-4 sm:p-6 md:p-8">
 
+            {/* Coleção — % e acesso */}
+            <button
+              type="button"
+              onClick={() => navigate('/collection')}
+              className="w-full mb-4 sm:mb-6 text-left rounded-xl border border-champion-gold/30 bg-black/25 hover:border-champion-gold/55 hover:bg-champion-gold/5 transition-all p-3 sm:p-4"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div>
+                  <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                    <span aria-hidden>🎴</span> Coleção
+                  </h2>
+                  <p className="text-xs sm:text-sm text-arena-mist">
+                    Veja as cartas que você possui e o que falta
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="font-display text-xl sm:text-2xl font-bold text-champion-gold tabular-nums">
+                    {Number(user?.collectionPercent ?? 0).toFixed(1)}%
+                  </p>
+                  <p className="text-[11px] text-arena-mist tabular-nums">
+                    {user?.ownedActiveCards ?? 0}/{user?.totalActiveCards ?? 0} cartas
+                  </p>
+                </div>
+              </div>
+              <div className="h-2 rounded-full overflow-hidden bg-white/10 mb-2">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-champion-amber to-champion-gold"
+                  style={{
+                    width: `${Math.min(100, Math.max(0, Number(user?.collectionPercent ?? 0)))}%`,
+                  }}
+                />
+              </div>
+              <span className="text-xs font-semibold text-champion-cyan">Abrir coleção →</span>
+            </button>
+
             {/* Grid com Meus Decks e Criar Novo Deck */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-4 sm:mb-8">
               {/* Lista de decks do usuário */}

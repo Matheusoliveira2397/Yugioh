@@ -9,15 +9,17 @@ const STORAGE_KEY = 'admin-panel-cards-order';
 type AdminCard = { id: string; label: string; icon: string; description: string; route: string; bg: string; iconBg: string; accent: string };
 
 const defaultCards: AdminCard[] = [
-  { id: 'loot-boxes', label: 'Loot Boxes', icon: '🎁', description: 'Configurar cartas, quantidades e chances', route: '/admin/loot-boxes', bg: 'bg-purple-900/40', iconBg: 'bg-purple-500/30', accent: 'border-l-purple-500' },
+  { id: 'loot-boxes', label: 'Pacotes de Cartas', icon: '🎴', description: 'Chances por raridade, créditos e drops por abertura', route: '/admin/loot-boxes', bg: 'bg-purple-900/40', iconBg: 'bg-purple-500/30', accent: 'border-l-purple-500' },
   { id: 'bots', label: 'Bots', icon: '🤖', description: 'Criar bots, definir decks, níveis e programação', route: '/admin/bots', bg: 'bg-indigo-900/40', iconBg: 'bg-indigo-500/30', accent: 'border-l-indigo-500' },
   { id: 'create-account', label: 'Criar conta', icon: '➕', description: 'Criar conta normal ou admin', route: '/admin/create-account', bg: 'bg-emerald-900/40', iconBg: 'bg-emerald-500/30', accent: 'border-l-emerald-500' },
   { id: 'admin-control', label: 'Controle de Admins', icon: '🛡️', description: 'Definir quais abas cada admin pode ver', route: '/admin/admin-control', bg: 'bg-slate-800/90', iconBg: 'bg-slate-500/30', accent: 'border-l-slate-400' },
   { id: 'site-tabs', label: 'Gerenciar Abas', icon: '🔧', description: 'Ativar/desativar abas do site', route: '/admin/site-tabs', bg: 'bg-slate-800/90', iconBg: 'bg-amber-500/20', accent: 'border-l-amber-500' },
   { id: 'cards', label: 'Cartas', icon: '🎴', description: 'Gerenciar cartas do jogo', route: '/admin/cartas', bg: 'bg-purple-900/40', iconBg: 'bg-purple-500/30', accent: 'border-l-purple-500' },
+  { id: 'card-effects', label: 'Efeitos OK', icon: '✅', description: 'Arrastar cartas ativas com efeito correto', route: '/admin/cartas/efeitos', bg: 'bg-emerald-900/40', iconBg: 'bg-emerald-500/30', accent: 'border-l-emerald-400' },
   { id: 'card-ownership', label: 'Posse de cartas', icon: '👥', description: 'Quantas pessoas têm cada carta', route: '/admin/card-ownership', bg: 'bg-purple-900/30', iconBg: 'bg-purple-500/20', accent: 'border-l-purple-400' },
   { id: 'initial-decks', label: 'Decks Iniciais', icon: '📚', description: 'Decks iniciais para novos jogadores', route: '/admin/initial-decks', bg: 'bg-violet-900/40', iconBg: 'bg-violet-500/30', accent: 'border-l-purple-500' },
   { id: 'news', label: 'Notícias', icon: '📢', description: 'Notícias e avisos do site', route: '/admin/news', bg: 'bg-fuchsia-900/30', iconBg: 'bg-fuchsia-500/30', accent: 'border-l-purple-500' },
+  { id: 'patch-notes', label: 'Patch Notes', icon: '📋', description: 'Correções, cartas e atualizações do jogo', route: '/admin/patch-notes', bg: 'bg-indigo-900/30', iconBg: 'bg-indigo-500/30', accent: 'border-l-indigo-400' },
   { id: 'playmats', label: 'Playmats', icon: '🎨', description: 'Tapetes de duelo', route: '/admin/playmats', bg: 'bg-cyan-900/40', iconBg: 'bg-cyan-500/30', accent: 'border-l-cyan-500' },
   { id: 'sleeves', label: 'Sleeves', icon: '🎭', description: 'Sleeves (fundo de carta)', route: '/admin/sleeves', bg: 'bg-teal-900/40', iconBg: 'bg-teal-500/30', accent: 'border-l-cyan-500' },
   { id: 'talismans', label: 'Talismãs', icon: '✨', description: 'Criar e gerenciar talismãs da loja', route: '/admin/talismans', bg: 'bg-amber-900/40', iconBg: 'bg-amber-500/30', accent: 'border-l-amber-500' },
@@ -31,6 +33,8 @@ const defaultCards: AdminCard[] = [
   { id: 'duel-score-settings', label: 'Score por duelo', icon: '📈', description: 'Quanto de score o duelista ganha por tipo de duelo', route: '/admin/duel-score-settings', bg: 'bg-slate-700/80', iconBg: 'bg-slate-500/30', accent: 'border-l-amber-500' },
   { id: 'tournaments', label: 'Torneios', icon: '🏆', description: 'Criar e gerenciar torneios', route: '/admin/tournaments', bg: 'bg-amber-900/40', iconBg: 'bg-amber-500/30', accent: 'border-l-yellow-500' },
   { id: 'seasons', label: 'Seasons', icon: '📅', description: 'Temporadas do ranking', route: '/admin/seasons', bg: 'bg-yellow-900/40', iconBg: 'bg-yellow-500/30', accent: 'border-l-yellow-500' },
+  { id: 'battle-pass', label: 'Passe de Batalha', icon: '🎖', description: 'Seasons do passe, níveis e recompensas grátis/premium', route: '/admin/battle-pass', bg: 'bg-amber-900/40', iconBg: 'bg-amber-500/30', accent: 'border-l-amber-400' },
+  { id: 'missions', label: 'Missões', icon: '🎯', description: 'Abas de missões, objetivos e recompensas', route: '/admin/missions', bg: 'bg-orange-900/40', iconBg: 'bg-orange-500/30', accent: 'border-l-orange-400' },
   { id: 'divisions', label: 'Divisões', icon: '📊', description: 'Divisões do ranking', route: '/admin/divisions', bg: 'bg-orange-900/30', iconBg: 'bg-orange-500/30', accent: 'border-l-yellow-500' },
   { id: 'achievements', label: 'Conquistas', icon: '⭐', description: 'Enviar conquistas aos usuários', route: '/admin/achievements', bg: 'bg-rose-900/30', iconBg: 'bg-rose-500/30', accent: 'border-l-yellow-500' },
   { id: 'messages', label: 'Mensagens', icon: '✉️', description: 'Mensagens em massa', route: '/admin/messages', bg: 'bg-pink-900/30', iconBg: 'bg-pink-500/30', accent: 'border-l-emerald-500' },
@@ -38,19 +42,21 @@ const defaultCards: AdminCard[] = [
   { id: 'social-media', label: 'Redes Sociais', icon: '📱', description: 'Links das redes sociais', route: '/admin/social-media', bg: 'bg-emerald-900/40', iconBg: 'bg-emerald-500/30', accent: 'border-l-emerald-500' },
   { id: 'new-account-settings', label: 'Contas Novas', icon: '⚙️', description: 'Cash, créditos e decks iniciais', route: '/admin/new-account-settings', bg: 'bg-slate-700/80', iconBg: 'bg-slate-400/30', accent: 'border-l-emerald-500' },
   { id: 'cash-division', label: 'Divisão de Cash', icon: '💰', description: 'Divisão automática de cash dos grupos', route: '/admin/cash-division', bg: 'bg-green-900/40', iconBg: 'bg-green-500/30', accent: 'border-l-emerald-500' },
+  { id: 'credit-packages', label: 'Pacotes de crédito', icon: '💎', description: 'Pacotes exibidos em Comprar créditos', route: '/admin/credit-packages', bg: 'bg-teal-900/40', iconBg: 'bg-teal-500/30', accent: 'border-l-teal-400' },
+  { id: 'promo-codes', label: 'Códigos de resgate', icon: '🎟', description: 'Gerar códigos ativos para contas resgatarem premiação', route: '/admin/promo-codes', bg: 'bg-violet-900/40', iconBg: 'bg-violet-500/30', accent: 'border-l-violet-400' },
   { id: 'payments', label: 'Pagamentos', icon: '💳', description: 'Adicionar créditos à conta e ver histórico', route: '/admin/payments', bg: 'bg-emerald-900/40', iconBg: 'bg-emerald-500/30', accent: 'border-l-emerald-500' },
 ];
 
 const CATEGORIES: { key: string; label: string; ids: string[] }[] = [
   { key: 'contas', label: 'Contas e Acesso', ids: ['create-account', 'admin-control', 'site-tabs', 'new-account-settings'] },
-  { key: 'cartas', label: 'Cartas e Decks', ids: ['cards', 'card-ownership', 'initial-decks', 'loot-boxes'] },
+  { key: 'cartas', label: 'Cartas e Decks', ids: ['cards', 'card-effects', 'card-ownership', 'initial-decks', 'loot-boxes'] },
   { key: 'loja', label: 'Loja e Cosméticos', ids: ['playmats', 'sleeves', 'talismans', 'briefcases', 'promotions'] },
-  { key: 'comunicacao', label: 'Notícias e Comunicação', ids: ['news', 'messages', 'feedback', 'social-media'] },
+  { key: 'comunicacao', label: 'Notícias e Comunicação', ids: ['news', 'patch-notes', 'messages', 'feedback', 'social-media'] },
   { key: 'jogadores', label: 'Jogadores', ids: ['players'] },
   { key: 'duelos', label: 'Duelos e Arena', ids: ['arena', 'active-duels', 'random-duel-level-ranges', 'bots', 'anime-decks', 'duel-score-settings'] },
   { key: 'torneios', label: 'Torneios', ids: ['tournaments'] },
-  { key: 'ranking', label: 'Ranking e Temporadas', ids: ['seasons', 'divisions', 'achievements'] },
-  { key: 'economia', label: 'Economia', ids: ['cash-division', 'payments'] },
+  { key: 'ranking', label: 'Ranking e Temporadas', ids: ['seasons', 'battle-pass', 'missions', 'divisions', 'achievements'] },
+  { key: 'economia', label: 'Economia', ids: ['cash-division', 'credit-packages', 'promo-codes', 'payments'] },
 ];
 
 function loadOrder(): string[] {

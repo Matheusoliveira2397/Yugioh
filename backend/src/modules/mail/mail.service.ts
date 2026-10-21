@@ -2,52 +2,124 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 
+const DEFAULT_FROM_NAME = 'YuGiOh RPG: Champions Of Duels';
+
 @Injectable()
 export class MailService {
   private transporter: nodemailer.Transporter | null = null;
+  /** Endereço legado / fallback (ex.: conta Gmail ou noreply do domínio) */
   private readonly emailUser: string;
   private readonly frontendUrl: string;
+  /** Cabeçalho From usado em todos os sendMail */
+  private readonly mailFromHeader: string;
 
   constructor(private configService: ConfigService) {
-    this.emailUser = this.configService.get<string>('EMAIL_USER') ?? '';
     this.frontendUrl = this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:5173';
-    const emailPassword = (this.configService.get<string>('EMAIL_PASSWORD') ?? '').replace(/\s/g, '');
+    this.emailUser = (this.configService.get<string>('EMAIL_USER') ?? '').trim();
 
-    console.log('🔍 [MailService] Verificando variáveis de ambiente...');
-    console.log(`   EMAIL_USER: ${this.emailUser || 'NÃO DEFINIDO'}`);
-    console.log(`   EMAIL_PASSWORD: ${emailPassword ? 'DEFINIDO (' + emailPassword.length + ' caracteres)' : 'NÃO DEFINIDO'}`);
-    console.log(`   FRONTEND_URL: ${this.frontendUrl || 'NÃO DEFINIDO'}`);
+    const emailPassword = (this.configService.get<string>('EMAIL_PASSWORD') ?? '').replace(/\s/g, '');
+    const smtpHost = (this.configService.get<string>('SMTP_HOST') ?? '').trim();
+    const smtpPortRaw = this.configService.get<string>('SMTP_PORT');
+    const smtpPort = smtpPortRaw ? parseInt(String(smtpPortRaw), 10) : 587;
+    const port = Number.isFinite(smtpPort) && smtpPort > 0 ? smtpPort : 587;
+    const smtpSecureEnv = String(this.configService.get<string>('SMTP_SECURE') ?? '').toLowerCase() === 'true';
+    const smtpSecure = smtpSecureEnv || port === 465;
+    const smtpUser = (this.configService.get<string>('SMTP_USER') ?? '').trim();
+    const smtpPass = (
+      this.configService.get<string>('SMTP_PASS') ??
+      this.configService.get<string>('SMTP_PASSWORD') ??
+      ''
+    ).replace(/\s/g, '');
+
+    const mailFromRaw = (this.configService.get<string>('MAIL_FROM') ?? '').trim();
+
+    this.mailFromHeader = this.buildMailFromHeader(mailFromRaw, this.emailUser);
 
     const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
-    if (!this.emailUser || this.emailUser === 'seu-email@gmail.com') {
-      console.log('⚠️ [MailService] Email não configurado - links aparecerão no console');
-      if (isProduction) {
-        console.error('❌ [MailService] PRODUÇÃO: Defina EMAIL_USER e EMAIL_PASSWORD nas variáveis de ambiente do servidor para enviar emails.');
-      } else {
-        console.log('💡 [MailService] Dica: Defina EMAIL_USER e EMAIL_PASSWORD no arquivo backend/.env');
+    const useCustomSmtp = !!smtpHost;
+
+    console.log('🔍 [MailService] Verificando variáveis de ambiente...');
+    console.log(`   SMTP_HOST: ${smtpHost || '(não definido → Gmail smtp.gmail.com)'}`);
+    console.log(`   SMTP_PORT: ${port}${useCustomSmtp ? '' : ' (ignorado no modo Gmail)'}`);
+    console.log(`   EMAIL_USER: ${this.emailUser || 'NÃO DEFINIDO'}`);
+    console.log(`   SMTP_USER: ${smtpUser || '(usa EMAIL_USER se SMTP_HOST definido)'}`);
+    console.log(
+      `   EMAIL_PASSWORD / SMTP_PASS: ${emailPassword || smtpPass ? 'DEFINIDO' : 'NÃO DEFINIDO'}`,
+    );
+    console.log(`   MAIL_FROM: ${mailFromRaw || '(usa nome padrão + EMAIL_USER)'}`);
+    console.log(`   FRONTEND_URL: ${this.frontendUrl || 'NÃO DEFINIDO'}`);
+
+    const authUser = useCustomSmtp ? smtpUser || this.emailUser : this.emailUser;
+    const authPass = useCustomSmtp ? smtpPass || emailPassword : emailPassword;
+
+    const emailUserPlaceholder =
+      !this.emailUser || this.emailUser === 'seu-email@gmail.com' || this.emailUser === 'seu-email-do-jogo@gmail.com';
+
+    if (!useCustomSmtp) {
+      if (emailUserPlaceholder) {
+        console.log('⚠️ [MailService] Email não configurado - links aparecerão no console');
+        if (isProduction) {
+          console.error(
+            '❌ [MailService] PRODUÇÃO: Defina EMAIL_USER e EMAIL_PASSWORD (Gmail) ou SMTP_HOST + credenciais transacionais.',
+          );
+        } else {
+          console.log('💡 [MailService] Dica: Defina EMAIL_USER e EMAIL_PASSWORD no backend/.env');
+        }
+        return;
       }
-      return;
-    }
-    if (!emailPassword) {
-      console.error('❌ [MailService] EMAIL_PASSWORD não está configurado!');
-      if (isProduction) {
-        console.error('❌ [MailService] PRODUÇÃO: Adicione EMAIL_PASSWORD (Senha de app do Gmail) nas variáveis de ambiente do servidor.');
+      if (!authPass) {
+        console.error('❌ [MailService] EMAIL_PASSWORD não está configurado!');
+        if (isProduction) {
+          console.error(
+            '❌ [MailService] PRODUÇÃO: Adicione EMAIL_PASSWORD (Senha de app Gmail) ou SMTP_PASS (provedor transacional).',
+          );
+        }
+        return;
       }
-      return;
+    } else {
+      if (!authUser || !authPass) {
+        console.error(
+          '❌ [MailService] SMTP_HOST definido: preencha SMTP_USER + SMTP_PASS (ou EMAIL_USER + EMAIL_PASSWORD como fallback).',
+        );
+        return;
+      }
+      const fromOk = !!mailFromRaw || !emailUserPlaceholder;
+      if (!fromOk) {
+        console.error(
+          '❌ [MailService] Com SMTP transacional, defina MAIL_FROM (ex.: noreply@seudominio.com) ou EMAIL_USER válido para o remetente.',
+        );
+        return;
+      }
     }
 
-    console.log(`📧 [MailService] Configurando SMTP com: ${this.emailUser}`);
+    const host = useCustomSmtp ? smtpHost : 'smtp.gmail.com';
+    const tlsRejectUnauthorized =
+      useCustomSmtp &&
+      String(this.configService.get<string>('SMTP_TLS_INSECURE') ?? '').toLowerCase() !== 'true';
+
+    console.log(
+      `📧 [MailService] SMTP: ${host}:${port} (secure=${smtpSecure}) — modo ${useCustomSmtp ? 'transacional' : 'Gmail'}`,
+    );
+
     this.transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false,
+      host,
+      port,
+      secure: smtpSecure,
       auth: {
-        user: this.emailUser,
-        pass: emailPassword,
+        user: authUser,
+        pass: authPass,
       },
-      tls: {
-        rejectUnauthorized: false,
-      },
+      ...(useCustomSmtp
+        ? {
+            tls: {
+              rejectUnauthorized: tlsRejectUnauthorized,
+            },
+          }
+        : {
+            tls: {
+              rejectUnauthorized: false,
+            },
+          }),
     });
 
     this.transporter.verify((error) => {
@@ -55,12 +127,29 @@ export class MailService {
         const smtpError = error as any;
         console.error('❌ [MailService] Erro ao verificar conexão SMTP:', smtpError?.message || error);
         if (smtpError?.code === 'EAUTH') {
-          console.error('💡 [MailService] Use a Senha de App do Gmail: https://myaccount.google.com/apppasswords');
+          if (useCustomSmtp) {
+            console.error(
+              '💡 [MailService] Confira SMTP_USER/SMTP_PASS no painel do provedor (ex.: Resend user=resend, pass=re_...).',
+            );
+          } else {
+            console.error('💡 [MailService] Use a Senha de App do Gmail: https://myaccount.google.com/apppasswords');
+          }
         }
       } else {
         console.log('✅ [MailService] SMTP OK – emails serão enviados para o endereço que a pessoa cadastrar.');
       }
     });
+  }
+
+  /** MAIL_FROM completo "Nome <email>" ou só email; senão nome padrão + EMAIL_USER */
+  private buildMailFromHeader(mailFromRaw: string, emailUser: string): string {
+    if (mailFromRaw) {
+      if (mailFromRaw.includes('<') && mailFromRaw.includes('>')) {
+        return mailFromRaw;
+      }
+      return `"${DEFAULT_FROM_NAME}" <${mailFromRaw}>`;
+    }
+    return `"${DEFAULT_FROM_NAME}" <${emailUser}>`;
   }
 
   async sendVerificationEmail(email: string, nickname: string, token: string): Promise<boolean> {
@@ -77,7 +166,7 @@ export class MailService {
 
     try {
       const info = await this.transporter.sendMail({
-        from: `"YuGiOh RPG: Champions Of Duels" <${this.emailUser}>`,
+        from: this.mailFromHeader,
         to: toAddress,
         subject: '🎴 Confirme seu cadastro no YuGiOh RPG: Champions Of Duels',
         html: `
@@ -149,8 +238,7 @@ export class MailService {
       console.log(`📧 [MailService] Accepted: ${JSON.stringify(info.accepted || [])}`);
       console.log(`📧 [MailService] Rejected: ${JSON.stringify(info.rejected || [])}`);
       console.log(`📧 [MailService] ===============================================`);
-      
-      // Verificar se o email foi realmente aceito
+
       if (info.accepted && info.accepted.length > 0) {
         console.log(`✅ [MailService] Email aceito pelo servidor SMTP`);
         return true;
@@ -167,27 +255,25 @@ export class MailService {
       console.error(`   Mensagem: ${error?.message || 'Erro desconhecido'}`);
       console.error(`   Código: ${error?.code || 'N/A'}`);
       console.error(`   Command: ${error?.command || 'N/A'}`);
-      
-      // Log detalhado do erro
+
       if (error.response) {
         console.error(`   Response: ${error.response}`);
       }
       if (error.responseCode) {
         console.error(`   Response Code: ${error.responseCode}`);
       }
-      
-      // Se for erro de autenticação, dar dica
+
       if (error.code === 'EAUTH' || error.message?.includes('Invalid login')) {
-        console.error('💡 [MailService] Dica: Verifique se está usando a Senha de App do Gmail, não a senha normal da conta');
+        console.error(
+          '💡 [MailService] Verifique SMTP_USER/SMTP_PASS ou senha de app Gmail conforme o modo configurado.',
+        );
       }
-      
-      // Retornar false em vez de lançar erro
+
       return false;
     }
   }
 
   async sendWelcomeEmail(email: string, nickname: string) {
-    // Se não tem transporter configurado, apenas loga
     if (!this.transporter) {
       console.log(`\n🎉 Boas-vindas para ${nickname} (${email})!\n`);
       return;
@@ -195,7 +281,7 @@ export class MailService {
 
     try {
       await this.transporter.sendMail({
-        from: `"YuGiOh RPG: Champions Of Duels" <${this.emailUser}>`,
+        from: this.mailFromHeader,
         to: email.trim().toLowerCase(),
         subject: '🎉 Bem-vindo ao YuGiOh RPG: Champions Of Duels!',
         html: `
@@ -277,7 +363,7 @@ export class MailService {
     }
     try {
       await this.transporter.sendMail({
-        from: `"YuGiOh RPG: Champions Of Duels" <${this.emailUser}>`,
+        from: this.mailFromHeader,
         to: email.trim().toLowerCase(),
         subject: '🔐 Redefinir senha - YuGiOh RPG: Champions Of Duels',
         html: `
@@ -335,7 +421,7 @@ export class MailService {
     }
     try {
       await this.transporter.sendMail({
-        from: `"YuGiOh RPG: Champions Of Duels" <${this.emailUser}>`,
+        from: this.mailFromHeader,
         to: currentEmail.trim().toLowerCase(),
         subject: '✉️ Confirmar troca de email - YuGiOh RPG: Champions Of Duels',
         html: `

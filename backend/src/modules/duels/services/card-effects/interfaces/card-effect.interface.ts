@@ -1,4 +1,5 @@
 import { Duel } from '../../../entities/duel.entity';
+import { exactCardMatch } from '../utils/card-key.util';
 
 /**
  * Contexto necessário para processar um efeito de carta
@@ -83,28 +84,7 @@ export class SimpleCardEffectWrapper implements ICardEffect {
   ) {}
 
   matches(card: any): boolean {
-    const cardId = card?.idCarta || card?.id || card?.cardId;
-    const cardName = (card?.name || card?.cardName || '').trim().toLowerCase();
-
-    // Verificar por nome
-    for (const name of this.cardNames) {
-      const normalizedName = name.toLowerCase().trim();
-      if (cardName === normalizedName || cardName.includes(normalizedName)) {
-        return true;
-      }
-    }
-
-    // Verificar por idCarta
-    if (this.cardIds && cardId) {
-      const cardIdLower = String(cardId).toLowerCase();
-      for (const id of this.cardIds) {
-        if (cardIdLower === id.toLowerCase() || cardIdLower.includes(id.toLowerCase())) {
-          return true;
-        }
-      }
-    }
-
-    return false;
+    return exactCardMatch(card, this.cardNames, this.cardIds);
   }
 
   async process(context: CardEffectContext): Promise<CardEffectResult> {

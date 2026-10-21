@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, LessThanOrEqual, MoreThan, Between, IsNull } from 'typeorm';
+import { Repository, LessThan, LessThanOrEqual, MoreThan, Between } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Tournament, TournamentStatus, TournamentFormat } from './entities/tournament.entity';
 import { TournamentParticipant, ParticipantStatus } from './entities/tournament-participant.entity';
@@ -12,6 +12,8 @@ import { AchievementsService } from '../users/achievements.service';
 import { ShopService } from '../shop/shop.service';
 import { AchievementType } from '../users/entities/achievement.entity';
 import { User } from '../users/entities/user.entity';
+import { MissionsService } from '../missions/missions.service';
+import { MissionObjectiveType } from '../missions/mission-objective.types';
 
 @Injectable()
 export class TournamentsService {
@@ -29,6 +31,7 @@ export class TournamentsService {
     private usersService: UsersService,
     private achievementsService: AchievementsService,
     private shopService: ShopService,
+    private missionsService: MissionsService,
   ) {}
 
   // ========== CRON JOBS - AUTOMAÇÃO ========== //
@@ -94,16 +97,8 @@ export class TournamentsService {
       // Gerar bracket automaticamente quando inscrições fecharem (fase de divulgação)
       if (tournament.currentParticipants >= 2) {
         try {
-          // Verificar se o bracket já foi gerado
-          const existingMatches = await this.matchRepository.find({
-            where: { tournamentId: tournament.id },
-            take: 1,
-          });
-
-          if (existingMatches.length === 0) {
-            await this.generateBracket(tournament.id);
-            this.logger.log(`🎲 Chave gerada automaticamente para torneio: ${tournament.name}`);
-          }
+          await this.ensureBracketGenerated(tournament.id);
+          this.logger.log(`🎲 Chave garantida para torneio: ${tournament.name}`);
         } catch (error) {
           this.logger.error(`Erro ao gerar chave automática do torneio ${tournament.id}:`, error);
         }
@@ -125,17 +120,9 @@ export class TournamentsService {
 
     for (const tournament of tournamentsToStart) {
       try {
-        // Verificar se o bracket já foi gerado
-        const existingMatches = await this.matchRepository.find({
-          where: { tournamentId: tournament.id },
-          take: 1,
-        });
-
-        // Se não tem bracket, gerar agora
-        if (existingMatches.length === 0) {
-          await this.generateBracket(tournament.id);
-          this.logger.log(`🎲 Chave gerada para torneio: ${tournament.name}`);
-        }
+        // Garantir chave completa (com todos os inscritos) antes de iniciar
+        await this.ensureBracketGenerated(tournament.id);
+        this.logger.log(`🎲 Chave garantida para torneio: ${tournament.name}`);
 
         // Mudar status para IN_PROGRESS (fase de duelos)
         tournament.status = TournamentStatus.IN_PROGRESS;
@@ -276,31 +263,56 @@ const matchesToStart = await this.matchRepository.find({
   private async autoAdvancePhases() {
     const tournamentsInProgress = await this.tournamentRepository.find({
       where: { status: TournamentStatus.IN_PROGRESS },
-      relations: ['matches'],
     });
 
     for (const tournament of tournamentsInProgress) {
-      const currentRoundMatches = tournament.matches.filter(
-        (m) => m.round === tournament.currentRound,
-      );
-
-      // Verificar se todas as partidas da rodada terminaram
-      const allFinished = currentRoundMatches.every(
-        (m) => m.status === MatchStatus.FINISHED || m.status === MatchStatus.WALKOVER,
-      );
-
-      if (allFinished && currentRoundMatches.length > 0) {
-        const hasNextRound = currentRoundMatches.some((m) => m.nextMatchId);
-
-        if (hasNextRound) {
-          // Avançar para próxima rodada
-          await this.advanceToNextRound(tournament.id);
-        } else {
-          // Torneio terminou
-          await this.finishTournament(tournament.id);
-        }
+      try {
+        await this.checkAndAdvanceRound(tournament.id);
+      } catch (error) {
+        this.logger.error(
+          `Erro ao avançar fases do torneio ${tournament.id}:`,
+          error,
+        );
       }
     }
+  }
+
+  /** Inicia duelo de uma partida READY (ou marca W.O. se mesmo jogador nos dois lados). */
+  private async tryStartMatchDuel(match: TournamentMatch): Promise<boolean> {
+    if (!match.player1Id || !match.player2Id || match.duelId) return false;
+    if (match.status !== MatchStatus.READY) return false;
+
+    if (match.player1Id === match.player2Id) {
+      match.winnerId = match.player1Id;
+      match.status = MatchStatus.WALKOVER;
+      match.finishedAt = new Date();
+      await this.matchRepository.save(match);
+      this.logger.warn(
+        `⚠️ Partida ${match.matchNumber} com o mesmo jogador nos dois lados — W.O.`,
+      );
+      return true;
+    }
+
+    try {
+      const duel = await this.duelsService.createDuel(
+        match.player1Id,
+        match.player2Id,
+        DuelOrigin.TOURNAMENT,
+      );
+      if (duel?.id) {
+        match.duelId = duel.id;
+        match.status = MatchStatus.IN_PROGRESS;
+        match.startedAt = new Date();
+        await this.matchRepository.save(match);
+        this.logger.log(
+          `⚔️ Duelo iniciado: partida ${match.matchNumber} (${match.player1Id} vs ${match.player2Id}) → ${duel.id}`,
+        );
+        return true;
+      }
+    } catch (error) {
+      this.logger.error(`Erro ao iniciar duelo da partida ${match.id}:`, error);
+    }
+    return false;
   }
 
   // ========== MÉTODOS PRINCIPAIS ========== //
@@ -387,7 +399,7 @@ const matchesToStart = await this.matchRepository.find({
     this.logger.log(`📝 Registrando usuário ${userIdValue} no torneio ${tournamentIdValue}`);
 
     try {
-      const participantId = await this.tournamentRepository.manager.transaction(async (manager) => {
+      const registrationResult = await this.tournamentRepository.manager.transaction(async (manager) => {
         const tournamentRepo = manager.getRepository(Tournament);
         const participantRepo = manager.getRepository(TournamentParticipant);
         const userRepo = manager.getRepository(User);
@@ -467,15 +479,40 @@ const matchesToStart = await this.matchRepository.find({
         }
         await tournamentRepo.save(lockedTournament);
 
-        return savedParticipant.id;
+        return {
+          participantId: savedParticipant.id,
+          filled: lockedTournament.currentParticipants >= lockedTournament.maxParticipants,
+        };
       });
 
       const saved = await this.participantRepository.findOne({
-        where: { id: participantId },
+        where: { id: registrationResult.participantId },
         relations: ['user', 'tournament'],
       });
       if (!saved) {
         throw new BadRequestException('Inscrição feita, mas não foi possível carregar o registro.');
+      }
+
+      // Vagas preenchidas → gerar chave imediatamente para divulgação
+      if (registrationResult.filled) {
+        try {
+          await this.ensureBracketGenerated(tournamentIdValue);
+        } catch (bracketErr: any) {
+          this.logger.error(
+            `Erro ao gerar chave após lotar torneio ${tournamentIdValue}:`,
+            bracketErr?.message || bracketErr,
+          );
+        }
+      }
+
+      try {
+        await this.missionsService.trackEvent(
+          userIdValue,
+          MissionObjectiveType.REGISTER_TOURNAMENT,
+          1,
+        );
+      } catch (missionErr: any) {
+        this.logger.warn(`Missão inscrição torneio: ${missionErr?.message || missionErr}`);
       }
       return saved;
     } catch (error: any) {
@@ -491,6 +528,70 @@ const matchesToStart = await this.matchRepository.find({
   }
 
   /**
+   * Garante chave completa com todos os participantes elegíveis.
+   * Regenera se a chave estiver ausente ou incompleta (ex.: alguém entrou depois).
+   */
+  async ensureBracketGenerated(tournamentId: string): Promise<TournamentMatch[]> {
+    const tournament = await this.tournamentRepository.findOne({
+      where: { id: tournamentId },
+      relations: ['participants'],
+    });
+    if (!tournament) {
+      throw new NotFoundException('Torneio não encontrado');
+    }
+
+    const eligible = (tournament.participants || []).filter(
+      (p) =>
+        p.status === ParticipantStatus.REGISTERED ||
+        p.status === ParticipantStatus.ACTIVE,
+    );
+    if (eligible.length < 2) {
+      throw new BadRequestException('Torneio precisa de pelo menos 2 participantes');
+    }
+
+    const existing = await this.matchRepository.find({ where: { tournamentId } });
+    if (existing.length === 0) {
+      return this.generateBracket(tournamentId);
+    }
+
+    const playerIdsInMatches = new Set<number>();
+    for (const m of existing) {
+      if (m.player1Id) playerIdsInMatches.add(m.player1Id);
+      if (m.player2Id) playerIdsInMatches.add(m.player2Id);
+    }
+    const missingPlayers = eligible.some((p) => !playerIdsInMatches.has(p.userId));
+
+    const totalRounds = Math.max(1, Math.ceil(Math.log2(Math.max(tournament.maxParticipants, eligible.length, 2))));
+    const expectedRound1Slots = Math.pow(2, totalRounds - 1);
+    const round1 = existing.filter((m) => m.round === 1 && !m.isThirdPlaceMatch);
+    const incompleteStructure =
+      tournament.format !== TournamentFormat.ROUND_ROBIN &&
+      round1.length < expectedRound1Slots;
+
+    if (!missingPlayers && !incompleteStructure) {
+      return existing;
+    }
+
+    const hasLiveOrFinished = existing.some(
+      (m) =>
+        m.status === MatchStatus.IN_PROGRESS ||
+        m.status === MatchStatus.FINISHED ||
+        m.status === MatchStatus.WALKOVER ||
+        !!m.duelId,
+    );
+    if (hasLiveOrFinished) {
+      this.logger.warn(
+        `Chave incompleta em ${tournament.name}, mas já há partidas iniciadas/finalizadas — não regenera automaticamente.`,
+      );
+      return existing;
+    }
+
+    this.logger.log(`♻️ Regenerando chave incompleta de ${tournament.name}`);
+    await this.matchRepository.delete({ tournamentId });
+    return this.generateBracket(tournamentId);
+  }
+
+  /**
    * Gera chave do torneio (bracket): mata-mata ou pontos corridos (round-robin).
    */
   async generateBracket(tournamentId: string) {
@@ -503,8 +604,11 @@ const matchesToStart = await this.matchRepository.find({
       throw new NotFoundException('Torneio não encontrado');
     }
 
+    // Inclui REGISTERED e ACTIVE (re-sorteio / regeneração)
     const participants = tournament.participants.filter(
-      (p) => p.status === ParticipantStatus.REGISTERED,
+      (p) =>
+        p.status === ParticipantStatus.REGISTERED ||
+        p.status === ParticipantStatus.ACTIVE,
     );
 
     if (participants.length < 2) {
@@ -524,24 +628,66 @@ const matchesToStart = await this.matchRepository.find({
       return await this.generateRoundRobinBracket(tournament, shuffled, startTime);
     }
 
-    // Mata-mata: primeira rodada + estrutura das próximas
+    // Mata-mata com byes até a próxima potência de 2 (baseado em maxParticipants ou N)
+    const bracketSize = Math.max(
+      2,
+      Math.pow(2, Math.ceil(Math.log2(Math.max(tournament.maxParticipants, shuffled.length)))),
+    );
+    const totalRounds = Math.ceil(Math.log2(bracketSize));
+    const firstRoundSlots = Math.pow(2, totalRounds - 1); // nº de partidas na R1
+
+    const slotPlayers: Array<number | null> = shuffled.map((p) => p.userId);
+    while (slotPlayers.length < firstRoundSlots * 2) {
+      slotPlayers.push(null); // bye
+    }
+
     const matchesFirstRound: Partial<TournamentMatch>[] = [];
-    for (let i = 0; i < shuffled.length; i += 2) {
-      if (i + 1 < shuffled.length) {
+    for (let i = 0; i < firstRoundSlots; i++) {
+      const p1 = slotPlayers[i * 2];
+      const p2 = slotPlayers[i * 2 + 1];
+      if (p1 != null && p2 != null) {
         matchesFirstRound.push({
           tournamentId: tournament.id,
           round: 1,
-          matchNumber: Math.floor(i / 2) + 1,
-          player1Id: shuffled[i].userId,
-          player2Id: shuffled[i + 1].userId,
+          matchNumber: i + 1,
+          player1Id: p1,
+          player2Id: p2,
           status: MatchStatus.READY,
           scheduledAt: startTime,
+        });
+      } else {
+        // Bye: um jogador avança automaticamente
+        const advancer = p1 ?? p2;
+        matchesFirstRound.push({
+          tournamentId: tournament.id,
+          round: 1,
+          matchNumber: i + 1,
+          player1Id: advancer ?? undefined,
+          player2Id: undefined,
+          winnerId: advancer ?? undefined,
+          status: advancer != null ? MatchStatus.WALKOVER : MatchStatus.SCHEDULED,
+          scheduledAt: startTime,
+          finishedAt: advancer != null ? new Date() : undefined,
         });
       }
     }
 
     const createdMatches = await this.matchRepository.save(matchesFirstRound);
     await this.createNextRoundStructure(tournament, createdMatches);
+
+    // Propagar vencedores de bye para a próxima rodada
+    for (const match of createdMatches) {
+      if (match.status === MatchStatus.WALKOVER && match.winnerId && match.nextMatchId) {
+        const next = await this.matchRepository.findOne({ where: { id: match.nextMatchId } });
+        if (next) {
+          if (!next.player1Id) next.player1Id = match.winnerId;
+          else if (!next.player2Id) next.player2Id = match.winnerId;
+          if (next.player1Id && next.player2Id) next.status = MatchStatus.READY;
+          await this.matchRepository.save(next);
+        }
+      }
+    }
+
     return createdMatches;
   }
 
@@ -587,8 +733,12 @@ const matchesToStart = await this.matchRepository.find({
    * Cria estrutura das próximas rodadas
    */
   private async createNextRoundStructure(tournament: Tournament, previousMatches: TournamentMatch[]) {
-    const totalRounds = Math.ceil(Math.log2(tournament.maxParticipants));
-    
+    const bracketSize = Math.max(
+      2,
+      Math.pow(2, Math.ceil(Math.log2(Math.max(tournament.maxParticipants, previousMatches.length * 2)))),
+    );
+    const totalRounds = Math.ceil(Math.log2(bracketSize));
+
     for (let round = 2; round <= totalRounds; round++) {
       const matchesInRound = Math.pow(2, totalRounds - round);
       const nextRoundMatches: Partial<TournamentMatch>[] = [];
@@ -607,7 +757,7 @@ const matchesToStart = await this.matchRepository.find({
 
       const savedMatches = await this.matchRepository.save(nextRoundMatches);
 
-      // Disputa de 3º lugar: sempre criar partida entre perdedores das semi (quando há pelo menos 4 participantes)
+      // Disputa de 3º lugar: semi com 2 partidas → criar jogo de 3º
       if (round === totalRounds && totalRounds >= 2 && previousMatches.length === 2) {
         const thirdPlaceMatch = this.matchRepository.create({
           tournamentId: tournament.id,
@@ -654,15 +804,26 @@ const matchesToStart = await this.matchRepository.find({
       return;
     }
 
+    if (
+      match.status === MatchStatus.FINISHED ||
+      match.status === MatchStatus.WALKOVER
+    ) {
+      this.logger.warn(
+        `⚠️ [updateTournamentMatchFromDuel] Partida ${match.id} já finalizada — ignorando`,
+      );
+      return;
+    }
+
     const tournament = match.tournament;
     const isRoundRobin = tournament?.format === TournamentFormat.ROUND_ROBIN;
+    const winnerIdNum = Number(winnerId);
 
-    match.winnerId = winnerId;
+    match.winnerId = winnerIdNum;
     match.status = MatchStatus.FINISHED;
     match.finishedAt = new Date();
     await this.matchRepository.save(match);
 
-    const loserId = match.player1Id === winnerId ? match.player2Id : match.player1Id;
+    const loserId = match.player1Id === winnerIdNum ? match.player2Id : match.player1Id;
 
     if (loserId) {
       const loserParticipant = await this.participantRepository.findOne({
@@ -678,14 +839,14 @@ const matchesToStart = await this.matchRepository.find({
       }
     }
     const winnerParticipant = await this.participantRepository.findOne({
-      where: { tournament: { id: match.tournamentId }, userId: winnerId },
+      where: { tournament: { id: match.tournamentId }, userId: winnerIdNum },
     });
     if (winnerParticipant) {
       winnerParticipant.wins = (winnerParticipant.wins || 0) + 1;
       await this.participantRepository.save(winnerParticipant);
     }
 
-    this.logger.log(`✅ [updateTournamentMatchFromDuel] Partida ${match.id} (Rodada ${match.round}) finalizada. Vencedor: ${winnerId}`);
+    this.logger.log(`✅ [updateTournamentMatchFromDuel] Partida ${match.id} (Rodada ${match.round}) finalizada. Vencedor: ${winnerIdNum}`);
 
     if (isRoundRobin) {
       await this.checkRoundRobinTournamentFinished(match.tournamentId);
@@ -729,37 +890,41 @@ const matchesToStart = await this.matchRepository.find({
         const shouldGoToPlayer1 = currentMatchIndex === 0;
         
         if (shouldGoToPlayer1) {
-          if (nextMatch.player1Id && nextMatch.player1Id !== winnerId) {
-            this.logger.warn(`⚠️ [updateTournamentMatchFromDuel] player1Id já está ocupado (${nextMatch.player1Id}), mas vencedor ${winnerId} também precisa ir para lá. Substituindo...`);
+          if (nextMatch.player1Id && nextMatch.player1Id !== winnerIdNum) {
+            this.logger.warn(`⚠️ [updateTournamentMatchFromDuel] player1Id já está ocupado (${nextMatch.player1Id}), mas vencedor ${winnerIdNum} também precisa ir para lá. Substituindo...`);
           }
-          nextMatch.player1Id = winnerId;
-          this.logger.log(`✅ [updateTournamentMatchFromDuel] Vencedor ${winnerId} atribuído ao player1Id da próxima partida (Match ${nextMatch.matchNumber} - Round ${nextMatch.round})`);
+          nextMatch.player1Id = winnerIdNum;
+          this.logger.log(`✅ [updateTournamentMatchFromDuel] Vencedor ${winnerIdNum} atribuído ao player1Id da próxima partida (Match ${nextMatch.matchNumber} - Round ${nextMatch.round})`);
         } else {
-          if (nextMatch.player2Id && nextMatch.player2Id !== winnerId) {
-            this.logger.warn(`⚠️ [updateTournamentMatchFromDuel] player2Id já está ocupado (${nextMatch.player2Id}), mas vencedor ${winnerId} também precisa ir para lá. Substituindo...`);
+          if (nextMatch.player2Id && nextMatch.player2Id !== winnerIdNum) {
+            this.logger.warn(`⚠️ [updateTournamentMatchFromDuel] player2Id já está ocupado (${nextMatch.player2Id}), mas vencedor ${winnerIdNum} também precisa ir para lá. Substituindo...`);
           }
           // Evitar colocar o mesmo jogador nos dois lados (ex.: bye mal preenchido)
-          if (nextMatch.player1Id === winnerId) {
-            this.logger.warn(`⚠️ [updateTournamentMatchFromDuel] Vencedor ${winnerId} já está em player1Id da próxima partida. Marcando partida como W.O.`);
-            nextMatch.winnerId = winnerId;
+          if (nextMatch.player1Id === winnerIdNum) {
+            this.logger.warn(`⚠️ [updateTournamentMatchFromDuel] Vencedor ${winnerIdNum} já está em player1Id da próxima partida. Marcando partida como W.O.`);
+            nextMatch.winnerId = winnerIdNum;
             nextMatch.status = MatchStatus.WALKOVER;
             nextMatch.finishedAt = new Date();
           } else {
-            nextMatch.player2Id = winnerId;
-            this.logger.log(`✅ [updateTournamentMatchFromDuel] Vencedor ${winnerId} atribuído ao player2Id da próxima partida (Match ${nextMatch.matchNumber} - Round ${nextMatch.round})`);
+            nextMatch.player2Id = winnerIdNum;
+            this.logger.log(`✅ [updateTournamentMatchFromDuel] Vencedor ${winnerIdNum} atribuído ao player2Id da próxima partida (Match ${nextMatch.matchNumber} - Round ${nextMatch.round})`);
           }
         }
 
-        // Se ambos os jogadores estão definidos, marcar como READY
-        if (nextMatch.player1Id && nextMatch.player2Id) {
+        // Se ambos os jogadores estão definidos e ainda não é W.O., marcar como READY
+        if (
+          nextMatch.status !== MatchStatus.WALKOVER &&
+          nextMatch.player1Id &&
+          nextMatch.player2Id
+        ) {
           nextMatch.status = MatchStatus.READY;
           this.logger.log(`✅ [updateTournamentMatchFromDuel] Próxima partida (Match ${nextMatch.matchNumber} - Round ${nextMatch.round}) está pronta com ambos os jogadores: ${nextMatch.player1Id} vs ${nextMatch.player2Id}`);
-        } else {
+        } else if (nextMatch.status !== MatchStatus.WALKOVER) {
           this.logger.log(`⏳ [updateTournamentMatchFromDuel] Próxima partida (Match ${nextMatch.matchNumber} - Round ${nextMatch.round}) aguardando outro jogador. Atual: player1Id=${nextMatch.player1Id}, player2Id=${nextMatch.player2Id}`);
         }
 
         await this.matchRepository.save(nextMatch);
-        this.logger.log(`✅ [updateTournamentMatchFromDuel] Vencedor ${winnerId} avançou para próxima fase (Partida ${nextMatch.matchNumber} - Rodada ${nextMatch.round})`);
+        this.logger.log(`✅ [updateTournamentMatchFromDuel] Vencedor ${winnerIdNum} avançou para próxima fase (Partida ${nextMatch.matchNumber} - Rodada ${nextMatch.round})`);
       } else {
         this.logger.warn(`⚠️ [updateTournamentMatchFromDuel] Próxima partida não encontrada (nextMatchId: ${match.nextMatchId})`);
       }
@@ -802,18 +967,45 @@ const matchesToStart = await this.matchRepository.find({
     // Se esta partida é a disputa de 3º lugar: definir finalPosition 3 e 4
     if (match.isThirdPlaceMatch && loserId) {
       await this.participantRepository.update(
-        { tournament: { id: match.tournamentId }, userId: winnerId },
+        { tournament: { id: match.tournamentId }, userId: winnerIdNum },
         { finalPosition: 3 },
       );
       await this.participantRepository.update(
         { tournament: { id: match.tournamentId }, userId: loserId },
         { finalPosition: 4 },
       );
-      this.logger.log(`🏅 [updateTournamentMatchFromDuel] 3º lugar: ${winnerId}, 4º lugar: ${loserId}`);
+      this.logger.log(`🏅 [updateTournamentMatchFromDuel] 3º lugar: ${winnerIdNum}, 4º lugar: ${loserId}`);
+
+      // Se o torneio já terminou (final antes do 3º), entregar prêmios de 3º/4º agora
+      const tNow = await this.tournamentRepository.findOne({ where: { id: match.tournamentId } });
+      if (tNow?.status === TournamentStatus.FINISHED) {
+        await this.distributePrizes(tNow, [3, 4]);
+        await this.awardTournamentPoints(match.tournamentId, [3, 4]);
+      }
     }
 
     // Verificar se todas as partidas da rodada atual terminaram para avançar fase
     await this.checkAndAdvanceRound(match.tournamentId);
+  }
+
+  /**
+   * Partidas da rodada que realmente precisam terminar.
+   * 3º lugar vazio (sem os 2 jogadores) não bloqueia a finalização.
+   */
+  private matchesRequiredToFinishRound(matches: TournamentMatch[]): TournamentMatch[] {
+    return matches.filter((m) => {
+      if (!m.isThirdPlaceMatch) return true;
+      if (
+        m.status === MatchStatus.FINISHED ||
+        m.status === MatchStatus.WALKOVER ||
+        m.status === MatchStatus.IN_PROGRESS ||
+        m.status === MatchStatus.CANCELLED
+      ) {
+        return m.status !== MatchStatus.CANCELLED;
+      }
+      // READY/SCHEDULED: só conta se ambos os jogadores estão definidos
+      return !!(m.player1Id && m.player2Id);
+    });
   }
 
   /**
@@ -830,114 +1022,115 @@ const matchesToStart = await this.matchRepository.find({
       return;
     }
 
+    if (tournament.status === TournamentStatus.FINISHED) {
+      return;
+    }
+
     const currentRoundMatches = tournament.matches.filter(
       (m) => m.round === tournament.currentRound,
     );
 
-    this.logger.log(`🔍 [checkAndAdvanceRound] Verificando rodada ${tournament.currentRound} do torneio ${tournament.name}. Total de partidas: ${currentRoundMatches.length}`);
+    // Cancelar disputa de 3º sem jogadores para não travar o torneio
+    for (const m of currentRoundMatches) {
+      if (
+        m.isThirdPlaceMatch &&
+        (m.status === MatchStatus.SCHEDULED || m.status === MatchStatus.READY) &&
+        (!m.player1Id || !m.player2Id)
+      ) {
+        const championshipDone = currentRoundMatches
+          .filter((x) => !x.isThirdPlaceMatch)
+          .every(
+            (x) =>
+              x.status === MatchStatus.FINISHED || x.status === MatchStatus.WALKOVER,
+          );
+        if (championshipDone) {
+          m.status = MatchStatus.CANCELLED;
+          m.finishedAt = new Date();
+          await this.matchRepository.save(m);
+          this.logger.log(
+            `🚫 [checkAndAdvanceRound] Disputa de 3º cancelada (sem jogadores) — torneio ${tournament.name}`,
+          );
+        }
+      }
+    }
 
-    // Verificar status de cada partida
-    const matchStatuses = currentRoundMatches.map(m => ({
-      id: m.id,
-      matchNumber: m.matchNumber,
-      status: m.status,
-      winnerId: m.winnerId,
-      player1Id: m.player1Id,
-      player2Id: m.player2Id,
-      nextMatchId: m.nextMatchId,
-    }));
-    this.logger.log(`📊 [checkAndAdvanceRound] Status das partidas:`, JSON.stringify(matchStatuses, null, 2));
+    const requiredMatches = this.matchesRequiredToFinishRound(currentRoundMatches);
 
-    // Verificar se todas as partidas da rodada terminaram
-    const allFinished = currentRoundMatches.every(
-      (m) => m.status === MatchStatus.FINISHED || m.status === MatchStatus.WALKOVER,
+    this.logger.log(
+      `🔍 [checkAndAdvanceRound] Rodada ${tournament.currentRound} de ${tournament.name}: ${requiredMatches.length}/${currentRoundMatches.length} partida(s) relevantes`,
     );
 
-    this.logger.log(`✅ [checkAndAdvanceRound] Todas as partidas terminaram? ${allFinished}`);
+    const allFinished =
+      requiredMatches.length > 0 &&
+      requiredMatches.every(
+        (m) =>
+          m.status === MatchStatus.FINISHED ||
+          m.status === MatchStatus.WALKOVER ||
+          m.status === MatchStatus.CANCELLED,
+      );
 
-    if (allFinished && currentRoundMatches.length > 0) {
-      const hasNextRound = currentRoundMatches.some((m) => m.nextMatchId);
+    this.logger.log(`✅ [checkAndAdvanceRound] Todas as partidas relevantes terminaram? ${allFinished}`);
+
+    if (allFinished) {
+      const championshipMatches = requiredMatches.filter((m) => !m.isThirdPlaceMatch);
+      const hasNextRound = championshipMatches.some((m) => m.nextMatchId);
 
       this.logger.log(`🔍 [checkAndAdvanceRound] Tem próxima rodada? ${hasNextRound}`);
 
       if (hasNextRound) {
-        // Avançar para próxima rodada
         await this.advanceToNextRound(tournament.id);
-        
-        // Buscar torneio atualizado para pegar o currentRound correto
+
         const updatedTournament = await this.tournamentRepository.findOne({
           where: { id: tournament.id },
         });
-        
+
         if (!updatedTournament) {
           this.logger.error(`❌ [checkAndAdvanceRound] Não foi possível buscar torneio atualizado após avançar rodada`);
           return;
         }
-        
-        // Iniciar automaticamente as partidas da próxima rodada se estiverem prontas
+
         const nextRound = updatedTournament.currentRound;
         this.logger.log(`📈 [checkAndAdvanceRound] Avançou para rodada ${nextRound}. Buscando partidas prontas...`);
-        
+
         const nextRoundMatches = await this.matchRepository.find({
-          where: {
-            tournamentId: tournament.id,
-            round: nextRound,
-          },
+          where: { tournamentId: tournament.id, round: nextRound },
         });
 
-        this.logger.log(`🔍 [checkAndAdvanceRound] Partidas da rodada ${nextRound}: ${nextRoundMatches.length}`);
-        
-        for (const nextMatch of nextRoundMatches) {
-          this.logger.log(`🔍 [checkAndAdvanceRound] Partida ${nextMatch.matchNumber} (Round ${nextRound}): status=${nextMatch.status}, player1Id=${nextMatch.player1Id}, player2Id=${nextMatch.player2Id}, duelId=${nextMatch.duelId}`);
-        }
-
-        const readyMatches = nextRoundMatches.filter(m => m.status === MatchStatus.READY);
+        const readyMatches = nextRoundMatches.filter((m) => m.status === MatchStatus.READY);
         this.logger.log(`✅ [checkAndAdvanceRound] Partidas prontas (READY): ${readyMatches.length}`);
 
-        // Iniciar todas as partidas da próxima rodada que estão prontas
         for (const nextMatch of readyMatches) {
-          if (nextMatch.player1Id && nextMatch.player2Id && !nextMatch.duelId) {
-            if (nextMatch.player1Id === nextMatch.player2Id) {
-              this.logger.warn(`⚠️ [checkAndAdvanceRound] Partida ${nextMatch.matchNumber} tem o mesmo jogador nos dois lados (${nextMatch.player1Id}). Marcando como W.O.`);
-              nextMatch.winnerId = nextMatch.player1Id;
-              nextMatch.status = MatchStatus.WALKOVER;
-              nextMatch.finishedAt = new Date();
-              await this.matchRepository.save(nextMatch);
-              continue;
-            }
-            try {
-              this.logger.log(`⚔️ [checkAndAdvanceRound] Iniciando duelo para partida ${nextMatch.matchNumber}: ${nextMatch.player1Id} vs ${nextMatch.player2Id}`);
-              
-              const duel = await this.duelsService.createDuel(
-                nextMatch.player1Id,
-                nextMatch.player2Id,
-                DuelOrigin.TOURNAMENT,
-              );
-
-              if (duel && duel.id) {
-                nextMatch.duelId = duel.id;
-                nextMatch.status = MatchStatus.IN_PROGRESS;
-                nextMatch.startedAt = new Date();
-                await this.matchRepository.save(nextMatch);
-                this.logger.log(`✅ [checkAndAdvanceRound] Duelo iniciado automaticamente para próxima fase: ${nextMatch.player1Id} vs ${nextMatch.player2Id} (Duel ID: ${duel.id})`);
-              }
-            } catch (error) {
-              this.logger.error(`❌ [checkAndAdvanceRound] Erro ao iniciar duelo da próxima fase ${nextMatch.id}:`, error);
-            }
-          } else {
-            this.logger.warn(`⚠️ [checkAndAdvanceRound] Partida ${nextMatch.matchNumber} não pode ser iniciada: player1Id=${nextMatch.player1Id}, player2Id=${nextMatch.player2Id}, duelId=${nextMatch.duelId}`);
-          }
+          await this.tryStartMatchDuel(nextMatch);
         }
+        // Reavalia: próxima rodada pode já estar toda em W.O./bye
+        await this.checkAndAdvanceRound(tournament.id);
       } else {
-        // Torneio terminou
         this.logger.log(`🏆 [checkAndAdvanceRound] Torneio ${tournament.name} terminou! Finalizando...`);
         await this.finishTournament(tournament.id);
       }
-    } else if (!allFinished && currentRoundMatches.length > 0) {
-      const unfinishedMatches = currentRoundMatches.filter(
-        (m) => m.status !== MatchStatus.FINISHED && m.status !== MatchStatus.WALKOVER,
+    } else if (currentRoundMatches.length > 0) {
+      // Iniciar partidas READY que ainda não têm duelo (ex.: 3º lugar liberado no meio da rodada)
+      const readyToStart = currentRoundMatches.filter(
+        (m) =>
+          m.status === MatchStatus.READY &&
+          m.player1Id &&
+          m.player2Id &&
+          !m.duelId,
       );
-      this.logger.log(`⏳ [checkAndAdvanceRound] Aguardando ${unfinishedMatches.length} partida(s) terminar:`, unfinishedMatches.map(m => `Match ${m.matchNumber} (${m.status})`));
+      for (const m of readyToStart) {
+        await this.tryStartMatchDuel(m);
+      }
+
+      const unfinishedMatches = requiredMatches.filter(
+        (m) =>
+          m.status !== MatchStatus.FINISHED &&
+          m.status !== MatchStatus.WALKOVER &&
+          m.status !== MatchStatus.CANCELLED,
+      );
+      this.logger.log(
+        `⏳ [checkAndAdvanceRound] Aguardando ${unfinishedMatches.length} partida(s):`,
+        unfinishedMatches.map((m) => `Match ${m.matchNumber} (${m.status})`),
+      );
     }
   }
 
@@ -1006,6 +1199,7 @@ const matchesToStart = await this.matchRepository.find({
 
   /**
    * Finaliza torneio. Quem vencer a final é o campeão (winnerId).
+   * Entrega premiações e marca status finished.
    */
   private async finishTournament(tournamentId: string) {
     const tournament = await this.tournamentRepository.findOne({
@@ -1016,42 +1210,80 @@ const matchesToStart = await this.matchRepository.find({
       throw new Error('Tournament not found');
     }
 
-    const finalMatch = await this.matchRepository.findOne({
-      where: {
-        tournamentId,
-        status: MatchStatus.FINISHED,
-        nextMatchId: IsNull(),
-        isThirdPlaceMatch: false,
-      },
-    });
+    if (tournament.status === TournamentStatus.FINISHED) {
+      this.logger.log(`ℹ️ [finishTournament] Torneio ${tournament.name} já estava finalizado`);
+      return;
+    }
 
-    if (finalMatch?.winnerId) {
-      tournament.winnerId = finalMatch.winnerId;
-      tournament.status = TournamentStatus.FINISHED;
-      tournament.finishedAt = new Date();
+    const allMatches = await this.matchRepository.find({ where: { tournamentId } });
+    const finalMatch = allMatches
+      .filter(
+        (m) =>
+          !m.isThirdPlaceMatch &&
+          !m.nextMatchId &&
+          (m.status === MatchStatus.FINISHED || m.status === MatchStatus.WALKOVER) &&
+          m.winnerId != null,
+      )
+      .sort((a, b) => b.round - a.round)[0];
 
-      const loserId = finalMatch.player1Id === finalMatch.winnerId ? finalMatch.player2Id : finalMatch.player1Id;
-      await this.participantRepository.update(
-        { tournament: { id: tournamentId }, userId: finalMatch.winnerId },
-        { finalPosition: 1 },
+    if (!finalMatch?.winnerId) {
+      this.logger.error(
+        `❌ [finishTournament] Torneio ${tournament.name}: final sem vencedor — não foi possível finalizar`,
       );
-      if (loserId) {
+      return;
+    }
+
+    tournament.winnerId = finalMatch.winnerId;
+    tournament.status = TournamentStatus.FINISHED;
+    tournament.finishedAt = new Date();
+
+    const loserId =
+      finalMatch.player1Id === finalMatch.winnerId
+        ? finalMatch.player2Id
+        : finalMatch.player1Id;
+    await this.participantRepository.update(
+      { tournament: { id: tournamentId }, userId: finalMatch.winnerId },
+      { finalPosition: 1 },
+    );
+    if (loserId) {
+      await this.participantRepository.update(
+        { tournament: { id: tournamentId }, userId: loserId },
+        { finalPosition: 2 },
+      );
+    }
+
+    // Garantir 3º/4º se a disputa de 3º já tiver terminado
+    const thirdPlaceMatch = allMatches.find(
+      (m) =>
+        m.isThirdPlaceMatch &&
+        (m.status === MatchStatus.FINISHED || m.status === MatchStatus.WALKOVER) &&
+        m.winnerId != null,
+    );
+    if (thirdPlaceMatch?.winnerId) {
+      const thirdLoser =
+        thirdPlaceMatch.player1Id === thirdPlaceMatch.winnerId
+          ? thirdPlaceMatch.player2Id
+          : thirdPlaceMatch.player1Id;
+      await this.participantRepository.update(
+        { tournament: { id: tournamentId }, userId: thirdPlaceMatch.winnerId },
+        { finalPosition: 3 },
+      );
+      if (thirdLoser) {
         await this.participantRepository.update(
-          { tournament: { id: tournamentId }, userId: loserId },
-          { finalPosition: 2 },
+          { tournament: { id: tournamentId }, userId: thirdLoser },
+          { finalPosition: 4 },
         );
       }
-
-      await this.tournamentRepository.save(tournament);
-
-      // Distribuir prêmios
-      await this.distributePrizes(tournament);
-
-      // Atribuir pontos de torneio (ranking Obelisco/Rá/Slifer)
-      await this.awardTournamentPoints(tournamentId);
-
-      this.logger.log(`🏆 Torneio ${tournament.name} finalizado!`);
     }
+
+    await this.tournamentRepository.save(tournament);
+
+    await this.distributePrizes(tournament);
+    await this.awardTournamentPoints(tournamentId);
+
+    this.logger.log(
+      `🏆 Torneio ${tournament.name} finalizado! Campeão userId=${tournament.winnerId}`,
+    );
   }
 
   /** Pontos por posição final (1º, 2º, 3º, 4º) para o ranking de torneios */
@@ -1062,7 +1294,7 @@ const matchesToStart = await this.matchRepository.find({
     4: 10,
   };
 
-  private async awardTournamentPoints(tournamentId: string) {
+  private async awardTournamentPoints(tournamentId: string, onlyPlaces?: number[]) {
     const full = await this.tournamentRepository.findOne({
       where: { id: tournamentId },
       relations: ['participants'],
@@ -1070,6 +1302,8 @@ const matchesToStart = await this.matchRepository.find({
     if (!full?.participants?.length) return;
     for (const p of full.participants) {
       const place = p.finalPosition;
+      if (place == null) continue;
+      if (onlyPlaces && !onlyPlaces.includes(place)) continue;
       const points = TournamentsService.POINTS_BY_PLACE[place];
       if (points == null || points === 0) continue;
       try {
@@ -1084,21 +1318,34 @@ const matchesToStart = await this.matchRepository.find({
   }
 
   /**
-   * Distribui prêmios
+   * Distribui prêmios. onlyPlaces limita a lugares específicos (ex.: 3º/4º tardios).
+   * Idempotente via prizeDetails._awardedPlaces.
    */
-  private async distributePrizes(tournament: Tournament) {
+  private async distributePrizes(tournament: Tournament, onlyPlaces?: number[]) {
     const fullTournament = await this.tournamentRepository.findOne({
       where: { id: tournament.id },
       relations: ['participants', 'participants.user'],
     });
     if (!fullTournament) return;
 
-    const details = fullTournament.prizeDetails;
-    const places = [1, 2, 3, 4] as const;
+    const details = { ...(fullTournament.prizeDetails ?? {}) } as Record<string, any>;
+    const awardedPlaces: number[] = Array.isArray(details._awardedPlaces)
+      ? [...details._awardedPlaces]
+      : [];
+    const places = ([1, 2, 3, 4] as const).filter(
+      (place) => !onlyPlaces || onlyPlaces.includes(place),
+    );
 
     for (const place of places) {
+      if (awardedPlaces.includes(place)) {
+        this.logger.log(`ℹ️ Prêmio ${place}º já entregue no torneio ${fullTournament.name}, pulando`);
+        continue;
+      }
+
       const participants = fullTournament.participants?.filter((p) => p.finalPosition === place) ?? [];
-      const prize = details?.[place];
+      if (participants.length === 0) continue;
+
+      const prize = details[place];
       const creditLegacy = place === 1 ? fullTournament.prizeFirst : place === 2 ? fullTournament.prizeSecond : place === 3 ? fullTournament.prizeThird : 0;
       const credit = prize?.credit ?? (place <= 3 ? creditLegacy : 0);
       const cash = prize?.cash ?? 0;
@@ -1107,6 +1354,7 @@ const matchesToStart = await this.matchRepository.find({
       const trophyIcon = prize?.trophyIcon;
       const stars = Math.max(0, prize?.stars ?? 0);
 
+      let awardedAny = false;
       for (const p of participants) {
         const userId = p.userId;
         try {
@@ -1136,15 +1384,28 @@ const matchesToStart = await this.matchRepository.find({
               title: trophyTitle,
               description: `${fullTournament.name} - ${place}º lugar`,
               icon: trophyIcon ?? undefined,
-              metadata: { tournamentId: fullTournament.id, place, tournamentName: fullTournament.name },
+              metadata: {
+                tournamentId: fullTournament.id,
+                place,
+                tournamentName: fullTournament.name,
+              },
             });
             this.logger.log(`🏆 Troféu ${place}º: ${trophyTitle} -> userId ${userId}`);
           }
+          awardedAny = true;
         } catch (err) {
           this.logger.error(`Erro ao distribuir prêmio ${place}º para userId ${userId}:`, err);
         }
       }
+
+      if (awardedAny || participants.length > 0) {
+        awardedPlaces.push(place);
+      }
     }
+
+    details._awardedPlaces = awardedPlaces;
+    fullTournament.prizeDetails = details;
+    await this.tournamentRepository.save(fullTournament);
   }
 
   /**
@@ -1177,7 +1438,16 @@ const matchesToStart = await this.matchRepository.find({
   async findOne(id: string) {
     const tournament = await this.tournamentRepository.findOne({
       where: { id },
-      relations: ['creator', 'participants', 'participants.user', 'matches', 'matches.player1', 'matches.player2', 'matches.winner'],
+      relations: [
+        'creator',
+        'winner',
+        'participants',
+        'participants.user',
+        'matches',
+        'matches.player1',
+        'matches.player2',
+        'matches.winner',
+      ],
     });
 
     if (!tournament) {
@@ -1240,7 +1510,7 @@ const matchesToStart = await this.matchRepository.find({
   }
 
   /**
-   * Obter top 3 do torneio (mata-mata: pela final; pontos corridos: por finalPosition).
+   * Obter pódio do torneio (1º–4º) com base em finalPosition dos participantes.
    */
   async getTop3(tournamentId: string) {
     const tournament = await this.tournamentRepository.findOne({
@@ -1256,98 +1526,108 @@ const matchesToStart = await this.matchRepository.find({
       throw new BadRequestException('Torneio ainda não foi finalizado');
     }
 
-    const top3: Array<{ position: number; user: any; prize: number }> = [];
     const prizeByPlace: Record<number, number> = {
       1: tournament.prizeFirst,
       2: tournament.prizeSecond,
       3: tournament.prizeThird,
+      4: tournament.prizeDetails?.[4]?.credit ?? 0,
     };
 
-    if (tournament.format === TournamentFormat.ROUND_ROBIN) {
-      const byPosition = (tournament.participants ?? [])
-        .filter((p) => p.finalPosition != null && p.finalPosition >= 1 && p.finalPosition <= 3)
-        .sort((a, b) => (a.finalPosition ?? 99) - (b.finalPosition ?? 99));
-      for (const p of byPosition.slice(0, 3)) {
+    const byPosition = (tournament.participants ?? [])
+      .filter((p) => p.finalPosition != null && p.finalPosition >= 1 && p.finalPosition <= 4)
+      .sort((a, b) => (a.finalPosition ?? 99) - (b.finalPosition ?? 99));
+
+    if (byPosition.length > 0) {
+      const top: Array<{ position: number; user: any; prize: number }> = [];
+      for (const p of byPosition) {
         const u = p.user ?? (await this.usersService.findById(p.userId));
         if (u) {
-          top3.push({
-            position: p.finalPosition!,
+          const place = p.finalPosition!;
+          const detailCredit = tournament.prizeDetails?.[place]?.credit;
+          top.push({
+            position: place,
             user: { id: u.id, nickname: u.nickname, profileImage: u.profileImage },
-            prize: prizeByPlace[p.finalPosition!] ?? 0,
+            prize: detailCredit ?? prizeByPlace[place] ?? 0,
           });
         }
       }
-      return top3;
+      return top;
     }
 
+    // Fallback mata-mata pela chave (torneios antigos sem finalPosition)
     const allMatches = await this.matchRepository.find({
-      where: { tournamentId, status: MatchStatus.FINISHED },
+      where: { tournamentId },
       relations: ['player1', 'player2', 'winner'],
     });
-    const finalMatch = allMatches.find(m => !m.nextMatchId && !m.isThirdPlaceMatch);
+    const finished = allMatches.filter(
+      (m) => m.status === MatchStatus.FINISHED || m.status === MatchStatus.WALKOVER,
+    );
+    const finalMatch = finished
+      .filter((m) => !m.nextMatchId && !m.isThirdPlaceMatch && m.winnerId != null)
+      .sort((a, b) => b.round - a.round)[0];
 
-    // 1º lugar (vencedor da final)
+    const top3: Array<{ position: number; user: any; prize: number }> = [];
+
     if (finalMatch?.winnerId) {
       const winner = await this.usersService.findById(finalMatch.winnerId);
       top3.push({
         position: 1,
-        user: {
-          id: winner.id,
-          nickname: winner.nickname,
-          profileImage: winner.profileImage,
-        },
+        user: { id: winner.id, nickname: winner.nickname, profileImage: winner.profileImage },
         prize: tournament.prizeFirst,
       });
-    }
-
-    // 2º lugar (perdedor da final)
-    if (finalMatch && finalMatch.player1Id && finalMatch.player2Id) {
-      const loserId = finalMatch.player1Id === finalMatch.winnerId ? finalMatch.player2Id : finalMatch.player1Id;
+      const loserId =
+        finalMatch.player1Id === finalMatch.winnerId
+          ? finalMatch.player2Id
+          : finalMatch.player1Id;
       if (loserId) {
         const loser = await this.usersService.findById(loserId);
         top3.push({
           position: 2,
-          user: {
-            id: loser.id,
-            nickname: loser.nickname,
-            profileImage: loser.profileImage,
-          },
+          user: { id: loser.id, nickname: loser.nickname, profileImage: loser.profileImage },
           prize: tournament.prizeSecond,
         });
       }
     }
 
-    // 3º lugar (perdedores das semifinais)
-    if (finalMatch) {
-      // Encontrar as semifinais (partidas que levam à final)
-      const semifinals = allMatches.filter(m => m.nextMatchId === finalMatch.id);
-      
-      if (semifinals.length > 0) {
-        // Pegar os perdedores das semifinais (que não são o vencedor nem o perdedor da final)
-        const finalPlayers = [finalMatch.player1Id, finalMatch.player2Id].filter(id => id !== null);
-        const semifinalLosers = semifinals
-          .map(m => {
-            if (m.winnerId === finalMatch.player1Id || m.winnerId === finalMatch.player2Id) {
-              // O vencedor da semifinal foi para a final, então o perdedor é o outro jogador
-              return m.player1Id === m.winnerId ? m.player2Id : m.player1Id;
-            }
-            return null;
-          })
-          .filter(id => id !== null && !finalPlayers.includes(id!));
-
-        if (semifinalLosers.length > 0) {
-          const thirdPlaceId = semifinalLosers[0];
-          const thirdPlace = await this.usersService.findById(thirdPlaceId!);
-          top3.push({
-            position: 3,
-            user: {
-              id: thirdPlace.id,
-              nickname: thirdPlace.nickname,
-              profileImage: thirdPlace.profileImage,
-            },
-            prize: tournament.prizeThird,
-          });
-        }
+    const thirdPlaceMatch = finished.find(
+      (m) => m.isThirdPlaceMatch && m.winnerId != null,
+    );
+    if (thirdPlaceMatch?.winnerId) {
+      const third = await this.usersService.findById(thirdPlaceMatch.winnerId);
+      top3.push({
+        position: 3,
+        user: { id: third.id, nickname: third.nickname, profileImage: third.profileImage },
+        prize: tournament.prizeThird,
+      });
+      const fourthId =
+        thirdPlaceMatch.player1Id === thirdPlaceMatch.winnerId
+          ? thirdPlaceMatch.player2Id
+          : thirdPlaceMatch.player1Id;
+      if (fourthId) {
+        const fourth = await this.usersService.findById(fourthId);
+        top3.push({
+          position: 4,
+          user: { id: fourth.id, nickname: fourth.nickname, profileImage: fourth.profileImage },
+          prize: tournament.prizeDetails?.[4]?.credit ?? 0,
+        });
+      }
+    } else if (finalMatch) {
+      const semifinals = finished.filter((m) => m.nextMatchId === finalMatch.id);
+      const finalPlayers = [finalMatch.player1Id, finalMatch.player2Id].filter(Boolean);
+      const semifinalLosers = semifinals
+        .map((m) => (m.player1Id === m.winnerId ? m.player2Id : m.player1Id))
+        .filter((id) => id != null && !finalPlayers.includes(id));
+      if (semifinalLosers[0]) {
+        const thirdPlace = await this.usersService.findById(semifinalLosers[0]!);
+        top3.push({
+          position: 3,
+          user: {
+            id: thirdPlace.id,
+            nickname: thirdPlace.nickname,
+            profileImage: thirdPlace.profileImage,
+          },
+          prize: tournament.prizeThird,
+        });
       }
     }
 

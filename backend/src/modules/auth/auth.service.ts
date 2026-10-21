@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -8,28 +8,34 @@ import * as bcrypt from 'bcryptjs';
 import { UsersService } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
-import { SeasonsService } from '../seasons/seasons.service';
-import { InitialDecksService } from '../initial-decks/initial-decks.service';
-import { NewAccountSettingsService } from '../new-account-settings/new-account-settings.service';
-import { DivisionsService } from '../divisions/divisions.service';
-import { CosmeticsService } from '../cosmetics/cosmetics.service';
 import { RefreshToken } from './entities/refresh-token.entity';
+import { AccountProvisioningService } from './account-provisioning.service';
+import { User, UserRole } from '../users/entities/user.entity';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+  /** Códigos one-time do callback Google → frontend (TTL curto). */
+  private readonly oauthExchangeCodes = new Map<
+    string,
+    { userId: number; expiresAt: number }
+  >();
+
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
     private configService: ConfigService,
     private mailService: MailService,
-    private seasonsService: SeasonsService,
-    private initialDecksService: InitialDecksService,
-    private newAccountSettingsService: NewAccountSettingsService,
-    private divisionsService: DivisionsService,
-    private cosmeticsService: CosmeticsService,
+    private accountProvisioning: AccountProvisioningService,
     @InjectRepository(RefreshToken)
     private refreshTokenRepository: Repository<RefreshToken>,
   ) {}
+
+  isGoogleAuthEnabled(): boolean {
+    const id = this.configService.get<string>('GOOGLE_CLIENT_ID')?.trim();
+    const secret = this.configService.get<string>('GOOGLE_CLIENT_SECRET')?.trim();
+    return Boolean(id && secret);
+  }
 
   /**
    * Valida usuário para login normal (/login).
@@ -88,6 +94,10 @@ export class AuthService {
       throw new UnauthorizedException(msg);
     }
 
+    if (!user.password) {
+      return null; // Conta só-OAuth: use "Continuar com Google"
+    }
+
     if (await bcrypt.compare(password, user.password)) {
       const { password: _, ...result } = user;
       return result;
@@ -123,6 +133,7 @@ export class AuthService {
           clanTag: fullProfile.clanTag || null,
           level: fullProfile.level || 1,
           totalScore: fullProfile.totalScore != null ? Number(fullProfile.totalScore) : 0,
+          rankedPoints: (fullProfile as any).rankedPoints != null ? Number((fullProfile as any).rankedPoints) : 1000,
           equippedDeckId: (fullProfile as any).equippedDeckId || null,
           equippedDeckName: (fullProfile as any).equippedDeckName || null,
           group: fullProfile.group || null,
@@ -132,6 +143,7 @@ export class AuthService {
           generalRank: fullProfile.generalRank || null,
           globalRank: fullProfile.globalRank || fullProfile.generalRank || null,
           adminAllowedTabs: fullProfile.adminAllowedTabs ?? null,
+          profileSetupCompleted: fullProfile.profileSetupCompleted !== false,
         },
       };
   }
@@ -282,142 +294,29 @@ export class AuthService {
     }
 
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
-    
-    // Gerar token de verificação de email
-    const crypto = require('crypto');
     const verificationToken = crypto.randomBytes(32).toString('hex');
-    
-    // Buscar configurações de contas novas
-    const newAccountSettings = await this.newAccountSettingsService.getSettings();
-    
-    // Buscar a divisão mais baixa disponível
-    const lowestDivision = await this.divisionsService.getLowestAvailableDivision();
-    
-    // Criar usuário com valores das configurações (novas contas: sem playmat, sleeve Default)
-    const user = await this.usersService.create({
+
+    const user = await this.accountProvisioning.createPlayerAccount({
       nickname: registerDto.nickname,
       username: registerDto.username,
       email: registerDto.email,
       password: hashedPassword,
-      level: 1,
-      totalScore: 0,
-      winsGeral: 0,
-      lossesGeral: 0,
-      winsSeason: 0,
-      lossesSeason: 0,
-      credits: newAccountSettings.initialCredits,
-      cash: newAccountSettings.initialCash,
-      profileImage: undefined,
-      clanTag: undefined,
-      biography: undefined,
-      playerClass: 'Novato',
-      division: lowestDivision, // Divisão mais baixa disponível
-      isOnline: false,
-      isBanned: false,
-      banReason: undefined,
-      isEmailVerified: false, // Email não verificado inicialmente
+      isEmailVerified: false,
       emailVerificationToken: verificationToken,
-      equippedPlaymatId: null,
-      equippedPlaymatImage: null,
-      equippedSkinId: null,
-      equippedSkinImage: null,
+      authProvider: 'local',
     });
 
-    // Aplicar playmat e sleeve padrão conforme "Contas Novas" no admin
-    const cosmeticsUpdate: { equippedPlaymatId?: string; equippedPlaymatImage?: string; equippedSkinId?: string; equippedSkinImage?: string } = {};
-    const playmatId = newAccountSettings.defaultPlaymatId?.trim() || null;
-    const skinId = newAccountSettings.defaultSkinId?.trim() || null;
-
-    if (playmatId) {
-      try {
-        const playmat = await this.cosmeticsService.findOnePlaymat(playmatId);
-        if (playmat?.image) {
-          cosmeticsUpdate.equippedPlaymatId = playmat.id;
-          cosmeticsUpdate.equippedPlaymatImage = playmat.image;
-        }
-      } catch (err: any) {
-        console.warn(`⚠️ [AuthService] Playmat padrão não aplicado (ID ${playmatId}):`, err?.message || err);
-      }
-    }
-    if (skinId) {
-      try {
-        const sleeve = await this.cosmeticsService.findOneSleeve(skinId);
-        if (sleeve?.image) {
-          cosmeticsUpdate.equippedSkinId = sleeve.id;
-          cosmeticsUpdate.equippedSkinImage = sleeve.image;
-        }
-      } catch (err: any) {
-        console.warn(`⚠️ [AuthService] Sleeve padrão não aplicada (ID ${skinId}):`, err?.message || err);
-      }
-    }
-    if (Object.keys(cosmeticsUpdate).length > 0) {
-      await this.usersService.updateCosmetics(user.id, cosmeticsUpdate);
-      if (cosmeticsUpdate.equippedPlaymatId) {
-        await this.usersService.addOwnedPlaymatIfNotPresent(user.id, cosmeticsUpdate.equippedPlaymatId);
-      }
-      if (cosmeticsUpdate.equippedSkinId) {
-        await this.usersService.addOwnedSleeveIfNotPresent(user.id, cosmeticsUpdate.equippedSkinId);
-      }
-    }
-
-    // Criar SeasonRanking para o usuário na season ativa
-    try {
-      await this.seasonsService.createUserRanking(user.id);
-    } catch (error) {
-      console.error('Erro ao criar ranking da season para o usuário:', error);
-      // Não falha o registro se não houver season ativa
-    }
-
-    // Atribuir deck inicial aleatório ao usuário
-    try {
-      console.log(`🎴 [AuthService] Tentando atribuir deck inicial ao usuário ${user.id}...`);
-      console.log(`🎴 [AuthService] Decks disponíveis configurados: ${newAccountSettings.availableInitialDeckIds?.length || 0}`);
-      
-      // Sempre tentar atribuir um deck inicial
-      // Se houver IDs específicos configurados, usar apenas esses
-      // Caso contrário, usar qualquer deck ativo disponível
-      const deckIds = (newAccountSettings.availableInitialDeckIds && newAccountSettings.availableInitialDeckIds.length > 0) 
-        ? newAccountSettings.availableInitialDeckIds 
-        : undefined;
-      
-      if (deckIds) {
-        console.log(`🎴 [AuthService] Usando decks configurados: ${JSON.stringify(deckIds)}`);
-      } else {
-        console.log(`🎴 [AuthService] Nenhum deck específico configurado, buscando qualquer deck ativo disponível...`);
-      }
-      
-      await this.initialDecksService.assignDeckToUser(user.id, deckIds);
-      console.log(`✅ [AuthService] Deck inicial atribuído com sucesso ao usuário ${user.id}`);
-    } catch (error: any) {
-      console.error('❌ [AuthService] Erro ao atribuir deck inicial ao usuário:', error);
-      console.error(`   Mensagem: ${error?.message || 'Erro desconhecido'}`);
-      console.error(`   Stack: ${error?.stack || 'N/A'}`);
-      // Não falha o registro se não houver deck inicial disponível, mas avisa
-      console.warn('⚠️ [AuthService] Usuário criado sem deck inicial. Configure decks iniciais no painel admin.');
-    }
-
-    // Enviar email de verificação
     let emailSent = false;
     try {
-      console.log(`📧 [AuthService] Enviando email de verificação para: ${user.email}`);
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`📧 [AuthService] Token gerado: ${verificationToken.substring(0, 8)}...`);
-      }
-      const emailResult = await this.mailService.sendVerificationEmail(user.email, user.nickname, verificationToken);
-      emailSent = emailResult === true; // Se retornar true, email foi enviado
-      if (emailSent) {
-        console.log(`✅ [AuthService] Email de verificação enviado com sucesso para: ${user.email}`);
-      } else {
-        console.warn(`⚠️ [AuthService] Email não foi enviado, mas usuário foi criado`);
-        if (process.env.NODE_ENV !== 'production') {
-          console.log(`\n🔗 [AuthService] Link (dev): ${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email/***\n`);
-        }
-      }
+      this.logger.log(`Enviando email de verificação para: ${user.email}`);
+      const emailResult = await this.mailService.sendVerificationEmail(
+        user.email,
+        user.nickname,
+        verificationToken,
+      );
+      emailSent = emailResult === true;
     } catch (error: any) {
-      console.error('❌ [AuthService] Erro ao enviar email, mas usuário foi criado:', error?.message || error);
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`\n🔗 [AuthService] Link (dev): ${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email/***\n`);
-      }
+      this.logger.error(`Erro ao enviar email, usuário criado: ${error?.message || error}`);
       emailSent = false;
     }
 
@@ -426,7 +325,7 @@ export class AuthService {
         ? 'Registro realizado com sucesso! Verifique seu email para confirmar sua conta.'
         : 'Registro realizado com sucesso! Verifique seu email para confirmar sua conta. Se não recebeu o email, verifique a pasta de spam.',
       email: user.email,
-      emailSent: emailSent,
+      emailSent,
     };
   }
 
@@ -470,79 +369,16 @@ export class AuthService {
       throw new BadRequestException('Este email já está cadastrado.');
     }
 
-    const newAccountSettings = await this.newAccountSettingsService.getSettings();
-    const lowestDivision = await this.divisionsService.getLowestAvailableDivision();
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    const user = await this.usersService.create({
+    const user = await this.accountProvisioning.createPlayerAccount({
       nickname,
       username,
       email,
       password: hashedPassword,
-      level: 1,
-      totalScore: 0,
-      winsGeral: 0,
-      lossesGeral: 0,
-      winsSeason: 0,
-      lossesSeason: 0,
-      credits: newAccountSettings.initialCredits,
-      cash: newAccountSettings.initialCash,
-      profileImage: undefined,
-      clanTag: undefined,
-      biography: undefined,
-      playerClass: 'Novato',
-      division: lowestDivision,
-      isOnline: false,
-      isBanned: false,
       isEmailVerified: true,
-      emailVerificationToken: undefined,
-      equippedPlaymatId: null,
-      equippedPlaymatImage: null,
-      equippedSkinId: null,
-      equippedSkinImage: null,
+      emailVerificationToken: null,
+      authProvider: 'local',
     });
-
-    const cosmeticsUpdate: { equippedPlaymatId?: string; equippedPlaymatImage?: string; equippedSkinId?: string; equippedSkinImage?: string } = {};
-    const playmatId = newAccountSettings.defaultPlaymatId?.trim() || null;
-    const skinId = newAccountSettings.defaultSkinId?.trim() || null;
-    if (playmatId) {
-      try {
-        const playmat = await this.cosmeticsService.findOnePlaymat(playmatId);
-        if (playmat?.image) {
-          cosmeticsUpdate.equippedPlaymatId = playmat.id;
-          cosmeticsUpdate.equippedPlaymatImage = playmat.image;
-        }
-      } catch (_) {}
-    }
-    if (skinId) {
-      try {
-        const sleeve = await this.cosmeticsService.findOneSleeve(skinId);
-        if (sleeve?.image) {
-          cosmeticsUpdate.equippedSkinId = sleeve.id;
-          cosmeticsUpdate.equippedSkinImage = sleeve.image;
-        }
-      } catch (_) {}
-    }
-    if (Object.keys(cosmeticsUpdate).length > 0) {
-      await this.usersService.updateCosmetics(user.id, cosmeticsUpdate);
-      if (cosmeticsUpdate.equippedPlaymatId) {
-        await this.usersService.addOwnedPlaymatIfNotPresent(user.id, cosmeticsUpdate.equippedPlaymatId);
-      }
-      if (cosmeticsUpdate.equippedSkinId) {
-        await this.usersService.addOwnedSleeveIfNotPresent(user.id, cosmeticsUpdate.equippedSkinId);
-      }
-    }
-
-    try {
-      await this.seasonsService.createUserRanking(user.id);
-    } catch (_) {}
-
-    try {
-      const deckIds = (newAccountSettings.availableInitialDeckIds && newAccountSettings.availableInitialDeckIds.length > 0)
-        ? newAccountSettings.availableInitialDeckIds
-        : undefined;
-      await this.initialDecksService.assignDeckToUser(user.id, deckIds);
-    } catch (_) {}
 
     return { id: user.id, username: user.username, nickname: user.nickname, email: user.email };
   }
@@ -586,8 +422,6 @@ export class AuthService {
       throw new BadRequestException('Email já foi verificado');
     }
 
-    // Gerar novo token de verificação
-    const crypto = require('crypto');
     const verificationToken = crypto.randomBytes(32).toString('hex');
     
     // Atualizar token no banco
@@ -618,7 +452,6 @@ export class AuthService {
     if (!user) {
       return { message: 'Se esse email estiver cadastrado, você receberá um link para redefinir a senha.' };
     }
-    const crypto = require('crypto');
     const token = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
     await this.usersService.setPasswordResetToken(user.id, token, expiresAt);
@@ -645,5 +478,168 @@ export class AuthService {
     }
     await this.usersService.setPasswordByResetToken(user.id, newPassword);
     return { message: 'Senha alterada com sucesso. Faça login com a nova senha.' };
+  }
+
+  /**
+   * Resolve ou cria usuário a partir do perfil Google (login + cadastro).
+   * Não usa foto do Google. Contas novas / vínculo pedem escolha de nick no frontend.
+   */
+  async findOrCreateFromGoogle(profile: {
+    googleId: string;
+    email: string;
+    displayName: string;
+    picture?: string | null;
+  }): Promise<User> {
+    const email = profile.email.trim().toLowerCase();
+    const googleId = profile.googleId;
+
+    let user = await this.usersService.findByGoogleId(googleId);
+    if (!user) {
+      const byEmail = await this.usersService.findByEmail(email);
+      if (byEmail) {
+        if (byEmail.role === UserRole.MASTER) {
+          throw new UnauthorizedException('Contas Master devem usar o login Master.');
+        }
+        // Conta já cadastrada: vincula Google e exige escolher/confirmar nick
+        user = await this.usersService.linkGoogleAccount(byEmail.id, googleId, {
+          markEmailVerified: true,
+          requireNicknameSetup: true,
+        });
+        this.logger.log(`Google vinculado à conta existente userId=${user.id}`);
+      }
+    }
+
+    if (!user) {
+      const { username, nickname } = await this.generateUniqueGoogleIdentity(profile.displayName, email);
+      user = await this.accountProvisioning.createPlayerAccount({
+        nickname,
+        username,
+        email,
+        password: null,
+        isEmailVerified: true,
+        emailVerificationToken: null,
+        googleId,
+        authProvider: 'google',
+        // Sem foto do Google — avatar padrão do jogo
+        profileImage: null,
+        profileSetupCompleted: false,
+      });
+      this.logger.log(`Conta Google criada: userId=${user.id} email=${email}`);
+    }
+
+    if (user.role === UserRole.MASTER) {
+      throw new UnauthorizedException('Contas Master devem usar o login Master.');
+    }
+
+    await this.usersService.clearExpiredBan(user.id);
+    const forAuth = await this.usersService.findByIdForAuth(user.id);
+    if (forAuth && this.usersService.isCurrentlyBanned(forAuth)) {
+      const until = forAuth.bannedUntil;
+      const reason = (forAuth as any).banReason || 'Violação dos termos de uso';
+      const msg = until
+        ? `Conta suspensa até ${new Date(until).toLocaleDateString('pt-BR')}. Motivo: ${reason}`
+        : `Conta banida. Motivo: ${reason}`;
+      throw new UnauthorizedException(msg);
+    }
+
+    return user;
+  }
+
+  /** Código one-time (2 min) para o frontend trocar por JWT sem expor tokens na URL. */
+  createGoogleExchangeCode(userId: number): string {
+    this.pruneExpiredOAuthCodes();
+    const code = crypto.randomBytes(32).toString('hex');
+    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+    this.oauthExchangeCodes.set(codeHash, {
+      userId,
+      expiresAt: Date.now() + 2 * 60 * 1000,
+    });
+    return code;
+  }
+
+  async exchangeGoogleCode(code: string) {
+    if (!code || typeof code !== 'string' || code.trim().length < 16) {
+      throw new UnauthorizedException('Código de autenticação inválido.');
+    }
+    this.pruneExpiredOAuthCodes();
+    const codeHash = crypto.createHash('sha256').update(code.trim()).digest('hex');
+    const entry = this.oauthExchangeCodes.get(codeHash);
+    if (!entry) {
+      throw new UnauthorizedException('Código expirado ou inválido. Tente entrar com Google novamente.');
+    }
+    this.oauthExchangeCodes.delete(codeHash);
+    if (entry.expiresAt < Date.now()) {
+      throw new UnauthorizedException('Código expirado. Tente entrar com Google novamente.');
+    }
+
+    const user = await this.usersService.findById(entry.userId);
+    if (!user) {
+      throw new UnauthorizedException('Usuário não encontrado.');
+    }
+
+    const { password: _, ...safeUser } = user as any;
+    const result = await this.login(safeUser);
+    return {
+      ...result,
+      needsNicknameSetup: user.profileSetupCompleted === false,
+    };
+  }
+
+  async completeGoogleNickname(userId: number, nickname: string) {
+    await this.usersService.completeGoogleNicknameSetup(userId, nickname);
+    const user = await this.usersService.findById(userId);
+    const { password: _, ...safeUser } = user as any;
+    const result = await this.login(safeUser);
+    return {
+      ...result,
+      needsNicknameSetup: false,
+    };
+  }
+
+  getFrontendOAuthRedirectBase(): string {
+    return (
+      this.configService.get<string>('FRONTEND_URL')?.trim() ||
+      this.configService.get<string>('CORS_ORIGIN')?.split(',')[0]?.trim() ||
+      'http://localhost:5173'
+    );
+  }
+
+  private pruneExpiredOAuthCodes() {
+    const now = Date.now();
+    for (const [key, value] of this.oauthExchangeCodes.entries()) {
+      if (value.expiresAt < now) this.oauthExchangeCodes.delete(key);
+    }
+  }
+
+  private async generateUniqueGoogleIdentity(
+    displayName: string,
+    email: string,
+  ): Promise<{ username: string; nickname: string }> {
+    const emailLocal = email.split('@')[0] || 'duelist';
+    const fromDisplay = (displayName || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9_]/g, '')
+      .slice(0, 16);
+    const fromEmail = emailLocal.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 12) || 'duelist';
+    const base = (fromDisplay || fromEmail).slice(0, 12) || 'duelist';
+
+    for (let i = 0; i < 40; i++) {
+      const suffix = i === 0 ? '' : String(Math.floor(1000 + Math.random() * 9000));
+      const username = `${base}${suffix}`.slice(0, 20);
+      const nicknameBase = (displayName || base).trim().slice(0, 18) || base;
+      const nickname = i === 0 ? nicknameBase : `${nicknameBase}${suffix}`.slice(0, 24);
+
+      const [u, n] = await Promise.all([
+        this.usersService.findByUsername(username),
+        this.usersService.findByNickname(nickname),
+      ]);
+      if (!u && !n) {
+        return { username, nickname };
+      }
+    }
+
+    const fallback = `duelist${Date.now().toString(36)}`;
+    return { username: fallback, nickname: fallback };
   }
 }

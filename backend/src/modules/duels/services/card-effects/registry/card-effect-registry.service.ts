@@ -3,18 +3,22 @@ import { ICardEffect, SimpleCardEffectFunction, SimpleCardEffectWrapper } from '
 import { logger } from '../../../../../common/utils/logger.util';
 import { DuelsService } from '../../../duels.service';
 import { DuelUtilsService } from '../../duel-utils.service';
+import { compactCardKey, normalizeCardKey } from '../utils/card-key.util';
 
 /**
- * Registro centralizado de todos os efeitos de cartas
- * Usa Factory Pattern para instanciar efeitos quando necessário
- * 
- * IMPORTANTE: Este é o único lugar onde efeitos são registrados
- * Cada efeito é isolado e não interfere com outros
+ * Registro centralizado de efeitos.
+ *
+ * Regras anti-regressão:
+ * 1. Match EXATO por nome/id (nunca includes parcial)
+ * 2. Cada chave aponta para UMA instância — colisão = erro (não sobrescreve)
+ * 3. Instância resolvida pela chave, não por “primeiro matches()”
  */
 @Injectable()
 export class CardEffectRegistryService {
-  private effects: Map<string, Type<ICardEffect>> = new Map();
-  private effectInstances: Map<string, ICardEffect> = new Map();
+  /** chave normalizada → instância do efeito */
+  private readonly effectsByKey = new Map<string, ICardEffect>();
+  /** chave canônica (primeiro nome) → lista de aliases registrados */
+  private readonly canonicalKeys = new Set<string>();
 
   constructor(
     @Inject(forwardRef(() => DuelsService))
@@ -22,51 +26,17 @@ export class CardEffectRegistryService {
     private readonly duelUtils: DuelUtilsService,
   ) {}
 
-  /**
-   * Registra um efeito de carta (classe completa)
-   * @param effectClass Classe do efeito que implementa ICardEffect
-   * @param instance Instância do efeito (criada pelo NestJS)
-   */
   register(effectClass: Type<ICardEffect>, instance: ICardEffect): void {
-    const names = instance.cardNames;
-    
-    for (const name of names) {
-      const normalizedName = name.toLowerCase().trim();
-      this.effects.set(normalizedName, effectClass);
-      this.logInfo(`✅ Efeito registrado: ${name} -> ${effectClass.name}`);
-    }
-
-    if (instance.cardIds) {
-      for (const id of instance.cardIds) {
-        const normalizedId = id.toLowerCase().trim();
-        this.effects.set(normalizedId, effectClass);
-        this.logInfo(`✅ Efeito registrado (ID): ${id} -> ${effectClass.name}`);
-      }
-    }
-
-    // Armazenar instância
-    const cacheKey = effectClass.name;
-    this.effectInstances.set(cacheKey, instance);
+    this.bindKeys(instance.cardNames, instance.cardIds, instance, effectClass.name);
   }
 
-  /**
-   * Registra um efeito simples (apenas função)
-   * Para efeitos básicos que não precisam de classe completa
-   * 
-   * @param cardNames Nomes da carta
-   * @param effectFunction Função que processa o efeito
-   * @param cardIds IDs da carta (opcional)
-   * @param duelsService Serviço de duelos (será injetado na função)
-   */
   registerSimple(
     cardNames: string[],
     effectFunction: SimpleCardEffectFunction,
     cardIds?: string[],
     duelsService?: DuelsService,
   ): void {
-    // Criar wrapper que injeta duelsService no contexto
     const wrappedFunction: SimpleCardEffectFunction = async (context) => {
-      // Injetar duelsService no contexto se não estiver presente
       if (!(context as any).duelsService && duelsService) {
         (context as any).duelsService = duelsService;
       }
@@ -74,79 +44,83 @@ export class CardEffectRegistryService {
     };
 
     const wrapper = new SimpleCardEffectWrapper(cardNames, wrappedFunction, cardIds);
-    
-    for (const name of cardNames) {
-      const normalizedName = name.toLowerCase().trim();
-      this.effects.set(normalizedName, SimpleCardEffectWrapper);
-      this.logInfo(`✅ Efeito simples registrado: ${name} -> função`);
-    }
+    this.bindKeys(cardNames, cardIds, wrapper, `simple:${cardNames[0]}`);
+  }
 
-    if (cardIds) {
-      for (const id of cardIds) {
-        const normalizedId = id.toLowerCase().trim();
-        this.effects.set(normalizedId, SimpleCardEffectWrapper);
-        this.logInfo(`✅ Efeito simples registrado (ID): ${id} -> função`);
+  private bindKeys(
+    names: string[],
+    ids: string[] | undefined,
+    instance: ICardEffect,
+    label: string,
+  ): void {
+    const keys = new Set<string>();
+    for (const name of names) {
+      keys.add(normalizeCardKey(name));
+      keys.add(compactCardKey(name));
+    }
+    if (ids) {
+      for (const id of ids) {
+        keys.add(normalizeCardKey(id));
+        keys.add(compactCardKey(id));
       }
     }
 
-    // Armazenar wrapper
-    const cacheKey = `simple_${cardNames[0]}`;
-    this.effectInstances.set(cacheKey, wrapper);
+    for (const key of keys) {
+      if (!key) continue;
+      const existing = this.effectsByKey.get(key);
+      if (existing && existing !== instance) {
+        const msg =
+          `COLISÃO DE EFEITO: chave "${key}" já registrada ` +
+          `(${existing.cardNames?.[0] || '?'}) e tentou registrar ${label} ` +
+          `(${instance.cardNames?.[0] || '?'}). Efeitos não podem se sobrescrever.`;
+        logger.error(`❌ [CardEffectRegistry] ${msg}`);
+        throw new Error(msg);
+      }
+      this.effectsByKey.set(key, instance);
+      this.logInfo(`✅ Efeito registrado: ${key} -> ${label}`);
+    }
+
+    if (names[0]) {
+      this.canonicalKeys.add(normalizeCardKey(names[0]));
+    }
   }
 
   /**
-   * Busca o efeito correspondente para uma carta
-   * @param card Carta para buscar efeito
-   * @returns Instância do efeito ou null se não encontrado
+   * Busca efeito por match EXATO de nome ou id.
    */
   findEffect(card: any): ICardEffect | null {
-    const cardId = card?.idCarta || card?.id || card?.cardId;
-    const cardName = (card?.name || card?.cardName || '').trim().toLowerCase();
+    const name = normalizeCardKey(card?.name || card?.cardName || '');
+    const id = normalizeCardKey(card?.idCarta || card?.id || card?.cardId || '');
 
-    // Tentar por nome primeiro
-    const normalizedName = cardName.toLowerCase().trim();
-    let effectClass = this.effects.get(normalizedName);
-    
-    if (!effectClass && cardId) {
-      // Tentar por idCarta
-      const normalizedId = String(cardId).toLowerCase().trim();
-      effectClass = this.effects.get(normalizedId);
+    if (name) {
+      const byName = this.effectsByKey.get(name) || this.effectsByKey.get(compactCardKey(name));
+      if (byName) return byName;
     }
 
-    if (!effectClass) {
-      // Tentar busca parcial por nome
-      for (const [key, value] of this.effects.entries()) {
-        if (cardName.includes(key) || key.includes(cardName)) {
-          effectClass = value;
-          break;
-        }
-      }
-    }
-
-    if (effectClass) {
-      // Se for SimpleCardEffectWrapper, buscar pelo nome da carta
-      if (effectClass === SimpleCardEffectWrapper) {
-        // Buscar wrapper pelo nome da carta
-        for (const [key, instance] of this.effectInstances.entries()) {
-          if (key.startsWith('simple_') && instance.matches(card)) {
-            return instance;
-          }
-        }
-      } else {
-        // Retornar instância armazenada (classe completa)
-        const cacheKey = effectClass.name;
-        return this.effectInstances.get(cacheKey) || null;
-      }
+    if (id) {
+      const byId = this.effectsByKey.get(id) || this.effectsByKey.get(compactCardKey(id));
+      if (byId) return byId;
     }
 
     return null;
   }
 
-  /**
-   * Obtém todas as cartas registradas
-   */
   getRegisteredCards(): string[] {
-    return Array.from(this.effects.keys());
+    return Array.from(this.canonicalKeys).sort();
+  }
+
+  /** Todas as chaves (aliases + ids) — usado pelo selo de regressão */
+  getAllKeys(): string[] {
+    return Array.from(this.effectsByKey.keys()).sort();
+  }
+
+  getRegisteredCount(): number {
+    return this.canonicalKeys.size;
+  }
+
+  hasKey(key: string): boolean {
+    const n = normalizeCardKey(key);
+    return this.effectsByKey.has(n) || this.effectsByKey.has(compactCardKey(n));
   }
 
   private logInfo(message: string): void {

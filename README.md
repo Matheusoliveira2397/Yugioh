@@ -92,17 +92,34 @@ git clone https://github.com/Matheusoliveira2397/Yugioh.git
 cd Yugioh
 ```
 
-### 2. Inicie os serviços com Docker
-```bash
-docker-compose up -d
+### 2. Dev leve (recomendado no Windows)
+
+Evita Vite/Nginx/Adminer dentro do Docker (polling + RAM alta).
+
+O frontend do jogo precisa de **Node 20**, mas os scripts **não alteram** o Node padrão do sistema
+(ex.: se você usa Node 16 em outro serviço, continue com `nvm use 16.10.0`).
+
+```powershell
+# Uma vez: ter o 20 instalado no nvm (sem trocar o padrão)
+nvm install 20.11.0
+# manter o padrão do PC no 16:
+nvm use 16.10.0
+
+# subir o jogo (usa Node 20 só pelo caminho absoluto)
+.\scripts\dev-lite.ps1
+# ou só o frontend:
+.\scripts\frontend-dev.ps1
 ```
 
-Isso iniciará:
-- ✅ Backend (NestJS) → http://localhost:3000
-- ✅ Frontend (React) → http://localhost:5173
-- ✅ PostgreSQL → localhost:5432
-- ✅ MongoDB → localhost:27017
-- ✅ Redis → localhost:6379
+Stack completa no Docker (mais pesada; Node 20 só dentro do container):
+```bash
+docker compose --profile docker-ui up -d
+```
+
+Serviços lite:
+- ✅ Backend → http://localhost:3000
+- ✅ Frontend (host) → http://localhost:5173
+- ✅ PostgreSQL / MongoDB / Redis
 
 ### 3. Acesse o jogo
 Abra seu navegador em: **http://localhost:5173**

@@ -1,6 +1,7 @@
-import { ReactNode, useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { ReactNode, Suspense, useState, useEffect, useRef, useCallback } from 'react';
+import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useI18n } from '../i18n/I18nContext';
+import { translateTabLabel } from '../i18n';
 import { useAuthStore } from '../stores/authStore';
 import ActiveDuelBanner from './ActiveDuelBanner';
 import ArenaCountdownBanner from './ArenaCountdownBanner';
@@ -21,7 +22,7 @@ interface SiteTab {
 }
 
 interface LayoutProps {
-  children: ReactNode;
+  children?: ReactNode;
 }
 
 interface SocialMediaLink {
@@ -31,27 +32,146 @@ interface SocialMediaLink {
   icon: string | null;
 }
 
+/** Cache de sessão: evita refetch a cada troca de aba (Layout agora é persistente, mas reforça). */
+let cachedSiteTabs: SiteTab[] | null = null;
+let cachedSocialLinks: SocialMediaLink[] | null = null;
+let lastUserRefreshAt = 0;
+
+function PageOutletFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-[30vh] text-white/70">
+      <div className="flex flex-col items-center gap-2 animate-fade-rise">
+        <div className="h-8 w-8 rounded-full border-2 border-champion-gold/25 border-t-champion-gold animate-spin" />
+        <p className="text-xs text-arena-mist">Carregando página...</p>
+      </div>
+    </div>
+  );
+}
+
+/** Ícones Yu-Gi-Oh (medalhão Millennium) por rota — sobrescreve emoji/legado do banco. */
+const TAB_NAV_ICONS: Record<string, string> = {
+  '/': '/images/Icones/Home.png',
+  '/chat': '/images/Icones/Chat.png',
+  '/random-duel': '/images/Icones/RandomDuel.png',
+  '/arena': '/images/Icones/Arena.png',
+  '/tournaments': '/images/Icones/Torneio.png',
+  '/groups': '/images/Icones/Cla.png',
+  '/ranking': '/images/Icones/Ranking.png',
+  '/missions': '/images/Icones/Missoes.png',
+  '/battle-pass': '/images/Icones/Passe.png',
+  '/redeem': '/images/Icones/Codigos.png',
+  '/drops': '/images/Icones/Drops.png',
+  '/shop': '/images/Icones/Shop.png',
+  '/collection': '/images/Icones/Colecao.png',
+  '/marketplace/accounts': '/images/Icones/Contas.png',
+  '/marketplace/cards': '/images/Icones/Cartas.png',
+  '/patch-notes': '/images/Icones/PatchNotes.png',
+  '/credit': '/images/Icones/Credito.png',
+  '/help': '/images/Icones/Ajuda.png',
+};
+
+function tabNavIconForRoute(route: string, fallback: string): string {
+  return TAB_NAV_ICONS[route] || fallback;
+}
+
+function tabNavImageClass(
+  variant: 'desktop' | 'mobileRow' | 'mobileGrid',
+  route: string,
+  isActiveDesktop?: boolean
+): string {
+  const pulse = isActiveDesktop ? ' animate-pulse' : '';
+  if (variant === 'desktop') {
+    return `h-11 w-11 xl:h-12 xl:w-12 relative z-10 drop-shadow-lg object-contain${pulse}`;
+  }
+  if (variant === 'mobileRow') {
+    return `h-10 w-10 object-contain drop-shadow-lg`;
+  }
+  return `h-12 w-12 object-contain drop-shadow-lg`;
+}
+
+function useNavScroll(depsKey: string | number) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [canLeft, setCanLeft] = useState(false);
+  const [canRight, setCanRight] = useState(false);
+
+  const update = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) {
+      setCanLeft(false);
+      setCanRight(false);
+      return;
+    }
+    const max = el.scrollWidth - el.clientWidth;
+    setCanLeft(el.scrollLeft > 4);
+    setCanRight(max > 4 && el.scrollLeft < max - 4);
+  }, []);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    update();
+    const t = window.setTimeout(update, 50);
+    el.addEventListener('scroll', update, { passive: true });
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    ro?.observe(el);
+    window.addEventListener('resize', update);
+    return () => {
+      window.clearTimeout(t);
+      el.removeEventListener('scroll', update);
+      ro?.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, [update, depsKey]);
+
+  const scrollByDir = useCallback((dir: -1 | 1) => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir * Math.max(180, el.clientWidth * 0.45), behavior: 'smooth' });
+  }, []);
+
+  return { scrollerRef, canLeft, canRight, scrollByDir };
+}
+
 export default function Layout({ children }: LayoutProps) {
-  const { refreshUser, isAuthenticated } = useAuthStore();
+  const { refreshUser, isAuthenticated, user } = useAuthStore();
   const { t } = useI18n();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [activeTabs, setActiveTabs] = useState<SiteTab[]>([]);
-  const [socialMediaLinks, setSocialMediaLinks] = useState<SocialMediaLink[]>([]);
+  const [activeTabs, setActiveTabs] = useState<SiteTab[]>(() => cachedSiteTabs ?? []);
+  const [socialMediaLinks, setSocialMediaLinks] = useState<SocialMediaLink[]>(
+    () => cachedSocialLinks ?? [],
+  );
   const location = useLocation();
+  const refreshedOnceRef = useRef(false);
+  const tabsScrollKey = activeTabs.map((t) => t.key).join(',');
+  const desktopNav = useNavScroll(tabsScrollKey);
+  const mobileNav = useNavScroll(tabsScrollKey);
 
-  // Atualizar dados do usuário quando a página carregar
+  const tabLabel = (tab: SiteTab) => translateTabLabel(tab, t);
+
+  // Atualizar usuário no máximo 1x/min (antes rodava a cada troca de aba)
   useEffect(() => {
-    if (isAuthenticated) {
-      refreshUser();
-    }
+    if (!isAuthenticated || user?.profileSetupCompleted === false) return;
+    const now = Date.now();
+    if (refreshedOnceRef.current && now - lastUserRefreshAt < 60_000) return;
+    refreshedOnceRef.current = true;
+    lastUserRefreshAt = now;
+    void refreshUser();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]); // refreshUser é estável, não precisa estar nas dependências
+  }, [isAuthenticated]);
 
-  // Buscar abas ativas do site; garantir que Ranking esteja sempre disponível no topo
+  if (isAuthenticated && user?.profileSetupCompleted === false) {
+    return <Navigate to="/auth/choose-nickname" replace />;
+  }
+
+  // Buscar abas ativas do site (com cache de sessão)
   useEffect(() => {
+    if (cachedSiteTabs) {
+      setActiveTabs(cachedSiteTabs);
+      return;
+    }
     const fetchActiveTabs = async () => {
       try {
-        const response = await axios.get(`${API_URL}/public/site-tabs/active`);
+        const response = await axios.get(`${API_URL}/public/site-tabs/active`, { timeout: 8000 });
         const tabs: SiteTab[] = (Array.isArray(response.data) ? response.data : []).filter(
           (tab) => tab.key !== 'random-anime'
         );
@@ -61,83 +181,123 @@ export default function Layout({ children }: LayoutProps) {
             key: 'ranking',
             label: 'Ranking',
             route: '/ranking',
-            icon: '📊',
+            icon: TAB_NAV_ICONS['/ranking'],
             order: 0,
           });
         }
-        const hasHelp = tabs.some((t) => t.route === '/help');
+        const hasHelp = tabs.some((tab) => tab.route === '/help');
         if (!hasHelp) {
           tabs.push({
             key: 'help-support',
             label: 'Ajuda',
             route: '/help',
-            icon: '💬',
+            icon: TAB_NAV_ICONS['/help'],
             order: 88,
           });
         }
+        const hasCredit = tabs.some((tab) => tab.route === '/credit');
+        if (!hasCredit) {
+          tabs.push({
+            key: 'credits',
+            label: 'Créditos',
+            route: '/credit',
+            icon: TAB_NAV_ICONS['/credit'],
+            order: 12,
+          });
+        }
+        const hasBattlePass = tabs.some((tab) => tab.route === '/battle-pass');
+        if (!hasBattlePass) {
+          tabs.push({
+            key: 'battle-pass',
+            label: 'Passe',
+            route: '/battle-pass',
+            icon: TAB_NAV_ICONS['/battle-pass'],
+            order: 7,
+          });
+        }
+        const hasRedeem = tabs.some((tab) => tab.route === '/redeem');
+        if (!hasRedeem) {
+          tabs.push({
+            key: 'redeem-code',
+            label: 'Códigos',
+            route: '/redeem',
+            icon: TAB_NAV_ICONS['/redeem'],
+            order: 8,
+          });
+        }
+        const hasPatchNotes = tabs.some((tab) => tab.route === '/patch-notes');
+        if (!hasPatchNotes) {
+          tabs.push({
+            key: 'patch-notes',
+            label: 'Patch Notes',
+            route: '/patch-notes',
+            icon: TAB_NAV_ICONS['/patch-notes'],
+            order: 85,
+          });
+        }
         tabs.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+        cachedSiteTabs = tabs;
         setActiveTabs(tabs);
       } catch (error) {
         console.error('Erro ao buscar abas ativas:', error);
-        setActiveTabs([
-          { key: 'ranking', label: 'Ranking', route: '/ranking', icon: '📊', order: 0 },
-          { key: 'help-support', label: 'Ajuda', route: '/help', icon: '💬', order: 88 },
-        ]);
+        const fallback = [
+          { key: 'ranking', label: 'Ranking', route: '/ranking', icon: TAB_NAV_ICONS['/ranking'], order: 0 },
+          { key: 'credits', label: 'Créditos', route: '/credit', icon: TAB_NAV_ICONS['/credit'], order: 12 },
+          { key: 'help-support', label: 'Ajuda', route: '/help', icon: TAB_NAV_ICONS['/help'], order: 88 },
+        ];
+        cachedSiteTabs = fallback;
+        setActiveTabs(fallback);
       }
     };
-    fetchActiveTabs();
+    void fetchActiveTabs();
   }, []);
 
-  // Buscar redes sociais ativas
+  // Buscar redes sociais ativas (com cache)
   useEffect(() => {
+    if (cachedSocialLinks) {
+      setSocialMediaLinks(cachedSocialLinks);
+      return;
+    }
     const fetchSocialMedia = async () => {
       try {
-        const response = await axios.get(`${API_URL}/public/social-media/active`);
-        // Filtrar apenas Instagram, WhatsApp, Discord e YouTube
-        const filtered = response.data.filter((social: SocialMediaLink) => {
+        const response = await axios.get(`${API_URL}/public/social-media/active`, { timeout: 8000 });
+        const filtered = (Array.isArray(response.data) ? response.data : []).filter((social: SocialMediaLink) => {
           const platform = social.platform.toLowerCase();
-          return platform === 'instagram' || platform === 'whatsapp' || 
+          return platform === 'instagram' || platform === 'whatsapp' ||
                  platform === 'discord' || platform === 'youtube';
         });
-        // Ordenar: Instagram, WhatsApp, Discord, YouTube
         const order = ['instagram', 'whatsapp', 'discord', 'youtube'];
-        const sorted = filtered.sort((a, b) => {
+        const sorted = filtered.sort((a: SocialMediaLink, b: SocialMediaLink) => {
           const aIndex = order.indexOf(a.platform.toLowerCase());
           const bIndex = order.indexOf(b.platform.toLowerCase());
           return aIndex - bIndex;
         });
+        cachedSocialLinks = sorted;
         setSocialMediaLinks(sorted);
       } catch (error) {
         console.error('Erro ao buscar redes sociais:', error);
+        cachedSocialLinks = [];
         setSocialMediaLinks([]);
       }
     };
-    fetchSocialMedia();
+    void fetchSocialMedia();
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-900 relative flex flex-col">
+    <div className="game-shell">
       <ArenaFullBleedBackground basePathWithoutExt="/images/backgroundLogin" zIndexClass="z-0" />
-      {/* Overlay escuro para melhorar legibilidade */}
-      <div className="fixed inset-0 bg-black bg-opacity-60 z-0"></div>
+      <div className="fixed inset-0 z-0 game-overlay" aria-hidden />
 
-      {/* Banner de Duelo Ativo */}
       <ActiveDuelBanner />
-      
-      {/* Banner de Contagem Regressiva da Arena */}
       <ArenaCountdownBanner />
 
-      {/* Container principal com flex para sidebar e conteúdo */}
-      <div className="relative z-10 flex flex-col lg:flex-row flex-1">
-        {/* Conteúdo Principal */}
-        <div className="flex-1 relative z-10 min-w-0 flex flex-col">
-        <nav id="main-nav" className="relative shadow-lg" style={{ backgroundColor: 'transparent' }}>
-          <div className="w-full px-2 sm:px-3 md:px-6">
-            <div className="flex items-center h-14 sm:h-20 md:h-24 lg:h-28 gap-2 md:gap-3">
-              {/* Menu Hamburger - Mobile - área de toque ~44px */}
+      <div className="relative z-10 flex flex-col flex-1 min-h-0 overflow-hidden">
+        <nav id="main-nav" className="relative game-nav flex-shrink-0">
+          <div className="w-full px-2 sm:px-3 md:px-4 xl:px-5">
+            <div className="flex items-center h-12 lg:h-[3.25rem] gap-1 md:gap-1.5">
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="lg:hidden flex-shrink-0 min-h-[44px] min-w-[44px] p-2 rounded-lg text-white hover:bg-white/10 transition-colors flex items-center justify-center"
+                className="lg:hidden flex-shrink-0 min-h-[44px] min-w-[44px] p-2 rounded-lg text-white hover:bg-champion-gold/10 transition-colors flex items-center justify-center"
                 aria-label={t('layout.openMenu')}
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -149,151 +309,159 @@ export default function Layout({ children }: LayoutProps) {
                 </svg>
               </button>
 
-              
-              {/* Separador visual - Desktop */}
-              <div className="hidden md:block h-8 w-px bg-gradient-to-b from-transparent via-purple-500/30 to-transparent flex-shrink-0"></div>
-              
-              {/* Abas de navegação - Desktop (centralizadas) */}
-              <div className="hidden lg:flex items-center justify-center gap-1 md:gap-1.5 flex-nowrap flex-1 min-w-0 overflow-x-auto scrollbar-hide">
-                {activeTabs.length > 0 ? (
-                  activeTabs.map((tab) => {
+              {/* Desktop: uma linha + setas se não couber */}
+              <div className="hidden lg:flex items-center flex-1 min-w-0 gap-1">
+                <button
+                  type="button"
+                  aria-label="Abas anteriores"
+                  disabled={!desktopNav.canLeft}
+                  onClick={() => desktopNav.scrollByDir(-1)}
+                  className={`flex-shrink-0 h-9 w-8 rounded-lg border border-champion-gold/25 text-champion-gold transition-opacity ${
+                    desktopNav.canLeft
+                      ? 'opacity-100 hover:bg-champion-gold/10'
+                      : 'opacity-0 pointer-events-none'
+                  }`}
+                >
+                  ‹
+                </button>
+                <div
+                  ref={desktopNav.scrollerRef}
+                  className="flex items-center gap-1 xl:gap-1.5 flex-nowrap flex-1 min-w-0 overflow-x-auto scrollbar-hide scroll-smooth"
+                >
+                  {activeTabs.map((tab) => {
                     const isHelpRoute = tab.route === '/help';
                     const isActive =
                       location.pathname === tab.route ||
                       (tab.route !== '/' && location.pathname.startsWith(tab.route)) ||
                       (isHelpRoute && location.pathname === '/feedback');
-                    
-                    // Mapear cores baseado na rota
-                    const getColors = (route: string) => {
-                      if (route === '/') return { from: 'from-gray-600', to: 'to-gray-500', hoverFrom: 'hover:from-gray-700', hoverTo: 'hover:to-gray-600' };
-                      if (route === '/chat') return { from: 'from-blue-600', to: 'to-cyan-600', hoverFrom: 'hover:from-blue-700', hoverTo: 'hover:to-cyan-700' };
-                      if (route === '/random-duel') return { from: 'from-red-600', to: 'to-orange-600', hoverFrom: 'hover:from-red-700', hoverTo: 'hover:to-orange-700' };
-                      if (route === '/arena') return { from: 'from-red-700', to: 'to-pink-700', hoverFrom: 'hover:from-red-800', hoverTo: 'hover:to-pink-800' };
-                      if (route === '/tournaments') return { from: 'from-yellow-600', to: 'to-amber-600', hoverFrom: 'hover:from-yellow-700', hoverTo: 'hover:to-amber-700' };
-                      if (route === '/groups') return { from: 'from-cyan-600', to: 'to-teal-600', hoverFrom: 'hover:from-cyan-700', hoverTo: 'hover:to-teal-700' };
-                      if (route === '/ranking') return { from: 'from-orange-600', to: 'to-red-600', hoverFrom: 'hover:from-orange-700', hoverTo: 'hover:to-red-700' };
-                      if (route === '/missions') return { from: 'from-green-600', to: 'to-emerald-600', hoverFrom: 'hover:from-green-700', hoverTo: 'hover:to-emerald-700' };
-                      if (route === '/drops') return { from: 'from-indigo-600', to: 'to-purple-600', hoverFrom: 'hover:from-indigo-700', hoverTo: 'hover:to-purple-700' };
-                      if (route === '/shop') return { from: 'from-purple-600', to: 'to-pink-600', hoverFrom: 'hover:from-purple-700', hoverTo: 'hover:to-pink-700' };
-                      if (route === '/marketplace/accounts') return { from: 'from-pink-600', to: 'to-rose-600', hoverFrom: 'hover:from-pink-700', hoverTo: 'hover:to-rose-700' };
-                      if (route === '/marketplace/cards') return { from: 'from-rose-600', to: 'to-red-600', hoverFrom: 'hover:from-rose-700', hoverTo: 'hover:to-red-700' };
-                      if (route === '/help') return { from: 'from-teal-600', to: 'to-emerald-600', hoverFrom: 'hover:from-teal-700', hoverTo: 'hover:to-emerald-700' };
-                      return { from: 'from-gray-600', to: 'to-gray-500', hoverFrom: 'hover:from-gray-700', hoverTo: 'hover:to-gray-600' };
-                    };
-
-                    const colors = getColors(tab.route);
-                    const tabIcon = tab.route === '/shop' ? '/images/Icones/Shop.png' : tab.route === '/arena' ? '/images/Icones/Arena.png' : tab.icon;
+                    const tabIcon = tabNavIconForRoute(tab.route, tab.icon);
 
                     return (
                       <Link
                         key={tab.key}
                         to={tab.route}
-                        className={`group relative flex flex-col items-center justify-center gap-0.5 md:gap-1 px-2 md:px-3 py-1.5 md:py-2 rounded-lg md:rounded-xl text-xs md:text-sm font-semibold whitespace-nowrap overflow-hidden flex-shrink-0 transition-all duration-300 ${
-                          isActive 
-                            ? `bg-gradient-to-r ${colors.from} ${colors.to} text-white shadow-lg border-2 scale-105` 
-                            : 'text-gray-300 hover:text-white border-2 border-transparent hover:border-white/20 hover:scale-105'
+                        title={tabLabel(tab)}
+                        className={`game-nav-tab game-nav-tab--compact ${
+                          isActive ? 'game-nav-tab--active' : 'game-nav-tab--idle'
                         }`}
                       >
-                        {/* Background gradient para hover (quando não está ativo) */}
-                        {!isActive && (
-                          <div className={`absolute inset-0 bg-gradient-to-r ${colors.from}/0 ${colors.to}/0 ${colors.hoverFrom}/70 ${colors.hoverTo}/70 rounded-lg md:rounded-xl transition-all duration-300 opacity-0 group-hover:opacity-100`}></div>
-                        )}
-                        
-                        {/* Indicador de aba ativa */}
-                        {isActive && (
-                          <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${colors.from} ${colors.to} rounded-full shadow-lg`}></div>
-                        )}
-                        
-                        {/* Conteúdo */}
                         {tabIcon && tabIcon.startsWith('/images/') ? (
-                          <img 
-                            src={tabIcon} 
-                            alt={tab.label}
-                            className={`h-20 w-20 md:h-24 md:w-24 relative z-10 drop-shadow-lg object-contain ${isActive ? 'animate-pulse' : ''}`}
+                          <img
+                            src={tabIcon}
+                            alt={tabLabel(tab)}
+                            className={tabNavImageClass('desktop', tab.route, isActive)}
                             onError={(e) => {
-                              // Fallback: esconder imagem se não carregar
                               e.currentTarget.style.display = 'none';
                             }}
                           />
                         ) : (
-                          <span 
-                            className={`text-lg md:text-xl relative z-10 drop-shadow-lg ${isActive ? 'animate-pulse' : ''}`}
+                          <span
+                            className={`text-lg xl:text-xl relative z-10 drop-shadow-lg ${
+                              isActive ? 'text-champion-gold' : ''
+                            }`}
                           >
                             {tabIcon}
                           </span>
                         )}
-                        <span className="relative z-10 text-center leading-tight">{tab.label}</span>
+                        <span className="relative z-10 text-center leading-tight max-w-[3.75rem] xl:max-w-[4.5rem] truncate">
+                          {tabLabel(tab)}
+                        </span>
                       </Link>
                     );
-                  })
-                ) : null}
+                  })}
+                </div>
+                <button
+                  type="button"
+                  aria-label="Próximas abas"
+                  disabled={!desktopNav.canRight}
+                  onClick={() => desktopNav.scrollByDir(1)}
+                  className={`flex-shrink-0 h-9 w-8 rounded-lg border border-champion-gold/25 text-champion-gold transition-opacity ${
+                    desktopNav.canRight
+                      ? 'opacity-100 hover:bg-champion-gold/10'
+                      : 'opacity-0 pointer-events-none'
+                  }`}
+                >
+                  ›
+                </button>
               </div>
 
-              {/* Abas de navegação - Mobile (scroll horizontal, centralizadas quando couber) */}
-              <div className="lg:hidden flex items-center justify-center gap-1 flex-nowrap flex-1 min-w-0 overflow-x-auto scrollbar-hide -mx-2 px-2 py-1">
-                {activeTabs.map((tab) => {
-                  const isHelpRoute = tab.route === '/help';
-                  const isActive =
-                    location.pathname === tab.route ||
-                    (tab.route !== '/' && location.pathname.startsWith(tab.route)) ||
-                    (isHelpRoute && location.pathname === '/feedback');
+              {/* Mobile: uma linha rolável */}
+              <div className="lg:hidden flex items-center flex-1 min-w-0 gap-1">
+                <button
+                  type="button"
+                  aria-label="Abas anteriores"
+                  disabled={!mobileNav.canLeft}
+                  onClick={() => mobileNav.scrollByDir(-1)}
+                  className={`flex-shrink-0 h-8 w-7 rounded-md border border-champion-gold/25 text-champion-gold text-sm ${
+                    mobileNav.canLeft ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                  }`}
+                >
+                  ‹
+                </button>
+                <div
+                  ref={mobileNav.scrollerRef}
+                  className="flex items-center gap-1 flex-nowrap flex-1 min-w-0 overflow-x-auto scrollbar-hide scroll-smooth"
+                >
+                  {activeTabs.map((tab) => {
+                    const isHelpRoute = tab.route === '/help';
+                    const isActive =
+                      location.pathname === tab.route ||
+                      (tab.route !== '/' && location.pathname.startsWith(tab.route)) ||
+                      (isHelpRoute && location.pathname === '/feedback');
+                    const tabIcon = tabNavIconForRoute(tab.route, tab.icon);
 
-                  const getColors = (route: string) => {
-                    if (route === '/') return { from: 'from-gray-600', to: 'to-gray-500' };
-                    if (route === '/chat') return { from: 'from-blue-600', to: 'to-cyan-600' };
-                    if (route === '/random-duel') return { from: 'from-red-600', to: 'to-orange-600' };
-                    if (route === '/arena') return { from: 'from-red-700', to: 'to-pink-700' };
-                    if (route === '/tournaments') return { from: 'from-yellow-600', to: 'to-amber-600' };
-                    if (route === '/groups') return { from: 'from-cyan-600', to: 'to-teal-600' };
-                    if (route === '/ranking') return { from: 'from-orange-600', to: 'to-red-600' };
-                    if (route === '/missions') return { from: 'from-green-600', to: 'to-emerald-600' };
-                    if (route === '/drops') return { from: 'from-indigo-600', to: 'to-purple-600' };
-                    if (route === '/shop') return { from: 'from-purple-600', to: 'to-pink-600' };
-                    if (route === '/help') return { from: 'from-teal-600', to: 'to-emerald-600' };
-                    return { from: 'from-gray-600', to: 'to-gray-500' };
-                  };
-
-                  const colors = getColors(tab.route);
-                  const tabIcon = tab.route === '/shop' ? '/images/Icones/Shop.png' : tab.route === '/arena' ? '/images/Icones/Arena.png' : tab.icon;
-
-                  return (
-                    <Link
-                      key={tab.key}
-                      to={tab.route}
-                      className={`group relative flex flex-col items-center justify-center gap-0.5 min-h-[44px] px-2 py-2 rounded-lg text-[10px] sm:text-xs font-semibold whitespace-nowrap flex-shrink-0 transition-all ${
-                        isActive 
-                          ? `bg-gradient-to-r ${colors.from} ${colors.to} text-white shadow-lg` 
-                          : 'text-gray-300 hover:text-white'
-                      }`}
-                    >
-                      {tabIcon && tabIcon.startsWith('/images/') ? (
-                        <img 
-                          src={tabIcon} 
-                          alt={tab.label}
-                          className="h-10 w-10 sm:h-12 sm:w-12 object-contain drop-shadow-lg"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <span className="text-sm sm:text-base drop-shadow-lg">
-                          {tabIcon}
+                    return (
+                      <Link
+                        key={tab.key}
+                        to={tab.route}
+                        title={tabLabel(tab)}
+                        className={`game-nav-tab game-nav-tab--compact min-h-[44px] text-[10px] sm:text-[11px] ${
+                          isActive ? 'game-nav-tab--active' : 'game-nav-tab--idle'
+                        }`}
+                      >
+                        {tabIcon && tabIcon.startsWith('/images/') ? (
+                          <img
+                            src={tabIcon}
+                            alt={tabLabel(tab)}
+                            className={tabNavImageClass('mobileRow', tab.route)}
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <span className="text-base sm:text-lg drop-shadow-lg">{tabIcon}</span>
+                        )}
+                        <span className="text-center leading-tight max-w-[3.75rem] truncate">
+                          {tabLabel(tab)}
                         </span>
-                      )}
-                      <span className="text-center leading-tight">{tab.label}</span>
-                    </Link>
-                  );
-                })}
+                      </Link>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  aria-label="Próximas abas"
+                  disabled={!mobileNav.canRight}
+                  onClick={() => mobileNav.scrollByDir(1)}
+                  className={`flex-shrink-0 h-8 w-7 rounded-md border border-champion-gold/25 text-champion-gold text-sm ${
+                    mobileNav.canRight ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                  }`}
+                >
+                  ›
+                </button>
               </div>
-              <div className="ml-auto flex-shrink-0 pl-2">
-                <LanguageSelector variant="compact" className="[&_button]:border-purple-500/30 [&_button]:text-gray-200 [&_button:hover]:bg-white/10" />
+
+              <div className="ml-auto flex-shrink-0 pl-1">
+                <LanguageSelector
+                  variant="compact"
+                  className="[&_button]:border-champion-gold/30 [&_button]:text-gray-200 [&_button:hover]:bg-champion-gold/10"
+                />
               </div>
             </div>
           </div>
 
-          {/* Menu Mobile Expandido */}
           {mobileMenuOpen && (
-            <div className="lg:hidden border-t border-purple-500/20 bg-black/80 backdrop-blur-sm">
+            <div className="lg:hidden border-t border-champion-gold/20 bg-arena-ink/90 backdrop-blur-md">
               <div className="px-4 py-3 max-h-[60vh] overflow-y-auto">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {activeTabs.map((tab) => {
@@ -302,24 +470,7 @@ export default function Layout({ children }: LayoutProps) {
                       location.pathname === tab.route ||
                       (tab.route !== '/' && location.pathname.startsWith(tab.route)) ||
                       (isHelpRoute && location.pathname === '/feedback');
-                    
-                    const getColors = (route: string) => {
-                      if (route === '/') return { from: 'from-gray-600', to: 'to-gray-500' };
-                      if (route === '/chat') return { from: 'from-blue-600', to: 'to-cyan-600' };
-                      if (route === '/random-duel') return { from: 'from-red-600', to: 'to-orange-600' };
-                      if (route === '/arena') return { from: 'from-red-700', to: 'to-pink-700' };
-                      if (route === '/tournaments') return { from: 'from-yellow-600', to: 'to-amber-600' };
-                      if (route === '/groups') return { from: 'from-cyan-600', to: 'to-teal-600' };
-                      if (route === '/ranking') return { from: 'from-orange-600', to: 'to-red-600' };
-                      if (route === '/missions') return { from: 'from-green-600', to: 'to-emerald-600' };
-                      if (route === '/drops') return { from: 'from-indigo-600', to: 'to-purple-600' };
-                      if (route === '/shop') return { from: 'from-purple-600', to: 'to-pink-600' };
-                      if (route === '/help') return { from: 'from-teal-600', to: 'to-emerald-600' };
-                      return { from: 'from-gray-600', to: 'to-gray-500' };
-                    };
-
-                    const colors = getColors(tab.route);
-                    const tabIcon = tab.route === '/shop' ? '/images/Icones/Shop.png' : tab.route === '/arena' ? '/images/Icones/Arena.png' : tab.icon;
+                    const tabIcon = tabNavIconForRoute(tab.route, tab.icon);
 
                     return (
                       <Link
@@ -327,26 +478,24 @@ export default function Layout({ children }: LayoutProps) {
                         to={tab.route}
                         onClick={() => setMobileMenuOpen(false)}
                         className={`flex flex-col items-center justify-center gap-1 min-h-[48px] p-3 rounded-lg text-xs font-semibold transition-all ${
-                          isActive 
-                            ? `bg-gradient-to-r ${colors.from} ${colors.to} text-white shadow-lg` 
-                            : 'text-gray-300 hover:text-white hover:bg-white/10'
+                          isActive
+                            ? 'game-nav-tab--active'
+                            : 'text-gray-300 hover:text-white hover:bg-champion-gold/10 border border-transparent'
                         }`}
                       >
                         {tabIcon && tabIcon.startsWith('/images/') ? (
-                          <img 
-                            src={tabIcon} 
-                            alt={tab.label}
-                            className="h-12 w-12 object-contain drop-shadow-lg"
+                          <img
+                            src={tabIcon}
+                            alt={tabLabel(tab)}
+                            className={tabNavImageClass('mobileGrid', tab.route)}
                             onError={(e) => {
                               e.currentTarget.style.display = 'none';
                             }}
                           />
                         ) : (
-                          <span className="text-xl drop-shadow-lg">
-                            {tabIcon}
-                          </span>
+                          <span className="text-2xl drop-shadow-lg">{tabIcon}</span>
                         )}
-                        <span className="text-center">{tab.label}</span>
+                        <span className="text-center">{tabLabel(tab)}</span>
                       </Link>
                     );
                   })}
@@ -356,44 +505,55 @@ export default function Layout({ children }: LayoutProps) {
           )}
         </nav>
 
-        <main className="flex-1 pb-8 px-2 sm:px-4 md:px-6">{children}</main>
+        {/* Uma única área de scroll: conteúdo + perfil juntos */}
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar [scrollbar-gutter:stable]">
+          <div className="flex items-start min-h-full">
+            <main className="flex-1 min-w-0 px-2 sm:px-3 md:px-4 py-2 sm:py-2.5">
+              <Suspense fallback={<PageOutletFallback />}>
+                {children ?? <Outlet />}
+              </Suspense>
+            </main>
+
+            <aside
+              id="user-sidebar"
+              className="user-sidebar hidden lg:block w-[15.75rem] xl:w-[17.75rem] flex-shrink-0"
+            >
+              <div className="p-2 xl:p-2.5">
+                <div className="user-sidebar-panel p-2.5 xl:p-3">
+                  <UserProfileCard />
+                </div>
+              </div>
+            </aside>
+          </div>
         </div>
 
-        {/* Card Lateral Direito - Perfil do Usuário - Desktop */}
-        <aside id="user-sidebar" className="w-64 xl:w-80 z-50 hidden lg:block self-start" style={{ backgroundColor: 'transparent' }}>
-          <div className="p-3 xl:p-5" style={{ backgroundColor: 'transparent' }}>
-            <UserProfileCard />
-          </div>
-        </aside>
-
-        {/* Card Lateral - Perfil do Usuário - Mobile (Bottom Sheet) */}
         {mobileMenuOpen && (
-          <div className="lg:hidden fixed inset-x-0 bottom-0 z-50 bg-black/90 backdrop-blur-sm border-t border-purple-500/20">
-            <div className="p-4 max-h-[40vh] overflow-y-auto">
-              <UserProfileCard />
+          <div className="lg:hidden fixed inset-x-0 bottom-0 z-50 bg-arena-ink/95 backdrop-blur-md border-t border-champion-gold/25">
+            <div className="p-3 max-h-[40vh] overflow-y-auto">
+              <div className="user-sidebar-panel p-3">
+                <UserProfileCard />
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Footer */}
-      <footer className="border-t border-gray-700/50 py-3 sm:py-4 px-3 sm:px-4 bg-transparent backdrop-blur-sm relative z-10 mt-auto">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-4">
-          <p className="text-gray-400 text-xs sm:text-sm text-center sm:text-left">
-            © 2025 Yugioh RPG: Champions Of Duels - Todos os direitos reservados
+      <footer className="flex-shrink-0 border-t border-champion-gold/15 py-1.5 px-3 bg-arena-ink/40 backdrop-blur-sm relative z-10">
+        <div className="max-w-7xl mx-auto flex flex-row justify-between items-center gap-2">
+          <p className="text-arena-mist text-[10px] sm:text-xs truncate">
+            © 2026 Yugioh RPG: Champions Of Duels
           </p>
           {socialMediaLinks.length > 0 && (
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 flex-shrink-0">
               {socialMediaLinks.map((social) => {
-                const icon = getSocialIcon(social.platform, "w-6 h-6");
-                
+                const icon = getSocialIcon(social.platform, "w-4 h-4 sm:w-5 sm:h-5");
                 return (
                   <a
                     key={social.id}
                     href={social.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="hover:scale-125 transition-all duration-200 opacity-80 hover:opacity-100"
+                    className="hover:scale-110 hover:text-champion-gold transition-all duration-200 opacity-75 hover:opacity-100"
                     title={social.platform}
                   >
                     {icon}
@@ -404,7 +564,6 @@ export default function Layout({ children }: LayoutProps) {
           )}
         </div>
       </footer>
-
     </div>
   );
 }

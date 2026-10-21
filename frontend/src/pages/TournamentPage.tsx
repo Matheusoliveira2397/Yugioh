@@ -6,6 +6,7 @@ import { useAuthStore } from '../stores/authStore';
 import TournamentBracket from '../components/TournamentBracket';
 import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { formatScore } from '../utils/formatScore';
+import { useI18n } from '../i18n/I18nContext';
 
 interface Tournament {
   id: string;
@@ -20,6 +21,7 @@ interface Tournament {
   registrationOpenAt: string;
   registrationCloseAt: string;
   startAt: string;
+  finishedAt?: string;
   prizeFirst: number;
   prizeSecond: number;
   prizeThird: number;
@@ -28,6 +30,12 @@ interface Tournament {
   banlist?: string[];
   createdAt: string;
   updatedAt: string;
+  winnerId?: number;
+  winner?: {
+    id: number;
+    nickname: string;
+    profileImage?: string;
+  };
   creator?: {
     id: number;
     nickname: string;
@@ -53,6 +61,7 @@ interface Match {
   player2Id?: number;
   winnerId?: number;
   status: string;
+  isThirdPlaceMatch?: boolean;
   player1?: {
     id: number;
     nickname: string;
@@ -86,6 +95,7 @@ interface Bracket {
 }
 
 export default function TournamentPage() {
+  const { t } = useI18n();
   const { id: tournamentIdParam } = useParams<{ id?: string }>();
   const navigate = useNavigate();
   const { user } = useAuthStore();
@@ -104,6 +114,7 @@ export default function TournamentPage() {
   const [ranking, setRanking] = useState<{ rank: number; userId: number; nickname: string; profileImage: string | null; clanTag: string | null; tournamentPoints: number; className: string; classOrder: number }[]>([]);
   const [rankingClasses, setRankingClasses] = useState<{ id: string; name: string; minPoints: number; maxPlayers: number | null; order: number }[]>([]);
   const [loadingRanking, setLoadingRanking] = useState(false);
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'open' | 'progress' | 'finished'>('open');
 
   useEffect(() => {
     loadTournaments();
@@ -126,6 +137,59 @@ export default function TournamentPage() {
     }
   }, [tournamentIdParam]);
 
+  const loadTop3 = async (tournamentId: string) => {
+    setLoadingTop3(true);
+    try {
+      const response = await api.get(`/tournaments/${tournamentId}/top3`);
+      setTop3(response.data);
+    } catch (error) {
+      console.error('Erro ao carregar pódio:', error);
+      setTop3([]);
+    } finally {
+      setLoadingTop3(false);
+    }
+  };
+
+  const loadBracket = async (tournamentId: string) => {
+    setLoadingBracket(true);
+    try {
+      const response = await api.get(`/tournaments/${tournamentId}/bracket`);
+      setBracket(response.data);
+    } catch (error) {
+      console.error('Erro ao carregar chave:', error);
+      setBracket(null);
+    } finally {
+      setLoadingBracket(false);
+    }
+  };
+
+  const refreshTournamentDetail = async (id: string, opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoadingDetail(true);
+    try {
+      const res = await api.get<Tournament>(`/tournaments/${id}`);
+      const t = res.data;
+      setSelectedTournament(t);
+      if (t.status === 'finished') {
+        await loadTop3(t.id);
+      } else {
+        setTop3([]);
+      }
+      if (
+        t.status === 'registration_closed' ||
+        t.status === 'in_progress' ||
+        t.status === 'finished'
+      ) {
+        await loadBracket(t.id);
+      }
+      return t;
+    } catch {
+      if (!opts?.silent) setSelectedTournament(null);
+      return null;
+    } finally {
+      if (!opts?.silent) setLoadingDetail(false);
+    }
+  };
+
   // Ao estar em /tournaments/:id, carregar o torneio e dados (top3, bracket)
   useEffect(() => {
     if (!tournamentIdParam) {
@@ -134,20 +198,17 @@ export default function TournamentPage() {
       setTop3([]);
       return;
     }
-    setLoadingDetail(true);
-    api
-      .get<Tournament>(`/tournaments/${tournamentIdParam}`)
-      .then((res) => {
-        setSelectedTournament(res.data);
-        const t = res.data;
-        if (t.status === 'finished') loadTop3(t.id);
-        if (t.status === 'in_progress' || t.status === 'finished') loadBracket(t.id);
-      })
-      .catch(() => {
-        setSelectedTournament(null);
-      })
-      .finally(() => setLoadingDetail(false));
+    refreshTournamentDetail(tournamentIdParam);
   }, [tournamentIdParam]);
+
+  // Enquanto o torneio está em andamento, atualiza status/chave/pódio periodicamente
+  useEffect(() => {
+    if (!tournamentIdParam || selectedTournament?.status !== 'in_progress') return;
+    const interval = setInterval(() => {
+      refreshTournamentDetail(tournamentIdParam, { silent: true });
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [tournamentIdParam, selectedTournament?.status]);
 
   const loadTournaments = async () => {
     try {
@@ -160,21 +221,6 @@ export default function TournamentPage() {
     }
   };
 
-  const loadTop3 = async (tournamentId: string) => {
-    if (selectedTournament?.status !== 'finished') return;
-    
-    setLoadingTop3(true);
-    try {
-      const response = await api.get(`/tournaments/${tournamentId}/top3`);
-      setTop3(response.data);
-    } catch (error) {
-      console.error('Erro ao carregar top 3:', error);
-      setTop3([]);
-    } finally {
-      setLoadingTop3(false);
-    }
-  };
-
   const handleRegister = async (tournamentId: string) => {
     if (!user) {
       navigate('/login');
@@ -182,13 +228,13 @@ export default function TournamentPage() {
     }
     const tournament = tournaments.find((t) => t.id === tournamentId) ?? selectedTournament;
     if (tournament && tournament.currentParticipants >= tournament.maxParticipants) {
-      alert('Torneio cheio. Não há mais vagas.');
+      alert(t('tournament.full'));
       return;
     }
     setRegisteringTournamentId(tournamentId);
     try {
       await api.post(`/tournaments/${tournamentId}/register`);
-      alert('Inscrição realizada com sucesso!');
+      alert(t('tournament.registeredOk'));
       const { data: freshList } = await api.get<Tournament[]>('/tournaments');
       setTournaments(freshList);
       const updated = freshList.find((t) => t.id === tournamentId);
@@ -199,19 +245,6 @@ export default function TournamentPage() {
       alert(error.response?.data?.message || 'Erro ao se inscrever no torneio');
     } finally {
       setRegisteringTournamentId(null);
-    }
-  };
-
-  const loadBracket = async (tournamentId: string) => {
-    setLoadingBracket(true);
-    try {
-      const response = await api.get(`/tournaments/${tournamentId}/bracket`);
-      setBracket(response.data);
-    } catch (error) {
-      console.error('Erro ao carregar bracket:', error);
-      setBracket(null);
-    } finally {
-      setLoadingBracket(false);
     }
   };
 
@@ -233,12 +266,12 @@ export default function TournamentPage() {
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case 'scheduled': return 'Agendado';
-      case 'registration_open': return 'Inscrições Abertas';
-      case 'registration_closed': return 'Inscrições Fechadas';
-      case 'in_progress': return 'Em Andamento';
-      case 'finished': return 'Finalizado';
-      case 'cancelled': return 'Cancelado';
+      case 'scheduled': return t('tournament.scheduled');
+      case 'registration_open': return t('tournament.registrationOpen');
+      case 'registration_closed': return t('tournament.registrationClosed');
+      case 'in_progress': return t('tournament.inProgress');
+      case 'finished': return t('tournament.finished');
+      case 'cancelled': return t('tournament.cancelled');
       default: return status;
     }
   };
@@ -264,6 +297,45 @@ export default function TournamentPage() {
   const emAndamento = tournaments.filter((t) => t.status === 'registration_closed' || t.status === 'in_progress');
   const finalizados = tournaments.filter((t) => t.status === 'finished');
 
+  const tabFilters: {
+    id: typeof activeTab;
+    label: string;
+    icon: string;
+    list: Tournament[];
+    emptyMsg: string;
+  }[] = [
+    {
+      id: 'upcoming',
+      label: t('tournament.nextTournaments'),
+      icon: '📅',
+      list: proximos,
+      emptyMsg: t('tournament.noneAvailable'),
+    },
+    {
+      id: 'open',
+      label: t('tournament.registrationOpen'),
+      icon: '✅',
+      list: inscricoesAbertas,
+      emptyMsg: t('tournament.noOpenRegistration'),
+    },
+    {
+      id: 'progress',
+      label: t('tournament.inProgress'),
+      icon: '⚔️',
+      list: emAndamento,
+      emptyMsg: t('tournament.noneAvailable'),
+    },
+    {
+      id: 'finished',
+      label: t('tournament.finished'),
+      icon: '🏆',
+      list: finalizados,
+      emptyMsg: t('tournament.noneAvailable'),
+    },
+  ];
+
+  const activeFilter = tabFilters.find((tab) => tab.id === activeTab) ?? tabFilters[1];
+
   const renderTournamentCard = (tournament: Tournament) => {
     const registered = isUserRegistered(tournament);
     const isFull = tournament.currentParticipants >= tournament.maxParticipants;
@@ -286,7 +358,7 @@ export default function TournamentPage() {
             )}
             {isFull && tournament.status === 'registration_open' && (
               <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-600/90 text-white">
-                Cheio
+                {t('tournament.full')}
               </span>
             )}
             <span className={`px-2 py-0.5 rounded text-xs text-white ${getStatusColor(tournament.status)}`}>
@@ -313,27 +385,10 @@ export default function TournamentPage() {
     );
   };
 
-  const renderSection = (title: string, icon: string, list: Tournament[], emptyMsg: string) => (
-    <section className="mb-10">
-      <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-        <span>{icon}</span>
-        {title}
-        <span className="text-sm font-normal text-gray-400">({list.length})</span>
-      </h2>
-      {list.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {list.map(renderTournamentCard)}
-        </div>
-      ) : (
-        <p className="text-gray-500 text-sm py-4">{emptyMsg}</p>
-      )}
-    </section>
-  );
-
   if (loading) {
     return (
       <div className="min-h-screen p-8 flex items-center justify-center">
-        <div className="text-white text-xl">Carregando torneios...</div>
+        <div className="text-white text-xl">{t('tournament.loading')}</div>
       </div>
     );
   }
@@ -364,12 +419,12 @@ export default function TournamentPage() {
     return phases;
   };
 
-  const getFaseAtual = (t: Tournament) => {
-    if (t.status === 'finished') return 'Finalizado';
-    if (t.status === 'in_progress') return 'Eliminatórias';
-    if (t.status === 'registration_closed') return 'Sorteio / Aguardando início';
-    if (t.status === 'registration_open') return 'Inscrições abertas';
-    return 'Agendado';
+  const getFaseAtual = (tournament: Tournament) => {
+    if (tournament.status === 'finished') return t('tournament.finished');
+    if (tournament.status === 'in_progress') return t('tournament.inProgress');
+    if (tournament.status === 'registration_closed') return t('tournament.registrationClosed');
+    if (tournament.status === 'registration_open') return t('tournament.registrationOpen');
+    return t('tournament.scheduled');
   };
 
   return (
@@ -386,8 +441,8 @@ export default function TournamentPage() {
           </div>
         )}
 
-        <h1 className="text-4xl font-bold text-white mb-2">Torneios</h1>
-        <p className="text-gray-400 mb-8">Inscreva-se, acompanhe as chaves e confira os resultados.</p>
+        <h1 className="text-4xl font-bold text-white mb-2">{t('tournament.title')}</h1>
+        <p className="text-gray-400 mb-8">{t('tournament.subtitle')}</p>
 
         {loadingDetail && (
           <div className="text-white py-12 text-center">Carregando torneio...</div>
@@ -395,7 +450,7 @@ export default function TournamentPage() {
 
         {tournamentIdParam && !loadingDetail && !selectedTournament && (
           <div className="text-center py-12">
-            <p className="text-gray-400 text-lg mb-4">Torneio não encontrado.</p>
+            <p className="text-gray-400 text-lg mb-4">{t('tournament.notFound')}</p>
             <button type="button" onClick={() => navigate('/tournaments')} className="text-amber-400 hover:text-amber-300 underline">
               Ver todos os torneios
             </button>
@@ -427,6 +482,28 @@ export default function TournamentPage() {
                 </div>
                 <h2 className="text-2xl sm:text-3xl font-bold text-white mb-1">{selectedTournament.name}</h2>
                 <p className="text-gray-400 text-sm">{selectedTournament.description || 'Mata-mata: perdeu está fora, quem ganhou passa de fase.'}</p>
+                {selectedTournament.status === 'finished' && (selectedTournament.winner || top3.find((p) => p.position === 1)) && (
+                  <div className="mt-3 flex items-center gap-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 w-fit">
+                    <img
+                      src={getProfileImageUrl(
+                        selectedTournament.winner?.profileImage ??
+                          top3.find((p) => p.position === 1)?.user.profileImage,
+                      )}
+                      alt=""
+                      className="w-10 h-10 rounded-full object-cover ring-2 ring-emerald-400/60"
+                      onError={(e) => {
+                        e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
+                      }}
+                    />
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-emerald-400/80 font-semibold">Campeão</p>
+                      <p className="text-emerald-300 font-bold">
+                        {selectedTournament.winner?.nickname ??
+                          top3.find((p) => p.position === 1)?.user.nickname}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-3 flex-shrink-0">
                 <span className="px-4 py-2 rounded-lg bg-amber-500/20 border border-amber-500/50 text-amber-300 font-bold text-sm whitespace-nowrap">
@@ -467,10 +544,16 @@ export default function TournamentPage() {
                           <td className="p-3 text-gray-400">{row.turno}</td>
                           <td className="p-3 text-gray-300 flex items-center justify-between gap-2">
                             {row.horario}
-                            {row.isRound && (selectedTournament.status === 'in_progress' || selectedTournament.status === 'finished') && (
+                            {row.isRound &&
+                              (selectedTournament.status === 'registration_closed' ||
+                                selectedTournament.status === 'in_progress' ||
+                                selectedTournament.status === 'finished') && (
                               <button
                                 type="button"
-                                onClick={() => document.getElementById('chave-torneio')?.scrollIntoView({ behavior: 'smooth' })}
+                                onClick={() => {
+                                  if (!bracket) loadBracket(selectedTournament.id);
+                                  setShowBracket(true);
+                                }}
                                 className="text-amber-400 hover:text-amber-300 p-1 rounded"
                                 title="Ver chave do torneio"
                                 aria-label="Ver chave"
@@ -508,70 +591,206 @@ export default function TournamentPage() {
                 </div>
               </div>
 
-            {/* Chave do torneio: só após início do torneio (in_progress ou finished) */}
-            {(selectedTournament.status === 'in_progress' || selectedTournament.status === 'finished') && (
+            {/* Chave: disponível quando as vagas enchem (registration_closed) ou torneio em andamento/finalizado */}
+            {(selectedTournament.status === 'registration_closed' ||
+              selectedTournament.status === 'in_progress' ||
+              selectedTournament.status === 'finished') && (
               <div id="chave-torneio" className="border-t border-amber-500/20 pt-6 mb-6 scroll-mt-4">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-bold text-amber-400 flex items-center gap-2">
-                    <span>🏆</span> Chave do Torneio
-                  </h3>
+                <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-amber-400 flex items-center gap-2">
+                      <span>🏆</span> Chave do Torneio
+                    </h3>
+                    {selectedTournament.status === 'registration_closed' && (
+                      <p className="text-gray-400 text-sm mt-1">
+                        Vagas preenchidas — a chave já está disponível. Início em{' '}
+                        <span className="text-amber-300 font-medium">
+                          {new Date(selectedTournament.startAt).toLocaleString('pt-BR', {
+                            dateStyle: 'long',
+                            timeStyle: 'short',
+                          })}
+                        </span>
+                        .
+                      </p>
+                    )}
+                  </div>
                   <button
+                    type="button"
                     onClick={() => {
-                      if (!showBracket && !bracket) {
-                        loadBracket(selectedTournament.id);
-                      }
-                      setShowBracket(!showBracket);
+                      if (!bracket) loadBracket(selectedTournament.id);
+                      setShowBracket(true);
                     }}
                     className="px-4 py-2 bg-amber-500/30 border border-amber-500/50 hover:bg-amber-500/50 text-amber-200 rounded-lg transition-all flex items-center gap-2 text-sm font-semibold"
                   >
-                    {showBracket ? '👁️ Ocultar' : '🔍 Ver Chave'}
+                    🔍 Ver Chave
                   </button>
                 </div>
-                
-                {showBracket && (
-                  <>
-                    {loadingBracket ? (
-                      <div className="text-white text-center py-8">Carregando chave...</div>
-                    ) : bracket && bracket.totalRounds > 0 ? (
-                      <div className="relative">
-                        <TournamentBracket bracket={bracket} />
-                      </div>
-                    ) : (
-                      <p className="text-gray-400 text-center py-8">Chave ainda não foi gerada.</p>
-                    )}
-                  </>
-                )}
               </div>
             )}
 
-            {/* Inscrições fechadas, torneio ainda não começou: aviso de quando a chave sai */}
-            {selectedTournament.status === 'registration_closed' && (
-              <div className="border-t border-amber-500/20 pt-6 mb-6">
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-center">
-                  <p className="text-amber-200 font-semibold mb-1">Inscrições encerradas</p>
-                  <p className="text-gray-400 text-sm">
-                    A chave do torneio será divulgada no início do torneio, em{' '}
-                    <span className="text-amber-300 font-medium">
-                      {new Date(selectedTournament.startAt).toLocaleString('pt-BR', { dateStyle: 'long', timeStyle: 'short' })}
-                    </span>.
-                  </p>
-                </div>
+            {/* Modal da chave — todos os confrontos */}
+            {showBracket && selectedTournament && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-sm"
+                onClick={() => setShowBracket(false)}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Chave do torneio"
+              >
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.96, y: 12 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  className="relative w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-xl border border-amber-500/40 bg-[#0c1220] shadow-2xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-amber-500/25 bg-[#0c1220]/95 px-4 py-3 backdrop-blur">
+                    <div>
+                      <h3 className="text-lg font-bold text-amber-300">{selectedTournament.name}</h3>
+                      <p className="text-xs text-gray-400">
+                        {selectedTournament.currentParticipants}/{selectedTournament.maxParticipants} participantes
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowBracket(false)}
+                      className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-white/80 hover:bg-white/10"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+
+                  <div className="overflow-y-auto max-h-[calc(92vh-4rem)] p-4 sm:p-5">
+                    {loadingBracket ? (
+                      <div className="text-white text-center py-12">Carregando chave...</div>
+                    ) : bracket && bracket.totalRounds > 0 ? (
+                      <div className="space-y-6">
+                        {/* Lista de todos os confrontos por rodada */}
+                        {Array.from({ length: bracket.totalRounds }, (_, i) => i + 1).map((round) => {
+                          const matches = bracket.rounds[round] || [];
+                          const roundName =
+                            round === bracket.totalRounds
+                              ? 'Final'
+                              : round === bracket.totalRounds - 1
+                                ? 'Semifinal'
+                                : round === bracket.totalRounds - 2
+                                  ? 'Quartas'
+                                  : `Rodada ${round}`;
+                          return (
+                            <div key={round}>
+                              <h4 className="text-sm font-bold uppercase tracking-wider text-champion-gold mb-3">
+                                {roundName}
+                              </h4>
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                {matches.map((match) => {
+                                  const isThird = (match as Match & { isThirdPlaceMatch?: boolean }).isThirdPlaceMatch;
+                                  return (
+                                    <div
+                                      key={match.id}
+                                      className="rounded-lg border border-white/10 bg-black/35 px-3 py-3"
+                                    >
+                                      {isThird && (
+                                        <p className="text-[10px] font-semibold uppercase text-amber-400 mb-1.5">
+                                          Disputa de 3º lugar
+                                        </p>
+                                      )}
+                                      <div className="flex items-center justify-between gap-2 text-sm">
+                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                          <img
+                                            src={getProfileImageUrl(match.player1?.profileImage)}
+                                            alt=""
+                                            className="w-7 h-7 rounded-full object-cover ring-1 ring-white/20 shrink-0"
+                                            onError={(e) => {
+                                              e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
+                                            }}
+                                          />
+                                          <span
+                                            className={`truncate font-medium ${
+                                              match.winnerId === match.player1Id
+                                                ? 'text-emerald-400'
+                                                : 'text-white'
+                                            }`}
+                                          >
+                                            {match.player1?.nickname || 'Aguardando...'}
+                                          </span>
+                                        </div>
+                                        <span className="text-white/40 text-xs shrink-0">vs</span>
+                                        <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
+                                          <span
+                                            className={`truncate font-medium text-right ${
+                                              match.winnerId === match.player2Id
+                                                ? 'text-emerald-400'
+                                                : 'text-white'
+                                            }`}
+                                          >
+                                            {match.player2?.nickname || 'Aguardando...'}
+                                          </span>
+                                          <img
+                                            src={getProfileImageUrl(match.player2?.profileImage)}
+                                            alt=""
+                                            className="w-7 h-7 rounded-full object-cover ring-1 ring-white/20 shrink-0"
+                                            onError={(e) => {
+                                              e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
+                                            }}
+                                          />
+                                        </div>
+                                      </div>
+                                      <p className="mt-2 text-[10px] uppercase tracking-wide text-white/45">
+                                        {match.status === 'finished'
+                                          ? 'Finalizado'
+                                          : match.status === 'in_progress'
+                                            ? 'Em andamento'
+                                            : match.status === 'ready'
+                                              ? 'Pronto'
+                                              : match.status === 'walkover'
+                                                ? 'W.O. / Bye'
+                                                : 'Agendado'}
+                                        {match.scheduledAt
+                                          ? ` · ${new Date(match.scheduledAt).toLocaleString('pt-BR', {
+                                              dateStyle: 'short',
+                                              timeStyle: 'short',
+                                            })}`
+                                          : ''}
+                                      </p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        <div className="border-t border-white/10 pt-4">
+                          <p className="text-xs text-white/50 mb-3">Visão em chave</p>
+                          <TournamentBracket bracket={bracket} />
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-gray-400 text-center py-12">Chave ainda não foi gerada.</p>
+                    )}
+                  </div>
+                </motion.div>
               </div>
             )}
 
             {/* Premiação — estilo dourado / dark */}
               <div className="border-t border-amber-500/20 pt-6">
                 <h3 className="text-2xl font-bold text-amber-400 mb-1">Premiação</h3>
-                <p className="text-gray-500 text-sm mb-4">Quem vence a final é o campeão. Prêmios em créditos.</p>
+                {selectedTournament.status === 'finished' ? (
+                  <p className="text-emerald-400 text-sm mb-4 font-medium">
+                    Torneio finalizado — premiações entregues. Confira o pódio abaixo.
+                  </p>
+                ) : (
+                  <p className="text-gray-500 text-sm mb-4">Quem vence a final é o campeão. Prêmios em créditos.</p>
+                )}
                 {loadingTop3 && selectedTournament.status === 'finished' ? (
                   <div className="text-gray-400 py-6">Carregando pódio...</div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     {[
-                      { place: 1, prize: selectedTournament.prizeFirst, player: top3.find((p) => p.position === 1) },
-                      { place: 2, prize: selectedTournament.prizeSecond, player: top3.find((p) => p.position === 2) },
-                      { place: 3, prize: selectedTournament.prizeThird, player: top3.find((p) => p.position === 3) },
-                      { place: 4, prize: 0, player: null },
+                      { place: 1, prize: top3.find((p) => p.position === 1)?.prize ?? selectedTournament.prizeFirst, player: top3.find((p) => p.position === 1) },
+                      { place: 2, prize: top3.find((p) => p.position === 2)?.prize ?? selectedTournament.prizeSecond, player: top3.find((p) => p.position === 2) },
+                      { place: 3, prize: top3.find((p) => p.position === 3)?.prize ?? selectedTournament.prizeThird, player: top3.find((p) => p.position === 3) },
+                      { place: 4, prize: top3.find((p) => p.position === 4)?.prize ?? 0, player: top3.find((p) => p.position === 4) ?? null },
                     ].map(({ place, prize, player }) => (
                       <motion.div
                         key={place}
@@ -594,7 +813,7 @@ export default function TournamentPage() {
                                 />
                               </div>
                               <p className="text-white font-semibold truncate">{player.user.nickname}</p>
-                              {place === 1 && <p className="text-amber-400 text-xs font-bold mt-0.5">CAMPEÃO</p>}
+                              {place === 1 && <p className="text-amber-400 text-xs font-bold mt-0.5">{t('tournament.champion')}</p>}
                             </>
                           ) : (
                             <p className="text-gray-500 text-sm py-4">—</p>
@@ -615,7 +834,7 @@ export default function TournamentPage() {
                   </div>
                 ) : selectedTournament.currentParticipants >= selectedTournament.maxParticipants ? (
                   <div className="w-full px-6 py-3 rounded-lg border-2 border-amber-500/60 bg-amber-500/20 text-amber-200 font-bold text-center">
-                    Torneio cheio. Não há mais vagas.
+                    {t('tournament.full')}
                   </div>
                 ) : (
                   <button
@@ -632,29 +851,46 @@ export default function TournamentPage() {
           </motion.div>
         )}
 
-        {!tournamentIdParam && renderSection(
-          'Próximos torneios',
-          '📅',
-          proximos,
-          'Nenhum torneio agendado no momento.'
-        )}
-        {!tournamentIdParam && renderSection(
-          'Inscrições Abertas',
-          '✅',
-          inscricoesAbertas,
-          'Nenhum torneio com inscrições abertas.'
-        )}
-        {!tournamentIdParam && renderSection(
-          'Em Andamento',
-          '⚔️',
-          emAndamento,
-          'Nenhum torneio em andamento.'
-        )}
-        {!tournamentIdParam && renderSection(
-          'Finalizados',
-          '🏆',
-          finalizados,
-          'Nenhum torneio finalizado.'
+        {!tournamentIdParam && (
+          <section className="mb-10">
+            <div className="flex flex-wrap gap-2 mb-5">
+              {tabFilters.map((tab) => {
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold border transition-all ${
+                      isActive
+                        ? 'bg-champion-gold/20 border-champion-gold/60 text-champion-gold shadow-[0_0_12px_rgba(232,197,71,0.2)]'
+                        : 'bg-black/25 border-white/15 text-white/75 hover:border-champion-gold/35 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <span aria-hidden>{tab.icon}</span>
+                    <span>{tab.label}</span>
+                    <span
+                      className={`ml-0.5 min-w-[1.25rem] rounded-md px-1.5 py-0.5 text-[11px] tabular-nums ${
+                        isActive ? 'bg-champion-gold/25 text-champion-gold' : 'bg-white/10 text-white/60'
+                      }`}
+                    >
+                      {tab.list.length}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {activeFilter.list.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {activeFilter.list.map(renderTournamentCard)}
+              </div>
+            ) : (
+              <p className="text-gray-500 text-sm py-6 text-center rounded-xl border border-white/10 bg-black/20">
+                {activeFilter.emptyMsg}
+              </p>
+            )}
+          </section>
         )}
 
         {/* Ranking de Torneios - Classes Obelisco, Rá, Slifer */}
@@ -717,7 +953,7 @@ export default function TournamentPage() {
 
         {!tournamentIdParam && tournaments.length === 0 && !loading && (
           <div className="text-center text-gray-400 py-12">
-            <p className="text-xl">Nenhum torneio disponível no momento</p>
+            <p className="text-xl">{t('tournament.noneAvailable')}</p>
           </div>
         )}
     </div>

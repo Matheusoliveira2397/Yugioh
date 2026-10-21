@@ -48,19 +48,21 @@ A classe `BaseCardEffect` define a estrutura comum, e cada efeito implementa os 
 ```
 card-effects/
 ├── interfaces/
-│   └── card-effect.interface.ts    # Contratos e tipos
+│   └── card-effect.interface.ts
 ├── base/
-│   └── card-effect.base.ts         # Classe base com funcionalidades comuns
+│   └── card-effect.base.ts
 ├── registry/
-│   └── card-effect-registry.service.ts  # Registro e busca de efeitos
+│   └── card-effect-registry.service.ts
+├── catalog/
+│   └── all-effects.catalog.ts
 ├── effects/
-│   ├── drop-off.effect.ts          # Efeito isolado da Drop Off
-│   ├── pot-of-greed.effect.ts      # Efeito isolado do Pot of Greed
-│   └── ...                         # Outros efeitos (um arquivo por carta)
-├── card-effects.module.ts          # Módulo NestJS que registra tudo
-├── README.md                       # Documentação de uso
-├── MIGRATION_GUIDE.md              # Guia de migração
-└── ARCHITECTURE.md               # Este arquivo
+│   ├── spells/       # Magias + player-target helpers + simple-effects
+│   ├── traps/        # Armadilhas (Drop Off + ativações)
+│   └── Monsters/     # Monstros (um arquivo por carta)
+├── card-effects.module.ts
+├── README.md
+├── MIGRATION_GUIDE.md
+└── ARCHITECTURE.md
 ```
 
 ## Fluxo de Execução

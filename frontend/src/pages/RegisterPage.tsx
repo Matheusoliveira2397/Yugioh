@@ -3,6 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import axios from 'axios';
 import ArenaFullBleedBackground from '../components/ArenaFullBleedBackground';
+import GoogleSignInButton from '../components/GoogleSignInButton';
+import { useI18n } from '../i18n/I18nContext';
+import LanguageSelector from '../components/LanguageSelector';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -13,6 +16,7 @@ interface ValidationState {
 }
 
 export default function RegisterPage() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [nickname, setNickname] = useState('');
   const [username, setUsername] = useState('');
@@ -53,7 +57,7 @@ export default function RegisterPage() {
       return;
     }
 
-    setNicknameValidation({ isValid: null, message: 'Verificando...', checking: true });
+    setNicknameValidation({ isValid: null, message: t('register.checking'), checking: true });
     try {
       const response = await axios.get(`${API_URL}/auth/check-nickname`, {
         params: { nickname: nickname.trim() },
@@ -88,7 +92,7 @@ export default function RegisterPage() {
       return;
     }
 
-    setUsernameValidation({ isValid: null, message: 'Verificando...', checking: true });
+    setUsernameValidation({ isValid: null, message: t('register.checking'), checking: true });
     try {
       const response = await axios.get(`${API_URL}/auth/check-username`, {
         params: { username: username.trim().toLowerCase() },
@@ -123,7 +127,7 @@ export default function RegisterPage() {
       return;
     }
 
-    setEmailValidation({ isValid: null, message: 'Verificando...', checking: true });
+    setEmailValidation({ isValid: null, message: t('register.checking'), checking: true });
     try {
       const response = await axios.get(`${API_URL}/auth/check-email`, {
         params: { email: email.trim().toLowerCase() },
@@ -239,28 +243,28 @@ export default function RegisterPage() {
                   <span className="text-3xl">✅</span>
                 </div>
                 <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
-                  Cadastro realizado!
+                  {t('register.successTitle')}
                 </h1>
-                <p className="text-slate-400 text-sm">Próximo passo: verificar seu email</p>
+                <p className="text-slate-400 text-sm">{t('register.nextStep')}</p>
               </div>
 
               {emailSent ? (
                 <div className="space-y-4 mb-8">
                   <div className="rounded-xl bg-blue-500/10 border border-blue-400/30 p-4">
                     <p className="text-blue-200 font-medium text-sm flex items-center gap-2">
-                      <span>📧</span> Email de verificação enviado
+                      <span>📧</span> {t('register.emailSent')}
                     </p>
                     <p className="text-slate-300 text-sm mt-2">
-                      Verifique a caixa de entrada e a pasta de <strong>spam</strong> em:
+                      {t('register.checkSpam')}
                     </p>
                     <p className="text-amber-200/90 text-sm font-medium mt-1 break-all">{registeredEmail}</p>
                   </div>
                   <p className="text-slate-400 text-sm text-center">
-                    Clique no link do email para ativar sua conta.
+                    {t('register.clickEmailLink')}
                   </p>
                   <div className="rounded-lg bg-amber-500/10 border border-amber-400/30 px-3 py-2 text-center">
                     <p className="text-amber-200 text-xs">
-                      ⚠️ Só é possível fazer login após verificar o email.
+                      {t('register.loginAfterVerify')}
                     </p>
                   </div>
                 </div>
@@ -268,15 +272,16 @@ export default function RegisterPage() {
                 <div className="space-y-4 mb-8">
                   <div className="rounded-xl bg-amber-500/10 border border-amber-400/30 p-4">
                     <p className="text-amber-200 font-medium text-sm flex items-center gap-2">
-                      <span>⚠️</span> Email pode não ter sido enviado
+                      <span>⚠️</span> {t('register.emailMaybeNotSent')}
                     </p>
                     <p className="text-slate-300 text-sm mt-2">
-                      Confira a pasta de spam em <strong className="text-slate-200">{registeredEmail}</strong>. Se não receber, solicite um novo email de verificação na página de login.
+                      {t('register.emailMaybeNotSentHint')}{' '}
+                      <strong className="text-slate-200">{registeredEmail}</strong>
                     </p>
                   </div>
                   <div className="rounded-lg bg-amber-500/10 border border-amber-400/30 px-3 py-2 text-center">
                     <p className="text-amber-200 text-xs">
-                      ⚠️ Só é possível fazer login após verificar o email.
+                      {t('register.loginAfterVerify')}
                     </p>
                   </div>
                 </div>
@@ -286,7 +291,7 @@ export default function RegisterPage() {
                 to="/login"
                 className="block w-full text-center py-3.5 px-6 rounded-xl font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 focus:ring-2 focus:ring-blue-400/50 focus:ring-offset-2 focus:ring-offset-slate-900 transition-all"
               >
-                Ir para Login
+                {t('register.goToLogin')}
               </Link>
             </div>
           </div>
@@ -312,12 +317,15 @@ export default function RegisterPage() {
       >
         <div className="rounded-2xl shadow-2xl overflow-hidden border border-white/10 bg-slate-900/80 backdrop-blur-xl">
           {/* Header do card */}
-          <div className="px-8 pt-8 pb-6 border-b border-white/5">
+          <div className="px-8 pt-8 pb-6 border-b border-white/5 relative">
+            <div className="absolute top-4 right-4">
+              <LanguageSelector variant="compact" />
+            </div>
             <h1 className="text-2xl sm:text-3xl font-bold text-white text-center">
-              Criar conta
+              {t('register.title')}
             </h1>
             <p className="text-slate-400 text-center text-sm mt-1">
-              Junte-se aos duelistas
+              {t('register.subtitle')}
             </p>
           </div>
 
@@ -325,11 +333,11 @@ export default function RegisterPage() {
             {/* Seção: Identificação */}
             <div className="space-y-4">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Sua identidade
+                {t('register.sectionIdentity')}
               </h2>
               <div>
                 <label htmlFor="nickname" className="block text-sm font-medium text-slate-200 mb-1.5">
-                  Nickname <span className="text-red-400">*</span>
+                  {t('register.nickname')} <span className="text-red-400">*</span>
                 </label>
                 <input
                   id="nickname"
@@ -344,7 +352,7 @@ export default function RegisterPage() {
                         ? inputInvalid
                         : 'border-white/10'
                   }`}
-                  placeholder="Como você quer ser chamado"
+                  placeholder={t('register.nicknamePlaceholder')}
                   required
                   maxLength={30}
                 />
@@ -365,7 +373,7 @@ export default function RegisterPage() {
               </div>
               <div>
                 <label htmlFor="username" className="block text-sm font-medium text-slate-200 mb-1.5">
-                  Username <span className="text-red-400">*</span>
+                  {t('register.username')} <span className="text-red-400">*</span>
                 </label>
                 <input
                   id="username"
@@ -380,7 +388,7 @@ export default function RegisterPage() {
                         ? inputInvalid
                         : 'border-white/10'
                   }`}
-                  placeholder="usuario_unico"
+                  placeholder={t('register.usernamePlaceholder')}
                   required
                   maxLength={20}
                   pattern="[a-zA-Z0-9_]+"
@@ -399,18 +407,18 @@ export default function RegisterPage() {
                     {usernameValidation.message}
                   </p>
                 )}
-                <p className="text-xs text-slate-500 mt-1">Apenas letras, números e _</p>
+                <p className="text-xs text-slate-500 mt-1">{t('register.usernameHint')}</p>
               </div>
             </div>
 
             {/* Seção: Email */}
             <div className="space-y-4">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Email
+                {t('register.email')}
               </h2>
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-slate-200 mb-1.5">
-                  Email <span className="text-red-400">*</span>
+                  {t('register.email')} <span className="text-red-400">*</span>
                 </label>
                 <input
                   id="email"
@@ -425,7 +433,7 @@ export default function RegisterPage() {
                         ? inputInvalid
                         : 'border-white/10'
                   }`}
-                  placeholder="seu@email.com"
+                  placeholder={t('register.emailPlaceholder')}
                   required
                 />
                 {emailValidation.message && (
@@ -445,7 +453,7 @@ export default function RegisterPage() {
               </div>
               <div>
                 <label htmlFor="confirmEmail" className="block text-sm font-medium text-slate-200 mb-1.5">
-                  Confirmar email <span className="text-red-400">*</span>
+                  {t('register.confirmEmail')} <span className="text-red-400">*</span>
                 </label>
                 <input
                   id="confirmEmail"
@@ -459,14 +467,14 @@ export default function RegisterPage() {
                         ? inputValid
                         : 'border-white/10'
                   }`}
-                  placeholder="repita o email"
+                  placeholder={t('register.confirmEmailPlaceholder')}
                   required
                 />
                 {confirmEmail && email && confirmEmail !== email && (
-                  <p className="text-xs text-red-400 mt-1.5">❌ Os emails não coincidem</p>
+                  <p className="text-xs text-red-400 mt-1.5">{t('register.emailsMismatch')}</p>
                 )}
                 {confirmEmail && email && confirmEmail === email && (
-                  <p className="text-xs text-emerald-400 mt-1.5">✅ Emails coincidem</p>
+                  <p className="text-xs text-emerald-400 mt-1.5">{t('register.emailsMatch')}</p>
                 )}
               </div>
             </div>
@@ -474,11 +482,11 @@ export default function RegisterPage() {
             {/* Seção: Senha */}
             <div className="space-y-4">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Senha
+                {t('register.password')}
               </h2>
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-slate-200 mb-1.5">
-                  Senha <span className="text-red-400">*</span>
+                  {t('register.password')} <span className="text-red-400">*</span>
                 </label>
                 <input
                   id="password"
@@ -486,17 +494,17 @@ export default function RegisterPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className={`${inputBase} border-white/10`}
-                  placeholder="Mínimo 6 caracteres"
+                  placeholder={t('register.passwordPlaceholder')}
                   required
                   minLength={6}
                 />
                 {password && password.length < 6 && (
-                  <p className="text-xs text-red-400 mt-1.5">❌ Mínimo 6 caracteres</p>
+                  <p className="text-xs text-red-400 mt-1.5">{t('register.passwordTooShort')}</p>
                 )}
               </div>
               <div>
                 <label htmlFor="confirmPassword" className="block text-sm font-medium text-slate-200 mb-1.5">
-                  Confirmar senha <span className="text-red-400">*</span>
+                  {t('register.confirmPassword')} <span className="text-red-400">*</span>
                 </label>
                 <input
                   id="confirmPassword"
@@ -510,14 +518,14 @@ export default function RegisterPage() {
                         ? inputValid
                         : 'border-white/10'
                   }`}
-                  placeholder="repita a senha"
+                  placeholder={t('register.confirmPasswordPlaceholder')}
                   required
                 />
                 {confirmPassword && password && confirmPassword !== password && (
-                  <p className="text-xs text-red-400 mt-1.5">❌ As senhas não coincidem</p>
+                  <p className="text-xs text-red-400 mt-1.5">{t('register.passwordsMismatch')}</p>
                 )}
                 {confirmPassword && password && confirmPassword === password && (
-                  <p className="text-xs text-emerald-400 mt-1.5">✅ Senhas coincidem</p>
+                  <p className="text-xs text-emerald-400 mt-1.5">{t('register.passwordsMatch')}</p>
                 )}
               </div>
             </div>
@@ -546,19 +554,26 @@ export default function RegisterPage() {
               {loading ? (
                 <>
                   <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/30 border-t-white" />
-                  <span>Cadastrando...</span>
+                  <span>{t('register.submitting')}</span>
                 </>
               ) : (
-                'Criar conta'
+                t('register.title')
               )}
             </button>
+
+            <div className="flex items-center gap-2 text-xs text-slate-500 pt-1">
+              <span className="flex-1 h-px bg-white/10" />
+              <span>{t('register.or')}</span>
+              <span className="flex-1 h-px bg-white/10" />
+            </div>
+            <GoogleSignInButton label={t('register.google')} showConfigHint />
           </form>
 
           <div className="px-8 pb-8 pt-2 text-center">
             <p className="text-slate-400 text-sm">
-              Já tem uma conta?{' '}
+              {t('register.haveAccountFull')}{' '}
               <Link to="/login" className="text-blue-400 hover:text-blue-300 font-semibold">
-                Entrar
+                {t('register.loginLink')}
               </Link>
             </p>
           </div>

@@ -20,10 +20,12 @@ import { Group } from '../groups/entities/group.entity';
 import { LevelsModule } from '../levels/levels.module';
 import { Deck } from '../decks/entities/deck.entity';
 import { DeckCard } from '../decks/entities/deck-card.entity';
+import { UserCard } from '../shop/entities/user-card.entity';
+import { Card } from '../cards/entities/card.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Achievement, UserSystemNotification, LoginBroadcast, SeasonRanking, Season, GroupMember, Group, Deck, DeckCard]),
+    TypeOrmModule.forFeature([User, Achievement, UserSystemNotification, LoginBroadcast, SeasonRanking, Season, GroupMember, Group, Deck, DeckCard, UserCard, Card]),
     UploadModule,
     MailModule,
     RedisModule,

@@ -16,6 +16,7 @@ export class UsersCosmeticsController {
       equippedPlaymatImage?: string | null;
       equippedSkinId?: string | null;
       equippedSkinImage?: string | null;
+      equippedAvatarFrame?: string | null;
       equippedDeckId?: string | null;
       equippedDeckName?: string | null;
     },

@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy, Inject, forwardRef } from '@nestjs/common';
 import { DuelsService } from './duels.service';
 import { Server } from 'socket.io';
 import { DuelOrigin } from './entities/duel.entity';
@@ -22,7 +22,10 @@ export class DuelQueueService implements OnModuleInit, OnModuleDestroy {
   private server: Server | null = null;
   private readonly PROCESSING_DELAY_MS = 2000; // 2 segundos
 
-  constructor(private duelsService: DuelsService) {}
+  constructor(
+    @Inject(forwardRef(() => DuelsService))
+    private duelsService: DuelsService,
+  ) {}
 
   onModuleInit() {
     this.start();

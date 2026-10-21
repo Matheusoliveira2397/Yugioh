@@ -1,5 +1,24 @@
 # Sistema de Efeitos de Cartas
 
+## Estrutura de pastas
+
+```
+card-effects/effects/
+├── spells/      # Magias (classes, simple-effects, player-target helpers)
+├── traps/       # Armadilhas (Drop Off + ativações automáticas)
+└── Monsters/    # Monstros (um arquivo por carta)
+```
+
+Novos efeitos: arquivo em `effects/spells|traps|Monsters/`, registrar no `card-effects.module.ts` e listar em `catalog/all-effects.catalog.ts`.
+
+## Anti-regressão (efeito não pode “sumir” depois)
+
+1. **Um arquivo por carta** — nunca edite o efeito A para “consertar” o B.
+2. **Match exato** — registry não usa `includes`; colisão de chave lança erro no boot.
+3. **Sem fallback se o efeito registrado falhar** — erro fica visível; não mascara com código antigo.
+4. **Selo (`validation/effects-seal.json`)** — no boot, se um efeito que já existia sumir do registry, o log marca `REGRESSÃO`.
+5. **Persistência** — em efeitos, use `updateDuel` / `syncDuelState`, nunca só `activeDuels.set`.
+
 ## Arquitetura Flexível
 
 Este sistema oferece **duas opções** para criar efeitos:

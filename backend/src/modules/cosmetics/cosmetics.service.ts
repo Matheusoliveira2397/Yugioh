@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Playmat } from './entities/playmat.entity';
 import { Sleeve } from './entities/sleeve.entity';
 import { CreatePlaymatDto } from './dto/create-playmat.dto';
@@ -51,6 +51,15 @@ export class CosmeticsService {
     return playmat;
   }
 
+  /** Batch load — evita N+1 no inventário. */
+  async findPlaymatsByIds(ids: string[]): Promise<Playmat[]> {
+    if (!ids.length) return [];
+    return this.playmatRepository.find({
+      where: { id: In(ids) },
+      select: ['id', 'name', 'image'],
+    });
+  }
+
   async updatePlaymat(id: string, updateData: Partial<CreatePlaymatDto>): Promise<Playmat> {
     const playmat = await this.findOnePlaymat(id);
     Object.assign(playmat, updateData);
@@ -88,6 +97,15 @@ export class CosmeticsService {
       throw new NotFoundException(`Sleeve com ID ${id} não encontrado`);
     }
     return sleeve;
+  }
+
+  /** Batch load — evita N+1 no inventário. */
+  async findSleevesByIds(ids: string[]): Promise<Sleeve[]> {
+    if (!ids.length) return [];
+    return this.sleeveRepository.find({
+      where: { id: In(ids) },
+      select: ['id', 'name', 'image'],
+    });
   }
 
   async updateSleeve(id: string, updateData: Partial<CreateSleeveDto>): Promise<Sleeve> {

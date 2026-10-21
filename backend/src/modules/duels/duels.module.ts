@@ -43,6 +43,8 @@ import { AdminModule } from '../admin/admin.module';
 import { AnimeDecksModule } from '../anime-decks/anime-decks.module';
 import { EconomyModule } from '../economy/economy.module';
 import { ShopModule } from '../shop/shop.module';
+import { BattlePassModule } from '../battle-pass/battle-pass.module';
+import { MissionsModule } from '../missions/missions.module';
 
 @Module({
   imports: [
@@ -60,6 +62,8 @@ import { ShopModule } from '../shop/shop.module';
     LevelsModule,
     forwardRef(() => AdminModule),
     EconomyModule,
+    BattlePassModule,
+    MissionsModule,
     forwardRef(() => CardEffectsModule), // Novo sistema de efeitos de cartas (forwardRef para evitar dependência circular)
   ],
   controllers: [DuelsController],

@@ -8,13 +8,11 @@ import {
 import { Server, Socket } from 'socket.io';
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { getCorsOriginOption } from '../../common/utils/cors-origins.util';
 
 @WebSocketGateway({
   cors: {
-    origin: (() => {
-      const o = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map((s) => s.trim()).filter(Boolean);
-      return o.length ? o : ['http://localhost:5173'];
-    })(),
+    origin: getCorsOriginOption(),
     credentials: true,
   },
 })

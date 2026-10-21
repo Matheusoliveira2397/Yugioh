@@ -12,6 +12,7 @@ import { Server, Socket } from 'socket.io';
 import { ChatService } from './chat.service';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
+import { getCorsOriginOption } from '../../common/utils/cors-origins.util';
 
 // Mapa para rastrear usuários online no chat global
 const globalChatUsers = new Map<number, { userId: number; username: string; nickname: string; clanTag?: string; socketId: string }>();
@@ -25,10 +26,7 @@ function normalizeChannel(channel: string): string {
 
 @WebSocketGateway({
   cors: {
-    origin: (() => {
-      const o = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map((s) => s.trim()).filter(Boolean);
-      return o.length ? o : ['http://localhost:5173'];
-    })(),
+    origin: getCorsOriginOption(),
     credentials: true,
   },
   transports: ['websocket', 'polling'],

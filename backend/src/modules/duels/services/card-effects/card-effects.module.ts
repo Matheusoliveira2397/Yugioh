@@ -5,27 +5,31 @@ import { DuelsService } from '../../duels.service';
 
 // Importar serviços de segurança e monitoramento
 import { EffectIntegrityService } from './validation/effect-integrity.service';
+import { EffectSealService } from './validation/effect-seal.service';
 import { EffectBackupService } from './backup/effect-backup.service';
 import { EffectMonitorService } from './monitoring/effect-monitor.service';
 
-// Importar efeitos complexos (que precisam de classe)
-import { DropOffEffect } from './effects/drop-off.effect';
-import { MysticalSpaceTyphoonEffect } from './effects/mystical-space-typhoon.effect';
-import { GracefulCharityEffect } from './effects/graceful-charity.effect';
-import { ChangeOfHeartEffect } from './effects/change-of-heart.effect';
-import { MonsterRebornEffect } from './effects/monster-reborn.effect';
-import { ReinforcementOfTheArmyEffect } from './effects/reinforcement-of-the-army.effect';
-import { LastWillEffect } from './effects/last-will.effect';
-import { MonsterReincarnationEffect } from './effects/monster-reincarnation.effect';
-import { BrainControlEffect } from './effects/brain-control.effect';
-import { SoulTakerEffect } from './effects/soul-taker.effect';
-import { UnitedWeStandEffect } from './effects/united-we-stand.effect';
-import { MagePowerEffect } from './effects/mage-power.effect';
-import { AutonomousActionUnitEffect } from './effects/autonomous-action-unit.effect';
-import { TheForcefulSentryEffect } from './effects/the-forceful-sentry.effect';
-import { ConfiscationEffect } from './effects/confiscation.effect';
+// Efeitos: todos em effects/{spells|traps|monsters}/
+import { DropOffEffect } from './effects/traps/drop-off.effect';
+import { MysticalSpaceTyphoonEffect } from './effects/spells/mystical-space-typhoon.effect';
+import { GracefulCharityEffect } from './effects/spells/graceful-charity.effect';
+import { ChangeOfHeartEffect } from './effects/spells/change-of-heart.effect';
+import { MonsterRebornEffect } from './effects/spells/monster-reborn.effect';
+import { ReinforcementOfTheArmyEffect } from './effects/spells/reinforcement-of-the-army.effect';
+import { LastWillEffect } from './effects/spells/last-will.effect';
+import { MonsterReincarnationEffect } from './effects/spells/monster-reincarnation.effect';
+import { BrainControlEffect } from './effects/spells/brain-control.effect';
+import { SoulTakerEffect } from './effects/spells/soul-taker.effect';
+import { UnitedWeStandEffect } from './effects/spells/united-we-stand.effect';
+import { MagePowerEffect } from './effects/spells/mage-power.effect';
+import { AutonomousActionUnitEffect } from './effects/spells/autonomous-action-unit.effect';
+import { TheForcefulSentryEffect } from './effects/spells/the-forceful-sentry.effect';
+import { ConfiscationEffect } from './effects/spells/confiscation.effect';
+import { ShrinkEffect } from './effects/spells/shrink.effect';
+import { MagicFormulaEffect } from './effects/spells/magic-formula.effect';
+import { MegamorphEffect } from './effects/spells/megamorph.effect';
+import { EnemyControllerEffect } from './effects/spells/enemy-controller.effect';
 
-// Importar efeitos simples (apenas funções)
 import { 
   createPotOfGreedEffect, 
   createUpstartGoblinEffect, 
@@ -45,7 +49,32 @@ import {
   createHammerShotEffect,
   createGiantTrunadeEffect,
   createDoubleSummonEffect,
-} from './effects/simple-effects';
+  createCardOfSanctityEffect,
+  createMultiplyEffect,
+  createBurstStreamOfDestructionEffect,
+  createDetonateEffect,
+  createSilentDoomEffect,
+  createLimiterRemovalEffect,
+  createTheFluteOfSummoningDragonEffect,
+  createFiendsSanctuaryEffect,
+  createFrontlineBaseEffect,
+} from './effects/spells/simple-effects';
+import { createMagiciansSalvationEffect } from './effects/spells/magicians-salvation';
+import { createFinalAttackOrdersEffect } from './effects/traps/final-attack-orders';
+import { createLightOfInterventionEffect } from './effects/traps/light-of-intervention';
+import {
+  createEmergencyCallEffect,
+  createOversoulEffect,
+  createFakeHeroEffect,
+  createSkyscraperEffect,
+  createRighteousJusticeEffect,
+  createMiracleFusionEffect,
+  createFifthHopeEffect,
+  createHeroHeartEffect,
+  createBurstReturnEffect,
+  createWrathOfNeosEffect,
+  createPolymerizationEffect,
+} from './effects/spells/hero-spells';
 
 /**
  * Módulo responsável por gerenciar todos os efeitos de cartas
@@ -64,6 +93,7 @@ import {
     CardEffectRegistryService,
     // Serviços de segurança e monitoramento
     EffectIntegrityService,
+    EffectSealService,
     EffectBackupService,
     EffectMonitorService,
     // Registrar apenas efeitos complexos como providers (que precisam de classe)
@@ -82,11 +112,16 @@ import {
     AutonomousActionUnitEffect,
     TheForcefulSentryEffect,
     ConfiscationEffect,
+    ShrinkEffect,
+    MagicFormulaEffect,
+    MegamorphEffect,
+    EnemyControllerEffect,
     // Efeitos simples não precisam ser providers, são apenas funções
   ],
   exports: [
     CardEffectRegistryService,
     EffectIntegrityService,
+    EffectSealService,
     EffectBackupService,
     EffectMonitorService,
   ],
@@ -109,7 +144,12 @@ export class CardEffectsModule implements OnModuleInit {
     private readonly autonomousActionUnitEffect: AutonomousActionUnitEffect,
     private readonly theForcefulSentryEffect: TheForcefulSentryEffect,
     private readonly confiscationEffect: ConfiscationEffect,
+    private readonly shrinkEffect: ShrinkEffect,
+    private readonly magicFormulaEffect: MagicFormulaEffect,
+    private readonly megamorphEffect: MegamorphEffect,
+    private readonly enemyControllerEffect: EnemyControllerEffect,
     private readonly integrityService: EffectIntegrityService,
+    private readonly sealService: EffectSealService,
     private readonly backupService: EffectBackupService,
     private readonly monitorService: EffectMonitorService,
     @Inject(forwardRef(() => DuelsService))
@@ -139,6 +179,10 @@ export class CardEffectsModule implements OnModuleInit {
     this.registry.register(AutonomousActionUnitEffect, this.autonomousActionUnitEffect);
     this.registry.register(TheForcefulSentryEffect, this.theForcefulSentryEffect);
     this.registry.register(ConfiscationEffect, this.confiscationEffect);
+    this.registry.register(ShrinkEffect, this.shrinkEffect);
+    this.registry.register(MagicFormulaEffect, this.magicFormulaEffect);
+    this.registry.register(MegamorphEffect, this.megamorphEffect);
+    this.registry.register(EnemyControllerEffect, this.enemyControllerEffect);
     
     // Registrar efeitos simples (funções) - MUITO MAIS FÁCIL!
     // Para efeitos básicos, apenas uma função é suficiente - não precisa de classe!
@@ -261,13 +305,175 @@ export class CardEffectsModule implements OnModuleInit {
       this.duelsService,
     );
 
-    // Lightning Vortex, Trade-In, Dark Eruption, Stamping Destruction, Tribute to the Doomed,
-    // Ancient Rules, Silver's Cry: resolvidos via pendingChoice PLAYER_TARGET_SPELL no gateway (escolha do jogador).
+    // Player-target spells (Lightning Vortex, Trade-In, etc.): helpers em
+    // helpers/player-target-spell.helpers.ts — ver catalog/all-effects.catalog.ts
 
     this.registry.registerSimple(
       ['double summon', 'doublesummon'],
       createDoubleSummonEffect(this.duelsService),
       ['DoubleSummon', 'YGOPRO_43422537'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ["magician's salvation", 'magicians salvation', 'magicianssalvation', 'salvacao do mago', 'salvação do mago'],
+      createMagiciansSalvationEffect(this.duelsService),
+      ['MagiciansSalvation', 'MagicianSSalvation', 'YGOPRO_35158295', '35158295'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['card of sanctity', 'cardofsanctity'],
+      createCardOfSanctityEffect(this.duelsService),
+      ['CardOfSanctity', 'YGOPRO_42664989', '42664989'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['multiply'],
+      createMultiplyEffect(this.duelsService),
+      ['Multiply', 'YGOPRO_40703222', '40703222'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['final attack orders', 'finalattackorders'],
+      createFinalAttackOrdersEffect(this.duelsService),
+      ['FinalAttackOrders', 'YGOPRO_52503575', '52503575'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['burst stream of destruction', 'burststreamofdestruction'],
+      createBurstStreamOfDestructionEffect(this.duelsService),
+      ['BurstStreamOfDestruction', 'YGOPRO_17655904', '17655904'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['detonate'],
+      createDetonateEffect(this.duelsService),
+      ['Detonate', 'YGOPRO_89086566', '89086566'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['silent doom', 'silentdoom'],
+      createSilentDoomEffect(this.duelsService),
+      ['SilentDoom', 'YGOPRO_42534368', '42534368'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['limiter removal', 'limiterremoval'],
+      createLimiterRemovalEffect(this.duelsService),
+      ['LimiterRemoval', 'YGOPRO_23171610', '23171610'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['the flute of summoning dragon', 'thefluteofsummoningdragon', 'flute of summoning dragon'],
+      createTheFluteOfSummoningDragonEffect(this.duelsService),
+      ['TheFluteOfSummoningDragon', 'YGOPRO_43973174', '43973174'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ["fiend's sanctuary", 'fiends sanctuary', 'fiendssanctuary'],
+      createFiendsSanctuaryEffect(this.duelsService),
+      ['FiendsSanctuary', 'FiendSanctuary', 'YGOPRO_24874630', '24874630'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['frontline base', 'frontlinebase'],
+      createFrontlineBaseEffect(this.duelsService),
+      ['FrontlineBase', 'YGOPRO_46181000', '46181000'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['light of intervention', 'lightofintervention'],
+      createLightOfInterventionEffect(this.duelsService),
+      ['LightOfIntervention', 'YGOPRO_62867251', '62867251'],
+      this.duelsService,
+    );
+
+    // HERO Spells
+    this.registry.registerSimple(
+      ['e - emergency call', 'emergency call', 'emergencycall'],
+      createEmergencyCallEffect(this.duelsService),
+      ['EmergencyCall', 'YGOPRO_213326', '213326'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['o - oversoul', 'oversoul'],
+      createOversoulEffect(this.duelsService),
+      ['Oversoul', 'YGOPRO_63703130', '63703130'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['fake hero', 'fakehero'],
+      createFakeHeroEffect(this.duelsService),
+      ['FakeHero', 'YGOPRO_78387742', '78387742'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['skyscraper'],
+      createSkyscraperEffect(this.duelsService),
+      ['Skyscraper', 'YGOPRO_63035430', '63035430'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['r - righteous justice', 'righteous justice', 'righteousjustice'],
+      createRighteousJusticeEffect(this.duelsService),
+      ['RighteousJustice', 'YGOPRO_37318031', '37318031'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['miracle fusion', 'miraclefusion'],
+      createMiracleFusionEffect(this.duelsService),
+      ['MiracleFusion', 'YGOPRO_45906428', '45906428'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['fifth hope', 'fifthhope'],
+      createFifthHopeEffect(this.duelsService),
+      ['FifthHope', 'YGOPRO_55428811', '55428811'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['hero heart', 'heroheart'],
+      createHeroHeartEffect(this.duelsService),
+      ['HeroHeart', 'YGOPRO_67951831', '67951831'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['burst return', 'burstreturn'],
+      createBurstReturnEffect(this.duelsService),
+      ['BurstReturn', 'YGOPRO_27191436', '27191436'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['wrath of neos', 'wrathofneos'],
+      createWrathOfNeosEffect(this.duelsService),
+      ['WrathOfNeos', 'YGOPRO_52098461', '52098461'],
+      this.duelsService,
+    );
+
+    this.registry.registerSimple(
+      ['polymerization'],
+      createPolymerizationEffect(this.duelsService),
+      ['Polymerization', 'YGOPRO_24094653', '24094653'],
       this.duelsService,
     );
     
@@ -288,6 +494,18 @@ export class CardEffectsModule implements OnModuleInit {
       }
     } catch (error) {
       console.error('⚠️ [CardEffectsModule] Erro ao validar integridade:', error);
+    }
+
+    // Selo anti-regressão: acusa se algum efeito antigo sumiu do registry
+    try {
+      const seal = await this.sealService.verifyAndUpdateSeal();
+      if (!seal.ok) {
+        console.error(
+          `❌ [CardEffectsModule] REGRESSÃO DE EFEITOS: faltando ${seal.missing.length}: ${seal.missing.join(', ')}`,
+        );
+      }
+    } catch (error) {
+      console.error('⚠️ [CardEffectsModule] Erro no selo de efeitos:', error);
     }
   }
 }

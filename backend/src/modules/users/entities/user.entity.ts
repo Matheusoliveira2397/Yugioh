@@ -31,8 +31,24 @@ export class User {
   @Column({ unique: true })
   email: string;
 
-  @Column()
-  password: string;
+  /** Null para contas criadas somente via OAuth (ex.: Google). */
+  @Column({ type: 'varchar', nullable: true })
+  password: string | null;
+
+  /** ID estável do Google (sub). Único quando preenchido. */
+  @Column({ type: 'varchar', length: 64, nullable: true, unique: true })
+  googleId: string | null;
+
+  /** local | google | local_google */
+  @Column({ type: 'varchar', length: 32, default: 'local' })
+  authProvider: string;
+
+  /**
+   * false = usuário entrou via Google e ainda precisa escolher o nick no jogo.
+   * Contas locais existentes ficam true por padrão.
+   */
+  @Column({ type: 'boolean', default: true })
+  profileSetupCompleted: boolean;
 
   @Column({ type: 'enum', enum: UserRole, default: UserRole.PLAYER })
   role: UserRole;
@@ -67,6 +83,13 @@ export class User {
   // Sistema de Score
   @Column({ type: 'decimal', precision: 10, scale: 1, default: 0, name: 'total_score' })
   totalScore: number; // Score geral acumulado de todas as seasons
+
+  /**
+   * Pontos da partida ranqueada (sobe e desce).
+   * Independente do totalScore, que só aumenta.
+   */
+  @Column({ type: 'int', default: 1000, name: 'ranked_points' })
+  rankedPoints: number;
 
   /** Pontos de torneios: usados no ranking de classes (Obelisco, Rá, Slifer) */
   @Column({ type: 'int', default: 0, name: 'tournament_points' })
@@ -167,6 +190,10 @@ export class User {
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   equippedSkinImage: string | null;
+
+  /** Moldura do avatar: obelisk | ra | slifer */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  equippedAvatarFrame: string | null;
 
   // Deck equipado (deck que será usado no duelo). ID identifica o deck mesmo com nomes repetidos.
   @Column({ type: 'uuid', nullable: true, name: 'equipped_deck_id' })

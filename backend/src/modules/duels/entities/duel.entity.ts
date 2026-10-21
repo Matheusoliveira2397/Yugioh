@@ -27,6 +27,7 @@ export enum TurnPhase {
 export enum DuelOrigin {
   RANDOM = 'RANDOM',
   RANDOM_ANIME = 'RANDOM_ANIME',
+  RANKED = 'RANKED',
   CHAT = 'CHAT',
   TOURNAMENT = 'TOURNAMENT',
   ARENA = 'ARENA',
@@ -115,7 +116,7 @@ export class Duel {
 
   @Column({ name: 'pending_choice', type: 'jsonb', nullable: true })
   pendingChoice: {
-    type: 'CONFISCATION' | 'GRACEFUL_CHARITY' | 'FORCEFUL_SENTRY';
+    type: 'CONFISCATION' | 'GRACEFUL_CHARITY' | 'FORCEFUL_SENTRY' | 'ARCHFIEND_OF_GILFER' | 'DUST_TORNADO';
     userId: number;
     turnWhenStarted: number;
     phaseWhenStarted: string;

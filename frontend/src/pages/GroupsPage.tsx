@@ -6,6 +6,7 @@ import api from '../api/axios';
 import { getApiErrorMessage } from '../utils/api-error';
 import { getImageUrl } from '../utils/imageUrl';
 import { formatScore } from '../utils/formatScore';
+import { useI18n } from '../i18n/I18nContext';
 
 interface Group {
   id: string;
@@ -45,6 +46,7 @@ interface RankedGroup {
 }
 
 export default function GroupsPage() {
+  const { t } = useI18n();
   const [groups, setGroups] = useState<Group[]>([]);
   const [seasonRanking, setSeasonRanking] = useState<RankedGroup[]>([]);
   const [generalRanking, setGeneralRanking] = useState<RankedGroup[]>([]);
@@ -215,7 +217,7 @@ export default function GroupsPage() {
         });
       }
       
-      setActionBanner({ type: 'success', text: 'Você entrou no grupo!' });
+      setActionBanner({ type: 'success', text: t('groups.joined') });
       fetchGroups();
     } catch (error: unknown) {
       setActionBanner({ type: 'error', text: getApiErrorMessage(error) });
@@ -234,10 +236,10 @@ export default function GroupsPage() {
           <div>
             <h1 className="text-5xl font-bold text-white mb-2 flex items-center gap-3">
               <span className="text-6xl">👥</span>
-              Grupos
+              {t('groups.title')}
             </h1>
             <p className="text-slate-400 text-lg">
-              Junte-se ou crie seu próprio clã de duelistas
+              {t('groups.subtitle')}
             </p>
           </div>
 
@@ -246,7 +248,7 @@ export default function GroupsPage() {
               onClick={() => setShowCreateModal(true)}
               className="px-8 py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold text-lg hover:scale-105 transition-transform shadow-lg shadow-purple-500/50"
             >
-              ➕ Criar Grupo
+              ➕ {t('groups.createGroup')}
             </button>
           )}
         </motion.div>
@@ -261,7 +263,7 @@ export default function GroupsPage() {
                 : 'text-slate-400 hover:bg-white/10 border border-white/20'
             }`}
           >
-            Todos
+            {t('groups.all')}
           </button>
           <button
             onClick={() => setFilterPublic(true)}
@@ -271,7 +273,7 @@ export default function GroupsPage() {
                 : 'text-slate-400 hover:bg-white/10 border border-white/20'
             }`}
           >
-            🌍 Públicos
+            🌍 {t('groups.public')}
           </button>
           <button
             onClick={() => setFilterPublic(false)}
@@ -281,7 +283,7 @@ export default function GroupsPage() {
                 : 'text-slate-400 hover:bg-white/10 border border-white/20'
             }`}
           >
-            🔒 Privados
+            🔒 {t('groups.private')}
           </button>
         </div>
       </div>
@@ -297,7 +299,7 @@ export default function GroupsPage() {
                 : 'text-slate-400 hover:bg-white/10 border border-white/20'
             }`}
           >
-            📊 Ranking Season
+            📊 {t('groups.seasonRanking')}
           </button>
           <button
             onClick={() => setActiveTab('general')}
@@ -307,7 +309,7 @@ export default function GroupsPage() {
                 : 'text-slate-400 hover:bg-white/10 border border-white/20'
             }`}
           >
-            🏆 Ranking Geral
+            🏆 {t('groups.generalRanking')}
           </button>
         </div>
 
@@ -323,7 +325,7 @@ export default function GroupsPage() {
               }}
               className="ml-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white font-semibold transition-colors"
             >
-              Tentar Novamente
+              {t('common.tryAgain')}
             </button>
           </div>
         )}
@@ -343,14 +345,14 @@ export default function GroupsPage() {
               onClick={() => setActionBanner(null)}
               className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-semibold"
             >
-              Fechar
+              {t('common.close')}
             </button>
           </div>
         )}
 
         {/* Lista de Rankings */}
         {loadingRankings ? (
-          <div className="text-center text-white text-xl py-12">Carregando rankings...</div>
+          <div className="text-center text-white text-xl py-12">{t('groups.loadingRankings')}</div>
         ) : (
           <div className="space-y-3">
             {(activeTab === 'season' ? seasonRanking : generalRanking).map((group, index) => (
@@ -414,7 +416,7 @@ export default function GroupsPage() {
                         <span className="text-purple-400 font-semibold">[{group.tag}]</span>
                       </div>
                       <div className="flex items-center gap-4 text-sm text-slate-400">
-                        <span>👥 {group.memberCount} membros</span>
+                        <span>👥 {group.memberCount} {t('groups.members')}</span>
                         <span 
                           onClick={(e) => {
                             e.preventDefault();
@@ -491,8 +493,8 @@ export default function GroupsPage() {
                 className="text-center rounded-2xl p-12 border border-white/20 bg-slate-900/30 "
               >
                 <span className="text-6xl mb-4 block">🏜️</span>
-                <h3 className="text-2xl font-bold text-white mb-2">Nenhum clã encontrado</h3>
-                <p className="text-slate-400">Seja o primeiro a criar um clã!</p>
+                <h3 className="text-2xl font-bold text-white mb-2">{t('groups.noClans')}</h3>
+                <p className="text-slate-400">{t('groups.beFirst')}</p>
               </motion.div>
             )}
           </div>
@@ -501,7 +503,7 @@ export default function GroupsPage() {
 
       {/* Modal de Criar Grupo */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 duel-modal-scrim flex items-center justify-center z-50 p-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -671,13 +673,13 @@ export default function GroupsPage() {
                   }}
                   className="flex-1 py-3 bg-slate-700 text-white rounded-xl font-bold hover:bg-slate-600 transition-colors"
                 >
-                  Cancelar
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
                   className="flex-1 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold hover:scale-105 transition-transform"
                 >
-                  Criar Grupo
+                  {t('groups.createGroup')}
                 </button>
               </div>
             </form>

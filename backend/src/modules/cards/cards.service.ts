@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, ILike } from 'typeorm';
+import { Repository, Like, ILike, In } from 'typeorm';
 import {
   Card,
   CardType,
@@ -30,9 +30,10 @@ export type CardForSale = Card & {
 
 @Injectable()
 export class CardsService implements OnModuleInit {
-  // Cache simples em memória para cartas da loja
+  // Cache em memória: lista completa da loja + vitrine leve (home/login)
   private shopCardsCache: { data: CardForSale[]; timestamp: number } | null = null;
-  private readonly CACHE_TTL = 60000; // 1 minuto
+  private shopLiteCache: { data: CardForSale[]; timestamp: number; limit: number } | null = null;
+  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutos
   private renameImagesExecuted = false;
 
   constructor(
@@ -107,6 +108,95 @@ export class CardsService implements OnModuleInit {
         .take(take)
         .getMany(),
     );
+  }
+
+  /**
+   * Catálogo de coleção: todas as cartas ativas + se o duelista possui (inclui fora da loja).
+   */
+  async getCollectionCatalog(userId: number): Promise<{
+    cards: Array<{
+      id: string;
+      idCarta: string;
+      name: string;
+      description: string | null;
+      cardImage: string | null;
+      type: string;
+      rarity: string;
+      level: number | null;
+      atk: number | null;
+      def: number | null;
+      attribute: string | null;
+      race: string | null;
+      isForSale: boolean;
+      owned: boolean;
+      quantity: number;
+    }>;
+    ownedActiveCards: number;
+    totalActiveCards: number;
+    collectionPercent: number;
+  }> {
+    const cards = await this.cardsRepository
+      .createQueryBuilder('c')
+      .select([
+        'c.id',
+        'c.idCarta',
+        'c.name',
+        'c.description',
+        'c.cardImage',
+        'c.type',
+        'c.rarity',
+        'c.level',
+        'c.atk',
+        'c.def',
+        'c.attribute',
+        'c.race',
+        'c.isForSale',
+      ])
+      .where('c.isActive = :active', { active: true })
+      .orderBy('c.activatedAt', 'ASC', 'NULLS LAST')
+      .addOrderBy('c.createdAt', 'ASC')
+      .addOrderBy('c.name', 'ASC')
+      .getMany();
+
+    const ownedRows: Array<{ cardId: string; quantity: string | number }> =
+      await this.cardsRepository.query(
+        `SELECT "cardId", "quantity" FROM user_cards WHERE "userId" = $1 AND "quantity" > 0`,
+        [userId],
+      );
+    const ownedMap = new Map<string, number>();
+    for (const row of ownedRows) {
+      ownedMap.set(String(row.cardId), Number(row.quantity) || 0);
+    }
+
+    const mapped = cards.map((c) => {
+      const quantity = ownedMap.get(c.id) || 0;
+      return {
+        id: c.id,
+        idCarta: c.idCarta,
+        name: c.name,
+        description: c.description ?? null,
+        cardImage: c.cardImage ?? null,
+        type: c.type,
+        rarity: c.rarity,
+        level: c.level ?? null,
+        atk: c.atk ?? null,
+        def: c.def ?? null,
+        attribute: c.attribute ?? null,
+        race: c.race ?? null,
+        isForSale: !!c.isForSale,
+        owned: quantity > 0,
+        quantity,
+      };
+    });
+
+    const totalActiveCards = mapped.length;
+    const ownedActiveCards = mapped.filter((c) => c.owned).length;
+    const collectionPercent =
+      totalActiveCards <= 0
+        ? 0
+        : Math.round(Math.min(100, (ownedActiveCards / totalActiveCards) * 100) * 10) / 10;
+
+    return { cards: mapped, ownedActiveCards, totalActiveCards, collectionPercent };
   }
 
   async findAll(search?: string, type?: string): Promise<Card[]> {
@@ -286,7 +376,17 @@ export class CardsService implements OnModuleInit {
     });
     
     if (existingCard) {
-      throw new BadRequestException(`Carta com idCarta "${cleanedData.idCarta}" já existe. Use outro idCarta.`);
+      // Soft-delete (Desativar) deixa a linha no banco — reativar + atualizar em vez de bloquear
+      if (!existingCard.isActive) {
+        console.log(
+          `♻️ [CardsService] idCarta "${cleanedData.idCarta}" existe mas está INATIVA — reativando e atualizando`,
+        );
+        return this.reactivateAndMerge(existingCard, cleanedData);
+      }
+      throw new BadRequestException(
+        `Carta com idCarta "${cleanedData.idCarta}" já existe e está ATIVA. ` +
+          `Edite a carta no painel, ou use exclusão permanente (🗑️), não só "Desativar".`,
+      );
     }
 
     // Se é uma nova skin de uma carta existente (mesmo nome), herdar dados compartilhados
@@ -367,6 +467,11 @@ export class CardsService implements OnModuleInit {
       }
     }
     
+    // Coleção ordena por ativação: nova carta ativa entra no fim da ordem
+    if (cardToSave.isActive !== false) {
+      cardToSave.activatedAt = new Date();
+    }
+
     console.log('📋 Campos que serão salvos:', Object.keys(cardToSave));
     console.log('📋 Valores que serão salvos:', JSON.stringify(cardToSave, null, 2));
     
@@ -738,12 +843,13 @@ export class CardsService implements OnModuleInit {
           updateData.maxCopiesInDeck = parseInt(String(updateData.maxCopiesInDeck));
         }
         if (updateData.priceCredits !== undefined && updateData.priceCredits !== null) {
-          updateData.priceCredits = parseInt(String(updateData.priceCredits));
+          const pc = parseInt(String(updateData.priceCredits), 10);
+          updateData.priceCredits = Number.isNaN(pc) ? null : Math.max(0, pc);
         }
         
-        // Garantir que priceCash é número ou null
         if (updateData.priceCash !== undefined && updateData.priceCash !== null) {
-          updateData.priceCash = parseFloat(String(updateData.priceCash));
+          const v = parseInt(String(updateData.priceCash), 10);
+          updateData.priceCash = Number.isNaN(v) ? null : Math.max(0, v);
         }
         
         // CRÍTICO: NUNCA salvar base64 no banco - apenas URLs
@@ -756,6 +862,11 @@ export class CardsService implements OnModuleInit {
             console.warn(`⚠️ [CardsService] URL externa em cardImage ao atualizar. Ignorando.`);
             delete updateData.cardImage;
           }
+        }
+
+        // Ordem da coleção: marca quando a carta passa a ativa
+        if (updateData.isActive === true && !card.isActive) {
+          updateData.activatedAt = new Date();
         }
 
         // Log dos dados sem cardImage completo
@@ -899,6 +1010,41 @@ export class CardsService implements OnModuleInit {
     }
   }
 
+  /**
+   * Carta soft-deleted (isActive=false) com o mesmo idCarta: reativa e aplica os dados novos
+   * (ex.: baixar imagem de novo sem precisar de exclusão permanente).
+   */
+  private async reactivateAndMerge(
+    existing: Card,
+    incoming: Partial<Card>,
+  ): Promise<Card> {
+    const merge: Partial<Card> = { ...incoming };
+    delete (merge as any).id;
+    delete (merge as any).idCarta; // manter idCarta original
+    delete (merge as any).createdAt;
+
+    Object.assign(existing, merge);
+    existing.isActive = true;
+    existing.activatedAt = new Date();
+    if (existing.isForSale == null) {
+      existing.isForSale = true;
+    }
+
+    const saved = await this.cardsRepository.save(existing);
+
+    try {
+      if (saved.isForSale) {
+        await this.shopService.addCardToShop(saved);
+      }
+    } catch (e: any) {
+      console.error('⚠️ [reactivateAndMerge] loja:', e?.message || e);
+    }
+
+    this.invalidateShopCache();
+    console.log(`✅ [reactivateAndMerge] Carta reativada: ${saved.name} (${saved.idCarta})`);
+    return saved;
+  }
+
   async delete(id: string): Promise<void> {
     try {
       const card = await this.findOne(id);
@@ -919,6 +1065,157 @@ export class CardsService implements OnModuleInit {
       console.error('❌ Erro ao desativar carta:', error);
       throw error;
     }
+  }
+
+  /**
+   * Ativa ou desativa várias cartas (máx. 200). Sincroniza loja como em delete/activate.
+   */
+  async bulkSetActive(
+    ids: string[],
+    isActive: boolean,
+  ): Promise<{ updated: number; skipped: number }> {
+    const unique = [...new Set(ids.map((id) => String(id).trim()).filter(Boolean))].slice(
+      0,
+      200,
+    );
+    if (unique.length === 0) {
+      throw new BadRequestException('Informe ao menos um id de carta.');
+    }
+
+    const cards = await this.cardsRepository.find({
+      where: { id: In(unique) },
+    });
+    if (cards.length === 0) {
+      return { updated: 0, skipped: unique.length };
+    }
+
+    const toChange = cards.filter((c) => c.isActive !== isActive);
+    if (toChange.length === 0) {
+      this.invalidateShopCache();
+      return { updated: 0, skipped: cards.length };
+    }
+
+    const changeIds = toChange.map((c) => c.id);
+    // Loja pública exige isActive e isForSale; ativar só isActive deixava cartas invisíveis na loja.
+    await this.cardsRepository.update(
+      { id: In(changeIds) },
+      isActive
+        ? { isActive: true, isForSale: true, activatedAt: new Date() }
+        : { isActive: false, isForSale: false },
+    );
+
+    for (const c of toChange) {
+      try {
+        if (!isActive) {
+          await this.shopService.removeCardFromShop(c.id);
+        } else {
+          const full = await this.findOne(c.id);
+          if (full.isForSale) {
+            await this.shopService.addCardToShop(full);
+          }
+        }
+      } catch (e: any) {
+        console.error(`bulkSetActive shop sync ${c.id}:`, e?.message || e);
+      }
+    }
+
+    this.invalidateShopCache();
+    return { updated: toChange.length, skipped: cards.length - toChange.length };
+  }
+
+  /**
+   * Cartas ativas que precisam de efeito (exclui monstros Normal).
+   * Agrupa por nome (efeito compartilhado entre skins).
+   */
+  async getEffectReviewBoard(): Promise<{
+    pending: Array<{
+      name: string;
+      type: string;
+      monsterType?: string | null;
+      spellType?: string | null;
+      trapType?: string | null;
+      cardImage?: string | null;
+      skinCount: number;
+      effectVerified: boolean;
+    }>;
+    verified: Array<{
+      name: string;
+      type: string;
+      monsterType?: string | null;
+      spellType?: string | null;
+      trapType?: string | null;
+      cardImage?: string | null;
+      skinCount: number;
+      effectVerified: boolean;
+    }>;
+  }> {
+    const rows: Array<{
+      name: string;
+      type: string;
+      monsterType: string | null;
+      spellType: string | null;
+      trapType: string | null;
+      cardImage: string | null;
+      skinCount: string;
+      effectVerified: boolean;
+    }> = await this.cardsRepository.manager.query(`
+      SELECT
+        c.name AS name,
+        (array_agg(c.type ORDER BY c."createdAt" ASC))[1] AS type,
+        (array_agg(c."monsterType" ORDER BY c."createdAt" ASC))[1] AS "monsterType",
+        (array_agg(c."spellType" ORDER BY c."createdAt" ASC))[1] AS "spellType",
+        (array_agg(c."trapType" ORDER BY c."createdAt" ASC))[1] AS "trapType",
+        (array_agg(c."cardImage" ORDER BY c."createdAt" ASC)
+          FILTER (WHERE c."cardImage" IS NOT NULL AND c."cardImage" <> ''))[1] AS "cardImage",
+        COUNT(*)::int AS "skinCount",
+        BOOL_OR(c."effectVerified") AS "effectVerified"
+      FROM cards c
+      WHERE c."isActive" = true
+        AND NOT (c.type = 'Monster' AND c."monsterType" = 'Normal')
+      GROUP BY c.name
+      ORDER BY c.name ASC
+    `);
+
+    const mapRow = (r: (typeof rows)[0]) => ({
+      name: r.name,
+      type: r.type,
+      monsterType: r.monsterType,
+      spellType: r.spellType,
+      trapType: r.trapType,
+      cardImage: r.cardImage,
+      skinCount: Number(r.skinCount) || 1,
+      effectVerified: !!r.effectVerified,
+    });
+
+    const pending = rows.filter((r) => !r.effectVerified).map(mapRow);
+    const verified = rows.filter((r) => r.effectVerified).map(mapRow);
+    return { pending, verified };
+  }
+
+  async bulkSetEffectVerified(
+    names: string[],
+    effectVerified: boolean,
+  ): Promise<{ updated: number; names: number }> {
+    const unique = [
+      ...new Set(names.map((n) => String(n || '').trim()).filter(Boolean)),
+    ].slice(0, 300);
+    if (unique.length === 0) {
+      throw new BadRequestException('Informe ao menos um nome de carta.');
+    }
+
+    const result = await this.cardsRepository
+      .createQueryBuilder()
+      .update(Card)
+      .set({ effectVerified })
+      .where('name IN (:...names)', { names: unique })
+      .andWhere('isActive = true')
+      .andWhere('NOT (type = :monster AND monsterType = :normal)', {
+        monster: CardType.MONSTER,
+        normal: MonsterType.NORMAL,
+      })
+      .execute();
+
+    return { updated: result.affected || 0, names: unique.length };
   }
 
   async hardDelete(id: string): Promise<void> {
@@ -1292,58 +1589,102 @@ export class CardsService implements OnModuleInit {
     return { items, total, page, limit, totalPages };
   }
 
-  async getCardsForSale(): Promise<CardForSale[]> {
-    // Verificar cache
+  async getCardsForSale(options?: { limit?: number; lite?: boolean }): Promise<CardForSale[]> {
     const now = Date.now();
-    if (this.shopCardsCache && (now - this.shopCardsCache.timestamp) < this.CACHE_TTL) {
-      return this.shopCardsCache.data;
+    const limit =
+      options?.limit != null && Number.isFinite(options.limit)
+        ? Math.min(Math.max(Math.floor(options.limit), 1), 1000)
+        : undefined;
+    const lite = Boolean(options?.lite);
+
+    // Home/login: query leve + cache próprio (não carrega 1000 cartas + promoções)
+    if (lite) {
+      const take = limit ?? 12;
+      if (
+        this.shopLiteCache &&
+        this.shopLiteCache.limit >= take &&
+        now - this.shopLiteCache.timestamp < this.CACHE_TTL
+      ) {
+        return this.shopLiteCache.data.slice(0, take);
+      }
+      try {
+        const cards = await this.cardsRepository
+          .createQueryBuilder('card')
+          .select([
+            'card.id',
+            'card.idCarta',
+            'card.name',
+            'card.cardImage',
+            'card.type',
+            'card.rarity',
+            'card.createdAt',
+          ])
+          .where('card.isActive = :active', { active: true })
+          .andWhere(
+            '(COALESCE(card."priceCredits", 0) > 0 OR COALESCE(card."priceCash", 0) > 0)',
+          )
+          .orderBy('card.createdAt', 'DESC')
+          .take(take)
+          .getMany();
+        this.shopLiteCache = { data: cards as CardForSale[], timestamp: now, limit: take };
+        return cards as CardForSale[];
+      } catch (error) {
+        console.error(`[getCardsForSale:lite] Erro:`, error);
+        if (this.shopLiteCache) return this.shopLiteCache.data.slice(0, take);
+        return [];
+      }
+    }
+
+    if (this.shopCardsCache && now - this.shopCardsCache.timestamp < this.CACHE_TTL) {
+      const cached = this.shopCardsCache.data;
+      return limit != null ? cached.slice(0, limit) : cached;
     }
 
     try {
-      // Retorna apenas cartas ativas e à venda - otimizado para carregar apenas campos necessários com timeout
+      // Loja: ativas + preço > 0 (mesmo critério da vitrine; limit 500 + cache 5min)
       const cards = await Promise.race([
-        this.cardsRepository.find({
-          where: { 
-            isActive: true, 
-            isForSale: true 
-          },
-          select: [
-            'id',
-            'idCarta',
-            'name',
-            'description',
-            'cardImage',
-            'type',
-            'monsterType',
-            'attribute',
-            'race',
-            'spellType',
-            'trapType',
-            'level',
-            'atk',
-            'def',
-            'rarity',
-            'priceCredits',
-            'priceCash',
-            'isForSale',
-            'maxCopiesInDeck',
-            'isBanned',
-          ],
-          order: { 
-            rarity: 'DESC',
-            createdAt: 'DESC' 
-          },
-          take: 1000, // Limitar a 1000 cartas para evitar sobrecarga
-        }),
-        new Promise<Card[]>((_, reject) => 
-          setTimeout(() => reject(new Error('Query timeout: getCardsForSale')), 15000)
-        )
+        this.cardsRepository
+          .createQueryBuilder('card')
+          .select([
+            'card.id',
+            'card.idCarta',
+            'card.name',
+            'card.description',
+            'card.cardImage',
+            'card.type',
+            'card.monsterType',
+            'card.attribute',
+            'card.race',
+            'card.spellType',
+            'card.trapType',
+            'card.level',
+            'card.atk',
+            'card.def',
+            'card.rarity',
+            'card.priceCredits',
+            'card.priceCash',
+            'card.isForSale',
+            'card.maxCopiesInDeck',
+            'card.isBanned',
+            'card.createdAt',
+          ])
+          .where('card.isActive = :active', { active: true })
+          .andWhere(
+            '(COALESCE(card."priceCredits", 0) > 0 OR COALESCE(card."priceCash", 0) > 0)',
+          )
+          .orderBy('card.rarity', 'DESC')
+          .addOrderBy('card.createdAt', 'DESC')
+          .take(500)
+          .getMany(),
+        new Promise<Card[]>((_, reject) =>
+          setTimeout(() => reject(new Error('Query timeout: getCardsForSale')), 15000),
+        ),
       ]);
 
       const cardIds = cards.map((c) => c.id);
       const promotionsMap = await this.promotionsService.findActiveForCardIds(cardIds);
 
-      const result: CardForSale[] = cards.map((card) => {
+      const withPromos: CardForSale[] = cards.map((card) => {
         const promo = promotionsMap.get(card.id);
         if (!promo) {
           return { ...card } as CardForSale;
@@ -1360,13 +1701,20 @@ export class CardsService implements OnModuleInit {
         } as CardForSale;
       });
 
+      const result = withPromos.filter((c) => {
+        const pc = Number(c.priceCredits ?? 0);
+        const pCash = Number(c.priceCash ?? 0);
+        return pc > 0 || pCash > 0;
+      });
+
       this.shopCardsCache = { data: result, timestamp: now };
-      return result;
+      return limit != null ? result.slice(0, limit) : result;
     } catch (error) {
       console.error(`[getCardsForSale] Erro ou timeout:`, error);
       if (this.shopCardsCache) {
         console.warn(`[getCardsForSale] Retornando cache antigo devido a erro`);
-        return this.shopCardsCache.data;
+        const cached = this.shopCardsCache.data;
+        return limit != null ? cached.slice(0, limit) : cached;
       }
       return [];
     }
@@ -1375,6 +1723,7 @@ export class CardsService implements OnModuleInit {
   // Invalidar cache quando uma carta for atualizada
   invalidateShopCache() {
     this.shopCardsCache = null;
+    this.shopLiteCache = null;
     console.log('🔄 Cache da loja invalidado');
   }
 
@@ -1623,10 +1972,13 @@ export class CardsService implements OnModuleInit {
 
     const existingRows = await this.cardsRepository
       .createQueryBuilder('c')
-      .select(['c.idCarta'])
+      .select(['c.id', 'c.idCarta', 'c.isActive', 'c.cardImage'])
       .where('c.idCarta LIKE :p', { p: 'YGOPRO_%' })
       .getMany();
-    const existingSet = new Set(existingRows.map((r) => r.idCarta));
+    const existingMap = new Map(
+      existingRows.map((r) => [r.idCarta, r] as const),
+    );
+    const existingSet = new Set(existingMap.keys());
 
     let inserted = 0;
     let updated = 0;
@@ -1722,7 +2074,16 @@ export class CardsService implements OnModuleInit {
         }
 
         if (existingSet.has(idCarta)) {
-          if (onConflict === 'skip') {
+          const existing = existingMap.get(idCarta);
+          const missingImage =
+            !existing?.cardImage || !String(existing.cardImage).trim();
+          // Inativa ou sem imagem: atualizar mesmo em modo "skip" (permite re-baixar arte)
+          const shouldUpdate =
+            onConflict === 'update' ||
+            existing?.isActive === false ||
+            (downloadImages && missingImage);
+
+          if (!shouldUpdate) {
             skipped++;
             continue;
           }
@@ -1731,8 +2092,14 @@ export class CardsService implements OnModuleInit {
           delete updatePayload.idCarta;
           if (importAsInactive) {
             updatePayload.isActive = false;
+          } else if (existing?.isActive === false) {
+            updatePayload.isActive = true;
           }
           await this.cardsRepository.update({ idCarta }, updatePayload as any);
+          if (existing) {
+            existing.isActive = updatePayload.isActive !== false;
+            if (cleaned.cardImage) existing.cardImage = cleaned.cardImage as string;
+          }
           updated++;
           continue;
         }

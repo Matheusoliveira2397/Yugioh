@@ -101,6 +101,12 @@ export const SPECIAL_CARD_IDS = {
   MORPHING_JAR: 'MorphingJar',
   MARSHMALLON: 'Marshmallon',
   JINZO: 'Jinzo',
+  DARK_MAGICIAN_OF_CHAOS: 'DarkMagicianOfChaos',
+  MAGICIAN_S_ROD: 'MagiciansRod',
+  MAGICIAN_S_SALVATION: 'MagiciansSalvation',
+  ETERNAL_SOUL: 'EternalSoul',
+  DARK_MAGICIAN: 'DarkMagician',
+  DARK_MAGICIAN_GIRL: 'DarkMagicianGirl',
 } as const;
 
 /**

@@ -1,5 +1,16 @@
 # Caminho do projeto no host (evita C: quando o projeto está em D:)
 # Crie .env na raiz com: PROJECT_PATH=D:/Yugioh
+#
+# Perfis:
+#   (padrão / lite)  docker compose up -d
+#       → postgres + mongodb + redis + backend
+#       → rode o frontend no host: cd frontend && npm run dev
+#   docker-ui        docker compose --profile docker-ui up -d
+#       → + frontend Vite no container + nginx
+#   tools            docker compose --profile tools up -d
+#       → + Adminer (http://localhost:8080)
+#
+# Windows (recomendado): scripts/dev-lite.ps1
 services:
   # PostgreSQL - Banco de dados principal
   postgres:
@@ -58,8 +69,9 @@ services:
       retries: 5
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
 
-  # Adminer - Interface do Banco de Dados
+  # Adminer - só com: docker compose --profile tools up -d
   adminer:
+    profiles: ["tools"]
     image: adminer:latest
     container_name: yugioh-adminer
     ports:
@@ -82,17 +94,24 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3000
-      # Use Supabase: defina DATABASE_URL, SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env da raiz.
       DATABASE_URL: ${DATABASE_URL:-postgresql://yugioh_user:yugioh_password_2024@postgres:5432/yugioh_db}
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
-      # Opcional: evita MaxClientsInSessionMode mantendo URI em 5432 no .env
       SUPABASE_TRANSACTION_POOLER: ${SUPABASE_TRANSACTION_POOLER:-}
       DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-}
       MONGODB_URI: mongodb://yugioh_mongo:yugioh_mongo_password@mongodb:27017/yugioh_chat?authSource=admin
       REDIS_URL: redis://redis:6379
       JWT_SECRET: yugioh_super_secret_key_2024_change_in_production
       CORS_ORIGIN: http://localhost:5173
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-http://localhost:3000/auth/google/callback}
+      BOT_AI_ENABLED: ${BOT_AI_ENABLED:-true}
+      BOT_AI_API_KEY: ${BOT_AI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      BOT_AI_BASE_URL: ${BOT_AI_BASE_URL:-https://api.openai.com/v1}
+      BOT_AI_MODEL: ${BOT_AI_MODEL:-gpt-4o-mini}
     depends_on:
       postgres:
         condition: service_healthy
@@ -108,8 +127,9 @@ services:
       - ${PROJECT_PATH:-.}/frontend/public/images/cards:/app/frontend-cards
     command: npx nest start --watch
 
-  # Frontend (dev: Vite na porta 5173)
+  # Frontend no Docker — só com profile docker-ui (pesado no Windows)
   frontend:
+    profiles: ["docker-ui"]
     build:
       context: ${PROJECT_PATH:-.}/frontend
       dockerfile: Dockerfile.dev
@@ -119,6 +139,8 @@ services:
     environment:
       VITE_API_URL: http://localhost:3000
       VITE_WS_URL: http://localhost:3000
+      # Volume montado no Windows: polling necessário dentro do container
+      VITE_USE_POLLING: "1"
     depends_on:
       - backend
     networks:
@@ -126,11 +148,11 @@ services:
     volumes:
       - ${PROJECT_PATH:-.}/frontend:/app
       - /app/node_modules
-    # Sincroniza dependências com package.json do host (ex.: após adicionar react-quill), depois sobe o Vite.
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
 
-  # Nginx - Load Balancer
+  # Nginx — só com profile docker-ui
   nginx:
+    profiles: ["docker-ui"]
     image: nginx:alpine
     container_name: yugioh-nginx
     ports:

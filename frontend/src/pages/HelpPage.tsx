@@ -2,10 +2,11 @@ import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import ModerationFeedbackPanel from '../components/ModerationFeedbackPanel';
+import { useI18n } from '../i18n/I18nContext';
 
 interface HelpSection {
   id: string;
-  title: string;
+  titleKey: string;
   icon: string;
   content: string;
   items?: string[];
@@ -14,7 +15,7 @@ interface HelpSection {
 const helpSections: HelpSection[] = [
   {
     id: 'getting-started',
-    title: 'Como Começar',
+    titleKey: 'help.howToStart',
     icon: '🚀',
     content: 'Bem-vindo ao jogo! Aqui está um guia rápido para começar:',
     items: [
@@ -27,7 +28,7 @@ const helpSections: HelpSection[] = [
   },
   {
     id: 'duels',
-    title: 'Sistema de Duelos',
+    titleKey: 'help.duelSystem',
     icon: '⚔️',
     content: 'Aprenda como funcionam os duelos no jogo:',
     items: [
@@ -40,7 +41,7 @@ const helpSections: HelpSection[] = [
   },
   {
     id: 'deck-building',
-    title: 'Construção de Decks',
+    titleKey: 'help.deckBuilding',
     icon: '🃏',
     content: 'Dicas para construir decks poderosos:',
     items: [
@@ -53,7 +54,7 @@ const helpSections: HelpSection[] = [
   },
   {
     id: 'economy',
-    title: 'Sistema Econômico',
+    titleKey: 'help.economy',
     icon: '💰',
     content: 'Entenda as moedas do jogo:',
     items: [
@@ -66,7 +67,7 @@ const helpSections: HelpSection[] = [
   },
   {
     id: 'ranking',
-    title: 'Sistema de Ranking',
+    titleKey: 'help.rankingSystem',
     icon: '🏆',
     content: 'Como funciona o sistema de ranking:',
     items: [
@@ -79,7 +80,7 @@ const helpSections: HelpSection[] = [
   },
   {
     id: 'clans',
-    title: 'Sistema de Clãs',
+    titleKey: 'help.clanSystem',
     icon: '⚔️',
     content: 'Junte-se a um clã e jogue em equipe:',
     items: [
@@ -92,7 +93,7 @@ const helpSections: HelpSection[] = [
   },
   {
     id: 'missions',
-    title: 'Missões e Recompensas',
+    titleKey: 'help.missionsRewards',
     icon: '📋',
     content: 'Complete missões para ganhar recompensas:',
     items: [
@@ -105,7 +106,7 @@ const helpSections: HelpSection[] = [
   },
   {
     id: 'tips',
-    title: 'Dicas e Truques',
+    titleKey: 'help.tipsTricks',
     icon: '💡',
     content: 'Dicas para melhorar seu jogo:',
     items: [
@@ -119,6 +120,7 @@ const helpSections: HelpSection[] = [
 ];
 
 export default function HelpPage() {
+  const { t } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const [mainTab, setMainTab] = useState<'guide' | 'moderation'>(() =>
@@ -153,10 +155,10 @@ export default function HelpPage() {
         {/* Header */}
         <div className="text-center">
           <h1 className="text-4xl font-bold text-white mb-4">
-            ❓ Central de Ajuda
+            ❓ {t('help.title')}
           </h1>
           <p className="text-gray-400 text-lg">
-            Guia do jogo e canal direto com a moderação
+            {t('help.subtitle')}
           </p>
         </div>
 
@@ -171,7 +173,7 @@ export default function HelpPage() {
                 : 'bg-slate-800/60 text-slate-300 border border-slate-600/50 hover:bg-slate-700/60 hover:text-white'
             }`}
           >
-            📚 Guia e dúvidas frequentes
+            📚 {t('help.guideFaq')}
           </button>
           <button
             type="button"
@@ -182,7 +184,7 @@ export default function HelpPage() {
                 : 'bg-slate-800/60 text-slate-300 border border-slate-600/50 hover:bg-slate-700/60 hover:text-white'
             }`}
           >
-            📬 Mensagem à moderação
+            📬 {t('help.messageMod')}
           </button>
         </div>
 
@@ -218,7 +220,7 @@ export default function HelpPage() {
                 <div className="flex items-center gap-4">
                   <span className="text-3xl">{section.icon}</span>
                   <div className="text-left">
-                    <h3 className="text-xl font-bold text-white">{section.title}</h3>
+                    <h3 className="text-xl font-bold text-white">{t(section.titleKey)}</h3>
                     <p className="text-gray-400 text-sm">{section.content}</p>
                   </div>
                 </div>
@@ -255,16 +257,17 @@ export default function HelpPage() {
           transition={{ delay: 0.8 }}
           className="bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-xl p-6 border border-blue-500/30 text-center"
         >
-          <h2 className="text-2xl font-bold text-white mb-4">📧 Precisa de Mais Ajuda?</h2>
+          <h2 className="text-2xl font-bold text-white mb-4">📧 {t('help.needMoreHelp')}</h2>
           <p className="text-gray-300 mb-4">
-            Se você não encontrou a resposta que procurava, use a aba <strong className="text-white">Mensagem à moderação</strong> acima.
+            Se você não encontrou a resposta que procurava, use a aba{' '}
+            <strong className="text-white">{t('help.messageMod')}</strong> acima.
           </p>
           <button
             type="button"
             onClick={() => setTab('moderation')}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-lg transition-colors"
           >
-            📬 Abrir painel da moderação
+            📬 {t('help.openModPanel')}
           </button>
           <p className="text-gray-400 text-sm mt-4">
             Você também pode entrar em contato pelas redes sociais ou pelo chat do jogo.
@@ -276,4 +279,3 @@ export default function HelpPage() {
     </div>
   );
 }
-

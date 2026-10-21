@@ -5,6 +5,8 @@ import { Friendship, FriendshipStatus } from './entities/friendship.entity';
 import { PrivateMessage } from './entities/private-message.entity';
 import { User } from '../users/entities/user.entity';
 import { FriendsGateway } from './friends.gateway';
+import { MissionsService } from '../missions/missions.service';
+import { MissionObjectiveType } from '../missions/mission-objective.types';
 
 @Injectable()
 export class FriendsService {
@@ -17,6 +19,7 @@ export class FriendsService {
     private userRepository: Repository<User>,
     @Inject(forwardRef(() => FriendsGateway))
     private friendsGateway: FriendsGateway,
+    private missionsService: MissionsService,
   ) {}
 
   // Listar amigos de um usuário
@@ -234,7 +237,20 @@ export class FriendsService {
     }
 
     friendship.status = FriendshipStatus.ACCEPTED;
-    return this.friendshipRepository.save(friendship);
+    const saved = await this.friendshipRepository.save(friendship);
+    try {
+      await Promise.all([
+        this.missionsService.trackEvent(userId, MissionObjectiveType.ADD_FRIEND, 1),
+        this.missionsService.trackEvent(
+          friendship.user.id,
+          MissionObjectiveType.ADD_FRIEND,
+          1,
+        ),
+      ]);
+    } catch {
+      /* ignore */
+    }
+    return saved;
   }
 
   // Rejeitar solicitação de amizade

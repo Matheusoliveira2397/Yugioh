@@ -10,6 +10,7 @@ import { SocialBrandIcon, socialPlatformLabel } from '../components/SocialBrandI
 import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { formatScore } from '../utils/formatScore';
 import ArenaFullBleedBackground from '../components/ArenaFullBleedBackground';
+import GoogleSignInButton from '../components/GoogleSignInButton';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -103,35 +104,49 @@ export default function LoginPage() {
   });
 
   useEffect(() => {
+    let cancelled = false;
+
+    // Prioridade: rankings (acima da dobra) — formulário de login já está na tela
     Promise.all([
-      axios.get(`${API_URL}/cards/shop/for-sale`, { timeout: 20000 }).then((r) => (Array.isArray(r.data) ? r.data.slice(0, 16) : [])).catch(() => []),
-      axios.get(`${API_URL}/users/ranking/general`).then((r) => {
+      axios.get(`${API_URL}/users/ranking/general?limit=5`, { timeout: 10000 }).then((r) => {
         if (!Array.isArray(r.data)) return [];
         return r.data.slice(0, 5).map(mapPlayer);
       }).catch(() => []),
-      axios.get(`${API_URL}/users/ranking/top5`).then((r) => {
+      axios.get(`${API_URL}/users/ranking/top5`, { timeout: 10000 }).then((r) => {
         if (!Array.isArray(r.data)) return [];
         return r.data.slice(0, 5).map(mapPlayer);
       }).catch(() => []),
-      axios.get(`${API_URL}/groups/ranking/general`).then((r) => {
+      axios.get(`${API_URL}/groups/ranking/top5`, { timeout: 10000 }).then((r) => {
         if (!Array.isArray(r.data)) return [];
         return r.data.slice(0, 3).map(mapClan);
       }).catch(() => []),
-      axios.get(`${API_URL}/groups/ranking/season`).then((r) => {
+      axios.get(`${API_URL}/groups/ranking/season?limit=3`, { timeout: 10000 }).then((r) => {
         if (!Array.isArray(r.data)) return [];
         return r.data.slice(0, 3).map(mapClan);
       }).catch(() => []),
-      axios.get(`${API_URL}/public/stats`).then((r) => r.data).catch(() => null),
-      axios.get(`${API_URL}/public/social-media/active`).then((r) => (Array.isArray(r.data) ? r.data : [])).catch(() => []),
-    ]).then(([cards, playersGlobal, playersSeason, clansGeneral, clansSeason, publicStats, social]) => {
-      setShopCards(cards);
+    ]).then(([playersGlobal, playersSeason, clansGeneral, clansSeason]) => {
+      if (cancelled) return;
       setTopPlayersGlobal(playersGlobal);
       setTopPlayersSeason(playersSeason);
       setTopClansGeneral(clansGeneral);
       setTopClansSeason(clansSeason);
+    });
+
+    // Secundário: cartas / stats / redes (não bloqueia o paint inicial)
+    Promise.all([
+      axios.get(`${API_URL}/cards/shop/for-sale?limit=10&lite=1`, { timeout: 8000 }).then((r) => (Array.isArray(r.data) ? r.data.slice(0, 10) : [])).catch(() => []),
+      axios.get(`${API_URL}/public/stats`, { timeout: 10000 }).then((r) => r.data).catch(() => null),
+      axios.get(`${API_URL}/public/social-media/active`, { timeout: 8000 }).then((r) => (Array.isArray(r.data) ? r.data : [])).catch(() => []),
+    ]).then(([cards, publicStats, social]) => {
+      if (cancelled) return;
+      setShopCards(cards);
       setStats(publicStats);
       setSocialMedia(social);
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -202,11 +217,10 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden">
       <ArenaFullBleedBackground basePathWithoutExt="/images/backgroundLogin" zIndexClass="fixed inset-0 z-0" />
-      {/* Overlay suave */}
-      <div className="absolute inset-0 z-[1] bg-black/50 backdrop-blur-[2px]" aria-hidden />
+      <div className="absolute inset-0 z-[1] game-overlay backdrop-blur-[2px]" aria-hidden />
 
       {/* Header: título + área de login */}
-      <header className="relative z-10 w-full bg-black/30 backdrop-blur-md">
+      <header className="relative z-10 w-full game-nav">
         <div className="max-w-6xl mx-auto px-4 py-4 sm:py-5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-3 flex-wrap">
@@ -215,12 +229,12 @@ export default function LoginPage() {
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.4 }}
-                  className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent"
+                  className="text-xl sm:text-2xl font-display font-bold text-champion"
                 >
                   {t('login.gameTitle')}
                 </motion.h1>
               </Link>
-              <LanguageSelector variant="compact" className="sm:ml-2" />
+              <LanguageSelector variant="compact" className="sm:ml-2 [&_button]:border-champion-gold/30" />
             </div>
 
             <motion.div
@@ -238,7 +252,7 @@ export default function LoginPage() {
                       type="text"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
-                      className="flex-1 min-w-[140px] sm:w-36 py-2.5 px-3 rounded-lg text-sm bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:border-purple-400/50"
+                      className="game-input flex-1 min-w-[140px] sm:w-36"
                       placeholder={t('login.usernameOrEmail')}
                       required
                     />
@@ -249,14 +263,14 @@ export default function LoginPage() {
                         type={showPassword ? 'text' : 'password'}
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="w-full py-2.5 pl-3 pr-10 rounded-lg text-sm bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:border-purple-400/50"
+                        className="game-input w-full pr-10"
                         placeholder={t('login.password')}
                         required
                       />
                       <button
                         type="button"
                         onClick={() => setShowPassword((v) => !v)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-white/60 hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-purple-400/60"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-white/60 hover:text-champion-gold hover:bg-champion-gold/10 focus:outline-none focus:ring-2 focus:ring-champion-gold/40"
                         title={showPassword ? t('login.hidePassword') : t('login.showPassword')}
                         aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
                       >
@@ -270,11 +284,19 @@ export default function LoginPage() {
                   </div>
                   <button
                     type="submit"
-                    className="py-2.5 px-5 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:ring-offset-2 focus:ring-offset-transparent transition-all active:scale-[0.98] shrink-0"
+                    className="btn-champion shrink-0 focus:outline-none focus:ring-2 focus:ring-champion-gold/50 focus:ring-offset-2 focus:ring-offset-transparent"
                   >
                     {t('login.submit')}
                   </button>
                 </form>
+              </div>
+              <div className="flex flex-col gap-2 w-full sm:max-w-md">
+                <div className="flex items-center gap-2 text-xs text-white/50">
+                  <span className="flex-1 h-px bg-white/15" />
+                  <span>{t('login.or')}</span>
+                  <span className="flex-1 h-px bg-white/15" />
+                </div>
+                <GoogleSignInButton label={t('login.continueWithGoogle')} showConfigHint />
               </div>
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <button
@@ -285,7 +307,7 @@ export default function LoginPage() {
                   {t('login.forgotPassword')}
                 </button>
                 <span className="text-white/40">·</span>
-                <Link to="/register" className="text-purple-300 hover:text-white font-medium transition-colors">
+                <Link to="/register" className="text-champion-gold hover:text-white font-medium transition-colors">
                   {t('login.createAccount')}
                 </Link>
               </div>
@@ -327,7 +349,7 @@ export default function LoginPage() {
       {/* Modal Recuperar senha */}
       {showForgotPassword && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 duel-modal-scrim"
           onClick={() => { if (forgotStatus !== 'success') setShowForgotPassword(false); }}
           role="dialog"
           aria-modal="true"
@@ -336,7 +358,7 @@ export default function LoginPage() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="rounded-xl border border-white/20 bg-slate-900/95 backdrop-blur-md p-6 w-full max-w-md shadow-2xl"
+            className="game-panel p-6 w-full max-w-md shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
@@ -377,7 +399,7 @@ export default function LoginPage() {
                   onChange={(e) => setForgotEmail(e.target.value)}
                   placeholder="seu@email.com"
                   required
-                  className="w-full py-2.5 px-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-400/60"
+                  className="game-input w-full"
                 />
                 <div className="flex gap-2">
                   <button
@@ -390,7 +412,7 @@ export default function LoginPage() {
                   <button
                     type="submit"
                     disabled={forgotStatus === 'loading'}
-                    className="flex-1 py-2.5 rounded-lg font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:opacity-60 transition-all"
+                    className="flex-1 btn-champion disabled:opacity-60"
                   >
                     {forgotStatus === 'loading' ? t('login.sending') : t('login.sendLink')}
                   </button>
@@ -401,7 +423,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowForgotPassword(false)}
-                className="w-full py-2.5 rounded-lg font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 transition-all"
+                className="w-full btn-champion"
               >
                 {t('common.close')}
               </button>
@@ -420,16 +442,16 @@ export default function LoginPage() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35 }}
-              className="lg:col-span-5 rounded-2xl border border-white/20 bg-black/30 backdrop-blur-md overflow-hidden shadow-xl"
+              className="lg:col-span-5 game-panel"
             >
-              <div className="px-4 py-3 border-b border-white/10 bg-gradient-to-r from-amber-500/20 to-transparent">
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <div className="game-panel-header">
+                <h2 className="game-panel-title text-base flex items-center gap-2">
                   <span className="text-xl">🏆</span> {t('loginRankings.top5Duelists')}
                 </h2>
               </div>
               <div className="p-4 grid grid-cols-2 gap-4 min-h-[200px]">
                 <div>
-                  <p className="text-[10px] uppercase tracking-wider text-amber-400/90 font-semibold mb-2">{t('loginRankings.global')}</p>
+                  <p className="text-[10px] uppercase tracking-wider text-champion-gold/90 font-semibold mb-2">{t('loginRankings.global')}</p>
                   {topPlayersGlobal.length === 0 ? (
                     <p className="text-white/40 text-xs">{t('common.loading')}</p>
                   ) : (
@@ -437,10 +459,10 @@ export default function LoginPage() {
                       {topPlayersGlobal.map((p, i) => (
                         <li key={p.id} className="flex items-center gap-2">
                           <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
-                          <img src={getProfileImageUrl(p.profileImage)} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }} />
+                          <img src={getProfileImageUrl(p.profileImage)} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-champion-gold/30" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }} />
                           <div className="min-w-0 flex-1">
                             <span className="text-white text-xs font-medium truncate block">{p.clanTag ? `[${p.clanTag}] ` : ''}{p.nickname || p.username || '—'}</span>
-                            <span className="text-amber-300/90 text-[10px]">{formatScore(p.score)} {t('common.pts')}</span>
+                            <span className="text-champion-amber text-[10px]">{formatScore(p.score)} {t('common.pts')}</span>
                           </div>
                         </li>
                       ))}
@@ -448,7 +470,7 @@ export default function LoginPage() {
                   )}
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase tracking-wider text-purple-400/90 font-semibold mb-2">{t('loginRankings.season')}</p>
+                  <p className="text-[10px] uppercase tracking-wider text-champion-cyan/90 font-semibold mb-2">{t('loginRankings.season')}</p>
                   {topPlayersSeason.length === 0 ? (
                     <p className="text-white/40 text-xs">{t('common.loading')}</p>
                   ) : (
@@ -456,10 +478,10 @@ export default function LoginPage() {
                       {topPlayersSeason.map((p, i) => (
                         <li key={p.id} className="flex items-center gap-2">
                           <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`}</span>
-                          <img src={getProfileImageUrl(p.profileImage)} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }} />
+                          <img src={getProfileImageUrl(p.profileImage)} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-champion-cyan/30" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }} />
                           <div className="min-w-0 flex-1">
                             <span className="text-white text-xs font-medium truncate block">{p.clanTag ? `[${p.clanTag}] ` : ''}{p.nickname || p.username || '—'}</span>
-                            <span className="text-purple-300/90 text-[10px]">{formatScore(p.score)} {t('common.pts')}</span>
+                            <span className="text-champion-cyan/90 text-[10px]">{formatScore(p.score)} {t('common.pts')}</span>
                           </div>
                         </li>
                       ))}
@@ -474,16 +496,16 @@ export default function LoginPage() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, delay: 0.05 }}
-              className="lg:col-span-4 rounded-2xl border border-white/20 bg-black/30 backdrop-blur-md overflow-hidden shadow-xl"
+              className="lg:col-span-4 game-panel"
             >
-              <div className="px-4 py-3 border-b border-white/10 bg-gradient-to-r from-rose-500/20 to-transparent">
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <div className="game-panel-header" style={{ background: 'linear-gradient(90deg, rgba(196, 60, 60, 0.14), transparent 70%)' }}>
+                <h2 className="game-panel-title text-base flex items-center gap-2">
                   <span className="text-xl">⚔️</span> {t('loginRankings.top3Clans')}
                 </h2>
               </div>
               <div className="p-4 grid grid-cols-2 gap-4 min-h-[200px]">
                 <div>
-                  <p className="text-[10px] uppercase tracking-wider text-amber-400/90 font-semibold mb-2">{t('loginRankings.general')}</p>
+                  <p className="text-[10px] uppercase tracking-wider text-champion-gold/90 font-semibold mb-2">{t('loginRankings.general')}</p>
                   {topClansGeneral.length === 0 ? (
                     <p className="text-white/40 text-xs">{t('common.loading')}</p>
                   ) : (
@@ -491,10 +513,10 @@ export default function LoginPage() {
                       {topClansGeneral.map((c, i) => (
                         <li key={c.id} className="flex items-center gap-2">
                           <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
-                          <img src={getImageUrl(c.logo)} alt="" className="w-7 h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }} />
+                          <img src={getImageUrl(c.logo)} alt="" className="w-7 h-7 rounded object-cover shrink-0 ring-1 ring-champion-gold/25" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }} />
                           <div className="min-w-0 flex-1">
                             <span className="text-white text-xs font-medium truncate block">[{c.tag}] {c.name}</span>
-                            <span className="text-amber-300/90 text-[10px]">{formatScore(c.totalScore)} {t('common.pts')}</span>
+                            <span className="text-champion-amber text-[10px]">{formatScore(c.totalScore)} {t('common.pts')}</span>
                           </div>
                         </li>
                       ))}
@@ -502,7 +524,7 @@ export default function LoginPage() {
                   )}
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase tracking-wider text-purple-400/90 font-semibold mb-2">{t('loginRankings.season')}</p>
+                  <p className="text-[10px] uppercase tracking-wider text-champion-cyan/90 font-semibold mb-2">{t('loginRankings.season')}</p>
                   {topClansSeason.length === 0 ? (
                     <p className="text-white/40 text-xs">{t('common.loading')}</p>
                   ) : (
@@ -510,10 +532,10 @@ export default function LoginPage() {
                       {topClansSeason.map((c, i) => (
                         <li key={c.id} className="flex items-center gap-2">
                           <span className="text-white/80 text-xs w-5 shrink-0">{i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
-                          <img src={getImageUrl(c.logo)} alt="" className="w-7 h-7 rounded object-cover shrink-0 ring-1 ring-white/20" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }} />
+                          <img src={getImageUrl(c.logo)} alt="" className="w-7 h-7 rounded object-cover shrink-0 ring-1 ring-champion-cyan/25" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROFILE_IMAGE_PATH; }} />
                           <div className="min-w-0 flex-1">
                             <span className="text-white text-xs font-medium truncate block">[{c.tag}] {c.name}</span>
-                            <span className="text-purple-300/90 text-[10px]">{formatScore(c.totalScore)} {t('common.pts')}</span>
+                            <span className="text-champion-cyan/90 text-[10px]">{formatScore(c.totalScore)} {t('common.pts')}</span>
                           </div>
                         </li>
                       ))}
@@ -530,9 +552,9 @@ export default function LoginPage() {
               transition={{ duration: 0.35, delay: 0.1 }}
               className="lg:col-span-3"
             >
-              <div className="rounded-2xl border border-white/20 bg-black/30 backdrop-blur-md overflow-hidden shadow-xl sticky top-4">
-                <div className="px-4 py-3 border-b border-white/10 bg-gradient-to-r from-emerald-500/20 to-transparent">
-                  <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <div className="game-panel sticky top-4">
+                <div className="game-panel-header">
+                  <h2 className="game-panel-title text-base flex items-center gap-2">
                     <span className="text-xl">📊</span> {t('loginRankings.statistics')}
                   </h2>
                 </div>
@@ -540,47 +562,47 @@ export default function LoginPage() {
                   <div className="p-4"><p className="text-white/40 text-xs">{t('common.loading')}</p></div>
                 ) : (
                   <div className="p-4 grid grid-cols-2 gap-3">
-                    <div className="px-3 py-2">
-                      <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.seasonLabel')}</p>
+                    <div className="game-stat-chip">
+                      <p className="text-[10px] uppercase tracking-wider text-arena-mist">{t('loginRankings.seasonLabel')}</p>
                       <p className="text-white font-bold text-sm">{stats.currentSeasonNumber}º</p>
                     </div>
                     {stats.seasonEndsInDays != null && (
-                      <div className="px-3 py-2">
-                        <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.endsIn')}</p>
-                        <p className="text-amber-300 font-bold text-sm">{stats.seasonEndsInDays} {t('loginRankings.days')}</p>
+                      <div className="game-stat-chip">
+                        <p className="text-[10px] uppercase tracking-wider text-arena-mist">{t('loginRankings.endsIn')}</p>
+                        <p className="text-champion-gold font-bold text-sm">{stats.seasonEndsInDays} {t('loginRankings.days')}</p>
                       </div>
                     )}
-                    <div className="px-3 py-2">
-                      <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.duelists')}</p>
+                    <div className="game-stat-chip">
+                      <p className="text-[10px] uppercase tracking-wider text-arena-mist">{t('loginRankings.duelists')}</p>
                       <p className="text-white font-bold text-sm">{stats.totalDuelists.toLocaleString('pt-BR')}</p>
                     </div>
-                    <div className="px-3 py-2">
-                      <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.duels')}</p>
+                    <div className="game-stat-chip">
+                      <p className="text-[10px] uppercase tracking-wider text-arena-mist">{t('loginRankings.duels')}</p>
                       <p className="text-white font-bold text-sm">{stats.totalDuels.toLocaleString('pt-BR')}</p>
                     </div>
-                    <div className="px-3 py-2 col-span-2">
-                      <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.onlineNow')}</p>
-                      <p className="text-emerald-400 font-bold text-lg">{stats.playersOnline.toLocaleString('pt-BR')}</p>
+                    <div className="game-stat-chip col-span-2" style={{ background: 'rgba(61, 184, 197, 0.1)', borderColor: 'rgba(61, 184, 197, 0.25)' }}>
+                      <p className="text-[10px] uppercase tracking-wider text-arena-mist">{t('loginRankings.onlineNow')}</p>
+                      <p className="text-champion-cyan font-bold text-lg">{stats.playersOnline.toLocaleString('pt-BR')}</p>
                     </div>
-                    <div className="px-3 py-2">
-                      <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.tournaments')}</p>
+                    <div className="game-stat-chip">
+                      <p className="text-[10px] uppercase tracking-wider text-arena-mist">{t('loginRankings.tournaments')}</p>
                       <p className="text-white font-bold text-sm">{stats.tournamentsFinished.toLocaleString('pt-BR')}</p>
                     </div>
-                    <div className="px-3 py-2">
-                      <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.cards')}</p>
+                    <div className="game-stat-chip">
+                      <p className="text-[10px] uppercase tracking-wider text-arena-mist">{t('loginRankings.cards')}</p>
                       <p className="text-white font-bold text-sm">{stats.cardsRegistered.toLocaleString('pt-BR')}</p>
                     </div>
                     {(stats.maxOnlineToday > 0 || stats.maxOnlineYesterday > 0) && (
                       <>
                         {stats.maxOnlineToday > 0 && (
-                          <div className="px-3 py-2">
-                            <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.maxToday')}</p>
+                          <div className="game-stat-chip">
+                            <p className="text-[10px] uppercase tracking-wider text-arena-mist">{t('loginRankings.maxToday')}</p>
                             <p className="text-white font-bold text-sm">{stats.maxOnlineToday.toLocaleString('pt-BR')}</p>
                           </div>
                         )}
                         {stats.maxOnlineYesterday > 0 && (
-                          <div className="px-3 py-2">
-                            <p className="text-[10px] uppercase tracking-wider text-white/50">{t('loginRankings.maxYesterday')}</p>
+                          <div className="game-stat-chip">
+                            <p className="text-[10px] uppercase tracking-wider text-arena-mist">{t('loginRankings.maxYesterday')}</p>
                             <p className="text-white font-bold text-sm">{stats.maxOnlineYesterday.toLocaleString('pt-BR')}</p>
                           </div>
                         )}
@@ -597,11 +619,11 @@ export default function LoginPage() {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, delay: 0.12 }}
-              className="rounded-2xl border border-white/20 bg-black/30 backdrop-blur-md overflow-hidden shadow-xl"
+              className="game-panel"
               aria-label="Redes sociais"
             >
-              <div className="px-4 py-3 border-b border-white/10 bg-gradient-to-r from-cyan-500/15 to-transparent">
-                <h2 className="text-sm font-bold text-white flex items-center gap-2">
+              <div className="game-panel-header" style={{ background: 'linear-gradient(90deg, rgba(61, 184, 197, 0.14), transparent 70%)' }}>
+                <h2 className="game-panel-title text-sm flex items-center gap-2">
                   <span className="text-lg" aria-hidden>
                     🌐
                   </span>
@@ -620,7 +642,7 @@ export default function LoginPage() {
                       rel="noreferrer"
                       title={name}
                       aria-label={name}
-                      className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-white/10 border border-white/15 hover:bg-white/20 hover:border-white/30 transition-colors"
+                      className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-champion-gold/10 border border-champion-gold/25 hover:bg-champion-gold/20 hover:border-champion-gold/50 transition-colors"
                     >
                       <SocialBrandIcon platform={s.platform} url={s.url} size={22} />
                     </a>

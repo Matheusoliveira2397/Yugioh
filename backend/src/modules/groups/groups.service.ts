@@ -13,6 +13,8 @@ import { SeasonsService } from '../seasons/seasons.service';
 import { DuelsGateway } from '../duels/duels.gateway';
 import { v4 as uuidv4 } from 'uuid';
 import { UploadService } from '../upload/upload.service';
+import { MissionsService } from '../missions/missions.service';
+import { MissionObjectiveType } from '../missions/mission-objective.types';
 
 @Injectable()
 export class GroupsService implements OnModuleInit {
@@ -36,6 +38,7 @@ export class GroupsService implements OnModuleInit {
     @Inject(forwardRef(() => DuelsGateway))
     private duelsGateway: DuelsGateway | null,
     private readonly uploadService: UploadService,
+    private readonly missionsService: MissionsService,
   ) {}
 
   async onModuleInit() {
@@ -228,6 +231,13 @@ export class GroupsService implements OnModuleInit {
     const updatedUser = await this.userRepository.findOne({ where: { id: userId } });
     console.log(`🔍 [createGroup] Verificação - clanTag do usuário após update:`, updatedUser?.clanTag);
 
+    try {
+      await this.missionsService.trackEvent(userId, MissionObjectiveType.CREATE_CLAN, 1);
+      await this.missionsService.trackEvent(userId, MissionObjectiveType.JOIN_CLAN, 1);
+    } catch (e: any) {
+      this.logger.warn(`Missão create/join clã: ${e?.message || e}`);
+    }
+
     return savedGroup;
   }
 
@@ -378,6 +388,12 @@ export class GroupsService implements OnModuleInit {
 
     // Recalcular estatísticas do grupo
     await this.recalculateGroupStats(group.id);
+
+    try {
+      await this.missionsService.trackEvent(userId, MissionObjectiveType.JOIN_CLAN, 1);
+    } catch (e: any) {
+      this.logger.warn(`Missão join clã: ${e?.message || e}`);
+    }
 
     return member;
   }
@@ -533,6 +549,16 @@ export class GroupsService implements OnModuleInit {
 
     // Recalcular estatísticas do grupo
     await this.recalculateGroupStats(group.id);
+
+    try {
+      await this.missionsService.trackEvent(
+        request.userId,
+        MissionObjectiveType.JOIN_CLAN,
+        1,
+      );
+    } catch (e: any) {
+      this.logger.warn(`Missão join clã (accept): ${e?.message || e}`);
+    }
 
     return newMember;
   }
@@ -1718,8 +1744,12 @@ export class GroupsService implements OnModuleInit {
   }
 
   // Ranking de clãs por season score (soma dos seasonScore dos membros)
-  async getGroupsSeasonRanking(): Promise<any[]> {
-    const groups = await this.groupRepository
+  async getGroupsSeasonRanking(limit?: number): Promise<any[]> {
+    const take =
+      limit != null && Number.isFinite(limit)
+        ? Math.min(Math.max(Math.floor(limit), 1), 100)
+        : undefined;
+    const qb = this.groupRepository
       .createQueryBuilder('g')
       .leftJoin('g.members', 'member', 'member.isActive = :memberActive', { memberActive: true })
       .leftJoin('g.leader', 'leader')
@@ -1752,8 +1782,9 @@ export class GroupsService implements OnModuleInit {
       .addGroupBy('leader.nickname')
       .addGroupBy('leader.profileImage')
       .having('COUNT(DISTINCT member.id) > 0')
-      .orderBy('SUM(member.seasonScore)', 'DESC')
-      .getRawMany();
+      .orderBy('SUM(member.seasonScore)', 'DESC');
+    if (take != null) qb.limit(take);
+    const groups = await qb.getRawMany();
 
     return groups.map((group, index) => ({
       rank: index + 1,
@@ -1779,10 +1810,13 @@ export class GroupsService implements OnModuleInit {
   }
 
   // Ranking de clãs por total score (soma dos totalScore dos membros)
-  async getGroupsGeneralRanking(): Promise<any[]> {
+  async getGroupsGeneralRanking(limit?: number): Promise<any[]> {
     // Usar o totalScore já calculado na tabela groups (atualizado pelo recalculateGroupStats)
-    // Isso é mais eficiente e garante consistência
-    const groups = await this.groupRepository
+    const take =
+      limit != null && Number.isFinite(limit)
+        ? Math.min(Math.max(Math.floor(limit), 1), 100)
+        : undefined;
+    const qb = this.groupRepository
       .createQueryBuilder('g')
       .leftJoin('g.members', 'member', 'member.isActive = :memberActive', { memberActive: true })
       .leftJoin('g.leader', 'leader')
@@ -1816,8 +1850,9 @@ export class GroupsService implements OnModuleInit {
       .addGroupBy('leader.nickname')
       .addGroupBy('leader.profileImage')
       .having('COUNT(DISTINCT member.id) > 0')
-      .orderBy('g.totalScore', 'DESC') // Ordenar pelo totalScore da tabela groups
-      .getRawMany();
+      .orderBy('g.totalScore', 'DESC');
+    if (take != null) qb.limit(take);
+    const groups = await qb.getRawMany();
 
     return groups.map((group, index) => ({
       rank: index + 1,

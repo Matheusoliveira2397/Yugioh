@@ -15,7 +15,7 @@ export class SiteTab {
   route: string; // Rota: '/', '/chat', '/arena', etc.
 
   @Column({ type: 'varchar', length: 255 })
-  icon: string; // Emoji: '🏠', '💬', '⚔️', etc. ou caminho de imagem: '/images/Icones/Torneio.png'
+  icon: string; // Caminho PNG: '/images/Icones/Torneio.png' (emoji legado ainda suportado no Layout)
 
   @Column({ default: true })
   isActive: boolean; // Se a aba está ativa

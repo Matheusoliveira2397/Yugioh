@@ -20,6 +20,8 @@ interface User {
   cash?: number;
   seasonScore?: number;
   totalScore?: number;
+  /** Pontos da partida ranqueada (sobe e desce) */
+  rankedPoints?: number;
   seasonRank?: number;
   generalRank?: number;
   globalRank?: number;
@@ -29,12 +31,22 @@ interface User {
   equippedDeckId?: string | null;
   /** Nome do deck equipado (para exibição) */
   equippedDeckName?: string | null;
+  /** Moldura do avatar: obelisk | ra | slifer */
+  equippedAvatarFrame?: string | null;
   /** Estrelas (premiação de torneios e outras recompensas) */
   stars?: number;
+  /** false = precisa escolher nick após login Google */
+  profileSetupCompleted?: boolean;
   /** Limite de decks desbloqueado pela maleta */
   maxDecks?: number;
   /** Capacidade total de cartas na maleta */
   maletaCapacity?: number;
+  /** Tipos de cartas ativas que o duelista possui */
+  ownedActiveCards?: number;
+  /** Total de cartas ativas no jogo */
+  totalActiveCards?: number;
+  /** % da coleção (cartas ativas que tem / cartas ativas no jogo) */
+  collectionPercent?: number;
   group?: {
     id: string;
     name: string;
@@ -50,12 +62,18 @@ interface AuthState {
   isAuthenticated: boolean;
   login: (username: string, password: string) => Promise<void>;
   loginMaster: (username: string, password: string) => Promise<void>;
+  /** Troca o código one-time do OAuth Google por sessão JWT. Retorna se precisa escolher nick. */
+  loginWithSession: (exchangeCode: string) => Promise<{ needsNicknameSetup: boolean }>;
+  completeGoogleNickname: (nickname: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
   setUser: (user: User) => void;
   setTokens: (token: string, refreshToken: string) => void;
   refreshUser: () => Promise<void>;
   logout: () => void;
 }
+
+/** Throttle de /users/me entre Layout, perfil e focus */
+let lastRefreshUserAt = 0;
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -109,6 +127,35 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
+      loginWithSession: async (exchangeCode: string) => {
+        const response = await api.post('/auth/google/exchange', {
+          code: exchangeCode,
+        });
+        const { access_token, refresh_token, user, needsNicknameSetup } = response.data;
+        set({
+          user: {
+            ...user,
+            profileSetupCompleted: needsNicknameSetup ? false : user?.profileSetupCompleted !== false,
+          },
+          token: access_token,
+          refreshToken: refresh_token ?? null,
+          isAuthenticated: true,
+        });
+        useCosmeticsStore.getState().resetCosmetics();
+        return { needsNicknameSetup: Boolean(needsNicknameSetup) };
+      },
+
+      completeGoogleNickname: async (nickname: string) => {
+        const response = await api.post('/auth/google/complete-profile', { nickname });
+        const { access_token, refresh_token, user } = response.data;
+        set({
+          user: { ...user, profileSetupCompleted: true },
+          token: access_token ?? get().token,
+          refreshToken: refresh_token ?? get().refreshToken,
+          isAuthenticated: true,
+        });
+      },
+
       register: async (username: string, email: string, password: string) => {
         try {
           const response = await api.post('/auth/register', {
@@ -145,14 +192,18 @@ export const useAuthStore = create<AuthState>()(
           return;
         }
 
+        const now = Date.now();
+        if (now - lastRefreshUserAt < 15000) {
+          return;
+        }
+        lastRefreshUserAt = now;
+
         try {
-          // O axios já adiciona o token automaticamente via interceptor
-          const response = await api.get('/users/me');
+          const response = await api.get('/users/me', { timeout: 8000 });
           const updatedUser = response.data;
           set({ user: updatedUser });
         } catch (error) {
           console.error('Erro ao atualizar dados do usuário:', error);
-          // Não fazer logout em caso de erro, apenas logar o erro
         }
       },
 

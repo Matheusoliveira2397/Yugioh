@@ -326,8 +326,9 @@ export default function BulkYgoproDeckImportSection({
                 value={bulkOnConflict}
                 onChange={(e) => setBulkOnConflict(e.target.value as 'skip' | 'update')}
                 className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+                title="Mesmo em Ignorar, cartas inativas ou sem imagem são atualizadas"
               >
-                <option value="skip">Ignorar (pular)</option>
+                <option value="skip">Ignorar ativas (inativas/sem imagem atualizam)</option>
                 <option value="update">Atualizar dados da API</option>
               </select>
             </div>

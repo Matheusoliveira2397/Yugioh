@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { CardEffectRegistryService } from '../registry/card-effect-registry.service';
 import { EffectIntegrityService } from '../validation/effect-integrity.service';
+import { EffectSealService } from '../validation/effect-seal.service';
 import { EffectBackupService } from '../backup/effect-backup.service';
 import { logger } from '../../../../../common/utils/logger.util';
 
@@ -18,6 +19,7 @@ export class EffectMonitorService implements OnModuleInit {
   constructor(
     private readonly registry: CardEffectRegistryService,
     private readonly integrityService: EffectIntegrityService,
+    private readonly sealService: EffectSealService,
     private readonly backupService: EffectBackupService,
   ) {}
 
@@ -63,28 +65,32 @@ export class EffectMonitorService implements OnModuleInit {
     try {
       logger.debug(`🔍 [EffectMonitor] Executando verificação de saúde...`);
 
-      // Validar integridade
       const integrityReport = await this.integrityService.validateAllEffects();
+      const sealReport = await this.sealService.verifyAndUpdateSeal();
 
-      // Verificar se há problemas
-      const hasErrors = integrityReport.invalidEffects > 0;
+      const hasErrors = integrityReport.invalidEffects > 0 || !sealReport.ok;
       const hasWarnings = integrityReport.effectsWithWarnings > 0;
 
       const result: HealthCheckResult = {
         timestamp: this.lastHealthCheck,
-        isHealthy: integrityReport.isHealthy,
+        isHealthy: integrityReport.isHealthy && sealReport.ok,
         totalEffects: integrityReport.totalEffects,
         validEffects: integrityReport.validEffects,
-        invalidEffects: integrityReport.invalidEffects,
+        invalidEffects: integrityReport.invalidEffects + sealReport.missing.length,
         effectsWithWarnings: integrityReport.effectsWithWarnings,
         duration: Date.now() - startTime,
         hasErrors,
         hasWarnings,
       };
 
-      // Alertar se houver problemas
+      if (!sealReport.ok) {
+        logger.error(
+          `❌ [EffectMonitor] REGRESSÃO DE SELO: faltando ${sealReport.missing.join(', ')}`,
+        );
+      }
+
       if (hasErrors) {
-        logger.error(`❌ [EffectMonitor] PROBLEMAS DETECTADOS: ${integrityReport.invalidEffects} efeitos inválidos!`);
+        logger.error(`❌ [EffectMonitor] PROBLEMAS DETECTADOS: ${result.invalidEffects} efeito(s) com falha!`);
         await this.handleErrors(integrityReport);
       } else if (hasWarnings) {
         logger.warn(`⚠️ [EffectMonitor] AVISOS: ${integrityReport.effectsWithWarnings} efeitos com avisos`);

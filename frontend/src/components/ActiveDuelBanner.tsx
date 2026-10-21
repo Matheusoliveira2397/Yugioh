@@ -80,39 +80,20 @@ export default function ActiveDuelBanner() {
     };
   }, [user, checkActiveDuel]);
 
-  // Ajustar posição do nav e sidebar quando a barra aparecer/desaparecer
+  // Ajustar posição do nav quando a barra aparecer/desaparecer
+  // (perfil do usuário agora rola junto com o conteúdo — sem sidebar com scroll próprio)
   useEffect(() => {
     const nav = document.getElementById('main-nav');
-    const sidebar = document.getElementById('user-sidebar');
     const arenaBanner = document.querySelector('[data-banner="arena-countdown"]');
     const hasArenaBanner = arenaBanner !== null;
-    
+
     if (activeDuel && !loading) {
-      // Se houver barra de arena também, 48px + 48px (total 96px)
       const bannerHeight = hasArenaBanner ? '96px' : '48px';
-      if (nav) {
-        nav.style.marginTop = bannerHeight;
-      }
-      if (sidebar) {
-        sidebar.style.marginTop = bannerHeight;
-      }
-    } else {
-      // Se não houver duelo ativo, verificar se há barra de arena
-      if (hasArenaBanner) {
-        if (nav) {
-          nav.style.marginTop = '64px';
-        }
-        if (sidebar) {
-          sidebar.style.marginTop = '64px';
-        }
-      } else {
-        if (nav) {
-          nav.style.marginTop = '0px';
-        }
-        if (sidebar) {
-          sidebar.style.marginTop = '0px';
-        }
-      }
+      if (nav) nav.style.marginTop = bannerHeight;
+    } else if (hasArenaBanner) {
+      if (nav) nav.style.marginTop = '64px';
+    } else if (nav) {
+      nav.style.marginTop = '0px';
     }
   }, [activeDuel, loading]);
 
@@ -132,9 +113,10 @@ export default function ActiveDuelBanner() {
           initial={{ y: -100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: -100, opacity: 0 }}
-          className="fixed top-0 left-0 right-0 w-full z-[60] bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700 text-white"
+          className="fixed top-0 left-0 right-0 w-full z-[60] text-white border-b border-champion-gold/40"
           style={{ 
-            boxShadow: 'none',
+            background: 'linear-gradient(90deg, #8f2a2a 0%, #c43c3c 45%, #a67c3d 100%)',
+            boxShadow: '0 4px 20px rgba(196, 60, 60, 0.35)',
             margin: 0,
             padding: 0
           }}
@@ -142,19 +124,19 @@ export default function ActiveDuelBanner() {
         <div className="container mx-auto px-3 py-1.5" style={{ margin: 0, padding: '6px 12px' }}>
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <div className="animate-pulse flex-shrink-0">
+              <div className="animate-pulse flex-shrink-0 text-champion-gold">
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
                 </svg>
               </div>
               <div className="min-w-0">
-                <p className="font-bold text-base leading-tight">⚔️ Duelo em Andamento</p>
+                <p className="font-display font-bold text-base leading-tight">⚔️ Duelo em Andamento</p>
                 <p className="text-xs opacity-90 leading-tight">Você tem um duelo ativo. Clique para continuar!</p>
               </div>
             </div>
             <button
               onClick={handleOpenDuel}
-              className="flex-shrink-0 px-4 py-1.5 text-sm bg-white text-blue-600 font-bold rounded-md hover:bg-blue-50 transition-colors shadow hover:shadow-md"
+              className="flex-shrink-0 px-4 py-1.5 text-sm bg-champion-gold text-arena-ink font-bold rounded-md hover:bg-[#f0d878] transition-colors shadow-gold-sm"
             >
               Clique para abrir o duelo
             </button>

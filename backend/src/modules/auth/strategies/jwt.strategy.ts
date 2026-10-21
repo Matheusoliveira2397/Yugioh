@@ -21,31 +21,38 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    console.log('🔍 JWT Strategy validate - payload.sub:', payload.sub, 'tipo:', typeof payload.sub);
-    // Converter payload.sub para number (pode ser string de JWT antigo ou number novo)
     const userId = typeof payload.sub === 'string' ? parseInt(payload.sub, 10) : Number(payload.sub);
-    console.log('🔍 JWT Strategy validate - userId convertido:', userId, 'tipo:', typeof userId);
-    if (isNaN(userId)) {
-      console.log('❌ JWT Strategy - userId é NaN!');
+    if (!Number.isFinite(userId) || isNaN(userId)) {
       throw new UnauthorizedException('Invalid user ID');
     }
+
+    // Uma única consulta — sem console.log no hot path (cada request autenticado)
     const user = await this.usersService.findByIdForAuth(userId);
     if (!user) {
-      console.log('❌ JWT Strategy - usuário não encontrado com ID:', userId);
       throw new UnauthorizedException();
     }
-    await this.usersService.clearExpiredBan(userId);
-    const fresh = await this.usersService.findByIdForAuth(userId);
-    if (fresh && this.usersService.isCurrentlyBanned(fresh)) {
-      const until = fresh.bannedUntil;
-      const reason = (fresh as any).banReason || 'Violação dos termos de uso';
+
+    // Ban expirado: UPDATE direto (sem 2º/3º SELECT)
+    if (user.isBanned && user.bannedUntil != null && new Date(user.bannedUntil) <= new Date()) {
+      await this.usersService.clearExpiredBan(userId, {
+        isBanned: user.isBanned,
+        bannedUntil: user.bannedUntil,
+      });
+      user.isBanned = false;
+    } else if (this.usersService.isCurrentlyBanned(user)) {
+      const until = user.bannedUntil;
+      const reason = user.banReason || 'Violação dos termos de uso';
       const msg = until
         ? `Conta suspensa até ${new Date(until).toLocaleDateString('pt-BR')}. Motivo: ${reason}`
         : `Conta banida. Motivo: ${reason}`;
       throw new UnauthorizedException(msg);
     }
-    const userObj = { id: Number(user.id), username: user.username, email: user.email, role: user.role };
-    console.log('🔍 JWT Strategy validate - retornando user:', userObj);
-    return userObj;
+
+    return {
+      id: Number(user.id),
+      username: user.username,
+      email: user.email,
+      role: user.role,
+    };
   }
 }

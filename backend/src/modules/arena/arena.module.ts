@@ -16,6 +16,7 @@ import { DuelsModule } from '../duels/duels.module';
 import { ShopModule } from '../shop/shop.module';
 import { GroupsModule } from '../groups/groups.module';
 import { SeasonsModule } from '../seasons/seasons.module';
+import { MissionsModule } from '../missions/missions.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { SeasonsModule } from '../seasons/seasons.module';
     ShopModule,
     forwardRef(() => GroupsModule),
     forwardRef(() => SeasonsModule),
+    MissionsModule,
   ],
   controllers: [ArenaController],
   providers: [ArenaService, ArenaScheduleService, ArenaMatchmakingService, ArenaMatchmakingProcessorService],

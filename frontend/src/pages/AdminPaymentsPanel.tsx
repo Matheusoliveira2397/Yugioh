@@ -137,7 +137,7 @@ export default function AdminPaymentsPanel() {
   return (
     <div className="min-h-screen p-4 sm:p-6">
       <div className="max-w-4xl mx-auto">
-        <div className="flex items-center gap-4 mb-6">
+        <div className="flex flex-wrap items-center gap-4 mb-6">
           <button
             type="button"
             onClick={() => navigate('/admin')}
@@ -146,6 +146,13 @@ export default function AdminPaymentsPanel() {
             ← Voltar
           </button>
           <h1 className="text-2xl font-bold text-white">Pagamentos – Créditos</h1>
+          <button
+            type="button"
+            onClick={() => navigate('/admin/credit-packages')}
+            className="ml-auto sm:ml-0 rounded-lg border border-teal-500/50 bg-teal-500/15 px-4 py-2 text-sm font-semibold text-teal-200 hover:bg-teal-500/25 transition-colors"
+          >
+            💎 Pacotes da loja (clique para configurar)
+          </button>
         </div>
 
         <motion.div

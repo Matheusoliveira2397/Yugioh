@@ -6,11 +6,14 @@ import {
   JoinColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { Card } from '../../cards/entities/card.entity';
 
 @Entity('user_cards')
+@Index('IDX_user_cards_user_id', ['userId'])
+@Index('IDX_user_cards_user_card', ['userId', 'cardId'])
 export class UserCard {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -25,7 +28,8 @@ export class UserCard {
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @ManyToOne(() => Card, { eager: true })
+  // Sem eager: inventário já faz relations: ['card'] só quando precisa
+  @ManyToOne(() => Card, { eager: false })
   @JoinColumn({ name: 'cardId' })
   card: Card;
 

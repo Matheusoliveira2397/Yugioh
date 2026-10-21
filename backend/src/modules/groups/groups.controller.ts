@@ -89,13 +89,19 @@ export class GroupsController {
   }
 
   @Get('ranking/season')
-  async getGroupsSeasonRanking() {
-    return this.groupsService.getGroupsSeasonRanking();
+  async getGroupsSeasonRanking(@Query('limit') limit?: string) {
+    const parsed = limit != null && limit !== '' ? parseInt(limit, 10) : undefined;
+    return this.groupsService.getGroupsSeasonRanking(
+      Number.isFinite(parsed) ? parsed : undefined,
+    );
   }
 
   @Get('ranking/general')
-  async getGroupsGeneralRanking() {
-    return this.groupsService.getGroupsGeneralRanking();
+  async getGroupsGeneralRanking(@Query('limit') limit?: string) {
+    const parsed = limit != null && limit !== '' ? parseInt(limit, 10) : undefined;
+    return this.groupsService.getGroupsGeneralRanking(
+      Number.isFinite(parsed) ? parsed : undefined,
+    );
   }
 
   @Get('ranking/top5')

@@ -6,6 +6,7 @@ import axios from 'axios';
 import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { arenaBackgroundUrls } from '../utils/arenaBackgroundUrls';
 import { formatScore } from '../utils/formatScore';
+import { useI18n } from '../i18n/I18nContext';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -47,6 +48,7 @@ interface ArenaRanking {
 }
 
 export default function ArenaPage() {
+  const { t } = useI18n();
   const { token, user } = useAuthStore();
   const { isConnected, duelFound, clearDuelFound, cancelSearch, getSocket } = useSocket();
   const [currentArena, setCurrentArena] = useState<Arena | null>(null);
@@ -401,14 +403,6 @@ export default function ArenaPage() {
     return '🥉';
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[40vh]">
-        <div className="text-lg text-gray-400">⏳ Carregando arenas...</div>
-      </div>
-    );
-  }
-
   // Dentro da arena: só as faixas de nível ativas (configuradas na arena); senão usa a lista global
   const activeLevelRanges =
     currentArena?.config?.levelRanges?.length
@@ -418,6 +412,14 @@ export default function ArenaPage() {
     name: range.name,
     rankings: arenaRankings[range.name] || []
   }));
+
+  if (loading && !currentArena) {
+    return (
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <div className="text-lg text-gray-400">⏳ {t('arena.loading')}</div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto px-3 sm:px-6 py-3 sm:py-6 min-h-0 w-full">
@@ -431,19 +433,19 @@ export default function ArenaPage() {
           >
             <div className="grid grid-cols-3 gap-3 sm:gap-4 text-white">
               <div className="flex flex-col items-center justify-center rounded-lg bg-black/20 py-3 sm:py-4 px-2 border border-amber-400/20">
-                <span className="text-amber-300/90 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-1">Seus pontos</span>
+                <span className="text-amber-300/90 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-1">{t('arena.yourPoints')}</span>
                 <span className="text-2xl sm:text-3xl font-black tabular-nums text-amber-300">{userArenaPoints}</span>
                 <span className="text-[10px] text-amber-200/70 mt-0.5">AP</span>
               </div>
               <div className="flex flex-col items-center justify-center rounded-lg bg-black/20 py-3 sm:py-4 px-2 border border-amber-400/20">
-                <span className="text-amber-300/90 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-1">Tempo restante</span>
+                <span className="text-amber-300/90 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-1">{t('arena.timeLeft')}</span>
                 <span className="text-xl sm:text-2xl md:text-3xl font-black tabular-nums text-white font-mono">{formatTimeRemaining(timeRemaining)}</span>
-                <span className="text-[10px] text-amber-200/70 mt-0.5">até o fim da arena</span>
+                <span className="text-[10px] text-amber-200/70 mt-0.5">{t('arena.untilArenaEnds')}</span>
               </div>
               <div className="flex flex-col items-center justify-center rounded-lg bg-black/20 py-3 sm:py-4 px-2 border border-amber-400/20">
-                <span className="text-amber-300/90 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-1">Duelos restantes</span>
+                <span className="text-amber-300/90 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-1">{t('arena.duelsLeft')}</span>
                 <span className="text-2xl sm:text-3xl font-black tabular-nums text-amber-300">{remainingDuels}</span>
-                <span className="text-[10px] text-amber-200/70 mt-0.5">de 50 por arena</span>
+                <span className="text-[10px] text-amber-200/70 mt-0.5">{t('arena.of50')}</span>
               </div>
             </div>
           </motion.div>
@@ -473,7 +475,7 @@ export default function ArenaPage() {
             >
               <div className="text-center text-white">
                 <div className="text-[10px] sm:text-xs font-semibold text-gray-300 mb-0.5">
-                  Próxima: <span className="font-bold text-blue-400 truncate block sm:inline">{nextArena.name}</span>
+                  {t('arena.next')} <span className="font-bold text-blue-400 truncate block sm:inline">{nextArena.name}</span>
                 </div>
                 <div className="text-base sm:text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400 tabular-nums">
                   {formatTimeRemaining(timeUntilNextArena)}
@@ -498,14 +500,14 @@ export default function ArenaPage() {
                   transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
                   className="w-10 h-10 sm:w-12 sm:h-12 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-2 sm:mb-3"
                 />
-                <h3 className="text-base sm:text-lg font-bold text-blue-400 mb-1">Criando Duelo...</h3>
-                <p className="text-xs sm:text-sm text-gray-300">Aguarde...</p>
+                <h3 className="text-base sm:text-lg font-bold text-blue-400 mb-1">{t('arena.creatingDuel')}</h3>
+                <p className="text-xs sm:text-sm text-gray-300">{t('arena.wait')}</p>
               </div>
             ) : duelFound ? (
               <div className="rounded-lg p-4 sm:p-6 border-2 border-green-500 text-center">
-                <h3 className="text-base sm:text-lg font-bold text-green-400 mb-1 sm:mb-2">⚔️ Duelo Encontrado!</h3>
+                <h3 className="text-base sm:text-lg font-bold text-green-400 mb-1 sm:mb-2">⚔️ {t('arena.duelFound')}</h3>
                 <p className="text-xs sm:text-sm text-gray-300 mb-2 truncate px-1">
-                  Oponente: <span className="font-bold text-red-400">
+                  {t('arena.opponent')} <span className="font-bold text-red-400">
                     {duelFound.opponent?.clanTag ? `|${duelFound.opponent.clanTag}| ` : ''}
                     {duelFound.opponent?.nickname || 'Oponente'}
                   </span>
@@ -518,10 +520,10 @@ export default function ArenaPage() {
                     }}
                     className="mt-2 sm:mt-3 w-full sm:w-auto min-h-[44px] bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-4 sm:px-6 rounded-lg text-sm sm:text-base transition-all touch-manipulation"
                   >
-                    ⚔️ Entrar no Duelo
+                    ⚔️ {t('arena.enterDuel')}
                   </button>
                 ) : (
-                  <p className="text-xs sm:text-sm text-yellow-400">Aguardando criação do duelo...</p>
+                  <p className="text-xs sm:text-sm text-yellow-400">{t('arena.wait')}</p>
                 )}
               </div>
             ) : isSearchingArena ? (
@@ -531,14 +533,14 @@ export default function ArenaPage() {
                   transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
                   className="w-10 h-10 sm:w-12 sm:h-12 border-4 border-red-500 border-t-transparent rounded-full mx-auto mb-2 sm:mb-3"
                 />
-                <h3 className="text-base sm:text-lg font-bold text-red-400 mb-1">Procurando Oponente...</h3>
+                <h3 className="text-base sm:text-lg font-bold text-red-400 mb-1">{t('arena.searching')}</h3>
                 <p className="text-xs text-gray-300 mb-0.5">Faixa: <span className="font-bold text-purple-400">{arenaLevelRange || division}</span></p>
                 {queueSize > 0 && <p className="text-[10px] sm:text-xs text-gray-400 mb-2">{queueSize} na faixa</p>}
                 <button 
                   onClick={handleCancelArenaSearch}
                   className="min-h-[44px] bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg text-sm transition-all touch-manipulation"
                 >
-                  Cancelar Busca
+                  {t('arena.cancelSearch')}
                 </button>
               </div>
             ) : (
@@ -548,7 +550,7 @@ export default function ArenaPage() {
                 className="w-full min-h-[48px] sm:min-h-[56px] bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-bold py-3 sm:py-4 rounded-xl text-base sm:text-xl transition-all shadow-lg hover:shadow-green-500/50 disabled:cursor-not-allowed flex items-center justify-center gap-2 touch-manipulation active:scale-[0.98]"
               >
                 <span className="text-xl sm:text-2xl">⚔️</span>
-                <span>Procurar Duelo</span>
+                <span>{t('arena.findDuel')}</span>
                 <span className="text-xl sm:text-2xl">⚔️</span>
               </button>
             )}
@@ -556,7 +558,7 @@ export default function ArenaPage() {
 
           {/* Ranking da arena - layout ampliado tipo tabela */}
           <section className="mb-2 sm:mb-3">
-            <h2 className="text-base sm:text-lg font-bold text-center text-white/90 mb-1 sm:mb-2">🏆 Ranking por faixa de nível</h2>
+            <h2 className="text-base sm:text-lg font-bold text-center text-white/90 mb-1 sm:mb-2">🏆 {t('arena.rankingByLevel')}</h2>
             <p className="text-[10px] sm:text-xs text-gray-400 text-center max-w-xl mx-auto">
               <span className="text-amber-300 font-semibold">AP</span> = pontos na arena · <span className="text-blue-300 font-semibold">DR</span> = duelos que ainda pode jogar (máx. 50)
             </p>
@@ -573,9 +575,9 @@ export default function ArenaPage() {
                 <h3 className="text-base sm:text-xl font-bold mb-3 sm:mb-4 text-center text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-blue-300 pb-2 border-b-2 border-white/15">{divisionData.name}</h3>
 
                 {loadingRankings ? (
-                  <div className="text-center py-8 sm:py-10 text-gray-400 text-sm">Carregando...</div>
+                  <div className="text-center py-8 sm:py-10 text-gray-400 text-sm">{t('common.loading')}</div>
                 ) : divisionData.rankings.length === 0 ? (
-                  <div className="text-center py-8 sm:py-10 text-gray-500 text-sm">Nenhum duelista nesta divisão ainda</div>
+                  <div className="text-center py-8 sm:py-10 text-gray-500 text-sm">{t('arena.noDuelists')}</div>
                 ) : (
                   <>
                     {/* Cabeçalho do ranking (tipo tabela) - colunas fixas para alinhar AP e DR */}
@@ -705,7 +707,7 @@ export default function ArenaPage() {
 
           {nextArena && timeUntilNextArena > 0 && (
             <div className="mt-3 sm:mt-4 rounded-lg p-2 sm:p-3 bg-blue-900/30 border border-blue-500/50 text-center text-white">
-              <div className="text-[10px] sm:text-xs text-gray-300">Próxima: <span className="font-bold text-blue-400">{nextArena.name}</span> em {formatTimeRemaining(timeUntilNextArena)}</div>
+              <div className="text-[10px] sm:text-xs text-gray-300">{t('arena.next')} <span className="font-bold text-blue-400">{nextArena.name}</span> em {formatTimeRemaining(timeUntilNextArena)}</div>
             </div>
           )}
         </motion.div>
@@ -716,15 +718,15 @@ export default function ArenaPage() {
           className="rounded-lg p-4 sm:p-6 text-center"
         >
           <div className="text-3xl sm:text-4xl mb-2 sm:mb-3">⏰</div>
-          <h2 className="text-lg sm:text-2xl font-bold mb-2">Nenhuma Arena Ativa</h2>
+          <h2 className="text-lg sm:text-2xl font-bold mb-2">{t('arena.noActiveArena')}</h2>
           
           {nextArena ? (
             <div className="mt-3 sm:mt-4">
               <p className="text-gray-300 text-sm sm:text-base mb-2 truncate px-2">
-                Próxima: <span className="font-bold text-purple-400">{nextArena.name}</span>
+                {t('arena.next')} <span className="font-bold text-purple-400">{nextArena.name}</span>
               </p>
               <div className="bg-gradient-to-r from-purple-900/50 to-indigo-900/50 rounded-xl p-4 sm:p-6 border-2 border-purple-500/50 inline-block w-full sm:w-auto sm:min-w-[200px]">
-                <div className="text-[10px] sm:text-xs font-semibold text-gray-300 mb-1.5 sm:mb-2 uppercase tracking-wide">Contagem regressiva</div>
+                <div className="text-[10px] sm:text-xs font-semibold text-gray-300 mb-1.5 sm:mb-2 uppercase tracking-wide">{t('arena.countdown')}</div>
                 <div className="text-2xl sm:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 tabular-nums">
                   {timeUntilNextArena > 0 ? formatTimeRemaining(timeUntilNextArena) : '0:00:00'}
                 </div>

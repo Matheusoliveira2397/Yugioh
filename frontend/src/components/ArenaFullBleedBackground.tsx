@@ -41,6 +41,8 @@ const ArenaFullBleedBackground: React.FC<Props> = ({
       className={`fixed inset-0 h-full w-full object-cover pointer-events-none ${zIndexClass} ${className}`}
       onError={onError}
       decoding="async"
+      loading="eager"
+      {...{ fetchpriority: 'low' }}
       draggable={false}
     />
   );

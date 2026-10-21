@@ -1,10 +1,27 @@
-import { Controller, Post, Get, Body, UseGuards, Request, Param, Query, Ip } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  UseGuards,
+  Request,
+  Param,
+  Query,
+  Ip,
+  Res,
+  Req,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { LocalMasterAuthGuard } from './guards/local-master-auth.guard';
+import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { GoogleExchangeDto } from './dto/google-exchange.dto';
+import { CompleteGoogleProfileDto } from './dto/complete-google-profile.dto';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { UsersService } from '../users/users.service';
+import type { Response } from 'express';
 
 @Controller('auth')
 export class AuthController {
@@ -64,30 +81,93 @@ export class AuthController {
     return this.authService.refreshAccessToken(refreshToken);
   }
 
+  /** Indica se o botão Google deve aparecer no frontend. */
+  @Get('providers')
+  getProviders() {
+    return {
+      google: this.authService.isGoogleAuthEnabled(),
+    };
+  }
+
+  @Get('google')
+  @UseGuards(GoogleAuthGuard)
+  googleAuth() {
+    // Passport redireciona para o Google
+  }
+
+  @Get('google/callback')
+  @UseGuards(GoogleAuthGuard)
+  async googleAuthCallback(@Req() req: any, @Res() res: Response, @Ip() ip: string) {
+    if (res.headersSent) {
+      return;
+    }
+    const frontendBase = this.authService.getFrontendOAuthRedirectBase();
+    try {
+      const user = req.user;
+      if (!user?.id) {
+        return res.redirect(`${frontendBase}/auth/google/callback?error=auth_failed`);
+      }
+
+      const realIp =
+        req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+        req.headers['x-real-ip'] ||
+        ip ||
+        req.ip ||
+        'unknown';
+
+      try {
+        await this.usersService.updateLastLogin(user.id, realIp);
+      } catch {
+        // não bloqueia o login se falhar telemetria de IP
+      }
+
+      const code = this.authService.createGoogleExchangeCode(user.id);
+      return res.redirect(
+        `${frontendBase}/auth/google/callback?code=${encodeURIComponent(code)}`,
+      );
+    } catch (err: any) {
+      const msg = encodeURIComponent(err?.message || 'auth_failed');
+      return res.redirect(`${frontendBase}/auth/google/callback?error=${msg}`);
+    }
+  }
+
+  @Post('google/exchange')
+  async googleExchange(@Body() body: GoogleExchangeDto) {
+    return this.authService.exchangeGoogleCode(body.code);
+  }
+
+  /** Após login Google: definir o nick do jogo (sem foto do Google). */
+  @UseGuards(JwtAuthGuard)
+  @Post('google/complete-profile')
+  async completeGoogleProfile(@Request() req: any, @Body() body: CompleteGoogleProfileDto) {
+    const userId = Number(req.user?.id ?? req.user?.userId ?? req.user?.sub);
+    return this.authService.completeGoogleNickname(userId, body.nickname);
+  }
+
   @UseGuards(LocalAuthGuard)
   @Post('login')
   async login(@Body() loginDto: LoginDto, @Request() req: any, @Ip() ip: string) {
     const result = await this.authService.login(req.user);
-    
-    // Capturar IP real (considerando proxies)
-    const realIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
-                   req.headers['x-real-ip'] || 
-                   ip || 
-                   req.ip || 
-                   req.connection?.remoteAddress || 
-                   'unknown';
-    
+
+    const realIp =
+      req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+      req.headers['x-real-ip'] ||
+      ip ||
+      req.ip ||
+      req.connection?.remoteAddress ||
+      'unknown';
+
     console.log(`🌐 [login] Capturando IP para usuário ${req.user.id}: ${realIp}`);
-    
-    // Atualizar último login, IP e marcar como online
+
     try {
       await this.usersService.updateLastLogin(req.user.id, realIp);
-      // updateLastLogin já marca como online, não precisa fazer novamente
-      console.log(`✅ [login] IP, último login atualizados e usuário ${req.user.id} marcado como online`);
+      console.log(
+        `✅ [login] IP, último login atualizados e usuário ${req.user.id} marcado como online`,
+      );
     } catch (error) {
       console.error(`❌ [login] Erro ao atualizar IP para usuário ${req.user.id}:`, error);
     }
-    
+
     return result;
   }
 
@@ -97,8 +177,13 @@ export class AuthController {
   async loginMaster(@Body() loginDto: LoginDto, @Request() req: any, @Ip() ip: string) {
     const result = await this.authService.login(req.user);
 
-    const realIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-                   req.headers['x-real-ip'] || ip || req.ip || req.connection?.remoteAddress || 'unknown';
+    const realIp =
+      req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+      req.headers['x-real-ip'] ||
+      ip ||
+      req.ip ||
+      req.connection?.remoteAddress ||
+      'unknown';
 
     try {
       await this.usersService.updateLastLogin(req.user.id, realIp);

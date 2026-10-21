@@ -471,9 +471,32 @@ export class CardEffectHandlersService {
       player2Field: (duel as any).player2Field,
     } as any);
     await (this.duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
+
+    // Magician's Salvation: SS de Dark Magician / Dark Magician Girl (ex.: Monster Reborn)
+    if (
+      !(duel as any).pendingChoice &&
+      playerField.monsters?.[emptyZoneIndex] &&
+      typeof (this.duelsService as any).tryStartMagiciansSalvationPairEffect === 'function'
+    ) {
+      const started = await (this.duelsService as any).tryStartMagiciansSalvationPairEffect(
+        duelId,
+        duel,
+        isPlayer1,
+        emptyZoneIndex,
+      );
+      if (started) {
+        await this.duelsService.updateDuelInDatabase(duelId, {
+          player1Field: (duel as any).player1Field,
+          player2Field: (duel as any).player2Field,
+          pendingChoice: (duel as any).pendingChoice,
+        } as any);
+      }
+    }
+
     await this.duelsService.updateDuelInDatabase(duelId, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
+      pendingChoice: (duel as any).pendingChoice || null,
     } as any);
     
     // Atualizar cache

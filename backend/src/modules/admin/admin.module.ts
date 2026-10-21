@@ -41,6 +41,7 @@ import { PublicStatsService } from './public-stats.service';
 import { Card } from '../cards/entities/card.entity';
 import { ShopModule } from '../shop/shop.module';
 import { PromotionsModule } from '../promotions/promotions.module';
+import { CreditPackagesModule } from '../credit-packages/credit-packages.module';
 import { CardsModule } from '../cards/cards.module';
 import { CosmeticsModule } from '../cosmetics/cosmetics.module';
 import { CreditPaymentLog } from './entities/credit-payment-log.entity';
@@ -54,6 +55,7 @@ import { LoginBroadcast } from './entities/login-broadcast.entity';
     ShopModule,
     CosmeticsModule,
     PromotionsModule,
+    CreditPackagesModule,
     CardsModule,
     TypeOrmModule.forFeature([
       CreditPaymentLog,

@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import StoryCharacterCreate from './story/StoryCharacterCreate';
+import {
+  StoryCharacter,
+  clearCharacter,
+  drawStoryCharacter,
+  ensureArtLoaded,
+  getScheme,
+  loadCharacter,
+  saveCharacter,
+} from './story/storyCharacter';
 
 type Point = { x: number; y: number };
 type Direction = 'up' | 'down' | 'left' | 'right';
@@ -45,13 +55,38 @@ export default function StoryModePage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const held = useRef<Direction | null>(null);
   const lastMove = useRef(0);
+  const [character, setCharacter] = useState<StoryCharacter | null>(() => loadCharacter(userId));
+  const [editingCharacter, setEditingCharacter] = useState(false);
   const [state, setState] = useState<StoryState>(() => loadState(userId));
   const [facing, setFacing] = useState<Direction>('down');
   const [dialog, setDialog] = useState<{ title: string; lines: string[] } | null>(null);
   const [hint, setHint] = useState('Use WASD ou setas para andar. Espaço / E para interagir.');
+  const [artReady, setArtReady] = useState(false);
 
-  useEffect(() => { setState(loadState(userId)); }, [userId]);
-  useEffect(() => { window.localStorage.setItem('yugioh-story-v1-' + userId, JSON.stringify(state)); }, [state, userId]);
+  useEffect(() => {
+    setCharacter(loadCharacter(userId));
+    setState(loadState(userId));
+    setEditingCharacter(false);
+  }, [userId]);
+
+  useEffect(() => {
+    let alive = true;
+    ensureArtLoaded()
+      .then(() => {
+        if (alive) setArtReady(true);
+      })
+      .catch(() => {
+        if (alive) setArtReady(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!character) return;
+    window.localStorage.setItem('yugioh-story-v1-' + userId, JSON.stringify(state));
+  }, [state, userId, character]);
 
   const move = useCallback((direction: Direction) => {
     setFacing(direction);
@@ -64,10 +99,18 @@ export default function StoryModePage() {
 
   const interact = useCallback(() => {
     if (dialog) { setDialog(null); return; }
+    if (!character) return;
     const nearby = [ {x: state.x, y: state.y}, ...Object.values(delta).map(d => ({x: state.x + d.x,y:state.y + d.y})) ];
     const npc = NPCS.find(n => nearby.some(p => p.x === n.x && p.y === n.y));
     if (npc) {
-      setDialog({ title: npc.name, lines: npc.lines });
+      const lines =
+        npc.id === 'guide' && !state.metGuide
+          ? [
+              `${character.name}! Bem-vindo à Academia de Duelos.`,
+              'Explore o campus. Em breve, você terá missões e duelos com outros estudantes.',
+            ]
+          : npc.lines;
+      setDialog({ title: npc.name, lines });
       if (npc.id === 'guide') setState(prev => ({...prev, metGuide: true}));
       return;
     }
@@ -78,10 +121,11 @@ export default function StoryModePage() {
       return;
     }
     setHint('Chegue perto de um personagem ou prédio e pressione E.');
-  }, [dialog, state.x, state.y]);
+  }, [dialog, state.x, state.y, state.metGuide, character]);
   const actionRef = useRef({ move, interact });
   useEffect(() => { actionRef.current = { move, interact }; }, [move, interact]);
   useEffect(() => {
+    if (!character || editingCharacter) return;
     const down = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       const direction = KEY_TO_DIRECTION[e.key] || KEY_TO_DIRECTION[e.key.toLowerCase()];
@@ -118,13 +162,15 @@ export default function StoryModePage() {
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', blur);
     };
-  }, []);
+  }, [character, editingCharacter]);
 
   useEffect(() => {
+    if (!character || editingCharacter) return;
     const c = canvasRef.current;
     const ctx = c?.getContext('2d');
     if (!c || !ctx) return;
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     for (let y = 0; y < HEIGHT; y++) for (let x = 0; x < WIDTH; x++) {
       ctx.fillStyle = (x + y) % 2 ? '#28784d' : '#2f8453';
       ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
@@ -147,72 +193,172 @@ export default function StoryModePage() {
       ctx.fillStyle = '#bfdbfe';ctx.fillRect(bx + bw/2 - 11, by+bh-23, 22, 23);
       ctx.fillStyle = '#fef08a';ctx.fillRect(bx + bw/2 + 5, by+bh-14, 3, 3);
     }
-    const drawPerson = (p: Point, jacket: string, skin: string, hair: string) => {
-      const px=p.x*TILE,py=p.y*TILE;
-      ctx.fillStyle='#152e28';ctx.fillRect(px+9,py+27,18,4);
-      ctx.fillStyle='#111827';ctx.fillRect(px+11,py+22,5,7);ctx.fillRect(px+19,py+22,5,7);
-      ctx.fillStyle=jacket;ctx.fillRect(px+9,py+12,17,12);
-      ctx.fillStyle=skin;ctx.fillRect(px+12,py+4,12,10);
-      ctx.fillStyle=hair;ctx.fillRect(px+11,py+2,14,5);
-      ctx.fillStyle='#111827';ctx.fillRect(px+15,py+9,2,2);ctx.fillRect(px+21,py+9,2,2);
-      ctx.fillStyle='#ffffff';ctx.fillRect(px+18,py+16,3,6);
-    };
+    // NPCs simples (não usam a arte do protagonista)
     for (const npc of NPCS) {
-      drawPerson(npc,npc.color,'#f4c49c','#4c1d95');
-      ctx.font='bold 11px sans-serif';ctx.textAlign='center';ctx.fillStyle='#fff';
-      ctx.fillText(npc.name,npc.x*TILE+16,npc.y*TILE-4);
+      const px = npc.x * TILE;
+      const py = npc.y * TILE;
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.beginPath();
+      ctx.ellipse(px + 16, py + 28, 8, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = npc.color;
+      ctx.beginPath();
+      ctx.ellipse(px + 16, py + 18, 7, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#f5c9a8';
+      ctx.beginPath();
+      ctx.ellipse(px + 16, py + 8, 6, 6.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(npc.name, px + 16, py - 2);
     }
-    drawPerson(state,'#2563eb','#f5c9a8','#1f2937');
-    ctx.fillStyle='#fde68a';
-    if(facing==='down') ctx.fillRect(state.x*TILE+14,state.y*TILE+30,5,2);
-    if(facing==='up') ctx.fillRect(state.x*TILE+14,state.y*TILE,5,2);
-    if(facing==='left') ctx.fillRect(state.x*TILE,state.y*TILE+14,3,5);
-    if(facing==='right') ctx.fillRect(state.x*TILE+29,state.y*TILE+14,3,5);
-  }, [state, facing]);
+    drawStoryCharacter(ctx, state.x * TILE, state.y * TILE, character, 1, facing, 'map');
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = getScheme(character.colorScheme).accent;
+    ctx.fillText(character.name, state.x * TILE + 16, state.y * TILE - 6);
+  }, [state, facing, character, editingCharacter, artReady]);
 
   const reset = () => {
     if (!window.confirm('Recomeçar exploração? Seu progresso neste mapa será apagado.')) return;
-    setState(START);setDialog(null);
+    setState(START);
+    setDialog(null);
   };
+
+  const recreateCharacter = () => {
+    if (!window.confirm('Criar um novo personagem? Você voltará à tela de criação (o mapa pode ser mantido).')) return;
+    clearCharacter(userId);
+    setCharacter(null);
+    setEditingCharacter(false);
+    setDialog(null);
+  };
+
   const movement = (dir: Direction) => {
     move(dir);
     held.current = dir;
     window.setTimeout(() => { if (held.current === dir) held.current = null; }, 140);
   };
-  return <main className="mx-auto max-w-5xl px-3 py-6 text-white">
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="text-3xl font-bold">Academia de Duelos</h1><p className="text-slate-300">Modo História · Capítulo 1 — Primeiro dia</p></div>
-      <div className="flex gap-2"><button onClick={reset} className="rounded bg-slate-700 px-3 py-2">Recomeçar</button><button onClick={()=>navigate('/home')} className="rounded bg-indigo-700 px-3 py-2">Sair</button></div>
-    </div>
-    <div className="rounded-xl border border-emerald-700 bg-slate-900 p-2 shadow-xl">
-      <div className="relative mx-auto w-full overflow-hidden rounded-lg" style={{maxWidth: WIDTH*TILE}}>
-        <canvas ref={canvasRef} width={WIDTH*TILE} height={HEIGHT*TILE} aria-label="Mapa da Academia de Duelos com personagem controlável" className="block w-full" style={{imageRendering:'pixelated'}}/>
-        {dialog && <div className="absolute bottom-2 left-2 right-2 rounded-xl border border-indigo-400 bg-slate-950/95 p-3 shadow-2xl">
-          <strong className="text-yellow-300">{dialog.title}</strong>
-          {dialog.lines.map((line,i)=><p key={i} className="text-sm sm:text-base mt-1">{line}</p>)}
-          <button onClick={interact} className="mt-2 rounded bg-indigo-600 px-4 py-1.5">Continuar</button>
-        </div>}
-      </div>
-    </div>
-    <div className="mt-4 grid gap-4 sm:grid-cols-2">
-      <section className="rounded-xl bg-slate-900 p-4">
-        <h2 className="font-bold mb-2">Objetivos</h2>
-        <p className={state.metGuide?'text-green-300':'text-yellow-200'}>{state.metGuide?'✓':'○'} Conversar com o professor no centro</p>
-        <p className="mt-2 text-slate-300">Locais conhecidos: {state.visited.length}/{BUILDINGS.length}</p>
-        <p className="mt-2 text-sm text-slate-400">{hint}</p>
-        <p className="mt-2 text-xs text-slate-500">Progresso salvo neste navegador para sua conta.</p>
-      </section>
-      <section className="rounded-xl bg-slate-900 p-4">
-        <h2 className="font-bold mb-2">Controles</h2>
-        <p className="mb-3 text-sm text-slate-300">Computador: WASD/setas · E/espaço para conversar. Celular: botões abaixo.</p>
-        <div className="mx-auto grid w-40 grid-cols-3 gap-2 select-none">
-          <div/><button aria-label="Cima" className="rounded bg-slate-700 p-3" onClick={()=>movement('up')}>↑</button><div/>
-          <button aria-label="Esquerda" className="rounded bg-slate-700 p-3" onClick={()=>movement('left')}>←</button>
-          <button className="rounded bg-indigo-600 p-3" onClick={interact}>E</button>
-          <button aria-label="Direita" className="rounded bg-slate-700 p-3" onClick={()=>movement('right')}>→</button>
-          <div/><button aria-label="Baixo" className="rounded bg-slate-700 p-3" onClick={()=>movement('down')}>↓</button><div/>
+
+  const handleConfirmCharacter = (created: StoryCharacter) => {
+    saveCharacter(userId, created);
+    setCharacter(created);
+    setEditingCharacter(false);
+    setHint(`Bem-vindo, ${created.name}! Explore a academia.`);
+  };
+
+  if (!character || editingCharacter) {
+    return (
+      <main className="mx-auto max-w-5xl px-3 py-6 text-white">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold sm:text-3xl">Modo História</h1>
+            <p className="text-slate-300">Crie seu duelista para entrar na Academia</p>
+          </div>
+          <button onClick={() => navigate('/home')} className="rounded bg-indigo-700 px-3 py-2">
+            Sair
+          </button>
         </div>
-      </section>
-    </div>
-  </main>;
+        <StoryCharacterCreate
+          initialName={user?.nickname || 'Duelista'}
+          initial={editingCharacter ? character : null}
+          onConfirm={handleConfirmCharacter}
+          onCancel={editingCharacter ? () => setEditingCharacter(false) : () => navigate('/home')}
+        />
+      </main>
+    );
+  }
+
+  return (
+    <main className="mx-auto max-w-5xl px-3 py-6 text-white">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold">Academia de Duelos</h1>
+          <p className="text-slate-300">
+            Modo História · <span className="text-amber-300">{character.name}</span> · Capítulo 1 — Primeiro dia
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => setEditingCharacter(true)} className="rounded bg-amber-700/80 px-3 py-2 text-sm">
+            Personagem
+          </button>
+          <button onClick={recreateCharacter} className="rounded bg-slate-700 px-3 py-2 text-sm">
+            Novo personagem
+          </button>
+          <button onClick={reset} className="rounded bg-slate-700 px-3 py-2 text-sm">
+            Recomeçar mapa
+          </button>
+          <button onClick={() => navigate('/home')} className="rounded bg-indigo-700 px-3 py-2 text-sm">
+            Sair
+          </button>
+        </div>
+      </div>
+      <div className="rounded-xl border border-emerald-700 bg-slate-900 p-2 shadow-xl">
+        <div className="relative mx-auto w-full overflow-hidden rounded-lg" style={{ maxWidth: WIDTH * TILE }}>
+          <canvas
+            ref={canvasRef}
+            width={WIDTH * TILE}
+            height={HEIGHT * TILE}
+            aria-label="Mapa da Academia de Duelos com personagem controlável"
+            className="block w-full"
+            style={{ imageRendering: 'auto' }}
+          />
+          {dialog && (
+            <div className="absolute bottom-2 left-2 right-2 rounded-xl border border-indigo-400 bg-slate-950/95 p-3 shadow-2xl">
+              <strong className="text-yellow-300">{dialog.title}</strong>
+              {dialog.lines.map((line, i) => (
+                <p key={i} className="mt-1 text-sm sm:text-base">
+                  {line}
+                </p>
+              ))}
+              <button onClick={interact} className="mt-2 rounded bg-indigo-600 px-4 py-1.5">
+                Continuar
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <section className="rounded-xl bg-slate-900 p-4">
+          <h2 className="mb-2 font-bold">Objetivos</h2>
+          <p className={state.metGuide ? 'text-green-300' : 'text-yellow-200'}>
+            {state.metGuide ? '✓' : '○'} Conversar com o professor no centro
+          </p>
+          <p className="mt-2 text-slate-300">
+            Locais conhecidos: {state.visited.length}/{BUILDINGS.length}
+          </p>
+          <p className="mt-2 text-sm text-slate-400">{hint}</p>
+          <p className="mt-2 text-xs text-slate-500">Personagem e progresso salvos neste navegador.</p>
+        </section>
+        <section className="rounded-xl bg-slate-900 p-4">
+          <h2 className="mb-2 font-bold">Controles</h2>
+          <p className="mb-3 text-sm text-slate-300">
+            Computador: WASD/setas · E/espaço para conversar. Celular: botões abaixo.
+          </p>
+          <div className="mx-auto grid w-40 select-none grid-cols-3 gap-2">
+            <div />
+            <button aria-label="Cima" className="rounded bg-slate-700 p-3" onClick={() => movement('up')}>
+              ↑
+            </button>
+            <div />
+            <button aria-label="Esquerda" className="rounded bg-slate-700 p-3" onClick={() => movement('left')}>
+              ←
+            </button>
+            <button className="rounded bg-indigo-600 p-3" onClick={interact}>
+              E
+            </button>
+            <button aria-label="Direita" className="rounded bg-slate-700 p-3" onClick={() => movement('right')}>
+              →
+            </button>
+            <div />
+            <button aria-label="Baixo" className="rounded bg-slate-700 p-3" onClick={() => movement('down')}>
+              ↓
+            </button>
+            <div />
+          </div>
+        </section>
+      </div>
+    </main>
+  );
 }

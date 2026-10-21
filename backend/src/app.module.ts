@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { LootBoxesModule } from './modules/loot-boxes/loot-boxes.module';
-import { BotsModule } from './modules/bots/bots.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import * as path from 'path';
 
@@ -75,6 +74,12 @@ import { InitialDecksModule } from './modules/initial-decks/initial-decks.module
 import { AnimeDecksModule } from './modules/anime-decks/anime-decks.module';
 import { LevelsModule } from './modules/levels/levels.module';
 import { FeedbackModule } from './modules/feedback/feedback.module';
+import { CreditPackagesModule } from './modules/credit-packages/credit-packages.module';
+import { BotsModule } from './modules/bots/bots.module';
+import { BattlePassModule } from './modules/battle-pass/battle-pass.module';
+import { MissionsModule } from './modules/missions/missions.module';
+import { PromoCodesModule } from './modules/promo-codes/promo-codes.module';
+import { PatchNotesModule } from './modules/patch-notes/patch-notes.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ActivityInterceptor } from './common/interceptors/activity.interceptor';
 
@@ -121,6 +126,8 @@ import { ActivityInterceptor } from './common/interceptors/activity.interceptor'
           poolMaxOverride !== undefined && poolMaxOverride !== ''
             ? parseInt(poolMaxOverride, 10)
             : NaN;
+        // Pool conservador: Postgres local ~100 max_connections; 500/50 estoura o banco sob carga.
+        // Override via DATABASE_POOL_MAX quando houver PgBouncer dedicado.
         const defaultSupabasePool = isSupabaseTransactionPooler ? 8 : 4;
         const poolMax =
           Number.isFinite(parsedPoolMax) && parsedPoolMax >= 1
@@ -128,9 +135,9 @@ import { ActivityInterceptor } from './common/interceptors/activity.interceptor'
             : isSupabase
               ? defaultSupabasePool
               : process.env.NODE_ENV === 'production'
-                ? 500
-                : 100;
-        const poolMin = isSupabase ? 0 : process.env.NODE_ENV === 'production' ? 50 : 20;
+                ? 30
+                : 15;
+        const poolMin = isSupabase ? 0 : process.env.NODE_ENV === 'production' ? 2 : 1;
         return {
           type: 'postgres',
           url: databaseUrl,
@@ -191,6 +198,11 @@ import { ActivityInterceptor } from './common/interceptors/activity.interceptor'
     FeedbackModule,
     LootBoxesModule,
     BotsModule,
+    CreditPackagesModule,
+    BattlePassModule,
+    MissionsModule,
+    PromoCodesModule,
+    PatchNotesModule,
   ],
   providers: [
     {

@@ -70,14 +70,14 @@ export class BotsService {
       nickname, username: 'bot_' + slug,
       email: 'bot_' + slug + '@bots.invalid',
       password: await bcrypt.hash(randomBytes(48).toString('hex'), 12),
-      role: UserRole.PLAYER, isOnline: false, isEmailVerified: false, level: input.level ?? 1,
+      role: UserRole.PLAYER, isOnline: false, isEmailVerified: true, level: input.level ?? 1,
     }));
     try {
       const deck = await this.duplicate(source, user.id);
       await this.users.update(user.id, { equippedDeckId: deck.id, equippedDeckName: deck.name });
       return await this.bots.save(this.bots.create({
         userId: user.id, name: nickname, level: input.level ?? 1,
-        difficulty: input.difficulty ?? BotDifficulty.NORMAL,
+        difficulty: input.difficulty ?? BotDifficulty.EXPERT,
         sourceDeckId: source.id, botDeckId: deck.id,
         participation: input.participation ?? BotParticipation.NONE,
         intervalMinutes: input.intervalMinutes ?? 30, enabled: input.enabled ?? false,

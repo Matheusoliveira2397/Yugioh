@@ -14,6 +14,7 @@ const ADMIN_TAB_OPTIONS = [
   { id: 'cards', label: 'Cartas' },
   { id: 'initial-decks', label: 'Decks Iniciais' },
   { id: 'news', label: 'Notícias' },
+  { id: 'patch-notes', label: 'Patch Notes' },
   { id: 'playmats', label: 'Playmats' },
   { id: 'sleeves', label: 'Sleeves' },
   { id: 'talismans', label: 'Talismãs' },
@@ -30,6 +31,8 @@ const ADMIN_TAB_OPTIONS = [
   { id: 'social-media', label: 'Redes Sociais' },
   { id: 'new-account-settings', label: 'Contas Novas' },
   { id: 'cash-division', label: 'Divisão de Cash' },
+  { id: 'credit-packages', label: 'Pacotes de crédito' },
+  { id: 'promo-codes', label: 'Códigos de resgate' },
 ];
 
 export default function AdminCreateAccountPanel() {

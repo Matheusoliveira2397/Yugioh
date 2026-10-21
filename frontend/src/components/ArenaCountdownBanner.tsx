@@ -142,49 +142,18 @@ export default function ArenaCountdownBanner() {
     };
   }, []);
 
-  // Ajustar posição do nav e sidebar quando a barra aparecer/desaparecer
+  // Ajustar posição do nav quando a barra aparecer/desaparecer
   useEffect(() => {
     const nav = document.getElementById('main-nav');
-    const sidebar = document.getElementById('user-sidebar');
     const activeDuelBanner = document.querySelector('[data-banner="active-duel"]');
-    
+
     if (upcomingArena && !loading && timeRemaining > 0) {
-      const bannerHeight = '48px';
       const hasActiveDuel = activeDuelBanner !== null;
-      
-      if (nav) {
-        if (hasActiveDuel) {
-          // Se houver duelo ativo, 48px + 48px (total 96px)
-          nav.style.marginTop = '96px';
-        } else {
-          nav.style.marginTop = bannerHeight;
-        }
-      }
-      if (sidebar) {
-        if (hasActiveDuel) {
-          sidebar.style.marginTop = '96px';
-        } else {
-          sidebar.style.marginTop = bannerHeight;
-        }
-      }
-    } else {
-      // Só remover se não houver outra barra
-      if (!activeDuelBanner) {
-        if (nav) {
-          nav.style.marginTop = '0px';
-        }
-        if (sidebar) {
-          sidebar.style.marginTop = '0px';
-        }
-      } else {
-        // Se ainda houver duelo ativo, manter apenas o margin do duelo
-        if (nav) {
-          nav.style.marginTop = '48px';
-        }
-        if (sidebar) {
-          sidebar.style.marginTop = '48px';
-        }
-      }
+      if (nav) nav.style.marginTop = hasActiveDuel ? '96px' : '48px';
+    } else if (!activeDuelBanner) {
+      if (nav) nav.style.marginTop = '0px';
+    } else if (nav) {
+      nav.style.marginTop = '48px';
     }
   }, [upcomingArena, loading, timeRemaining]);
 

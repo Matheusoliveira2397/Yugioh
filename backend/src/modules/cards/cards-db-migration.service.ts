@@ -105,6 +105,52 @@ export class CardsDbMigrationService implements OnModuleInit {
       } else {
         this.logger.debug('✅ Índice IDX_cards_name já existe.');
       }
+
+      // 4. Coluna effectVerified (admin: efeito implementado corretamente)
+      const effectVerifiedCol = await queryRunner.query(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'cards'
+          AND column_name = 'effectVerified'
+      `);
+      if (effectVerifiedCol.length === 0) {
+        this.logger.log('🔧 Adicionando coluna effectVerified...');
+        await queryRunner.query(`
+          ALTER TABLE "cards"
+          ADD COLUMN "effectVerified" boolean NOT NULL DEFAULT false
+        `);
+        await queryRunner.query(`
+          CREATE INDEX IF NOT EXISTS "IDX_cards_effectVerified" ON "cards"("effectVerified")
+        `);
+        this.logger.log('✅ Coluna effectVerified criada');
+      }
+
+      // 5. Coluna activatedAt (ordem de ativação na coleção)
+      const activatedAtCol = await queryRunner.query(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'cards'
+          AND column_name = 'activatedAt'
+      `);
+      if (activatedAtCol.length === 0) {
+        this.logger.log('🔧 Adicionando coluna activatedAt...');
+        await queryRunner.query(`
+          ALTER TABLE "cards"
+          ADD COLUMN "activatedAt" TIMESTAMPTZ NULL
+        `);
+        await queryRunner.query(`
+          CREATE INDEX IF NOT EXISTS "IDX_cards_activatedAt" ON "cards"("activatedAt")
+        `);
+        // Cartas já ativas: usa createdAt como ordem histórica aproximada
+        await queryRunner.query(`
+          UPDATE "cards"
+          SET "activatedAt" = "createdAt"
+          WHERE "isActive" = true AND "activatedAt" IS NULL
+        `);
+        this.logger.log('✅ Coluna activatedAt criada e preenchida');
+      }
       
       this.logger.log('✅ Schema de cartas configurado corretamente!');
     } catch (error: any) {

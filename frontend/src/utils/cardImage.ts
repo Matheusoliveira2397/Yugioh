@@ -1,3 +1,5 @@
+import { rewriteStorageUrlToLocal } from './imageUrl';
+
 /**
  * Normaliza o nome da carta para corresponder ao nome do arquivo
  * Remove espaços, caracteres especiais e converte para formato PascalCase
@@ -255,7 +257,7 @@ function extFromCardImageField(cardImage: string | undefined | null): string | n
 /** Path ou URL de imagem de carta válido (backend uploads/cards, legado /images/cards, ou URL absoluta ex.: Supabase) */
 function isCardImagePath(p: string): boolean {
   if (!p || typeof p !== 'string' || p.trim() === '') return false;
-  const s = p.trim();
+  const s = rewriteStorageUrlToLocal(p.trim());
   return (
     s.startsWith('/images/cards/') ||
     s.startsWith('/uploads/cards/') ||
@@ -271,7 +273,7 @@ function isCardImagePath(p: string): boolean {
 export const getCardImage = (card: any): string | null => {
   const rawImg = card?.cardImage?.trim();
   if (rawImg && isCardImagePath(rawImg)) {
-    return rawImg;
+    return rewriteStorageUrlToLocal(rawImg);
   }
 
   const idCarta = card?.idCarta || card?.cardId;
@@ -373,7 +375,7 @@ export const getAllCardImagePaths = (card: any, options?: GetAllCardImagePathsOp
 
   // 1) Caminho salvo no banco (uploads, CDN, etc.) — evita dezenas de 404 em /images/cards antes do arquivo real
   if (cardImage && isCardImagePath(cardImage)) {
-    paths.push(cardImage);
+    paths.push(rewriteStorageUrlToLocal(cardImage));
   }
 
   if (idCarta != null && String(idCarta).trim() !== '') {

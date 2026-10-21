@@ -583,15 +583,25 @@ export const useSocket = () => {
     };
   }, []); // Array de dependências vazio - executa apenas uma vez
 
-  const searchDuel = (userId: string | number, options?: { animeDeckId?: string }) => {
+  const searchDuel = (
+    userId: string | number,
+    options?: { animeDeckId?: string; mode?: 'casual' | 'ranked' | 'anime' },
+  ) => {
     const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : Number(userId);
     if (isNaN(userIdNum)) {
       console.error('ID de usuário inválido:', userId);
       return;
     }
     setDuelError(null);
-    const payload: { userId: number; animeDeckId?: string } = { userId: userIdNum };
+    const payload: {
+      userId: number;
+      animeDeckId?: string;
+      mode?: 'casual' | 'ranked' | 'anime';
+    } = { userId: userIdNum };
     if (options?.animeDeckId) payload.animeDeckId = options.animeDeckId;
+    if (options?.mode) payload.mode = options.mode;
+    else if (options?.animeDeckId) payload.mode = 'anime';
+    else payload.mode = 'casual';
     socketRef.current?.emit('searchDuel', payload);
   };
 

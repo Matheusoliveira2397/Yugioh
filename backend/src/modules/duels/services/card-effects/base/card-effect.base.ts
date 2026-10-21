@@ -3,13 +3,15 @@ import { ICardEffect, CardEffectContext, CardEffectResult } from '../interfaces/
 import { DuelsService } from '../../../duels.service';
 import { DuelUtilsService } from '../../duel-utils.service';
 import { logger } from '../../../../../common/utils/logger.util';
+import { exactCardMatch } from '../utils/card-key.util';
 
 /**
  * Classe base abstrata para efeitos de cartas
  * Fornece funcionalidades comuns e garante consistência
  * 
- * IMPORTANTE: Cada carta deve ter sua própria classe que estende esta base
- * e NUNCA deve ser modificada após estar funcionando corretamente
+ * IMPORTANTE: Cada carta deve ter sua própria classe que estende esta base.
+ * NÃO edite um efeito que já funciona para “ajustar outro” — crie arquivo novo.
+ * Match é SEMPRE exato (anti-regressão).
  */
 @Injectable()
 export abstract class BaseCardEffect implements ICardEffect {
@@ -31,31 +33,10 @@ export abstract class BaseCardEffect implements ICardEffect {
   }
 
   /**
-   * Verifica se esta carta corresponde ao identificador fornecido
+   * Match EXATO por nome/id — nunca parcial (evita efeito A roubar carta B)
    */
   matches(card: any): boolean {
-    const cardId = card?.idCarta || card?.id || card?.cardId;
-    const cardName = (card?.name || card?.cardName || '').trim().toLowerCase();
-
-    // Verificar por nome (prioridade)
-    for (const name of this.cardNames) {
-      const normalizedName = name.toLowerCase().trim();
-      if (cardName === normalizedName || cardName.includes(normalizedName)) {
-        return true;
-      }
-    }
-
-    // Verificar por idCarta (fallback)
-    if (this.cardIds && cardId) {
-      const cardIdLower = String(cardId).toLowerCase();
-      for (const id of this.cardIds) {
-        if (cardIdLower === id.toLowerCase() || cardIdLower.includes(id.toLowerCase())) {
-          return true;
-        }
-      }
-    }
-
-    return false;
+    return exactCardMatch(card, this.cardNames, this.cardIds);
   }
 
   /**

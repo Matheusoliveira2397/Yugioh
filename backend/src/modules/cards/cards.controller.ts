@@ -9,6 +9,8 @@ import { Card } from './entities/card.entity';
 import { UploadService } from '../upload/upload.service';
 import { CreateCardDto } from './dto/create-card.dto';
 import { BulkImportCardsDto } from './dto/bulk-import-cards.dto';
+import { BulkSetActiveDto } from './dto/bulk-set-active.dto';
+import { BulkSetEffectVerifiedDto } from './dto/bulk-set-effect-verified.dto';
 import { UpdateCardDto } from './dto/update-card.dto';
 import { AddEffectDto } from './dto/add-effect.dto';
 import { YugiohApiService } from './services/yugioh-api.service';
@@ -26,6 +28,12 @@ export class CardsController {
   @Get()
   findAll(@Query('search') search?: string, @Query('type') type?: string) {
     return this.cardsService.findAll(search, type);
+  }
+
+  /** Coleção: todas as cartas ativas + posse do duelista (inclui cartas fora da loja). */
+  @Get('collection')
+  getCollection(@Request() req: { user: { id: number } }) {
+    return this.cardsService.getCollectionCatalog(req.user.id);
   }
 
   @Get('admin/all')
@@ -259,16 +267,36 @@ export class CardsController {
     }
   }
 
+  @Post('admin/bulk-set-active')
+  @UseGuards(AdminGuard)
+  bulkSetActive(@Body() dto: BulkSetActiveDto) {
+    return this.cardsService.bulkSetActive(dto.ids, dto.isActive);
+  }
+
+  /** Quadro: cartas ativas com efeito a revisar / já verificadas (sem monstros Normal). */
+  @Get('admin/effect-review')
+  @UseGuards(AdminGuard)
+  getEffectReviewBoard() {
+    return this.cardsService.getEffectReviewBoard();
+  }
+
+  @Post('admin/bulk-set-effect-verified')
+  @UseGuards(AdminGuard)
+  bulkSetEffectVerified(@Body() dto: BulkSetEffectVerifiedDto) {
+    return this.cardsService.bulkSetEffectVerified(dto.names, dto.effectVerified);
+  }
+
   @Post(':id/activate')
   @UseGuards(AdminGuard)
   async activateCard(@Param('id') id: string) {
-    const card = await this.cardsService.findOne(id);
-    card.isActive = true;
-    await this.cardsService.update(id, { isActive: true });
-    return { 
-      success: true, 
+    const card = await this.cardsService.update(id, {
+      isActive: true,
+      isForSale: true,
+    });
+    return {
+      success: true,
       message: 'Carta reativada com sucesso',
-      card 
+      card,
     };
   }
 
@@ -307,8 +335,15 @@ export class CardsController {
   
   @Public()
   @Get('shop/for-sale')
-  getCardsForSale() {
-    return this.cardsService.getCardsForSale();
+  getCardsForSale(
+    @Query('limit') limit?: string,
+    @Query('lite') lite?: string,
+  ) {
+    const parsedLimit = limit != null && limit !== '' ? parseInt(limit, 10) : undefined;
+    return this.cardsService.getCardsForSale({
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+      lite: lite === '1' || lite === 'true',
+    });
   }
 
   @Get('search/by-name')

@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { canPaySpellActivationLp } from '../../utils/spellActivationLpCost';
+import { countMonstersEligibleForEquipSpell, isSpellEquipCard } from '../../utils/equipSpell';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { getCardImage, CARD_IMAGE_GRID_PROPS } from '../../utils/cardImage';
@@ -81,6 +82,8 @@ interface DuelFieldProps {
   onActivateMonsterEffect?: (monsterZoneIndex: number) => void; // Callback para ativar efeito de monstro (ex: ChaosSorcerer)
   monsterDestroyedThisTurn?: boolean; // Flag para Last Will - indica se um monstro foi destruído neste turno
   disabled?: boolean; // Modo somente leitura (ex: espectador) — desativa todas as ações
+  /** Admin/espectador: mostrar face de cartas setadas (monstros e S/T) */
+  revealFaceDown?: boolean;
   /** Bônus de ATK da Banner of Courage durante a Fase de Batalha (0 ou 200) - para exibir no ATK e no cálculo de dano */
   bannerOfCourageBonus?: number;
   /** LP do dono do campo (para bloquear ativação de spells com custo de LP) */
@@ -93,6 +96,7 @@ interface DuelFieldProps {
 
 const DuelField: React.FC<DuelFieldProps> = ({
   isOpponent,
+  revealFaceDown = false,
   deckCount = 40,
   handCount = 0,
   monsters = Array(5).fill(null),
@@ -407,13 +411,13 @@ const DuelField: React.FC<DuelFieldProps> = ({
         <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden">
           <div
             ref={gridShellRef}
-            className="flex w-full max-w-full flex-col px-0.5 py-2.5 sm:px-2 sm:py-7 lg:px-2.5 lg:py-9"
+            className="flex w-full max-w-full flex-col px-0.5 py-1.5 sm:px-2 sm:py-3 lg:px-2.5 lg:py-4"
             style={{
               transform: `scale(${gridFitScale})`,
               transformOrigin: 'center center',
             }}
           >
-            <div className="mx-auto flex w-full max-w-full flex-col justify-center gap-y-2.5 sm:gap-y-5 lg:gap-y-7 self-center">
+            <div className="mx-auto flex w-full max-w-full flex-col justify-center gap-y-1.5 sm:gap-y-2.5 lg:gap-y-3 self-center">
       {/* Linha 1 */}
       <div
         className="grid w-full min-w-0 grid-cols-7 justify-items-stretch items-stretch gap-y-0 [align-content:center]"
@@ -994,7 +998,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                         safeOnAttackClick(index);
                       }
                     }}
-                    className="absolute top-1 left-1 z-50 w-10 h-10 sm:w-11 sm:h-11 bg-gradient-to-br from-red-600/90 to-red-700/90 hover:from-red-500 hover:to-red-600 border border-red-400/70 rounded-lg flex items-center justify-center transition-all cursor-pointer shadow-md shadow-red-500/50 hover:shadow-red-500/70"
+                    className="absolute top-1 left-1 z-50 w-11 h-11 sm:w-12 sm:h-12 touch-manipulation bg-gradient-to-br from-red-600/90 to-red-700/90 hover:from-red-500 hover:to-red-600 border border-red-400/70 rounded-lg flex items-center justify-center transition-all cursor-pointer shadow-md shadow-red-500/50 hover:shadow-red-500/70"
                     title={`Atacar com ${monster.name} (ATK: ${Math.max(0, (monster.atk || 0) + (monster.equipmentBonusAtk || 0) + (monster.spellCounterBonusAtk || 0) + bannerOfCourageBonus + (/slifer\s*the\s*sky\s*dragon/i.test((monster.name || monster.cardName || '')) ? (handCount ?? 0) * 1000 : 0) - (Number(monster.sliferAtkDebuff) || 0))})`}
                   >
                     <span className="text-sm sm:text-base leading-none">⚔️</span>
@@ -1042,7 +1046,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                 safeOnChangePosition(index, 'attack');
                               }
                             }}
-                            className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-red-600/90 to-red-700/90 hover:from-red-500 hover:to-red-600 border-red-400/70 cursor-pointer shadow-red-500/40 hover:shadow-red-500/60"
+                            className="w-11 h-11 sm:w-12 sm:h-12 touch-manipulation border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-red-600/90 to-red-700/90 hover:from-red-500 hover:to-red-600 border-red-400/70 cursor-pointer shadow-red-500/40 hover:shadow-red-500/60"
                             title="Mudar para Ataque"
                           >
                             <img 
@@ -1072,7 +1076,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                 safeOnChangePosition(index, 'defense');
                               }
                             }}
-                            className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-blue-600/90 to-blue-700/90 hover:from-blue-500 hover:to-blue-600 border-blue-400/70 cursor-pointer shadow-blue-500/40 hover:shadow-blue-500/60"
+                            className="w-11 h-11 sm:w-12 sm:h-12 touch-manipulation border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-blue-600/90 to-blue-700/90 hover:from-blue-500 hover:to-blue-600 border-blue-400/70 cursor-pointer shadow-blue-500/40 hover:shadow-blue-500/60"
                             title="Mudar para Defesa"
                           >
                             <span className="text-sm sm:text-base leading-none">🛡️</span>
@@ -1096,11 +1100,53 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                 e.stopPropagation();
                                 if (safeOnBreakerRemoveCounter) safeOnBreakerRemoveCounter(index);
                               }}
-                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-purple-600/90 to-purple-700/90 hover:from-purple-500 hover:to-purple-600 border-purple-400/70 cursor-pointer shadow-purple-500/40 hover:shadow-purple-500/60"
+                              className="w-11 h-11 sm:w-12 sm:h-12 touch-manipulation border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-purple-600/90 to-purple-700/90 hover:from-purple-500 hover:to-purple-600 border-purple-400/70 cursor-pointer shadow-purple-500/40 hover:shadow-purple-500/60"
                               title="Escolher 1 Spell/Trap no campo para destruir (este monstro perde os +300 de ATK)"
                             >
                               <span className="text-sm sm:text-base leading-none">✨</span>
                             </motion.button>
+                          ) : null;
+                        })()}
+
+                        {/* Skilled Dark Magician: Tributar com 3 Marcadores → SS Dark Magician */}
+                        {(() => {
+                          const monsterCardId = String(monster.idCarta || monster.id || monster.cardId || '').toLowerCase();
+                          const monsterName = (monster.name || monster.cardName || '').toLowerCase();
+                          const isSkilled =
+                            monsterName.includes('skilled dark magician') ||
+                            monsterName.includes('mago negro experiente') ||
+                            monsterCardId.includes('skilleddarkmagician') ||
+                            monsterCardId.includes('73752131');
+                          const has3 = (Number(monster.spellCounters) || 0) >= 3;
+                          const canActivate =
+                            !isOpponent &&
+                            isMyTurn &&
+                            (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') &&
+                            isSkilled &&
+                            has3 &&
+                            safeOnActivateMonsterEffect;
+                          return canActivate ? (
+                            <motion.button
+                              whileHover={{ y: -2 }}
+                              whileTap={{ scale: 0.9 }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (safeOnActivateMonsterEffect) safeOnActivateMonsterEffect(index);
+                              }}
+                              className="w-11 h-11 sm:w-12 sm:h-12 touch-manipulation border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-violet-700/90 to-indigo-800/90 hover:from-violet-600 hover:to-indigo-700 border-violet-400/70 cursor-pointer"
+                              title="Tributar (3 Marcadores): Invocar Especial 1 Dark Magician da mão, Deck ou GY"
+                            >
+                              <span className="text-[10px] sm:text-xs font-bold text-white">
+                                {monster.spellCounters || 0}/3
+                              </span>
+                            </motion.button>
+                          ) : isSkilled && !isOpponent ? (
+                            <div
+                              className="absolute top-0 left-0 bg-black/70 text-[9px] text-violet-200 px-1 rounded"
+                              title="Marcadores de Magia"
+                            >
+                              {monster.spellCounters || 0}/3
+                            </div>
                           ) : null;
                         })()}
                         
@@ -1126,7 +1172,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                   safeOnActivateMonsterEffect(index);
                                 }
                               }}
-                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-indigo-600/90 to-purple-600/90 hover:from-indigo-500 hover:to-purple-500 border-indigo-400/70 cursor-pointer shadow-indigo-500/40 hover:shadow-indigo-500/60"
+                              className="w-11 h-11 sm:w-12 sm:h-12 touch-manipulation border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-indigo-600/90 to-purple-600/90 hover:from-indigo-500 hover:to-purple-500 border-indigo-400/70 cursor-pointer shadow-indigo-500/40 hover:shadow-indigo-500/60"
                               title="Efeito do ChaosSorcerer: Uma vez por turno, banir 1 monstro face-up do oponente (não pode atacar neste turno)"
                             >
                               <span className="text-sm sm:text-base leading-none">🌟</span>
@@ -1161,7 +1207,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                   safeOnActivateMonsterEffect(index);
                                 }
                               }}
-                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-red-600/90 to-orange-600/90 hover:from-red-500 hover:to-orange-500 border-red-400/70 cursor-pointer shadow-red-500/40 hover:shadow-red-500/60"
+                              className="w-11 h-11 sm:w-12 sm:h-12 touch-manipulation border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-red-600/90 to-orange-600/90 hover:from-red-500 hover:to-orange-500 border-red-400/70 cursor-pointer shadow-red-500/40 hover:shadow-red-500/60"
                               title="Efeito do Chaos Emperor Dragon: Pague 1000 LP; descarte todas as cartas do campo e da mão de ambos os duelistas para o cemitério. O oponente perde 300 LP por cada carta enviada."
                             >
                               <span className="text-sm sm:text-base leading-none">💥</span>
@@ -1190,7 +1236,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                   safeOnActivateMonsterEffect(index);
                                 }
                               }}
-                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-amber-600/90 to-yellow-600/90 hover:from-amber-500 hover:to-yellow-500 border-amber-400/70 cursor-pointer shadow-amber-500/40 hover:shadow-amber-500/60"
+                              className="w-11 h-11 sm:w-12 sm:h-12 touch-manipulation border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-amber-600/90 to-yellow-600/90 hover:from-amber-500 hover:to-yellow-500 border-amber-400/70 cursor-pointer shadow-amber-500/40 hover:shadow-amber-500/60"
                               title="Efeito do Black Luster Soldier: Escolha 1 - Banir 1 monstro (não ataca este turno) ou 2 - Se destruir monstro em batalha, pode atacar novamente"
                             >
                               <span className="text-sm sm:text-base leading-none">⚔️</span>
@@ -1223,7 +1269,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                   safeOnActivateMonsterEffect(index);
                                 }
                               }}
-                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-red-600/90 to-orange-600/90 hover:from-red-500 hover:to-orange-500 border-red-400/70 cursor-pointer shadow-red-500/40 hover:shadow-red-500/60"
+                              className="w-11 h-11 sm:w-12 sm:h-12 touch-manipulation border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-red-600/90 to-orange-600/90 hover:from-red-500 hover:to-orange-500 border-red-400/70 cursor-pointer shadow-red-500/40 hover:shadow-red-500/60"
                               title="Efeito do Red-Eyes Darkness Metal Dragon: Uma vez por turno, invocar por invocação especial 1 monstro do Tipo Dragão da sua mão ou Cemitério (exceto Red-Eyes Darkness Metal Dragon) em posição de ataque"
                             >
                               <span className="text-sm sm:text-base leading-none">🐉</span>
@@ -1255,7 +1301,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                   safeOnActivateMonsterEffect(index);
                                 }
                               }}
-                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-cyan-600/90 to-blue-600/90 hover:from-cyan-500 hover:to-blue-500 border-cyan-400/70 cursor-pointer shadow-cyan-500/40 hover:shadow-cyan-500/60"
+                              className="w-11 h-11 sm:w-12 sm:h-12 touch-manipulation border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-cyan-600/90 to-blue-600/90 hover:from-cyan-500 hover:to-blue-500 border-cyan-400/70 cursor-pointer shadow-cyan-500/40 hover:shadow-cyan-500/60"
                               title="Efeito do Cyber-Stein: Pague 5000 LP; invoque por invocação especial 1 monstro do seu Extra Deck em modo de ataque"
                             >
                               <span className="text-sm sm:text-base leading-none">⚡</span>
@@ -1290,7 +1336,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                   safeOnActivateMonsterEffect(index);
                                 }
                               }}
-                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-purple-600/90 to-indigo-600/90 hover:from-purple-500 hover:to-indigo-500 border-purple-400/70 cursor-pointer shadow-purple-500/40 hover:shadow-purple-500/60"
+                              className="w-11 h-11 sm:w-12 sm:h-12 touch-manipulation border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-purple-600/90 to-indigo-600/90 hover:from-purple-500 hover:to-indigo-500 border-purple-400/70 cursor-pointer shadow-purple-500/40 hover:shadow-purple-500/60"
                               title="Efeito do Dark Armed Dragon: Bane 1 monstro Dark do seu cemitério; depois, você pode destruir 1 carta no campo."
                             >
                               <span className="text-sm sm:text-base leading-none">⚡</span>
@@ -1323,7 +1369,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                   safeOnActivateMonsterEffect(index);
                                 }
                               }}
-                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-orange-600/90 to-red-600/90 hover:from-orange-500 hover:to-red-500 border-orange-400/70 cursor-pointer shadow-orange-500/40 hover:shadow-orange-500/60"
+                              className="w-11 h-11 sm:w-12 sm:h-12 touch-manipulation border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-orange-600/90 to-red-600/90 hover:from-orange-500 hover:to-red-500 border-orange-400/70 cursor-pointer shadow-orange-500/40 hover:shadow-orange-500/60"
                               title="Efeito do Exiled Force: Você pode tributar este monstro; destrua 1 monstro no campo."
                             >
                               <span className="text-sm sm:text-base leading-none">💥</span>
@@ -1345,7 +1391,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                                 e.stopPropagation();
                                 if (safeOnActivateMonsterEffect) safeOnActivateMonsterEffect(index);
                               }}
-                              className="w-10 h-10 sm:w-11 sm:h-11 border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-amber-700/90 to-amber-900/90 hover:from-amber-600 hover:to-amber-800 border-amber-500/70 cursor-pointer shadow-amber-500/40"
+                              className="w-11 h-11 sm:w-12 sm:h-12 touch-manipulation border rounded-lg flex items-center justify-center transition-all shadow-md bg-gradient-to-br from-amber-700/90 to-amber-900/90 hover:from-amber-600 hover:to-amber-800 border-amber-500/70 cursor-pointer shadow-amber-500/40"
                               title="Efeito do Obelisk: Escolha 2 monstros que você controla; destrua todos os monstros do oponente. (1x por turno)"
                             >
                               <span className="text-sm sm:text-base leading-none">⚡</span>
@@ -1405,7 +1451,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                     overflow: 'visible',
                   }}
                 >
-                  {monster.position === 'set' ? (
+                  {monster.position === 'set' && !revealFaceDown ? (
                     // Face-down (set): mostrar sleeve da carta
                     // Quando invocamos em defesa da mão, sempre vai face-down (set)
                     <div
@@ -1743,8 +1789,8 @@ const DuelField: React.FC<DuelFieldProps> = ({
 
                 return (
                   <>
-                    {spellTrap.position === 'face-up' ? (
-                      // Face-up: carta virada para cima - sem bordas, apenas a imagem
+                    {spellTrap.position === 'face-up' || revealFaceDown ? (
+                      // Face-up (ou revelado p/ espectador): carta virada para cima
                       <div
                         className={`absolute inset-0 w-full h-full rounded-lg cursor-pointer ${
                           !isOpponent && (() => {
@@ -1914,8 +1960,15 @@ const DuelField: React.FC<DuelFieldProps> = ({
                         {(() => {
                           const cardId = spellTrap.idCarta || spellTrap.id || spellTrap.cardId || '';
                           const cardName = (spellTrap.name || spellTrap.cardName || '').toLowerCase();
+                          const cardIdLower = String(cardId).toLowerCase();
                           const isLastWill = cardId.toLowerCase().includes('lastwill') || 
                                             cardName.includes('last will');
+                          const isRingOfDestruction =
+                            cardName.includes('ring of destruction') ||
+                            cardIdLower.includes('ringofdestruction') ||
+                            cardIdLower.includes('83555666') ||
+                            cardIdLower.includes('ygopro_83555666');
+                          const isTrap = spellTrap.type === 'Trap' || spellTrap.cardType === 'Trap';
                           
                           // Para Last Will, verificar se um monstro foi destruído neste turno
                           if (isLastWill && !monsterDestroyedThisTurn) {
@@ -1926,10 +1979,33 @@ const DuelField: React.FC<DuelFieldProps> = ({
                           if (!lpOk) {
                             return false;
                           }
+
+                          const mainPhaseMyTurn =
+                            isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2');
+                          const ringBattle =
+                            isRingOfDestruction && isTrap && currentPhase === 'BATTLE';
+                          const ringSameTurnSetBlocked =
+                            isRingOfDestruction &&
+                            isTrap &&
+                            spellTrap.trapSetTurnCounter != null &&
+                            Number(spellTrap.trapSetTurnCounter) === Number(turnCounter);
+                          const canActivateTiming =
+                            (mainPhaseMyTurn || ringBattle) && !ringSameTurnSetBlocked;
+
+                          const equipSpell = isSpellEquipCard(spellTrap);
+                          const equipTargetsOk =
+                            !equipSpell ||
+                            countMonstersEligibleForEquipSpell(monsters) >= 1;
                           
-                          return !isOpponent && isMyTurn && (currentPhase === 'MAIN1' || currentPhase === 'MAIN2') && safeOnActivateCard && 
-                                 spellTrap.position === 'set' && 
-                                 (spellTrap.type === 'Spell' || spellTrap.cardType === 'Spell');
+                          return (
+                            !isOpponent &&
+                            canActivateTiming &&
+                            equipTargetsOk &&
+                            safeOnActivateCard &&
+                            spellTrap.position === 'set' &&
+                            ((spellTrap.type === 'Spell' || spellTrap.cardType === 'Spell') ||
+                              (isRingOfDestruction && isTrap))
+                          );
                         })() && (
                           <motion.button
                             initial={{ opacity: 0, scale: 0.8 }}
@@ -1947,7 +2023,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                               // Prevenir que o drag comece quando clicar no botão
                               e.stopPropagation();
                             }}
-                            className="absolute top-1 right-1 z-50 w-10 h-10 sm:w-11 sm:h-11 bg-gradient-to-br from-green-600/90 to-green-700/90 hover:from-green-500 hover:to-green-600 border border-green-400/70 rounded-lg flex items-center justify-center transition-all cursor-pointer shadow-md shadow-green-500/50 hover:shadow-green-500/70 pointer-events-auto"
+                            className="absolute top-1 right-1 z-50 w-11 h-11 sm:w-12 sm:h-12 touch-manipulation bg-gradient-to-br from-green-600/90 to-green-700/90 hover:from-green-500 hover:to-green-600 border border-green-400/70 rounded-lg flex items-center justify-center transition-all cursor-pointer shadow-md shadow-green-500/50 hover:shadow-green-500/70 pointer-events-auto"
                             title={`Ativar ${spellTrap.name || spellTrap.cardName || 'Spell'}`}
                           >
                             <span className="text-sm sm:text-base leading-none">✨</span>

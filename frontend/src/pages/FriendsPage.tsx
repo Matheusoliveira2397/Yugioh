@@ -6,6 +6,7 @@ import { useSocketStore } from '../stores/socketStore';
 import api from '../api/axios';
 import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { formatScore } from '../utils/formatScore';
+import { useI18n } from '../i18n/I18nContext';
 
 interface Friend {
   id: number | string;
@@ -40,6 +41,7 @@ interface FriendRequest {
 }
 
 export default function FriendsPage() {
+  const { t } = useI18n();
   const { user, token } = useAuthStore();
   const { connect, getSocket, isConnected } = useSocketStore();
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -439,9 +441,9 @@ export default function FriendsPage() {
           className="text-center mb-8"
         >
           <h1 className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 mb-2">
-            👥 Amigos
+            👥 {t('friends.title')}
           </h1>
-          <p className="text-gray-300">Conecte-se com seus amigos e converse!</p>
+          <p className="text-gray-300">{t('friends.subtitle')}</p>
         </motion.div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -462,7 +464,7 @@ export default function FriendsPage() {
                       : 'text-gray-400 hover:text-white'
                   }`}
                 >
-                  🟢 Online ({friends.filter(f => f.isOnline).length})
+                  🟢 {t('friends.online')} ({friends.filter(f => f.isOnline).length})
                 </button>
                 <button
                   onClick={() => setActiveTab('all')}
@@ -472,7 +474,7 @@ export default function FriendsPage() {
                       : 'text-gray-400 hover:text-white'
                   }`}
                 >
-                  📋 Todos ({friends.length})
+                  📋 {t('friends.all')} ({friends.length})
                 </button>
                 <button
                   onClick={() => setActiveTab('requests')}
@@ -482,7 +484,7 @@ export default function FriendsPage() {
                       : 'text-gray-400 hover:text-white'
                   }`}
                 >
-                  🔔 Solicitações
+                  🔔 {t('friends.requests')}
                   {pendingRequests.length > 0 && (
                     <span className="absolute top-1 right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                       {pendingRequests.length}
@@ -501,7 +503,7 @@ export default function FriendsPage() {
                   ) : pendingRequests.length === 0 ? (
                     <div className="text-center py-12 text-gray-400">
                       <p className="text-4xl mb-2">📭</p>
-                      <p>Nenhuma solicitação pendente</p>
+                      <p>{t('friends.noRequests')}</p>
                     </div>
                   ) : (
                     <AnimatePresence>
@@ -539,13 +541,13 @@ export default function FriendsPage() {
                               onClick={() => handleAcceptRequest(request.id)}
                               className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors text-white font-semibold text-sm"
                             >
-                              ✓ Aceitar
+                              ✓ {t('friends.accept')}
                             </button>
                             <button
                               onClick={() => handleRejectRequest(request.id)}
                               className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors text-white font-semibold text-sm"
                             >
-                              ✕ Rejeitar
+                              ✕ {t('friends.decline')}
                             </button>
                           </div>
                         </motion.div>
@@ -598,7 +600,7 @@ export default function FriendsPage() {
                             </p>
                             <p className="text-sm text-gray-400 truncate">{friend.nickname}</p>
                             <div className="flex items-center gap-2 text-xs text-gray-500">
-                              <span>Nível {friend.level || 1}</span>
+                              <span>{t('profileCard.level')} {friend.level || 1}</span>
                               <span>•</span>
                               <span>Score: {formatScore(friend.totalScore)}</span>
                             </div>
@@ -622,8 +624,8 @@ export default function FriendsPage() {
               <div className="rounded-xl border border-purple-500/30 h-[600px] flex items-center justify-center">
                 <div className="text-center text-gray-400">
                   <p className="text-6xl mb-4">🔔</p>
-                  <p className="text-xl">Gerencie suas solicitações de amizade</p>
-                  <p className="text-sm mt-2">Selecione uma solicitação na lista ao lado</p>
+                  <p className="text-xl">{t('friends.manageRequests')}</p>
+                  <p className="text-sm mt-2">{t('friends.selectFriend')}</p>
                 </div>
               </div>
             ) : (
@@ -652,7 +654,7 @@ export default function FriendsPage() {
                         </Link>
                       </h3>
                       <p className="text-sm text-gray-400">
-                        {selectedFriend.isOnline ? '🟢 Online' : '⚫ Offline'}
+                        {selectedFriend.isOnline ? `🟢 ${t('friends.online')}` : '⚫ Offline'}
                       </p>
                     </div>
                     <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors text-white font-semibold">
@@ -669,8 +671,8 @@ export default function FriendsPage() {
                       <div className="flex items-center justify-center h-full text-gray-400">
                         <div className="text-center">
                           <p className="text-4xl mb-2">💬</p>
-                          <p>Nenhuma mensagem ainda</p>
-                          <p className="text-sm mt-1">Comece a conversar!</p>
+                          <p>{t('friends.noMessages')}</p>
+                          <p className="text-sm mt-1">{t('friends.startChat')}</p>
                         </div>
                       </div>
                     ) : (
@@ -713,7 +715,7 @@ export default function FriendsPage() {
                         value={messageInput}
                         onChange={(e) => setMessageInput(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                        placeholder="Digite sua mensagem..."
+                        placeholder={t('chat.placeholder')}
                         className="flex-1 bg-gray-800 px-4 py-3 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
                       />
                       <button
@@ -721,7 +723,7 @@ export default function FriendsPage() {
                         disabled={!messageInput.trim()}
                         className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg font-semibold text-white transition-all"
                       >
-                        📤 Enviar
+                        📤 {t('friends.send')}
                       </button>
                     </div>
                   </div>
@@ -730,7 +732,7 @@ export default function FriendsPage() {
                 <div className="flex-1 flex items-center justify-center text-gray-400">
                   <div className="text-center">
                     <p className="text-6xl mb-4">💬</p>
-                    <p className="text-xl">Selecione um amigo para começar a conversar</p>
+                    <p className="text-xl">{t('friends.selectFriend')}</p>
                   </div>
                 </div>
               )}

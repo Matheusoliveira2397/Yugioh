@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
 import { api } from '../api/axios';
 import CardImage from '../components/CardImage';
+import DeckCopyLimitBadge from '../components/DeckCopyLimitBadge';
 import { CARD_IMAGE_GRID_PROPS } from '../utils/cardImage';
 import { getCardDescription } from '../utils/cardDescription';
 
@@ -21,7 +23,21 @@ interface Card {
   priceCredits?: number;
   priceCash?: number;
   isForSale: boolean;
+  maxCopiesInDeck?: number;
   createdAt?: string;
+}
+
+type CardSortOption = 'name' | 'priceAsc' | 'priceDesc' | 'atkAsc' | 'atkDesc';
+
+function compareCardsByAtk(a: Card, b: Card, direction: 'asc' | 'desc'): number {
+  const tier = (c: Card) => (c.type === 'Monster' ? 0 : 1);
+  const t = tier(a) - tier(b);
+  if (t !== 0) return t;
+  const atkA = a.type === 'Monster' ? Number(a.atk ?? 0) : 0;
+  const atkB = b.type === 'Monster' ? Number(b.atk ?? 0) : 0;
+  const byAtk = direction === 'asc' ? atkA - atkB : atkB - atkA;
+  if (byAtk !== 0) return byAtk;
+  return a.name.localeCompare(b.name);
 }
 
 export default function ShopCardsPage() {
@@ -29,6 +45,9 @@ export default function ShopCardsPage() {
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCurrency, setSelectedCurrency] = useState<'credits' | 'cash'>('credits');
+  const [atkMin, setAtkMin] = useState('');
+  const [atkMax, setAtkMax] = useState('');
+  const [cardSort, setCardSort] = useState<CardSortOption>('name');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -152,10 +171,38 @@ export default function ShopCardsPage() {
       : (user.cash || 0);
   };
 
-  const filteredCards = cards.filter(card => {
-    const price = getPrice(card);
-    return price && price > 0;
-  });
+  const filteredCards = useMemo(() => {
+    const filtered = cards.filter((card) => {
+      const price = getPrice(card);
+      if (!price || price <= 0) return false;
+      const atkOn = (atkMin !== '' && atkMin != null) || (atkMax !== '' && atkMax != null);
+      if (atkOn) {
+        if (card.type !== 'Monster') return true;
+        const atk = Number(card.atk ?? 0);
+        if (atkMin !== '' && !Number.isNaN(Number(atkMin)) && atk < Number(atkMin)) return false;
+        if (atkMax !== '' && !Number.isNaN(Number(atkMax)) && atk > Number(atkMax)) return false;
+      }
+      return true;
+    });
+    const priceOf = (c: Card) =>
+      selectedCurrency === 'credits' ? c.priceCredits ?? 0 : c.priceCash ?? 0;
+    return [...filtered].sort((a, b) => {
+      switch (cardSort) {
+        case 'name':
+          return a.name.localeCompare(b.name);
+        case 'priceAsc':
+          return priceOf(a) - priceOf(b);
+        case 'priceDesc':
+          return priceOf(b) - priceOf(a);
+        case 'atkAsc':
+          return compareCardsByAtk(a, b, 'asc');
+        case 'atkDesc':
+          return compareCardsByAtk(a, b, 'desc');
+        default:
+          return 0;
+      }
+    });
+  }, [cards, selectedCurrency, atkMin, atkMax, cardSort]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -169,6 +216,12 @@ export default function ShopCardsPage() {
             <div>
               <h1 className="text-4xl font-bold mb-2">🛒 Loja de Cartas</h1>
               <p className="text-gray-300">Compre cartas individuais para seu deck</p>
+              <Link
+                to="/credit"
+                className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-sm font-semibold text-amber-200 hover:bg-amber-500/20"
+              >
+                💎 Comprar créditos
+              </Link>
             </div>
             <div className="text-right bg-gradient-to-br from-gray-900 to-gray-800 px-6 py-4 rounded-lg border-2 border-purple-500/50 shadow-lg">
               <p className="text-gray-400 text-sm mb-2">💰 Seu Saldo</p>
@@ -231,6 +284,128 @@ export default function ShopCardsPage() {
           </button>
         </div>
 
+        {/* Filtro ATK */}
+        <div className="mb-6 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
+          <p className="mb-3 text-sm font-medium text-gray-300">Filtrar por ATK (só monstros; magias/armadilhas seguem visíveis)</p>
+          <div className="flex flex-wrap items-end gap-4">
+            <div>
+              <label className="mb-1 block text-xs text-gray-400">ATK mínimo (≥)</label>
+              <input
+                type="number"
+                min={0}
+                placeholder="Ex.: 1000"
+                value={atkMin}
+                onChange={(e) => setAtkMin(e.target.value)}
+                className="w-36 rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white focus:border-purple-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-gray-400">ATK máximo (≤)</label>
+              <input
+                type="number"
+                min={0}
+                placeholder="Ex.: 2500"
+                value={atkMax}
+                onChange={(e) => setAtkMax(e.target.value)}
+                className="w-36 rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white focus:border-purple-500 focus:outline-none"
+              />
+            </div>
+            <div className="min-w-[220px]">
+              <label className="mb-1.5 block text-xs text-gray-400">Ordenar por ATK</label>
+              <div className="flex flex-col gap-1 rounded-lg border border-gray-600 bg-gray-950 p-1.5">
+                <button
+                  type="button"
+                  onClick={() => setCardSort('atkAsc')}
+                  className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                    cardSort === 'atkAsc'
+                      ? 'bg-purple-600/55 text-purple-100'
+                      : 'text-white hover:bg-purple-500/20'
+                  }`}
+                >
+                  Menor → maior
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCardSort('atkDesc')}
+                  className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                    cardSort === 'atkDesc'
+                      ? 'bg-purple-600/55 text-purple-100'
+                      : 'text-white hover:bg-purple-500/20'
+                  }`}
+                >
+                  Maior → menor
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCardSort('name')}
+                  className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                    cardSort !== 'atkAsc' && cardSort !== 'atkDesc'
+                      ? 'bg-purple-600/55 text-purple-100'
+                      : 'text-white hover:bg-purple-500/20'
+                  }`}
+                >
+                  Outra ordem (nome/preço)
+                </button>
+              </div>
+            </div>
+            {(atkMin || atkMax) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setAtkMin('');
+                  setAtkMax('');
+                }}
+                className="rounded-lg border border-gray-500 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+              >
+                Limpar faixa ATK
+              </button>
+            )}
+            <div className="min-w-[220px]">
+              <label className="mb-1.5 block text-xs text-gray-400">Ordenar (nome / preço)</label>
+              <div className="flex flex-col gap-1 rounded-lg border border-gray-600 bg-gray-950 p-1.5">
+                {(cardSort === 'atkAsc' || cardSort === 'atkDesc') && (
+                  <p className="px-2 py-1 text-[11px] text-amber-200/90">
+                    Ordem ATK ativa — use a coluna &quot;Ordenar por ATK&quot; para mudar
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setCardSort('name')}
+                  className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                    cardSort === 'name'
+                      ? 'bg-purple-600/55 text-purple-100'
+                      : 'text-white hover:bg-purple-500/20'
+                  }`}
+                >
+                  Nome (A–Z)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCardSort('priceAsc')}
+                  className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                    cardSort === 'priceAsc'
+                      ? 'bg-purple-600/55 text-purple-100'
+                      : 'text-white hover:bg-purple-500/20'
+                  }`}
+                >
+                  Preço (menor → maior)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCardSort('priceDesc')}
+                  className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                    cardSort === 'priceDesc'
+                      ? 'bg-purple-600/55 text-purple-100'
+                      : 'text-white hover:bg-purple-500/20'
+                  }`}
+                >
+                  Preço (maior → menor)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Grid de Cartas */}
         {loading ? (
           <div className="text-center py-16">
@@ -277,9 +452,14 @@ export default function ShopCardsPage() {
                         />
                       </div>
                       
-                      {/* Rarity Badge */}
-                      <div className={`absolute top-3 right-3 bg-gradient-to-r ${getRarityColor(card.rarity)} px-3 py-1 rounded-full border-2 border-white/30 backdrop-blur-sm`}>
-                        <p className="text-xs font-bold text-white shadow-lg">{card.rarity}</p>
+                      {/* Limite no deck (0–3) + raridade — canto superior direito */}
+                      <div className="absolute top-3 right-3 z-20 flex flex-col items-end gap-1.5 pointer-events-none">
+                        <DeckCopyLimitBadge maxCopiesInDeck={card.maxCopiesInDeck} variant="inline" showStandardLimit />
+                        <div
+                          className={`bg-gradient-to-r ${getRarityColor(card.rarity)} px-3 py-1 rounded-full border-2 border-white/30 backdrop-blur-sm`}
+                        >
+                          <p className="text-xs font-bold text-white shadow-lg">{card.rarity}</p>
+                        </div>
                       </div>
 
                       {/* Type Badge */}

@@ -1,10 +1,19 @@
-import { motion } from 'framer-motion';
-import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { useSocket } from '../hooks/useSocket';
 import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import api from '../api/axios';
 import CardImage from '../components/CardImage';
+import { useI18n } from '../i18n/I18nContext';
+
+type DuelQueueMode = 'ranked' | 'casual' | 'anime';
+
+function formatSearchTimer(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -71,12 +80,15 @@ interface SiteTab {
 }
 
 export default function RandomDuelPage() {
+  const { t } = useI18n();
   const { user } = useAuthStore();
   const { isConnected, isSearching, duelFound, duelError, clearDuelFound, clearDuelError, searchDuel, cancelSearch, getSocket } = useSocket();
   const [isCreatingDuel, setIsCreatingDuel] = useState(false);
   const [levelRange, setLevelRange] = useState<LevelRange | null>(null);
   const [searchElapsedSeconds, setSearchElapsedSeconds] = useState(0);
-  const [duelMode, setDuelMode] = useState<'normal' | 'anime'>('normal');
+  const [duelMode, setDuelMode] = useState<DuelQueueMode>('casual');
+  const [showModeMenu, setShowModeMenu] = useState(false);
+  const modeMenuRef = useRef<HTMLDivElement | null>(null);
   const [animeDecks, setAnimeDecks] = useState<AnimeDeckOption[]>([]);
   const [selectedAnimeDeckId, setSelectedAnimeDeckId] = useState<string | null>(null);
   const [animeDecksLoading, setAnimeDecksLoading] = useState(false);
@@ -85,12 +97,23 @@ export default function RandomDuelPage() {
   const [equippingDeckId, setEquippingDeckId] = useState<string | null>(null);
   const [showDeckPicker, setShowDeckPicker] = useState(false);
   const [randomStats, setRandomStats] = useState<{ total: number; wins: number; losses: number } | null>(null);
+  const [rankedStats, setRankedStats] = useState<{
+    total: number;
+    wins: number;
+    losses: number;
+    rankedPoints: number;
+  } | null>(null);
   const [isRandomAnimeEnabled, setIsRandomAnimeEnabled] = useState(true);
   const [animeDeckPreview, setAnimeDeckPreview] = useState<AnimeDeckOption | null>(null);
   const handlerRef = useRef<((data: any) => void) | null>(null);
   const isOpeningRef = useRef<boolean>(false);
   const searchStartTimeRef = useRef<number | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Fecha o menu de modos ao começar a procurar
+  useEffect(() => {
+    if (isSearching) setShowModeMenu(false);
+  }, [isSearching]);
 
   // Contador de tempo enquanto procura duelo
   useEffect(() => {
@@ -137,18 +160,45 @@ export default function RandomDuelPage() {
     fetchLevelRange();
   }, [user?.level, API_URL]);
 
-  // Estatísticas de duelos no Random (total, V/D, %)
+  // Estatísticas Casual + Ranked
   useEffect(() => {
     if (!user?.id) return;
     api
       .get<{ total: number; wins: number; losses: number }>('/duels/stats/random/my')
       .then((res) => {
         if (res.data && typeof (res.data as any).total === 'number') {
-          setRandomStats({ total: (res.data as any).total, wins: (res.data as any).wins ?? 0, losses: (res.data as any).losses ?? 0 });
+          setRandomStats({
+            total: (res.data as any).total,
+            wins: (res.data as any).wins ?? 0,
+            losses: (res.data as any).losses ?? 0,
+          });
         }
       })
       .catch(() => setRandomStats({ total: 0, wins: 0, losses: 0 }));
-  }, [user?.id]);
+
+    api
+      .get<{ total: number; wins: number; losses: number; rankedPoints: number }>(
+        '/duels/stats/ranked/my',
+      )
+      .then((res) => {
+        if (res.data && typeof (res.data as any).rankedPoints === 'number') {
+          setRankedStats({
+            total: (res.data as any).total ?? 0,
+            wins: (res.data as any).wins ?? 0,
+            losses: (res.data as any).losses ?? 0,
+            rankedPoints: (res.data as any).rankedPoints ?? 1000,
+          });
+        }
+      })
+      .catch(() =>
+        setRankedStats({
+          total: 0,
+          wins: 0,
+          losses: 0,
+          rankedPoints: user.rankedPoints ?? 1000,
+        }),
+      );
+  }, [user?.id, user?.rankedPoints]);
 
   // Verificar se a aba "Random Anime" está ativa no painel admin
   useEffect(() => {
@@ -169,16 +219,28 @@ export default function RandomDuelPage() {
     fetchRandomAnimeTabStatus();
   }, []);
 
-  // Se a aba for desativada no admin, forçar retorno ao modo normal
+  // Se a aba for desativada no admin, voltar ao casual
   useEffect(() => {
     if (!isRandomAnimeEnabled && duelMode === 'anime') {
-      setDuelMode('normal');
+      setDuelMode('casual');
     }
   }, [isRandomAnimeEnabled, duelMode]);
 
-  // Buscar decks do usuário quando modo Random Duel normal
+  // Fechar menu de modos ao clicar fora
   useEffect(() => {
-    if (duelMode !== 'normal') return;
+    if (!showModeMenu) return;
+    const onDown = (e: MouseEvent) => {
+      if (modeMenuRef.current && !modeMenuRef.current.contains(e.target as Node)) {
+        setShowModeMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [showModeMenu]);
+
+  // Buscar decks do usuário quando modo casual ou ranked
+  useEffect(() => {
+    if (duelMode !== 'casual' && duelMode !== 'ranked') return;
     setMyDecksLoading(true);
     api
       .get<MyDeckOption[]>('/decks')
@@ -348,11 +410,82 @@ export default function RandomDuelPage() {
     };
   }, [getSocket, duelFound]);
 
+  const startQueueSearch = useCallback(() => {
+    if (!user?.id) return;
+    const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
+    if (duelMode === 'anime') {
+      if (!selectedAnimeDeckId) return;
+      searchDuel(userId, { mode: 'anime', animeDeckId: selectedAnimeDeckId });
+      return;
+    }
+    if (duelMode === 'ranked') {
+      searchDuel(userId, { mode: 'ranked' });
+      return;
+    }
+    searchDuel(userId, { mode: 'casual' });
+  }, [user?.id, duelMode, selectedAnimeDeckId, searchDuel]);
+
+  const canSearch = useMemo(() => {
+    if (!isConnected) return false;
+    if (duelMode === 'anime') return !!selectedAnimeDeckId && animeDecks.length > 0;
+    return true;
+  }, [isConnected, duelMode, selectedAnimeDeckId, animeDecks.length]);
+
+  const equippedDeckInfo = useMemo(() => {
+    const deck = myDecks.find((d) => d.id === user?.equippedDeckId) ?? null;
+    const mainDeckCount = deck ? (deck.cards?.filter((c) => !c.isExtraDeck).length ?? 0) : 0;
+    const coverCard = deck ? (deck.coverCard ?? deck.cards?.[0]?.card ?? null) : null;
+    return {
+      deck,
+      mainDeckCount,
+      coverCard,
+      isValid: !!deck && mainDeckCount >= 40,
+    };
+  }, [myDecks, user?.equippedDeckId]);
+
+  const modeMeta = useMemo(() => {
+    if (duelMode === 'ranked') {
+      return {
+        icon: '🏆',
+        title: t('randomDuel.modeRanked'),
+        border: 'border-amber-400/55',
+        bg: 'bg-amber-950/45 hover:bg-amber-950/65',
+        ring: 'ring-amber-400/30',
+        soft: 'text-amber-200',
+      };
+    }
+    if (duelMode === 'anime') {
+      return {
+        icon: '🎬',
+        title: t('randomDuel.animeDeck'),
+        border: 'border-fuchsia-400/55',
+        bg: 'bg-fuchsia-950/45 hover:bg-fuchsia-950/65',
+        ring: 'ring-fuchsia-400/30',
+        soft: 'text-fuchsia-200',
+      };
+    }
+    return {
+      icon: '🎲',
+      title: t('randomDuel.modeCasual'),
+      border: 'border-purple-400/55',
+      bg: 'bg-purple-950/45 hover:bg-purple-950/65',
+      ring: 'ring-purple-400/30',
+      soft: 'text-purple-200',
+    };
+  }, [duelMode, t]);
+
+  const activeStats = duelMode === 'ranked' ? rankedStats : randomStats;
+  const statsWins = activeStats?.wins ?? 0;
+  const statsLosses = activeStats?.losses ?? 0;
+  const statsTotal = activeStats?.total ?? 0;
+  const winRate = statsTotal > 0 ? Math.round((statsWins / statsTotal) * 100) : 0;
+  const selectedAnimeDeck = animeDecks.find((d) => d.id === selectedAnimeDeckId) ?? null;
+
   if (!user) return null;
 
   return (
-    <div className="min-h-[100svh] flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="max-w-4xl w-full text-center py-2 sm:py-4">
+    <div className="min-h-[100svh] flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+      <div className="max-w-3xl w-full text-center py-2 sm:py-4">
         {/* Erro da busca (ex.: "já tem duelo ativo", timeout, deck não equipado) */}
         {duelError && (
           <motion.div
@@ -364,17 +497,20 @@ export default function RandomDuelPage() {
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => { clearDuelError(); if (user?.id) searchDuel(user.id, duelMode === 'anime' && selectedAnimeDeckId ? { animeDeckId: selectedAnimeDeckId } : undefined); }}
+                onClick={() => {
+                  clearDuelError();
+                  startQueueSearch();
+                }}
                 className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium"
               >
-                Tentar novamente
+                {t('common.tryAgain')}
               </button>
               <button
                 type="button"
                 onClick={clearDuelError}
                 className="px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-sm"
               >
-                Fechar
+                {t('common.close')}
               </button>
             </div>
           </motion.div>
@@ -391,7 +527,7 @@ export default function RandomDuelPage() {
           >
             <div className="flex flex-col items-center">
               <p className="text-emerald-400 text-lg sm:text-xl font-semibold tracking-wider uppercase mb-1">
-                Partida encontrada
+                {t('randomDuel.matchFound')}
               </p>
               <div className="w-16 sm:w-20 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent rounded-full mb-3 sm:mb-4" />
             </div>
@@ -424,7 +560,7 @@ export default function RandomDuelPage() {
                     className="absolute inset-0 bg-green-500/40 rounded-2xl blur-2xl"
                   />
                   <img 
-                    src="/images/Icones/Random Duel.png" 
+                    src="/images/Icones/RandomDuel.png" 
                     alt="Random Duel"
                     className="relative w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 object-contain drop-shadow-2xl"
                     onError={(e) => {
@@ -438,7 +574,7 @@ export default function RandomDuelPage() {
                   transition={{ delay: 0.4 }}
                   className="text-xl sm:text-2xl md:text-3xl font-bold text-green-400 mb-1 drop-shadow-lg"
                 >
-                  Duelo Encontrado!
+                  {t('randomDuel.duelFound')}
                 </motion.h2>
               </div>
 
@@ -478,7 +614,7 @@ export default function RandomDuelPage() {
                     transition={{ delay: 0.3 }}
                     className="text-center bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm rounded-xl p-3 sm:p-4 md:p-5 border border-red-500/20"
                   >
-                    <p className="text-white text-base sm:text-lg mb-1 font-semibold">Oponente:</p>
+                    <p className="text-white text-base sm:text-lg mb-1 font-semibold">{t('randomDuel.opponent')}</p>
                     <p className="text-xl sm:text-2xl md:text-3xl font-bold text-red-400 drop-shadow-lg break-words">
                       {duelFound.opponent?.clanTag ? `|${duelFound.opponent.clanTag}| ` : ''}
                       {duelFound.opponent?.nickname || 'Oponente'}
@@ -859,220 +995,299 @@ export default function RandomDuelPage() {
                 }}
                 className="text-white/70 hover:text-white text-sm font-medium underline focus:outline-none focus:ring-2 focus:ring-emerald-400 rounded px-2 py-1"
               >
-                ✕ Fechar e procurar de novo
+                ✕ {t('randomDuel.closeAndSearch')}
               </button>
             </div>
           </motion.div>
           </motion.div>
         ) : isSearching ? (
           <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="space-y-3 sm:space-y-4 w-full"
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="mx-auto w-full max-w-lg"
           >
-            {/* Logo durante busca */}
-            <div className="flex justify-center mb-2 sm:mb-4">
-              <motion.div
-                animate={{ 
-                  scale: [1, 1.05, 1],
-                  filter: ['brightness(1)', 'brightness(1.2)', 'brightness(1)']
-                }}
-                transition={{ duration: 2, repeat: Infinity }}
-                className="relative"
-              >
-                <motion.div
-                  animate={{ 
-                    boxShadow: [
-                      '0 0 30px rgba(139, 92, 246, 0.4)',
-                      '0 0 50px rgba(139, 92, 246, 0.6)',
-                      '0 0 30px rgba(139, 92, 246, 0.4)'
-                    ]
-                  }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                  className="absolute inset-0 bg-purple-500/40 rounded-2xl blur-2xl"
-                />
-                <img 
-                  src="/images/Icones/Random Duel.png" 
-                  alt="Random Duel"
-                  className="relative w-20 h-20 sm:w-28 sm:h-28 md:w-32 md:h-32 object-contain drop-shadow-2xl"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
-              </motion.div>
-            </div>
+            <div className="relative overflow-hidden rounded-2xl border border-purple-500/30 bg-gradient-to-b from-purple-950/70 via-slate-950/80 to-black/70 px-5 py-8 sm:px-8 sm:py-10 shadow-2xl shadow-purple-950/40">
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(139,92,246,0.18),transparent_55%)]" />
 
-            {/* Animação de Loading */}
-            <div className="relative w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 mx-auto mb-3 sm:mb-4">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-                className="w-full h-full border-4 sm:border-[6px] md:border-8 border-purple-500 border-t-transparent rounded-full"
-              />
-              <motion.div
-                animate={{ scale: [1, 1.2, 1], rotate: [0, 180, 360] }}
-                transition={{ duration: 1.5, repeat: Infinity }}
-                className="absolute inset-0 flex items-center justify-center"
-              >
-                <span className="text-4xl sm:text-5xl md:text-6xl">⚔️</span>
-              </motion.div>
-            </div>
+              <div className="relative flex flex-col items-center gap-6">
+                <div
+                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${modeMeta.border} ${modeMeta.bg} ${modeMeta.soft}`}
+                >
+                  <span>{modeMeta.icon}</span>
+                  <span>{modeMeta.title}</span>
+                </div>
 
-            {/* Texto */}
-            <div className="text-center">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
-                Procurando Oponente...
-              </h2>
-              <motion.p
-                animate={{ opacity: [0.5, 1, 0.5] }}
-                transition={{ duration: 1.5, repeat: Infinity }}
-                className="text-white/80 text-sm sm:text-base md:text-lg mb-2"
-              >
-                Aguarde enquanto buscamos um duelista digno...
-              </motion.p>
-              {/* Contador de tempo */}
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-black/30 border border-purple-500/40 mb-4">
-                <span className="text-white/70 text-sm font-medium">Tempo:</span>
-                <span className="text-2xl sm:text-3xl font-mono font-bold tabular-nums text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.4)]">
-                  {Math.floor(searchElapsedSeconds / 60)}:{(searchElapsedSeconds % 60).toString().padStart(2, '0')}
-                </span>
+                {/* VS row */}
+                <div className="flex w-full items-center justify-center gap-4 sm:gap-8">
+                  <div className="flex flex-col items-center gap-2 w-24 sm:w-28">
+                    <img
+                      src={getProfileImageUrl(user.profileImage)}
+                      alt={user.nickname}
+                      className="h-16 w-16 sm:h-20 sm:w-20 rounded-full border-2 border-purple-400/70 object-cover shadow-lg"
+                      onError={(e) => {
+                        e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
+                      }}
+                    />
+                    <p className="truncate w-full text-center text-sm font-semibold text-white">
+                      {user.nickname}
+                    </p>
+                  </div>
+
+                  <div className="relative flex h-28 w-28 sm:h-36 sm:w-36 items-center justify-center">
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
+                      className="absolute inset-0 rounded-full border border-purple-400/20 border-t-purple-400/70"
+                    />
+                    <motion.div
+                      animate={{ rotate: -360 }}
+                      transition={{ duration: 5, repeat: Infinity, ease: 'linear' }}
+                      className="absolute inset-3 rounded-full border border-pink-400/15 border-b-pink-400/60"
+                    />
+                    <motion.div
+                      animate={{ scale: [1, 1.08, 1], opacity: [0.35, 0.6, 0.35] }}
+                      transition={{ duration: 2.2, repeat: Infinity }}
+                      className="absolute inset-6 rounded-full bg-purple-500/25 blur-md"
+                    />
+                    <div className="relative z-10 text-center">
+                      <p className="text-[10px] uppercase tracking-widest text-white/45 mb-0.5">
+                        {t('randomDuel.time')}
+                      </p>
+                      <p className="font-mono text-2xl sm:text-3xl font-bold tabular-nums text-amber-300">
+                        {formatSearchTimer(searchElapsedSeconds)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col items-center gap-2 w-24 sm:w-28">
+                    <div className="relative h-16 w-16 sm:h-20 sm:w-20">
+                      <motion.div
+                        animate={{ opacity: [0.35, 0.7, 0.35] }}
+                        transition={{ duration: 1.6, repeat: Infinity }}
+                        className="absolute inset-0 rounded-full border-2 border-dashed border-white/25 bg-white/5"
+                      />
+                      <span className="absolute inset-0 flex items-center justify-center text-2xl text-white/30">
+                        ?
+                      </span>
+                    </div>
+                    <p className="truncate w-full text-center text-sm font-medium text-white/40">
+                      ???
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-center space-y-1.5">
+                  <h2 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-purple-300 via-pink-300 to-purple-300 bg-clip-text text-transparent">
+                    {t('randomDuel.searching')}
+                  </h2>
+                  <motion.p
+                    animate={{ opacity: [0.45, 1, 0.45] }}
+                    transition={{ duration: 1.8, repeat: Infinity }}
+                    className="text-sm text-white/65"
+                  >
+                    {t('randomDuel.waitSearch')}
+                  </motion.p>
+                  {(duelMode === 'casual' || duelMode === 'ranked') && equippedDeckInfo.deck && (
+                    <p className="text-xs text-purple-200/80 pt-1">
+                      {t('randomDuel.equippedDeck')}{' '}
+                      <span className="font-semibold text-white/90">{equippedDeckInfo.deck.name}</span>
+                    </p>
+                  )}
+                  {duelMode === 'anime' && selectedAnimeDeck && (
+                    <p className="text-xs text-fuchsia-200/80 pt-1">
+                      Deck:{' '}
+                      <span className="font-semibold text-white/90">{selectedAnimeDeck.name}</span>
+                    </p>
+                  )}
+                </div>
+
+                <motion.button
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => {
+                    if (user?.id) {
+                      const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
+                      cancelSearch(userId);
+                    }
+                  }}
+                  className="mt-1 rounded-xl border border-red-400/40 bg-red-600/80 px-8 py-2.5 text-sm font-bold text-white shadow-lg shadow-red-950/40 transition hover:bg-red-500"
+                >
+                  {t('randomDuel.cancelSearch')}
+                </motion.button>
               </div>
-            </div>
-
-            {/* Botão Cancelar */}
-            <div className="flex justify-center">
-              <motion.button 
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                  if (user?.id) {
-                    const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
-                    cancelSearch(userId);
-                  }
-                }}
-                className="bg-gradient-to-r from-red-600 to-pink-600 px-8 py-3 rounded-xl font-bold text-white hover:shadow-lg hover:shadow-red-500/50 transition-all"
-              >
-                Cancelar Busca
-              </motion.button>
             </div>
           </motion.div>
         ) : (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            className="w-full"
+            className="mx-auto w-full max-w-xl space-y-4 sm:space-y-5"
           >
-            {/* Header com Logo e Status */}
-            <div className="mb-4 sm:mb-6">
-              {/* Header do Random Duel */}
-              <div className="flex flex-col items-center mb-3 sm:mb-4">
-                <motion.p
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.3 }}
-                  className="text-white/90 text-sm sm:text-base md:text-lg text-center max-w-md px-2"
-                >
-                  Encontre um oponente aleatório e prove seu valor!
-                </motion.p>
-                <motion.p
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4 }}
-                  className="mt-2 text-xs sm:text-sm text-purple-200/90 text-center"
-                >
-                  Deck equipado: {user.equippedDeckName || 'Nenhum deck equipado'}
-                </motion.p>
-              </div>
+            <div className="text-center space-y-1.5 px-2">
+              <p className="text-white/80 text-sm sm:text-base">{t('randomDuel.subtitle')}</p>
+            </div>
 
-              {/* Status Conexão */}
-              <div className="flex justify-center mb-3 sm:mb-4">
-                <div className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full backdrop-blur-sm border ${
-                  isConnected ? 'bg-green-500/20 text-green-400 border-green-500/50' : 'bg-red-500/20 text-red-400 border-red-500/50'
-                }`}>
-                  <motion.div 
-                    animate={{ scale: [1, 1.2, 1] }}
-                    transition={{ duration: 1.5, repeat: Infinity }}
-                    className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} 
-                  />
-                  <span className="font-semibold">{isConnected ? 'Conectado' : 'Desconectado'}</span>
-                </div>
-              </div>
-
-              {/* Modo: Random Duel vs Random Duel: Animes Deck */}
-              <div className="flex justify-center gap-2 mb-3 sm:mb-4">
+            {/* Seletor de modo */}
+            <div className="flex justify-center" ref={modeMenuRef}>
+              <div className="relative w-full max-w-md">
                 <button
                   type="button"
-                  onClick={() => setDuelMode('normal')}
-                  className={`px-4 py-2 rounded-xl font-semibold transition-all ${
-                    duelMode === 'normal'
-                      ? 'bg-purple-600 text-white border-2 border-purple-400'
-                      : 'bg-gray-700/50 text-gray-400 border-2 border-transparent hover:border-gray-500'
-                  }`}
+                  onClick={() => setShowModeMenu((v) => !v)}
+                  className={`w-full flex items-center gap-3 rounded-2xl border-2 px-4 py-3.5 text-left transition-all ring-1 ${modeMeta.border} ${modeMeta.bg} ${modeMeta.ring}`}
+                  aria-expanded={showModeMenu}
+                  aria-haspopup="listbox"
                 >
-                  🎲 Random Duel
-                </button>
-                {isRandomAnimeEnabled && (
-                  <button
-                    type="button"
-                    onClick={() => setDuelMode('anime')}
-                    className={`px-4 py-2 rounded-xl font-semibold transition-all ${
-                      duelMode === 'anime'
-                        ? 'bg-purple-600 text-white border-2 border-purple-400'
-                        : 'bg-gray-700/50 text-gray-400 border-2 border-transparent hover:border-gray-500'
-                    }`}
+                  <span className="text-2xl shrink-0">{modeMeta.icon}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[10px] uppercase tracking-wide text-white/45 font-medium">
+                      {t('randomDuel.selectMode')}
+                    </span>
+                    <span className="block text-base sm:text-lg font-bold text-white truncate">
+                      {modeMeta.title}
+                    </span>
+                    {duelMode === 'ranked' && (
+                      <span className="block text-xs text-amber-200/80 tabular-nums mt-0.5">
+                        {t('randomDuel.rankedPoints')}:{' '}
+                        {rankedStats?.rankedPoints ?? user?.rankedPoints ?? 1000}
+                      </span>
+                    )}
+                  </span>
+                  <span
+                    className={`text-white/70 text-sm transition-transform ${showModeMenu ? 'rotate-180' : ''}`}
                   >
-                    🎬 Animes Deck
-                  </button>
-                )}
-              </div>
+                    ▼
+                  </span>
+                </button>
 
-              {/* Se modo Animes Deck: escolher deck */}
-              {duelMode === 'anime' && (
-                <div className="mb-4 sm:mb-6 p-3 sm:p-4 rounded-xl bg-gray-800/50 border border-purple-500/30">
-                  <p className="text-white/90 text-sm sm:text-base font-medium mb-2">Escolha um deck para duelar:</p>
-                  {animeDecksLoading ? (
-                    <p className="text-gray-400 text-sm">Carregando decks...</p>
-                  ) : animeDecks.length === 0 ? (
-                    <p className="text-amber-400 text-sm">Nenhum deck anime disponível. Crie decks no painel admin.</p>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-2 gap-3 max-h-56 overflow-y-auto">
-                      {animeDecks.map((deck) => (
+                <AnimatePresence>
+                  {showModeMenu && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      className="absolute z-30 left-0 right-0 mt-2 rounded-2xl border border-white/15 bg-gray-950/95 backdrop-blur-md shadow-2xl overflow-hidden"
+                      role="listbox"
+                    >
+                      {(
+                        [
+                          {
+                            id: 'ranked' as const,
+                            icon: '🏆',
+                            title: t('randomDuel.modeRanked'),
+                            desc: t('randomDuel.modeRankedDesc'),
+                            enabled: true,
+                          },
+                          {
+                            id: 'casual' as const,
+                            icon: '🎲',
+                            title: t('randomDuel.modeCasual'),
+                            desc: t('randomDuel.modeCasualDesc'),
+                            enabled: true,
+                          },
+                          {
+                            id: 'anime' as const,
+                            icon: '🎬',
+                            title: t('randomDuel.animeDeck'),
+                            desc: t('randomDuel.modeAnimeDesc'),
+                            enabled: isRandomAnimeEnabled,
+                          },
+                        ] as const
+                      )
+                        .filter((m) => m.enabled)
+                        .map((m) => {
+                          const selected = duelMode === m.id;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              role="option"
+                              aria-selected={selected}
+                              onClick={() => {
+                                setDuelMode(m.id);
+                                setShowModeMenu(false);
+                              }}
+                              className={`w-full flex items-start gap-3 px-4 py-3.5 text-left transition-colors border-b border-white/5 last:border-0 ${
+                                selected ? 'bg-white/10' : 'hover:bg-white/5'
+                              }`}
+                            >
+                              <span className="text-xl shrink-0 mt-0.5">{m.icon}</span>
+                              <span className="min-w-0 flex-1">
+                                <span className="flex items-center gap-2">
+                                  <span className="font-bold text-white text-sm sm:text-base">
+                                    {m.title}
+                                  </span>
+                                  {selected && (
+                                    <span className="text-[10px] font-semibold text-emerald-300">✓</span>
+                                  )}
+                                </span>
+                                <span className="block text-xs text-white/55 mt-0.5 leading-snug">
+                                  {m.desc}
+                                </span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+
+            {/* Anime deck picker */}
+            {duelMode === 'anime' && (
+              <div className="rounded-2xl border border-fuchsia-500/25 bg-fuchsia-950/20 p-3 sm:p-4 text-left">
+                <p className="text-white/90 text-sm font-semibold mb-3">{t('randomDuel.chooseDeck')}</p>
+                {animeDecksLoading ? (
+                  <p className="text-gray-400 text-sm">{t('randomDuel.loadingDecks')}</p>
+                ) : animeDecks.length === 0 ? (
+                  <p className="text-amber-400 text-sm">{t('randomDuel.noAnimeDecks')}</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2.5 sm:gap-3 max-h-60 overflow-y-auto pr-0.5">
+                    {animeDecks.map((deck) => {
+                      const selected = selectedAnimeDeckId === deck.id;
+                      return (
                         <div
                           key={deck.id}
-                          className={`rounded-lg border-2 transition-all flex flex-col overflow-hidden ${
-                            selectedAnimeDeckId === deck.id
-                              ? 'bg-purple-600/40 border-purple-400 text-white'
-                              : 'bg-gray-700/50 border-gray-600 text-gray-300 hover:border-purple-500/50'
+                          className={`rounded-xl border-2 transition-all flex flex-col overflow-hidden ${
+                            selected
+                              ? 'bg-fuchsia-600/35 border-fuchsia-400 text-white shadow-lg shadow-fuchsia-950/40'
+                              : 'bg-black/30 border-white/10 text-gray-300 hover:border-fuchsia-400/40'
                           }`}
                         >
                           <button
                             type="button"
                             onClick={() => setSelectedAnimeDeckId(deck.id)}
-                            className="text-center px-2 pt-2 pb-1 flex flex-col items-center w-full min-h-0"
+                            className="text-left px-2.5 pt-2.5 pb-2 flex items-center gap-2.5 w-full"
                           >
                             {deck.coverCard ? (
-                              <div className="flex-shrink-0 w-14 sm:w-16 aspect-[59/86] rounded overflow-hidden border border-white/20 mb-1.5">
+                              <div className="shrink-0 w-11 sm:w-12 aspect-[59/86] rounded-md overflow-hidden border border-white/20">
                                 <CardImage
                                   {...animePreviewCardImageProps}
-                                  sizes="64px"
+                                  sizes="48px"
                                   card={deck.coverCard}
                                   className="w-full h-full object-cover"
                                   fallback="/images/fundoCarta.webp"
                                 />
                               </div>
                             ) : (
-                              <div className="flex-shrink-0 w-14 sm:w-16 aspect-[59/86] rounded bg-gray-700 border border-white/20 flex items-center justify-center text-xl mb-1.5">🃏</div>
+                              <div className="shrink-0 w-11 sm:w-12 aspect-[59/86] rounded-md bg-gray-700 border border-white/20 flex items-center justify-center text-lg">
+                                🃏
+                              </div>
                             )}
-                            <span className="font-semibold text-xs truncate w-full block">{deck.name}</span>
-                            {deck.cards && (
-                              <span className="text-[10px] text-white/60">
-                                {deck.cards.reduce((s, c) => s + (c.quantity ?? 1), 0)} cartas
+                            <span className="min-w-0 flex-1">
+                              <span className="font-semibold text-xs sm:text-sm line-clamp-2 block leading-snug">
+                                {deck.name}
                               </span>
-                            )}
+                              {deck.cards && (
+                                <span className="text-[10px] text-white/55 mt-0.5 block">
+                                  {deck.cards.reduce((s, c) => s + (c.quantity ?? 1), 0)} cartas
+                                </span>
+                              )}
+                            </span>
                           </button>
                           <button
                             type="button"
-                            className="mt-auto w-full py-1.5 text-[11px] font-semibold bg-black/35 hover:bg-black/50 border-t border-white/10 text-purple-200 hover:text-white transition-colors"
+                            className="w-full py-1.5 text-[11px] font-semibold bg-black/35 hover:duel-modal-scrim border-t border-white/10 text-fuchsia-200 hover:text-white transition-colors"
                             onClick={(e) => {
                               e.stopPropagation();
                               setAnimeDeckPreview(deck);
@@ -1081,318 +1296,210 @@ export default function RandomDuelPage() {
                             Ver cartas
                           </button>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Card do duelista + botão em frente */}
-            <div className="relative mx-auto mb-3 sm:mb-4 w-full max-w-sm">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="w-full rounded-xl border border-purple-500/25 bg-transparent backdrop-blur-md shadow-xl shadow-purple-950/20 overflow-hidden"
-            >
-              <div className="p-3 sm:p-4 space-y-3 sm:space-y-4">
-                {/* Avatar + identidade (sempre em linha em telas médias+) */}
-                <div className="flex flex-row gap-3 sm:gap-4 items-center text-left">
-                  <div className="relative flex-shrink-0">
-                    <motion.div
-                      animate={{
-                        scale: [1, 1.04, 1],
-                        boxShadow: [
-                          '0 0 18px rgba(139, 92, 246, 0.25)',
-                          '0 0 28px rgba(139, 92, 246, 0.45)',
-                          '0 0 18px rgba(139, 92, 246, 0.25)',
-                        ],
-                      }}
-                      transition={{ duration: 2, repeat: Infinity }}
-                      className="absolute -inset-1 rounded-full bg-purple-500/35 blur-md"
-                    />
-                    <img
-                      src={getProfileImageUrl(user.profileImage)}
-                      alt={user.nickname}
-                      className="relative h-[4.5rem] w-[4.5rem] sm:h-[5.25rem] sm:w-[5.25rem] rounded-full border-2 border-purple-400/80 object-cover shadow-lg ring-2 ring-black/40"
-                      onError={(e) => {
-                        e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
-                      }}
-                    />
+                      );
+                    })}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-lg sm:text-xl font-bold leading-tight text-white break-words">
-                      {user.clanTag ? (
-                        <>
-                          <span className="text-purple-300/90">|{user.clanTag}|</span>{' '}
-                          <span className="bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text text-transparent">
-                            {user.nickname}
-                          </span>
-                        </>
-                      ) : (
+                )}
+              </div>
+            )}
+
+            {/* Painel principal: duelista + deck + stats */}
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.08 }}
+              className="rounded-2xl border border-purple-500/30 bg-gradient-to-b from-purple-950/50 via-slate-950/60 to-black/50 backdrop-blur-md shadow-xl shadow-purple-950/25 overflow-hidden"
+            >
+              {/* Player header + deck ao lado do nick */}
+              <div className="flex items-center gap-2.5 sm:gap-3 px-4 sm:px-5 py-3.5 border-b border-white/8">
+                <div className="relative shrink-0">
+                  <motion.div
+                    animate={{ opacity: [0.4, 0.75, 0.4] }}
+                    transition={{ duration: 2.4, repeat: Infinity }}
+                    className="absolute -inset-1 rounded-full bg-purple-500/30 blur-md"
+                  />
+                  <img
+                    src={getProfileImageUrl(user.profileImage)}
+                    alt={user.nickname}
+                    className="relative h-14 w-14 sm:h-16 sm:w-16 rounded-full border-2 border-purple-400/80 object-cover shadow-lg"
+                    onError={(e) => {
+                      e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
+                    }}
+                  />
+                </div>
+
+                <div className="min-w-0 flex-1 text-left">
+                  <h3 className="text-base sm:text-lg font-bold leading-tight text-white truncate">
+                    {user.clanTag ? (
+                      <>
+                        <span className="text-purple-300/90">|{user.clanTag}|</span>{' '}
                         <span className="bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text text-transparent">
                           {user.nickname}
                         </span>
-                      )}
-                    </h3>
-                    {levelRange && (
-                      <div className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-lg border border-purple-500/35 bg-purple-500/10 px-2 py-1">
-                        <span className="text-[10px] sm:text-xs font-medium text-white/55">Faixa de nível</span>
-                        <span className="truncate text-xs sm:text-sm font-bold text-purple-200">{levelRange.name}</span>
-                      </div>
+                      </>
+                    ) : (
+                      <span className="bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text text-transparent">
+                        {user.nickname}
+                      </span>
                     )}
+                  </h3>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    {levelRange && (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-purple-500/35 bg-purple-500/10 px-1.5 py-0.5 text-[10px] text-purple-100">
+                        <span className="text-white/45">{t('randomDuel.levelRange')}</span>
+                        <span className="font-semibold">{levelRange.name}</span>
+                      </span>
+                    )}
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${
+                        isConnected
+                          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                          : 'border-red-500/40 bg-red-500/10 text-red-300'
+                      }`}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-red-400'}`}
+                      />
+                      {isConnected ? t('randomDuel.connected') : t('randomDuel.disconnected')}
+                    </span>
                   </div>
                 </div>
 
-                {/* Deck + botão procurar (botão fora do card do deck, à direita, maior) */}
-                {duelMode === 'normal' ? (
-                  <div className="min-w-0 rounded-xl border border-white/10 bg-black/25 p-2">
-                      <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-white/45">
-                        Deck Equipado
-                      </p>
-                      {myDecksLoading ? (
-                        <p className="text-gray-400 text-xs py-1.5">Carregando decks…</p>
-                      ) : myDecks.length === 0 ? (
-                        <p className="text-amber-400/90 text-xs py-1.5">Crie um deck no Deck Builder.</p>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          {(() => {
-                            const equippedDeck = myDecks.find((d) => d.id === user?.equippedDeckId);
-                            const mainDeckCount = equippedDeck ? (equippedDeck.cards?.filter((c) => !c.isExtraDeck).length ?? 0) : 0;
-                            const coverCard = equippedDeck
-                              ? (equippedDeck.coverCard ?? equippedDeck.cards?.[0]?.card ?? null)
-                              : null;
-                            const ok = equippedDeck && mainDeckCount >= 40;
-                            return (
-                              <>
-                                <div
-                                  className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-lg border px-2 py-1.5 ${
-                                    ok
-                                      ? 'border-purple-400/50 bg-transparent'
-                                      : 'border-dashed border-gray-600 bg-gray-800/30'
-                                  }`}
-                                >
-                                  {ok && coverCard ? (
-                                    <div className="relative w-[3.25rem] shrink-0 overflow-hidden rounded border border-white/15 bg-black/40 aspect-[59/86] sm:w-[3.625rem]">
-                                      <CardImage
-                                        card={coverCard}
-                                        className="absolute inset-0 h-full w-full min-h-0"
-                                        style={{ backgroundSize: 'cover', backgroundPosition: 'top center' }}
-                                        fallback="/images/fundoCarta.webp"
-                                      />
-                                    </div>
-                                  ) : ok ? (
-                                    <div className="flex w-[3.25rem] shrink-0 items-center justify-center rounded border border-white/10 bg-gray-700 text-base aspect-[59/86] sm:w-[3.625rem]">
-                                      🃏
-                                    </div>
-                                  ) : null}
-                                  <div className="min-w-0 w-full px-0.5 text-center">
-                                    {ok && equippedDeck ? (
-                                      <p className="line-clamp-2 text-xs font-semibold leading-tight text-white sm:text-sm">
-                                        {equippedDeck.name}
-                                      </p>
-                                    ) : (
-                                      <p className="text-[11px] leading-snug text-gray-400 sm:text-xs">
-                                        {equippedDeck && mainDeckCount < 40
-                                          ? `"${equippedDeck.name}" precisa de no mínimo 40 cartas.`
-                                          : 'Nenhum deck equipado.'}
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => setShowDeckPicker(true)}
-                                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-purple-500/45 bg-purple-500/10 text-lg font-bold leading-none text-purple-200 transition-all hover:border-purple-400 hover:bg-purple-500/20 sm:h-11 sm:w-11"
-                                  title="Trocar deck"
-                                  aria-label="Trocar deck equipado"
-                                >
-                                  +
-                                </button>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      )}
-                  </div>
-                ) : (
-                  <div className="min-w-0 rounded-xl border border-white/10 bg-black/25 p-2">
-                    <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-white/45">
-                      Deck anime
+                {/* Deck na frente do nick (ao lado direito) */}
+                {(duelMode === 'casual' || duelMode === 'ranked') ? (
+                  myDecksLoading ? (
+                    <span className="text-[10px] text-gray-400 shrink-0">...</span>
+                  ) : myDecks.length === 0 ? null : (
+                    <div className="flex items-end gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setShowDeckPicker(true)}
+                        title={equippedDeckInfo.deck?.name ?? t('randomDuel.noDeck')}
+                        aria-label="Trocar deck equipado"
+                        className={`relative w-[3.25rem] sm:w-14 shrink-0 overflow-hidden rounded border aspect-[59/86] transition-all ${
+                          equippedDeckInfo.isValid
+                            ? 'border-purple-400/55 hover:border-purple-300 hover:brightness-110'
+                            : 'border-dashed border-amber-500/50 bg-gray-800/60'
+                        }`}
+                      >
+                        {equippedDeckInfo.isValid && equippedDeckInfo.coverCard ? (
+                          <CardImage
+                            card={equippedDeckInfo.coverCard}
+                            className="absolute inset-0 h-full w-full min-h-0"
+                            style={{ backgroundSize: 'cover', backgroundPosition: 'top center' }}
+                            fallback="/images/fundoCarta.webp"
+                          />
+                        ) : (
+                          <span className="absolute inset-0 flex items-center justify-center text-sm text-white/50">
+                            🃏
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowDeckPicker(true)}
+                        className="mb-0.5 flex h-6 w-6 items-center justify-center rounded border border-purple-500/45 bg-purple-500/10 text-xs font-bold text-purple-200 hover:bg-purple-500/20"
+                        aria-label="Trocar deck"
+                      >
+                        +
+                      </button>
+                    </div>
+                  )
+                ) : selectedAnimeDeck ? (
+                  <button
+                    type="button"
+                    onClick={() => setAnimeDeckPreview(selectedAnimeDeck)}
+                    title={selectedAnimeDeck.name}
+                    className="relative w-[3.25rem] sm:w-14 shrink-0 overflow-hidden rounded border border-fuchsia-400/50 aspect-[59/86] hover:brightness-110 transition-all"
+                  >
+                    {selectedAnimeDeck.coverCard ? (
+                      <CardImage
+                        card={selectedAnimeDeck.coverCard}
+                        className="absolute inset-0 h-full w-full min-h-0"
+                        style={{ backgroundSize: 'cover', backgroundPosition: 'top center' }}
+                        fallback="/images/fundoCarta.webp"
+                      />
+                    ) : (
+                      <span className="absolute inset-0 flex items-center justify-center text-sm text-white/50">
+                        🃏
+                      </span>
+                    )}
+                  </button>
+                ) : null}
+
+                {duelMode === 'ranked' && (
+                  <div className="shrink-0 rounded-lg border border-amber-500/35 bg-amber-500/10 px-2 py-1.5 text-center">
+                    <p className="text-[8px] uppercase tracking-wide text-amber-200/70">
+                      {t('randomDuel.rankedPoints')}
                     </p>
-                    {(() => {
-                      const sel = animeDecks.find((d) => d.id === selectedAnimeDeckId);
-                      if (!sel) {
-                        return <p className="text-xs text-gray-400">Selecione um deck na lista acima.</p>;
-                      }
-                      const cc = sel.coverCard;
-                      return (
-                        <div className="flex flex-col items-center gap-1 py-0.5 text-center">
-                          {cc ? (
-                            <div className="relative w-[3.25rem] shrink-0 overflow-hidden rounded border border-white/15 bg-black/40 aspect-[59/86] sm:w-[3.625rem]">
-                              <CardImage
-                                card={cc}
-                                className="absolute inset-0 h-full w-full min-h-0"
-                                style={{ backgroundSize: 'cover', backgroundPosition: 'top center' }}
-                                fallback="/images/fundoCarta.webp"
-                              />
-                            </div>
-                          ) : (
-                            <div className="flex w-[3.25rem] shrink-0 items-center justify-center rounded border border-white/10 bg-gray-700 text-base aspect-[59/86] sm:w-[3.625rem]">
-                              🃏
-                            </div>
-                          )}
-                          <p className="line-clamp-2 w-full text-xs font-semibold leading-tight text-white sm:text-sm">
-                            {sel.name}
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => setAnimeDeckPreview(sel)}
-                            className="mt-1 text-[10px] font-semibold text-purple-300 hover:text-purple-100 underline underline-offset-2"
-                          >
-                            Ver cartas do deck
-                          </button>
-                        </div>
-                      );
-                    })()}
+                    <p className="text-base sm:text-lg font-bold tabular-nums text-amber-300 leading-none mt-0.5">
+                      {rankedStats?.rankedPoints ?? user.rankedPoints ?? 1000}
+                    </p>
                   </div>
                 )}
+              </div>
 
-                {/* Estatísticas Random */}
-                <div>
-                  <p className="mb-2 text-[10px] sm:text-xs font-medium uppercase tracking-wide text-white/45">
-                    Histórico no Random
-                  </p>
-                  <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
-                    <motion.div
-                      whileHover={{ scale: 1.02 }}
-                      className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-2 py-2 text-center sm:px-2.5 sm:py-2.5"
-                    >
-                      <span className="block text-[10px] font-medium text-amber-200/70">Duelos</span>
-                      <span className="text-base font-bold tabular-nums text-amber-300 sm:text-lg">
-                        {randomStats?.total ?? 0}
-                      </span>
-                    </motion.div>
-                    <motion.div
-                      whileHover={{ scale: 1.02 }}
-                      className="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-center sm:px-2.5 sm:py-2.5"
-                    >
-                      <span className="block text-[10px] font-medium text-white/55">Vit / Der</span>
-                      <span className="text-sm font-bold tabular-nums sm:text-base">
-                        <span className="text-emerald-400">{randomStats?.wins ?? 0}</span>
-                        <span className="text-white/35"> / </span>
-                        <span className="text-rose-400">{randomStats?.losses ?? 0}</span>
-                      </span>
-                    </motion.div>
-                    <motion.div
-                      whileHover={{ scale: 1.02 }}
-                      className="rounded-lg border border-purple-500/25 bg-purple-500/10 px-2 py-2 text-center sm:px-2.5 sm:py-2.5"
-                    >
-                      <span className="block text-[10px] font-medium text-purple-200/70">Aproveit.</span>
-                      <span className="text-base font-bold tabular-nums text-purple-200 sm:text-lg">
-                        {(() => {
-                          const total = randomStats?.total ?? 0;
-                          const wins = randomStats?.wins ?? 0;
-                          return total > 0 ? Math.round((wins / total) * 100) : 0;
-                        })()}
-                        %
-                      </span>
-                    </motion.div>
+              {/* Stats */}
+              <div className="px-4 sm:px-5 py-3.5">
+                <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-wider text-white/40 text-left">
+                  {duelMode === 'ranked'
+                    ? t('randomDuel.rankedHistory')
+                    : t('randomDuel.casualHistory')}
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] px-2 py-2.5 text-center">
+                    <p className="text-[10px] text-white/45">Duelos</p>
+                    <p className="mt-0.5 text-lg font-bold tabular-nums text-white">{statsTotal}</p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] px-2 py-2.5 text-center">
+                    <p className="text-[10px] text-white/45">Vit / Der</p>
+                    <p className="mt-0.5 text-lg font-bold tabular-nums">
+                      <span className="text-emerald-400">{statsWins}</span>
+                      <span className="text-white/30"> / </span>
+                      <span className="text-rose-400">{statsLosses}</span>
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] px-2 py-2.5 text-center">
+                    <p className="text-[10px] text-white/45">Aproveit.</p>
+                    <p className="mt-0.5 text-lg font-bold tabular-nums text-purple-200">{winRate}%</p>
                   </div>
                 </div>
               </div>
             </motion.div>
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.35 }}
-              className="pointer-events-none absolute inset-y-0 left-full z-20 hidden items-center pl-4 sm:flex md:pl-5"
-            >
-              <motion.button
-                type="button"
-                whileHover={
-                  duelMode === 'normal'
-                    ? (isConnected ? { scale: 1.03 } : {})
-                    : (isConnected && !!selectedAnimeDeckId && animeDecks.length > 0 ? { scale: 1.03 } : {})
-                }
-                whileTap={
-                  duelMode === 'normal'
-                    ? (isConnected ? { scale: 0.98 } : {})
-                    : (isConnected && !!selectedAnimeDeckId && animeDecks.length > 0 ? { scale: 0.98 } : {})
-                }
-                onClick={() => {
-                  if (!user?.id) return;
-                  const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
-                  if (duelMode === 'anime') {
-                    const opts = selectedAnimeDeckId ? { animeDeckId: selectedAnimeDeckId } : undefined;
-                    searchDuel(userId, opts);
-                    return;
-                  }
-                  searchDuel(userId, undefined);
-                }}
-                disabled={duelMode === 'anime' ? (!isConnected || !selectedAnimeDeckId || animeDecks.length === 0) : !isConnected}
-                className="pointer-events-auto border-0 bg-transparent p-0 shadow-none transition-opacity duration-200 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-xl"
-                aria-label="Procurar duelo"
-              >
-                <img
-                  src="/images/ProcurarDuelo.png"
-                  alt=""
-                  className="block h-auto w-[15.5rem] max-w-[64vw] object-contain select-none drop-shadow-[0_12px_34px_rgba(0,0,0,0.62)] md:w-[17.5rem] lg:w-[19rem]"
-                  draggable={false}
-                />
-              </motion.button>
-            </motion.div>
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.35 }}
-              className="mt-2 flex w-full justify-center sm:hidden"
-            >
-              <motion.button
-                type="button"
-                whileHover={
-                  duelMode === 'normal'
-                    ? (isConnected ? { scale: 1.03 } : {})
-                    : (isConnected && !!selectedAnimeDeckId && animeDecks.length > 0 ? { scale: 1.03 } : {})
-                }
-                whileTap={
-                  duelMode === 'normal'
-                    ? (isConnected ? { scale: 0.98 } : {})
-                    : (isConnected && !!selectedAnimeDeckId && animeDecks.length > 0 ? { scale: 0.98 } : {})
-                }
-                onClick={() => {
-                  if (!user?.id) return;
-                  const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
-                  if (duelMode === 'anime') {
-                    const opts = selectedAnimeDeckId ? { animeDeckId: selectedAnimeDeckId } : undefined;
-                    searchDuel(userId, opts);
-                    return;
-                  }
-                  searchDuel(userId, undefined);
-                }}
-                disabled={duelMode === 'anime' ? (!isConnected || !selectedAnimeDeckId || animeDecks.length === 0) : !isConnected}
-                className="border-0 bg-transparent p-0 shadow-none transition-opacity duration-200 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-xl"
-                aria-label="Procurar duelo"
-              >
-                <img
-                  src="/images/ProcurarDuelo.png"
-                  alt=""
-                  className="block h-auto w-[14.5rem] max-w-[80vw] object-contain select-none drop-shadow-[0_12px_34px_rgba(0,0,0,0.62)]"
-                  draggable={false}
-                />
-              </motion.button>
-            </motion.div>
-            </div>
 
+            {/* CTA procurar — centralizado */}
+            <div className="flex flex-col items-center gap-2 pt-1 pb-2">
+              <motion.button
+                type="button"
+                whileHover={canSearch ? { scale: 1.04 } : {}}
+                whileTap={canSearch ? { scale: 0.97 } : {}}
+                onClick={startQueueSearch}
+                disabled={!canSearch}
+                className="border-0 bg-transparent p-0 shadow-none transition-opacity duration-200 disabled:cursor-not-allowed disabled:opacity-45 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-xl"
+                aria-label="Procurar duelo"
+              >
+                <img
+                  src="/images/ProcurarDuelo.png"
+                  alt=""
+                  className="block h-auto w-[15rem] sm:w-[17rem] md:w-[18.5rem] max-w-[85vw] object-contain select-none drop-shadow-[0_14px_36px_rgba(0,0,0,0.65)]"
+                  draggable={false}
+                />
+              </motion.button>
+              {!isConnected && (
+                <p className="text-xs text-red-300/90">Conecte-se para procurar um duelo.</p>
+              )}
+              {isConnected && duelMode === 'anime' && !selectedAnimeDeckId && (
+                <p className="text-xs text-amber-300/90">Escolha um deck anime para começar.</p>
+              )}
+            </div>
           </motion.div>
         )}
       </div>
 
       {/* Modal: escolher deck para duelar */}
-      {showDeckPicker && duelMode === 'normal' && (
+      {showDeckPicker && (duelMode === 'casual' || duelMode === 'ranked') && (
         <div
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 duel-modal-scrim z-50 flex items-center justify-center p-4"
           onClick={() => setShowDeckPicker(false)}
           role="dialog"
           aria-modal="true"
@@ -1419,9 +1526,9 @@ export default function RandomDuelPage() {
             </div>
             <div className="p-3 overflow-y-auto flex-1 min-h-0">
               {myDecksLoading ? (
-                <p className="text-gray-400 text-sm text-center py-4">Carregando...</p>
+                <p className="text-gray-400 text-sm text-center py-4">{t('common.loading')}</p>
               ) : myDecks.length === 0 ? (
-                <p className="text-amber-400 text-sm text-center py-4">Nenhum deck. Crie um no Deck Builder.</p>
+                <p className="text-amber-400 text-sm text-center py-4">{t('randomDuel.noDeck')}</p>
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   {myDecks.map((deck) => {
@@ -1479,10 +1586,10 @@ export default function RandomDuelPage() {
                           {mainDeckCount} cartas{mainDeckCount < 40 && !isEquipped ? ' (mín. 40)' : ''}
                         </span>
                         {isEquipped && (
-                          <span className="text-[10px] text-purple-300 font-medium mt-0.5">Equipado</span>
+                          <span className="text-[10px] text-purple-300 font-medium mt-0.5">{t('randomDuel.equipped')}</span>
                         )}
                         {equippingDeckId === deck.id && !isEquipped && (
-                          <span className="text-[10px] text-amber-400 mt-0.5">Equipando...</span>
+                          <span className="text-[10px] text-amber-400 mt-0.5">{t('randomDuel.equipping')}</span>
                         )}
                       </button>
                     );
@@ -1497,7 +1604,7 @@ export default function RandomDuelPage() {
       {/* Modal: composição do deck anime */}
       {animeDeckPreview && (
         <div
-          className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-stretch justify-center p-0 sm:p-2 md:p-3"
+          className="fixed inset-0 duel-modal-scrim z-50 flex items-stretch justify-center p-0 sm:p-2 md:p-3"
           onClick={() => setAnimeDeckPreview(null)}
           role="dialog"
           aria-modal="true"
@@ -1525,7 +1632,7 @@ export default function RandomDuelPage() {
                 type="button"
                 onClick={() => setAnimeDeckPreview(null)}
                 className="flex-shrink-0 text-gray-400 hover:text-white transition-colors text-2xl font-bold leading-none px-2 py-1"
-                aria-label="Fechar"
+                aria-label={t('common.close')}
               >
                 ×
               </button>

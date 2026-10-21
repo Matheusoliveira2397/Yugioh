@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ShopService } from './shop.service';
 import { ShopController } from './shop.controller';
@@ -14,6 +14,7 @@ import { DeckCard } from '../decks/entities/deck-card.entity';
 import { EconomyModule } from '../economy/economy.module';
 import { CosmeticsModule } from '../cosmetics/cosmetics.module';
 import { PromotionsModule } from '../promotions/promotions.module';
+import { MissionsModule } from '../missions/missions.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { PromotionsModule } from '../promotions/promotions.module';
     EconomyModule,
     CosmeticsModule,
     PromotionsModule,
+    forwardRef(() => MissionsModule),
   ],
   controllers: [ShopController],
   providers: [ShopService],

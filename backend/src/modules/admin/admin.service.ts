@@ -176,6 +176,9 @@ export class AdminService implements OnModuleInit {
           CREATE TABLE "duel_score_settings" (
             "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
             "scoreRandom" NUMERIC(10,2) NOT NULL DEFAULT 1.7,
+            "scoreRanked" NUMERIC(10,2) NOT NULL DEFAULT 2.0,
+            "rankedPointsOnWin" INTEGER NOT NULL DEFAULT 25,
+            "rankedPointsOnLoss" INTEGER NOT NULL DEFAULT 20,
             "scoreChat" NUMERIC(10,2) NOT NULL DEFAULT 1.0,
             "scoreTournament" NUMERIC(10,2) NOT NULL DEFAULT 10.0,
             "scoreArena" NUMERIC(10,2) NOT NULL DEFAULT 2.0,
@@ -185,8 +188,8 @@ export class AdminService implements OnModuleInit {
           )
         `);
         await this.duelScoreSettingsRepository.query(`
-          INSERT INTO duel_score_settings ("scoreRandom","scoreChat","scoreTournament","scoreArena","scoreOther","createdAt","updatedAt")
-          VALUES (1.7, 1.0, 10.0, 2.0, 1.0, NOW(), NOW())
+          INSERT INTO duel_score_settings ("scoreRandom","scoreRanked","rankedPointsOnWin","rankedPointsOnLoss","scoreChat","scoreTournament","scoreArena","scoreOther","createdAt","updatedAt")
+          VALUES (1.7, 2.0, 25, 20, 1.0, 10.0, 2.0, 1.0, NOW(), NOW())
         `);
         console.log('✅ [AdminService] Tabela duel_score_settings criada');
       }
@@ -1208,17 +1211,23 @@ export class AdminService implements OnModuleInit {
     const defaultTabs = [
       { key: 'home', label: 'Home', route: '/', icon: '/images/Icones/Home.png', order: 0, isActive: true },
       { key: 'chat', label: 'Chat', route: '/chat', icon: '/images/Icones/Chat.png', order: 1, isActive: true },
-      { key: 'random-duel', label: 'Random Duel', route: '/random-duel', icon: '/images/Icones/Random Duel.png', order: 2, isActive: true },
+      { key: 'random-duel', label: 'Random Duel', route: '/random-duel', icon: '/images/Icones/RandomDuel.png', order: 2, isActive: true },
       { key: 'random-anime', label: 'Random Anime', route: '/random-duel', icon: '🎬', order: 2, isActive: true },
-      { key: 'arena', label: 'Arena', route: '/arena', icon: '⚔', order: 3, isActive: true },
+      { key: 'arena', label: 'Arena', route: '/arena', icon: '/images/Icones/Arena.png', order: 3, isActive: true },
       { key: 'tournaments', label: 'Torneios', route: '/tournaments', icon: '/images/Icones/Torneio.png', order: 4, isActive: true },
       { key: 'groups', label: 'Clãs', route: '/groups', icon: '/images/Icones/Cla.png', order: 5, isActive: true },
       { key: 'ranking', label: 'Ranking', route: '/ranking', icon: '/images/Icones/Ranking.png', order: 6, isActive: true },
-      { key: 'missions', label: 'Missões', route: '/missions', icon: '✦', order: 7, isActive: true },
-      { key: 'drops', label: 'Drops', route: '/drops', icon: '✨', order: 8, isActive: true },
-      { key: 'shop', label: 'Loja', route: '/shop', icon: '🛍', order: 9, isActive: true },
-      { key: 'marketplace-accounts', label: 'Contas', route: '/marketplace/accounts', icon: '👤', order: 10, isActive: true },
-      { key: 'marketplace-cards', label: 'Cartas', route: '/marketplace/cards', icon: '🃏', order: 11, isActive: true },
+      { key: 'missions', label: 'Missões', route: '/missions', icon: '/images/Icones/Missoes.png', order: 7, isActive: true },
+      { key: 'battle-pass', label: 'Passe', route: '/battle-pass', icon: '/images/Icones/Passe.png', order: 7, isActive: true },
+      { key: 'redeem-code', label: 'Códigos', route: '/redeem', icon: '/images/Icones/Codigos.png', order: 8, isActive: true },
+      { key: 'drops', label: 'Drops', route: '/drops', icon: '/images/Icones/Drops.png', order: 8, isActive: true },
+      { key: 'shop', label: 'Loja', route: '/shop', icon: '/images/Icones/Shop.png', order: 9, isActive: true },
+      { key: 'collection', label: 'Coleção', route: '/collection', icon: '/images/Icones/Colecao.png', order: 9, isActive: true },
+      { key: 'marketplace-accounts', label: 'Contas', route: '/marketplace/accounts', icon: '/images/Icones/Contas.png', order: 10, isActive: true },
+      { key: 'marketplace-cards', label: 'Cartas', route: '/marketplace/cards', icon: '/images/Icones/Cartas.png', order: 11, isActive: true },
+      { key: 'credits', label: 'Créditos', route: '/credit', icon: '/images/Icones/Credito.png', order: 12, isActive: true },
+      { key: 'patch-notes', label: 'Patch Notes', route: '/patch-notes', icon: '/images/Icones/PatchNotes.png', order: 85, isActive: true },
+      { key: 'help-support', label: 'Ajuda', route: '/help', icon: '/images/Icones/Ajuda.png', order: 88, isActive: true },
     ];
 
     for (const tabData of defaultTabs) {
@@ -2103,6 +2112,7 @@ export class AdminService implements OnModuleInit {
     return {
       [DuelOrigin.RANDOM]: scoreRandom,
       [DuelOrigin.RANDOM_ANIME]: scoreRandom,
+      [DuelOrigin.RANKED]: Number(row.scoreRanked) || 2.0,
       [DuelOrigin.CHAT]: Number(row.scoreChat) || 1.0,
       [DuelOrigin.TOURNAMENT]: Number(row.scoreTournament) || 10.0,
       [DuelOrigin.ARENA]: Number(row.scoreArena) || 2.0,
@@ -2110,11 +2120,32 @@ export class AdminService implements OnModuleInit {
     };
   }
 
-  /** Retorna a linha de configuração para o painel admin (scoreRandom, scoreChat, ...). */
-  async getDuelScoreSettingsForAdmin(): Promise<{ scoreRandom: number; scoreChat: number; scoreTournament: number; scoreArena: number; scoreOther: number }> {
+  /** Pontos ranqueados (sobe/desce) configuráveis no admin. */
+  async getRankedPointsSettings(): Promise<{ onWin: number; onLoss: number }> {
+    const row = await this.ensureDuelScoreSettingsRow();
+    return {
+      onWin: Math.max(0, Math.floor(Number(row.rankedPointsOnWin) || 25)),
+      onLoss: Math.max(0, Math.floor(Number(row.rankedPointsOnLoss) || 20)),
+    };
+  }
+
+  /** Retorna a linha de configuração para o painel admin. */
+  async getDuelScoreSettingsForAdmin(): Promise<{
+    scoreRandom: number;
+    scoreRanked: number;
+    rankedPointsOnWin: number;
+    rankedPointsOnLoss: number;
+    scoreChat: number;
+    scoreTournament: number;
+    scoreArena: number;
+    scoreOther: number;
+  }> {
     const row = await this.ensureDuelScoreSettingsRow();
     return {
       scoreRandom: Number(row.scoreRandom) || 1.7,
+      scoreRanked: Number(row.scoreRanked) || 2.0,
+      rankedPointsOnWin: Number(row.rankedPointsOnWin) || 25,
+      rankedPointsOnLoss: Number(row.rankedPointsOnLoss) || 20,
       scoreChat: Number(row.scoreChat) || 1.0,
       scoreTournament: Number(row.scoreTournament) || 10.0,
       scoreArena: Number(row.scoreArena) || 2.0,
@@ -2127,6 +2158,9 @@ export class AdminService implements OnModuleInit {
     if (!row) {
       row = this.duelScoreSettingsRepository.create({
         scoreRandom: 1.7,
+        scoreRanked: 2.0,
+        rankedPointsOnWin: 25,
+        rankedPointsOnLoss: 20,
         scoreChat: 1.0,
         scoreTournament: 10.0,
         scoreArena: 2.0,
@@ -2140,6 +2174,9 @@ export class AdminService implements OnModuleInit {
   /** Atualizar score por tipo de duelo (admin). */
   async updateDuelScoreSettings(dto: {
     scoreRandom?: number;
+    scoreRanked?: number;
+    rankedPointsOnWin?: number;
+    rankedPointsOnLoss?: number;
     scoreChat?: number;
     scoreTournament?: number;
     scoreArena?: number;
@@ -2147,6 +2184,13 @@ export class AdminService implements OnModuleInit {
   }): Promise<DuelScoreSettings> {
     const row = await this.ensureDuelScoreSettingsRow();
     if (dto.scoreRandom != null) row.scoreRandom = Number(dto.scoreRandom);
+    if (dto.scoreRanked != null) row.scoreRanked = Number(dto.scoreRanked);
+    if (dto.rankedPointsOnWin != null) {
+      row.rankedPointsOnWin = Math.max(0, Math.floor(Number(dto.rankedPointsOnWin)));
+    }
+    if (dto.rankedPointsOnLoss != null) {
+      row.rankedPointsOnLoss = Math.max(0, Math.floor(Number(dto.rankedPointsOnLoss)));
+    }
     if (dto.scoreChat != null) row.scoreChat = Number(dto.scoreChat);
     if (dto.scoreTournament != null) row.scoreTournament = Number(dto.scoreTournament);
     if (dto.scoreArena != null) row.scoreArena = Number(dto.scoreArena);

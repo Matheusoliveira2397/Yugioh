@@ -16,6 +16,7 @@ import { UsersModule } from '../users/users.module';
 import { ShopModule } from '../shop/shop.module';
 import { User } from '../users/entities/user.entity';
 import { TournamentRankingService } from './tournament-ranking.service';
+import { MissionsModule } from '../missions/missions.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { TournamentRankingService } from './tournament-ranking.service';
     forwardRef(() => DuelsModule),
     UsersModule,
     ShopModule,
+    MissionsModule,
   ],
   controllers: [TournamentsController, TournamentTypesController],
   providers: [TournamentsService, TournamentTypesService, TournamentRankingService, TournamentsDbMigrationService],

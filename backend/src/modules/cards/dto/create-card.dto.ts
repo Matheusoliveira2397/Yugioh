@@ -5,7 +5,6 @@ import {
   IsOptional, 
   IsInt, 
   IsBoolean, 
-  IsNumber, 
   Min, 
   Max
 } from 'class-validator';
@@ -114,9 +113,9 @@ export class CreateCardDto {
   priceCredits?: number; // Preço em créditos (moeda premium)
 
   @IsOptional()
-  @IsNumber()
+  @IsInt()
   @Min(0)
-  priceCash?: number; // Preço em dinheiro real
+  priceCash?: number; // Preço em cash (inteiro, sem centavos)
 
   @IsOptional()
   @IsBoolean()

@@ -12,6 +12,7 @@ import { ShopService } from '../shop/shop.service';
 import { DuelsGateway } from '../duels/duels.gateway';
 import { GroupsService } from '../groups/groups.service';
 import { SeasonsService } from '../seasons/seasons.service';
+import { MissionsService } from '../missions/missions.service';
 
 @Injectable()
 export class ArenaService implements OnModuleInit {
@@ -35,6 +36,7 @@ export class ArenaService implements OnModuleInit {
     private groupsService: GroupsService,
     @Inject(forwardRef(() => SeasonsService))
     private seasonsService: SeasonsService,
+    private missionsService: MissionsService,
   ) {}
 
   async onModuleInit() {
@@ -680,6 +682,15 @@ export class ArenaService implements OnModuleInit {
           const position = i + 1; // 1, 2, 3, 4, 5
           const rewardKey = `top${position}` as 'top1' | 'top2' | 'top3' | 'top4' | 'top5';
           const reward = levelRangeReward[rewardKey];
+
+          try {
+            await this.missionsService.trackArenaTop(player.userId, position);
+          } catch (missionErr: any) {
+            console.warn(
+              `[distributeArenaRewards] Erro ao atualizar missão de top arena:`,
+              missionErr?.message || missionErr,
+            );
+          }
 
           if (reward) {
             const user = await this.userRepository.findOne({ where: { id: player.userId } });

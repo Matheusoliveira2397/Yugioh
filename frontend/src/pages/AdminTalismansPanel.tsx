@@ -421,30 +421,24 @@ export default function AdminTalismansPanel() {
                 key={t.id}
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className={`bg-gray-800 rounded-lg overflow-hidden shadow-xl border-2 ${
-                  t.isActive ? 'border-amber-500/30' : 'border-red-500/30'
+                className={`flex flex-col gap-3 pb-6 border-b border-gray-700 last:border-0 ${
+                  t.isActive ? '' : 'opacity-80'
                 }`}
               >
-                <div
-                  className={`h-32 flex items-center justify-center ${
-                    t.isActive ? 'bg-gradient-to-br from-amber-900 to-yellow-900' : 'bg-gray-700'
-                  }`}
-                >
+                <div className="aspect-square w-full max-w-[200px] mx-auto flex items-center justify-center">
                   {t.image ? (
                     <img
                       src={t.image.startsWith('http') ? t.image : `${API_URL}${t.image}`}
-                      alt={t.name}
-                      className="h-full w-full object-cover"
+                      alt=""
+                      className="max-w-full max-h-full w-auto h-auto object-contain"
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = 'none';
                       }}
                     />
-                  ) : (
-                    <span className="text-5xl">✨</span>
-                  )}
+                  ) : null}
                 </div>
-                <div className="p-4">
-                  <h3 className="text-lg font-bold mb-2">{t.name}</h3>
+                <h3 className="text-lg font-bold text-center text-white">{t.name}</h3>
+                <div className="space-y-3">
                   {t.description && (
                     <p className="text-sm text-gray-400 mb-3 line-clamp-2">{t.description}</p>
                   )}

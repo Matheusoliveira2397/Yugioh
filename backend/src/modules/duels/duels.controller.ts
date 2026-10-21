@@ -1353,6 +1353,26 @@ export class DuelsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('stats/ranked/my')
+  async getMyRankedStats(@Request() req: any) {
+    try {
+      const userId = req.user.id;
+      const stats = await this.duelsService.getRankedDuelStats(userId);
+      return { success: true, ...stats };
+    } catch (error: any) {
+      console.error(`❌ [getMyRankedStats] Erro:`, error);
+      return {
+        success: false,
+        message: error.message || 'Erro ao buscar estatísticas ranqueadas',
+        total: 0,
+        wins: 0,
+        losses: 0,
+        rankedPoints: 1000,
+      };
+    }
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('stats/:userId')
   async getUserStats(
     @Param('userId') userId: string,

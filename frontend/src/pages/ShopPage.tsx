@@ -1,12 +1,15 @@
 import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
 import api from '../api/axios';
 import CardImage from '../components/CardImage';
+import DeckCopyLimitBadge from '../components/DeckCopyLimitBadge';
 import LatestCardsMarquee, { type MarqueeCard } from '../components/LatestCardsMarquee';
 import { CARD_IMAGE_GRID_PROPS } from '../utils/cardImage';
 import { useCosmeticsStore } from '../stores/cosmeticsStore';
 import { getCardDescription } from '../utils/cardDescription';
+import { useI18n } from '../i18n/I18nContext';
 
 interface Card {
   id: string;
@@ -32,6 +35,7 @@ interface Card {
   promotionEndsAt?: string;
   promotionLabel?: string | null;
   isForSale: boolean;
+  maxCopiesInDeck?: number;
   stock?: number;
   rating?: number;
   reviews?: number;
@@ -56,7 +60,18 @@ interface Sleeve {
   stock?: number;
 }
 
-type SortOption = 'name' | 'priceAsc' | 'priceDesc';
+type SortOption = 'name' | 'priceAsc' | 'priceDesc' | 'atkAsc' | 'atkDesc';
+
+function compareShopCardsByAtk(a: Card, b: Card, direction: 'asc' | 'desc'): number {
+  const tier = (c: Card) => (c.type === 'Monster' ? 0 : 1);
+  const t = tier(a) - tier(b);
+  if (t !== 0) return t;
+  const atkA = a.type === 'Monster' ? Number(a.atk ?? 0) : 0;
+  const atkB = b.type === 'Monster' ? Number(b.atk ?? 0) : 0;
+  const byAtk = direction === 'asc' ? atkA - atkB : atkB - atkA;
+  if (byAtk !== 0) return byAtk;
+  return a.name.localeCompare(b.name);
+}
 type CardTypeFilter = 'Monster' | 'Spell' | 'Trap';
 type MonsterTypeFilter = 'Normal' | 'Effect' | 'Fusion';
 interface TalismanTemplate {
@@ -89,6 +104,7 @@ interface MaletaTemplate {
 type ShopCategory = 'cards' | 'playmats' | 'sleeves' | 'talismans' | 'items';
 
 export default function ShopPage() {
+  const { t } = useI18n();
   const { user } = useAuthStore();
   const [mode, setMode] = useState<'buy' | 'sell'>('buy');
   /** null = tela inicial da loja (escolher categoria); senão mostra a categoria selecionada */
@@ -135,6 +151,8 @@ export default function ShopPage() {
   const [sortBy, setSortBy] = useState<SortOption>('name');
   const [priceMin, setPriceMin] = useState('');
   const [priceMax, setPriceMax] = useState('');
+  const [atkMin, setAtkMin] = useState('');
+  const [atkMax, setAtkMax] = useState('');
   const [typeFilters, setTypeFilters] = useState<CardTypeFilter[]>(['Monster', 'Spell', 'Trap']);
   const [attributeFilters, setAttributeFilters] = useState<string[]>([]);
   const [monsterTypeFilters, setMonsterTypeFilters] = useState<MonsterTypeFilter[]>([]);
@@ -157,6 +175,8 @@ export default function ShopPage() {
   }, []);
 
   // Buscar cartas da loja
+  // Destaques (category null): só lite/limit — evita baixar ~500 cartas na landing
+  // Aba Cartas: catálogo completo (com promoções)
   useEffect(() => {
     let cancelled = false;
     
@@ -164,9 +184,15 @@ export default function ShopPage() {
       try {
         setLoading(true);
         setError(null);
-        
+
+        const isFeaturedLanding = category === null;
         const response = await Promise.race([
-          api.get('/cards/shop/for-sale', { timeout: 20000 }),
+          api.get('/cards/shop/for-sale', {
+            timeout: 20000,
+            params: isFeaturedLanding
+              ? { limit: 24, lite: 1 }
+              : undefined,
+          }),
           new Promise((_, reject) => 
             setTimeout(() => reject(new Error('Timeout')), 20000)
           )
@@ -182,13 +208,8 @@ export default function ShopPage() {
           return;
         }
         
-        const cardsWithExtras = dataArray.map((card: any) => ({
-          ...card,
-          stock: Math.floor(Math.random() * 250) + 1,
-        }));
-        
         if (!cancelled) {
-          setCards(cardsWithExtras);
+          setCards(dataArray);
         }
       } catch (error: any) {
         if (!cancelled) {
@@ -422,6 +443,17 @@ export default function ShopPage() {
       filtered = filtered.filter(card => (card.priceCredits || 0) <= max);
     }
 
+    const atkFilterActive = (atkMin !== '' && atkMin != null) || (atkMax !== '' && atkMax != null);
+    if (atkFilterActive) {
+      filtered = filtered.filter((card) => {
+        if (card.type !== 'Monster') return true;
+        const atk = Number(card.atk ?? 0);
+        if (atkMin !== '' && !Number.isNaN(Number(atkMin)) && atk < Number(atkMin)) return false;
+        if (atkMax !== '' && !Number.isNaN(Number(atkMax)) && atk > Number(atkMax)) return false;
+        return true;
+      });
+    }
+
     filtered.sort((a, b) => {
       switch (sortBy) {
         case 'name':
@@ -430,13 +462,17 @@ export default function ShopPage() {
           return (a.priceCredits || 0) - (b.priceCredits || 0);
         case 'priceDesc':
           return (b.priceCredits || 0) - (a.priceCredits || 0);
+        case 'atkAsc':
+          return compareShopCardsByAtk(a, b, 'asc');
+        case 'atkDesc':
+          return compareShopCardsByAtk(a, b, 'desc');
         default:
           return 0;
       }
     });
 
     return filtered;
-  }, [cards, searchTerm, sortBy, priceMin, priceMax, typeFilters, attributeFilters, monsterTypeFilters]);
+  }, [cards, searchTerm, sortBy, priceMin, priceMax, atkMin, atkMax, typeFilters, attributeFilters, monsterTypeFilters]);
 
   // Contagem de cartas por tipo (para exibir nos filtros)
   const countByType = useMemo(() => {
@@ -519,6 +555,19 @@ export default function ShopPage() {
       filtered = filtered.filter((uc: any) => priceCredits(uc) <= max);
     }
 
+    const atkFilterActiveSell = (atkMin !== '' && atkMin != null) || (atkMax !== '' && atkMax != null);
+    if (atkFilterActiveSell) {
+      filtered = filtered.filter((uc: any) => {
+        const card = uc.card;
+        if (!card) return false;
+        if (card.type !== 'Monster') return true;
+        const atk = Number(card.atk ?? 0);
+        if (atkMin !== '' && !Number.isNaN(Number(atkMin)) && atk < Number(atkMin)) return false;
+        if (atkMax !== '' && !Number.isNaN(Number(atkMax)) && atk > Number(atkMax)) return false;
+        return true;
+      });
+    }
+
     filtered.sort((a: any, b: any) => {
       const cardA = a.card;
       const cardB = b.card;
@@ -530,13 +579,17 @@ export default function ShopPage() {
           return (cardA.priceCredits || 0) - (cardB.priceCredits || 0);
         case 'priceDesc':
           return (cardB.priceCredits || 0) - (cardA.priceCredits || 0);
+        case 'atkAsc':
+          return compareShopCardsByAtk(cardA as Card, cardB as Card, 'asc');
+        case 'atkDesc':
+          return compareShopCardsByAtk(cardA as Card, cardB as Card, 'desc');
         default:
           return 0;
       }
     });
 
     return filtered;
-  }, [sellListBase, searchTerm, sortBy, priceMin, priceMax, typeFilters, attributeFilters, monsterTypeFilters]);
+  }, [sellListBase, searchTerm, sortBy, priceMin, priceMax, atkMin, atkMax, typeFilters, attributeFilters, monsterTypeFilters]);
 
   // Contagens para filtros na aba Vender
   const countByTypeSell = useMemo(() => {
@@ -694,7 +747,7 @@ export default function ShopPage() {
     paymentMethod: 'credits' | 'cash'
   ) => {
     if (!user) {
-      alert('Você precisa estar logado para comprar!');
+      alert(t('shop.mustLogin'));
       return;
     }
 
@@ -948,6 +1001,10 @@ export default function ShopPage() {
     setCurrentPage(1);
   }, [category]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, sortBy, priceMin, priceMax, atkMin, atkMax, typeFilters, attributeFilters, monsterTypeFilters]);
+
   // Novos itens no formato do carrossel (para a seção "Novos Itens Adicionados")
   const newItemsMarqueeCards: MarqueeCard[] = useMemo(() => {
     return newItems.map((c) => ({
@@ -958,6 +1015,7 @@ export default function ShopPage() {
       type: c.type,
       rarity: c.rarity,
       createdAt: c.createdAt,
+      maxCopiesInDeck: c.maxCopiesInDeck ?? 3,
     }));
   }, [newItems]);
 
@@ -980,6 +1038,7 @@ export default function ShopPage() {
       type: c.type,
       rarity: c.rarity,
       createdAt: c.createdAt,
+      maxCopiesInDeck: c.maxCopiesInDeck ?? 3,
     }));
   }, [featuredCards]);
   const featuredPlaymats = useMemo(() => playmats.slice(0, 3), [playmats]);
@@ -1001,6 +1060,7 @@ export default function ShopPage() {
       rarity: c.rarity,
       createdAt: c.createdAt,
       promotionDiscountPercent: c.promotionDiscountPercent,
+      maxCopiesInDeck: c.maxCopiesInDeck ?? 3,
     }));
   }, [promotionCards]);
 
@@ -1015,10 +1075,28 @@ export default function ShopPage() {
         >
           <h1 className="text-4xl font-bold mb-2 flex items-center gap-3 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-red-400">
             <img src="/images/Icones/Shop.png" alt="" className="w-12 h-12 sm:w-14 sm:h-14 object-contain flex-shrink-0" aria-hidden />
-            Loja
+            {t('shop.title')}
           </h1>
-          <a href="/loot-boxes" className="inline-flex rounded-lg bg-indigo-700 px-4 py-2 mb-3 text-white hover:bg-indigo-600">🎁 Abrir Loot Boxes</a>
-          <p className="text-sm text-gray-300">Compre cartas, playmats e sleeves para personalizar seu deck</p>
+          <div className="flex flex-wrap gap-2 mb-3">
+            <a href="/loot-boxes" className="btn-champion inline-flex items-center gap-1.5 text-sm px-4 py-2">
+              🎴 {t('shop.openLootBoxes')}
+            </a>
+            <a
+              href="/collection"
+              className="btn-secondary inline-flex items-center gap-1.5 text-sm px-4 py-2"
+            >
+              📚 Coleção
+            </a>
+          </div>
+          <p className="text-sm text-gray-300">{t('shop.subtitle')}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              to="/credit"
+              className="inline-flex items-center gap-2 rounded-xl border-2 border-amber-500/50 bg-amber-500/15 px-4 py-2 text-sm font-bold text-amber-200 hover:bg-amber-500/25 hover:border-amber-400 transition-colors"
+            >
+              💎 {t('shop.buyCredits')}
+            </Link>
+          </div>
         </motion.div>
 
         {/* Tabs Comprar / Vender */}
@@ -1031,7 +1109,7 @@ export default function ShopPage() {
                 : 'text-gray-300 hover:bg-white/10 border-white/20'
             }`}
           >
-            🛒 Comprar
+            🛒 {t('shop.buy')}
           </button>
           <button
             onClick={() => { setMode('sell'); setCurrentPage(1); }}
@@ -1041,7 +1119,7 @@ export default function ShopPage() {
                 : 'text-gray-300 hover:bg-white/10 border-white/20'
             }`}
           >
-            💰 Vender
+            💰 {t('shop.sell')}
           </button>
         </div>
 
@@ -1056,7 +1134,7 @@ export default function ShopPage() {
                   : 'text-gray-300 hover:bg-white/10'
               }`}
             >
-              ⭐ Destaques
+              ⭐ {t('shop.featured')}
             </button>
             <button
               onClick={() => { setCategory('cards'); setCurrentPage(1); }}
@@ -1066,7 +1144,7 @@ export default function ShopPage() {
                   : 'text-gray-300 hover:bg-white/10'
               }`}
             >
-              🎴 Cartas
+              🎴 {t('shop.cards')}
             </button>
             <button
               onClick={() => { setCategory('items'); setCurrentPage(1); }}
@@ -1076,7 +1154,7 @@ export default function ShopPage() {
                   : 'text-gray-300 hover:bg-white/10'
               }`}
             >
-              📦 Itens
+              📦 {t('shop.items')}
             </button>
             <button
               onClick={() => { setCategory('playmats'); setCurrentPage(1); }}
@@ -1086,7 +1164,7 @@ export default function ShopPage() {
                   : 'text-gray-300 hover:bg-white/10'
               }`}
             >
-              🎨 Playmats
+              🎨 {t('shop.playmats')}
             </button>
             <button
               onClick={() => { setCategory('sleeves'); setCurrentPage(1); }}
@@ -1096,7 +1174,7 @@ export default function ShopPage() {
                   : 'text-gray-300 hover:bg-white/10'
               }`}
             >
-              🎭 Sleeves
+              🎭 {t('shop.sleeves')}
             </button>
             <button
               onClick={() => { setCategory('talismans'); setCurrentPage(1); }}
@@ -1106,7 +1184,7 @@ export default function ShopPage() {
                   : 'text-gray-300 hover:bg-white/10'
               }`}
             >
-              ✨ Talismãs
+              ✨ {t('shop.talismans')}
             </button>
           </div>
         </div>
@@ -1123,14 +1201,14 @@ export default function ShopPage() {
             <div>
               <div className="flex items-center gap-3 mb-4">
                 <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-400">
-                  ⭐ Itens em destaque
+                  ⭐ {t('shop.featuredItems')}
                 </h2>
                 <div className="flex-1 h-px bg-gradient-to-r from-yellow-400/50 to-transparent" />
               </div>
               <div className="rounded-2xl p-4 bg-white/5 border border-white/10 space-y-6">
                 {featuredCardsMarquee.length > 0 && (
                   <div>
-                    <p className="text-sm text-gray-400 mb-2">🎴 Últimas cartas cadastradas</p>
+                    <p className="text-sm text-gray-400 mb-2">🎴 {t('shop.latestCards')}</p>
                     <div className="max-w-full -mx-2 md:mx-0">
                       <LatestCardsMarquee
                         cards={featuredCardsMarquee}
@@ -1152,7 +1230,7 @@ export default function ShopPage() {
                 {/* Cartas em promoção — logo abaixo das últimas cartas cadastradas */}
                 {promotionCardsMarquee.length > 0 && (
                   <div>
-                    <p className="text-sm text-gray-400 mb-2">🏷️ Cartas em promoção</p>
+                    <p className="text-sm text-gray-400 mb-2">🏷️ {t('shop.promoCards')}</p>
                     <div className="max-w-full -mx-2 md:mx-0">
                       <LatestCardsMarquee
                         cards={promotionCardsMarquee}
@@ -1174,7 +1252,7 @@ export default function ShopPage() {
                 )}
                 {featuredPlaymats.length > 0 && (
                   <div>
-                    <p className="text-sm text-gray-400 mb-2">🎨 Playmats</p>
+                    <p className="text-sm text-gray-400 mb-2">🎨 {t('shop.playmats')}</p>
                     <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
                       {featuredPlaymats.map((pm) => {
                         const src = pm.image ? (pm.image.startsWith('http') ? pm.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${pm.image}`) : '';
@@ -1195,7 +1273,7 @@ export default function ShopPage() {
                 )}
                 {featuredSleeves.length > 0 && (
                   <div>
-                    <p className="text-sm text-gray-400 mb-2">🎭 Sleeves</p>
+                    <p className="text-sm text-gray-400 mb-2">🎭 {t('shop.sleeves')}</p>
                     <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
                       {featuredSleeves.map((sl) => {
                         const src = sl.image ? (sl.image.startsWith('http') ? sl.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${sl.image}`) : '';
@@ -1216,20 +1294,25 @@ export default function ShopPage() {
                 )}
                 {featuredTalismans.length > 0 && (
                   <div>
-                    <p className="text-sm text-gray-400 mb-2">✨ Talismãs</p>
+                    <p className="text-sm text-gray-400 mb-2">✨ {t('shop.talismans')}</p>
                     <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
                       {featuredTalismans.map((t) => {
                         const src = t.image ? (t.image.startsWith('http') ? t.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${t.image}`) : '';
                         return (
-                          <motion.div
+                          <motion.button
                             key={t.id}
+                            type="button"
                             whileHover={{ scale: 1.03 }}
                             onClick={() => { setCategory('talismans'); setMode('buy'); setCurrentPage(1); }}
-                            className="flex-shrink-0 w-24 cursor-pointer rounded-lg overflow-hidden border border-amber-500/30 bg-slate-800/50"
+                            className="flex-shrink-0 w-24 cursor-pointer flex flex-col items-center gap-1 bg-transparent p-0 border-0 text-left"
                           >
-                            {src ? <img src={src} alt={t.name} className="w-full aspect-square object-cover" /> : <div className="w-full aspect-square flex items-center justify-center text-2xl">✨</div>}
-                            <p className="text-[10px] text-white truncate p-1">{t.name}</p>
-                          </motion.div>
+                            <span className="w-full aspect-square flex items-center justify-center">
+                              {src ? (
+                                <img src={src} alt="" className="max-w-full max-h-full object-contain" />
+                              ) : null}
+                            </span>
+                            <span className="text-[10px] text-white text-center leading-tight line-clamp-2 w-full">{t.name}</span>
+                          </motion.button>
                         );
                       })}
                     </div>
@@ -1261,7 +1344,7 @@ export default function ShopPage() {
                   </div>
                 )}
                 {featuredCardsMarquee.length === 0 && featuredPlaymats.length === 0 && featuredSleeves.length === 0 && featuredTalismans.length === 0 && featuredMaletas.length === 0 && (
-                  <p className="text-gray-400 text-sm text-center py-4">Carregando itens em destaque...</p>
+                  <p className="text-gray-400 text-sm text-center py-4">{t('common.loading')}</p>
                 )}
               </div>
             </div>
@@ -1294,20 +1377,31 @@ export default function ShopPage() {
                   onClick={() => setOpenDropdown(openDropdown === 'sort' ? null : 'sort')}
                   className="px-4 py-2 hover:bg-white/10 border border-white/20 rounded-lg text-white font-medium flex items-center gap-2 transition-all"
                 >
-                  <span>Ordenar: {sortBy === 'name' ? 'Nome' : sortBy === 'priceAsc' ? 'Preço ↑' : 'Preço ↓'}</span>
+                  <span>
+                    Ordenar:{' '}
+                    {sortBy === 'name'
+                      ? 'Nome'
+                      : sortBy === 'priceAsc'
+                        ? 'Preço ↑'
+                        : sortBy === 'priceDesc'
+                          ? 'Preço ↓'
+                          : sortBy === 'atkAsc'
+                            ? 'ATK ↑'
+                            : 'ATK ↓'}
+                  </span>
                   <svg className={`w-4 h-4 transition-transform ${openDropdown === 'sort' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
                 {openDropdown === 'sort' && (
-                  <div className="absolute top-full left-0 mt-2 w-48 bg-black/80 border border-white/20 rounded-lg shadow-2xl z-[100]">
+                  <div className="absolute top-full left-0 mt-2 w-56 duel-modal-scrim border border-white/20 rounded-lg shadow-2xl z-[100]">
                     <div className="py-2">
                       <button
                         onClick={() => {
                           setSortBy('name');
                           setOpenDropdown(null);
                         }}
-                        className={`w-full text-left px-4 py-2 hover:bg-white/10 transition-colors ${
+                        className={`w-full text-left px-4 py-2 hover:bg-purple-500/20 transition-colors ${
                           sortBy === 'name' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
                         }`}
                       >
@@ -1318,7 +1412,7 @@ export default function ShopPage() {
                           setSortBy('priceAsc');
                           setOpenDropdown(null);
                         }}
-                        className={`w-full text-left px-4 py-2 hover:bg-white/10 transition-colors ${
+                        className={`w-full text-left px-4 py-2 hover:bg-purple-500/20 transition-colors ${
                           sortBy === 'priceAsc' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
                         }`}
                       >
@@ -1329,11 +1423,33 @@ export default function ShopPage() {
                           setSortBy('priceDesc');
                           setOpenDropdown(null);
                         }}
-                        className={`w-full text-left px-4 py-2 hover:bg-white/10 transition-colors ${
+                        className={`w-full text-left px-4 py-2 hover:bg-purple-500/20 transition-colors ${
                           sortBy === 'priceDesc' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
                         }`}
                       >
                         Preço: Maior → Menor
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSortBy('atkAsc');
+                          setOpenDropdown(null);
+                        }}
+                        className={`w-full text-left px-4 py-2 hover:bg-purple-500/20 transition-colors ${
+                          sortBy === 'atkAsc' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
+                        }`}
+                      >
+                        ATK: Menor → Maior
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSortBy('atkDesc');
+                          setOpenDropdown(null);
+                        }}
+                        className={`w-full text-left px-4 py-2 hover:bg-purple-500/20 transition-colors ${
+                          sortBy === 'atkDesc' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
+                        }`}
+                      >
+                        ATK: Maior → Menor
                       </button>
                     </div>
                   </div>
@@ -1352,7 +1468,7 @@ export default function ShopPage() {
                   </svg>
                 </button>
                 {openDropdown === 'price' && (
-                  <div className="absolute top-full left-0 mt-2 w-64 bg-black/80 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl z-[100] p-4">
+                  <div className="absolute top-full left-0 mt-2 w-64 duel-modal-scrim border border-white/20 rounded-lg shadow-2xl z-[100] p-4">
                     <div className="space-y-3">
                       <div>
                         <label className="block text-xs text-gray-300 mb-1">Preço Mínimo</label>
@@ -1390,6 +1506,101 @@ export default function ShopPage() {
                 )}
               </div>
 
+              {/* ATK (monstros) */}
+              <div className="relative z-[100]" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={() => setOpenDropdown(openDropdown === 'atk' ? null : 'atk')}
+                  className="px-4 py-2 hover:bg-white/10 border border-white/20 rounded-lg text-white font-medium flex items-center gap-2 transition-all"
+                >
+                  <span>
+                    ATK{' '}
+                    {(atkMin || atkMax) &&
+                      `(${atkMin || '0'} – ${atkMax || '∞'})`}
+                  </span>
+                  <svg className={`w-4 h-4 transition-transform ${openDropdown === 'atk' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {openDropdown === 'atk' && (
+                  <div className="absolute top-full left-0 mt-2 w-64 duel-modal-scrim border border-white/20 rounded-lg shadow-2xl z-[100] p-4">
+                    <p className="text-xs text-gray-400 mb-2">Só aplica a monstros; magias e armadilhas continuam na lista.</p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs text-gray-300 mb-1">ATK mínimo (≥)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          placeholder="Ex.: 1500"
+                          value={atkMin}
+                          onChange={(e) => setAtkMin(e.target.value)}
+                          className="w-full px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded text-white text-sm focus:outline-none focus:border-purple-500/50"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-300 mb-1">ATK máximo (≤)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          placeholder="Ex.: 2000"
+                          value={atkMax}
+                          onChange={(e) => setAtkMax(e.target.value)}
+                          className="w-full px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded text-white text-sm focus:outline-none focus:border-purple-500/50"
+                        />
+                      </div>
+                      {(atkMin || atkMax) && (
+                        <button
+                          onClick={() => {
+                            setAtkMin('');
+                            setAtkMax('');
+                          }}
+                          className="w-full px-3 py-1 bg-purple-600/80 hover:bg-purple-600 rounded text-sm font-medium transition-colors backdrop-blur-sm"
+                        >
+                          Limpar faixa
+                        </button>
+                      )}
+                      <div>
+                        <label className="block text-xs text-gray-300 mb-1.5">Ordenar por ATK</label>
+                        <div className="flex flex-col gap-1 rounded-lg border border-white/20 bg-gray-950/90 p-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSortBy('atkAsc')}
+                            className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                              sortBy === 'atkAsc'
+                                ? 'bg-purple-600/55 text-purple-100'
+                                : 'text-white hover:bg-purple-500/20'
+                            }`}
+                          >
+                            Menor → maior
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSortBy('atkDesc')}
+                            className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                              sortBy === 'atkDesc'
+                                ? 'bg-purple-600/55 text-purple-100'
+                                : 'text-white hover:bg-purple-500/20'
+                            }`}
+                          >
+                            Maior → menor
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSortBy('name')}
+                            className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                              sortBy !== 'atkAsc' && sortBy !== 'atkDesc'
+                                ? 'bg-purple-600/55 text-purple-100'
+                                : 'text-white hover:bg-purple-500/20'
+                            }`}
+                          >
+                            Nome / preço (menu Ordenar)
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Tipo */}
               <div className="relative z-[100]" onClick={(e) => e.stopPropagation()}>
                 <button 
@@ -1402,7 +1613,7 @@ export default function ShopPage() {
                   </svg>
                 </button>
                 {openDropdown === 'type' && (
-                  <div className="absolute top-full left-0 mt-2 w-48 bg-black/80 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl z-[100] p-4">
+                  <div className="absolute top-full left-0 mt-2 w-48 duel-modal-scrim border border-white/20 rounded-lg shadow-2xl z-[100] p-4">
                     <div className="space-y-2">
                       {(['Monster', 'Spell', 'Trap'] as CardTypeFilter[]).map(type => (
                         <label key={type} className="flex items-center gap-2 cursor-pointer hover:bg-white/10 p-2 rounded transition-colors">
@@ -1435,7 +1646,7 @@ export default function ShopPage() {
                   </svg>
                 </button>
                 {openDropdown === 'attribute' && (
-                  <div className="absolute top-full left-0 mt-2 w-64 bg-black/80 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl z-[100] p-4">
+                  <div className="absolute top-full left-0 mt-2 w-64 duel-modal-scrim border border-white/20 rounded-lg shadow-2xl z-[100] p-4">
                     <div className="grid grid-cols-2 gap-2">
                       {attributes.map(attr => (
                         <label key={attr} className="flex items-center gap-2 cursor-pointer hover:bg-white/10 p-2 rounded transition-colors">
@@ -1476,7 +1687,7 @@ export default function ShopPage() {
                   </svg>
                 </button>
                 {openDropdown === 'monsterType' && (
-                  <div className="absolute top-full left-0 mt-2 w-52 bg-black/80 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl z-[100] p-4">
+                  <div className="absolute top-full left-0 mt-2 w-52 duel-modal-scrim border border-white/20 rounded-lg shadow-2xl z-[100] p-4">
                     <div className="space-y-2">
                       {MONSTER_TYPES.map(mt => (
                         <label key={mt} className="flex items-center gap-2 cursor-pointer hover:bg-white/10 p-2 rounded transition-colors">
@@ -1532,7 +1743,7 @@ export default function ShopPage() {
             {(mode === 'buy' && category === 'items' ? loadingMaletas : loading) ? (
               <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
                 <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
-                <p className="mt-4 text-gray-200">Carregando...</p>
+                <p className="mt-4 text-gray-200">{t('common.loading')}</p>
               </div>
             ) : error ? (
               <div className="text-center py-12 bg-red-900/30 backdrop-blur-md border border-red-500/50 rounded-xl shadow-xl">
@@ -1540,7 +1751,7 @@ export default function ShopPage() {
               </div>
             ) : paginatedItems.length === 0 ? (
               <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
-                <p className="text-gray-200 text-lg">Nenhum item encontrado</p>
+                <p className="text-gray-200 text-lg">{t('shop.noItems')}</p>
               </div>
             ) : (
               <div className="bg-transparent p-4 mb-6">
@@ -1569,17 +1780,20 @@ export default function ShopPage() {
                               card={card}
                               className="w-full h-full object-cover rounded-lg shadow-lg hover:shadow-xl transition-all"
                               fallback="/images/fundoCarta.webp"
-                              loading={index < 36 ? 'eager' : 'lazy'}
+                              loading={index < 8 ? 'eager' : 'lazy'}
                               fetchPriority={index < 12 ? 'high' : 'auto'}
                             />
-                            {card.promotionDiscountPercent ? (
-                              <div
-                                className="absolute top-1 right-1 flex items-center justify-center min-w-[28px] h-7 px-1.5 rounded-md bg-rose-500/95 text-white text-xs font-bold shadow-lg border border-rose-300/50"
-                                title={card.promotionLabel || `${card.promotionDiscountPercent}% off`}
-                              >
-                                -{card.promotionDiscountPercent}%
-                              </div>
-                            ) : null}
+                            <div className="absolute top-1 right-1 z-20 flex flex-col items-end gap-1 pointer-events-none">
+                              <DeckCopyLimitBadge maxCopiesInDeck={card.maxCopiesInDeck} variant="inline" showStandardLimit />
+                              {card.promotionDiscountPercent ? (
+                                <div
+                                  className="flex items-center justify-center min-w-[28px] h-7 px-1.5 rounded-md bg-rose-500/95 text-white text-xs font-bold shadow-lg border border-rose-300/50"
+                                  title={card.promotionLabel || `${card.promotionDiscountPercent}% off`}
+                                >
+                                  -{card.promotionDiscountPercent}%
+                                </div>
+                              ) : null}
+                            </div>
                             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity rounded-lg"></div>
                           </div>
                           <div className="space-y-2 flex-1">
@@ -1710,37 +1924,24 @@ export default function ShopPage() {
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: index * 0.05 }}
                           whileHover={{ scale: 1.03, zIndex: 10 }}
-                          className="flex flex-col bg-gradient-to-br from-amber-900/40 to-yellow-900/40 backdrop-blur-sm rounded-xl p-5 border border-amber-500/30 hover:border-amber-400/50 shadow-xl hover:shadow-2xl transition-all w-full max-w-md mx-auto"
+                          className="flex flex-col items-center w-full max-w-md mx-auto gap-2"
                         >
-                          <div className="relative w-full aspect-square mb-4 bg-gradient-to-br from-amber-500/30 via-yellow-500/20 to-orange-500/30 rounded-xl overflow-hidden border border-amber-400/40 flex items-center justify-center">
+                          <div className="relative w-full aspect-square flex items-center justify-center">
                             {imageSrc ? (
                               <img
                                 src={imageSrc}
-                                alt={talisman.name}
-                                className="w-full h-full object-cover"
+                                alt=""
+                                className="max-w-full max-h-full w-auto h-auto object-contain"
                                 onError={(e) => {
                                   (e.target as HTMLImageElement).style.display = 'none';
                                 }}
                               />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-5xl text-amber-200/80">
-                                ✨
-                              </div>
-                            )}
+                            ) : null}
                           </div>
-                          <h3 className="text-base font-bold text-white mb-1 truncate" title={talisman.name}>
+                          <h3 className="text-sm font-bold text-white text-center px-1 line-clamp-2 w-full" title={talisman.name}>
                             {talisman.name}
                           </h3>
-                          {talisman.description ? (
-                            <p className="text-xs text-gray-400 mb-3 line-clamp-2">{talisman.description}</p>
-                          ) : null}
-                          <div className="flex flex-wrap gap-1 mb-3 text-[10px] text-amber-200/90">
-                            {talisman.bonusScorePct > 0 && <span>Score +{talisman.bonusScorePct}%</span>}
-                            {talisman.bonusCashPct > 0 && <span>• Cash +{talisman.bonusCashPct}%</span>}
-                            {talisman.bonusArenaPointsPct > 0 && <span>• Arena +{talisman.bonusArenaPointsPct}%</span>}
-                            {(talisman.initialCharges ?? 0) > 0 && <span>• ⚡ {talisman.initialCharges} cargas</span>}
-                          </div>
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 w-full">
                             {(talisman.priceCredits ?? 0) > 0 ? (
                               <button
                                 onClick={() => handlePurchaseClick(talisman, 'credits')}
@@ -1983,7 +2184,7 @@ export default function ShopPage() {
                   if (noResults) {
                     return (
                       <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
-                        <p className="text-gray-200 text-lg mb-2">Nenhum resultado para os filtros</p>
+                        <p className="text-gray-200 text-lg mb-2">{t('common.noResults')}</p>
                         <p className="text-gray-400 text-sm">Tente alterar pesquisa ou filtros.</p>
                       </div>
                     );
@@ -2014,14 +2215,15 @@ export default function ShopPage() {
                                 card={card}
                                 className="w-full h-full object-cover rounded-lg shadow-lg hover:shadow-xl transition-all"
                                 fallback="/images/fundoCarta.webp"
-                                loading={index < 36 ? 'eager' : 'lazy'}
+                                loading={index < 8 ? 'eager' : 'lazy'}
                                 fetchPriority={index < 12 ? 'high' : 'auto'}
                               />
+                              <DeckCopyLimitBadge maxCopiesInDeck={card.maxCopiesInDeck} showStandardLimit />
                               {(() => {
                                 const sellableQty = (userCard as any).sellableQuantity ?? userCard.quantity;
                                 if (sellableQty < 1) return null;
                                 return (
-                                  <div className="absolute top-2 right-2 bg-green-500/90 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-bold text-white shadow-lg border border-white/20">
+                                  <div className="absolute top-1 left-1 z-20 bg-green-500/90 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-bold text-white shadow-lg border border-white/20">
                                     x{sellableQty}
                                   </div>
                                 );
@@ -2065,7 +2267,7 @@ export default function ShopPage() {
                                     title={sellableQty <= 0 ? 'Cartas em deck não podem ser vendidas. Só a maleta.' : undefined}
                                     className="w-full mt-2 px-3 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg text-xs font-bold transition-all shadow-md hover:shadow-lg text-white disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
-                                    {isSelling ? '⏳ Vendendo...' : sellableQty <= 0 ? '🔒 Em deck' : '💰 Vender'}
+                                    {isSelling ? '⏳ Vendendo...' : sellableQty <= 0 ? '🔒 Em deck' : `💰 ${t('shop.sell')}`}
                                   </button>
                                 );
                               })()}
@@ -2154,7 +2356,7 @@ export default function ShopPage() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 duel-modal-scrim flex items-center justify-center z-50 p-4"
             onClick={() => setSelectedCard(null)}
           >
             <motion.div
@@ -2191,17 +2393,25 @@ export default function ShopPage() {
                   fetchPriority="high"
                   sizes="200px"
                 />
-                {selectedCard.promotionDiscountPercent ? (
-                  <div
-                    className="absolute top-2 right-2 min-w-[36px] h-9 px-2 rounded-lg bg-rose-500/95 text-white text-sm font-bold shadow-lg border border-rose-300/50 flex items-center justify-center"
-                    title={selectedCard.promotionLabel || `${selectedCard.promotionDiscountPercent}% off`}
-                  >
-                    -{selectedCard.promotionDiscountPercent}%
-                  </div>
-                ) : null}
+                <div className="absolute top-2 right-2 z-20 flex flex-col items-end gap-1.5 pointer-events-none">
+                  <DeckCopyLimitBadge maxCopiesInDeck={selectedCard.maxCopiesInDeck} variant="inline" showStandardLimit />
+                  {selectedCard.promotionDiscountPercent ? (
+                    <div
+                      className="min-w-[36px] h-9 px-2 rounded-lg bg-rose-500/95 text-white text-sm font-bold shadow-lg border border-rose-300/50 flex items-center justify-center"
+                      title={selectedCard.promotionLabel || `${selectedCard.promotionDiscountPercent}% off`}
+                    >
+                      -{selectedCard.promotionDiscountPercent}%
+                    </div>
+                  ) : null}
+                </div>
               </div>
               
               <h3 className="text-xl font-bold text-white mb-2">{selectedCard.name}</h3>
+              <p className="mb-2 text-sm font-semibold text-amber-200/95">
+                {(selectedCard.maxCopiesInDeck ?? 3) === 0
+                  ? 'Banida — não pode ser usada no deck.'
+                  : `Pode incluir até ${selectedCard.maxCopiesInDeck ?? 3} cópia${(selectedCard.maxCopiesInDeck ?? 3) === 1 ? '' : 's'} com o mesmo nome no deck.`}
+              </p>
               <p className="text-white/80 mb-4">{getCardDescription(selectedCard)}</p>
               
               {selectedCard.type === 'Monster' && (
@@ -2272,7 +2482,7 @@ export default function ShopPage() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 duel-modal-scrim flex items-center justify-center z-50 p-4"
             onClick={() => {
               setShowPurchaseConfirm(false);
               setPurchaseItem(null);
@@ -2284,11 +2494,28 @@ export default function ShopPage() {
               className="bg-gradient-to-br from-slate-800/70 to-slate-900/70 backdrop-blur-xl rounded-xl p-6 max-w-md w-full border-2 border-white/20 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <h2 className="text-2xl font-bold text-white mb-4">Confirmar Compra</h2>
+              <h2 className="text-2xl font-bold text-white mb-4">{t('shop.confirmPurchase')}</h2>
               <div className="mb-4">
-                <p className="text-white/80 mb-2">
-                  <span className="font-semibold">Item:</span> {purchaseItem.item.name}
-                </p>
+                {category === 'talismans' && 'image' in purchaseItem.item && (purchaseItem.item as TalismanTemplate).image ? (
+                  <div className="flex flex-col items-center gap-2 mb-4">
+                    <img
+                      src={
+                        (purchaseItem.item as TalismanTemplate).image!.startsWith('http')
+                          ? (purchaseItem.item as TalismanTemplate).image!
+                          : `${API_URL}${(purchaseItem.item as TalismanTemplate).image}`
+                      }
+                      alt=""
+                      className="max-h-52 w-auto max-w-full object-contain"
+                    />
+                    <p className="text-white font-semibold text-center text-sm">
+                      {(purchaseItem.item as TalismanTemplate).name}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-white/80 mb-2">
+                    <span className="font-semibold">Item:</span> {purchaseItem.item.name}
+                  </p>
+                )}
                 {category === 'cards' && (
                   <div className="mb-2">
                     <span className="text-white/80 font-semibold block mb-2">Quantidade:</span>
@@ -2347,13 +2574,13 @@ export default function ShopPage() {
                   }}
                   className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-white font-bold transition-all"
                 >
-                  Cancelar
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={handlePurchaseConfirm}
                   className="flex-1 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg text-white font-bold transition-all"
                 >
-                  Confirmar
+                  {t('common.confirm')}
                 </button>
               </div>
             </motion.div>
@@ -2365,7 +2592,7 @@ export default function ShopPage() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 duel-modal-scrim flex items-center justify-center z-50 p-4"
             onClick={() => setSellModal(null)}
           >
             <motion.div
@@ -2374,7 +2601,7 @@ export default function ShopPage() {
               className="bg-gradient-to-br from-slate-800/70 to-slate-900/70 backdrop-blur-xl rounded-xl p-6 max-w-md w-full border-2 border-white/20 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <h2 className="text-2xl font-bold text-white mb-4">Vender carta</h2>
+              <h2 className="text-2xl font-bold text-white mb-4">{t('shop.sellCard')}</h2>
               <div className="mb-4">
                 <p className="text-white/80 mb-2">
                   <span className="font-semibold">Carta:</span> {sellModal.userCard.card.name}
@@ -2414,13 +2641,13 @@ export default function ShopPage() {
                   onClick={() => setSellModal(null)}
                   className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-white font-bold transition-all"
                 >
-                  Cancelar
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={handleSellConfirm}
                   className="flex-1 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg text-white font-bold transition-all"
                 >
-                  Vender
+                  {t('shop.sell')}
                 </button>
               </div>
             </motion.div>
@@ -2432,7 +2659,7 @@ export default function ShopPage() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/50 backdrop-blur-md flex items-center justify-center z-[60] p-4"
+            className="fixed inset-0 duel-modal-scrim flex items-center justify-center z-[60] p-4"
             onClick={() => setSuccessModal(null)}
           >
             <motion.div
@@ -2448,7 +2675,7 @@ export default function ShopPage() {
                     <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center text-4xl mb-3">
                       ✅
                     </div>
-                    <h2 className="text-xl font-bold text-white mb-1">Compra realizada!</h2>
+                    <h2 className="text-xl font-bold text-white mb-1">{t('shop.purchaseDone')}</h2>
                     <p className="text-gray-300 text-sm">Item adicionado ao seu inventário</p>
                   </div>
                   {successModal.itemImage && (
@@ -2498,7 +2725,7 @@ export default function ShopPage() {
                     <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center text-4xl mb-3">
                       💰
                     </div>
-                    <h2 className="text-xl font-bold text-white mb-1">Venda realizada!</h2>
+                    <h2 className="text-xl font-bold text-white mb-1">{t('shop.saleDone')}</h2>
                     <p className="text-gray-300 text-sm">Créditos e cash creditados</p>
                   </div>
                   {successModal.cardImage && (

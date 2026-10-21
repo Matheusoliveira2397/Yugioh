@@ -327,7 +327,10 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
                 CHAMPION
               </h3>
               {(() => {
-                const finalMatch = organizedRounds[totalRounds][0];
+                const roundMatches = organizedRounds[totalRounds] || [];
+                const finalMatch =
+                  roundMatches.find((m) => !(m as Match & { isThirdPlaceMatch?: boolean }).isThirdPlaceMatch) ||
+                  roundMatches[0];
                 const champion = finalMatch?.winner
                   ? { nickname: finalMatch.winner.nickname, profileImage: finalMatch.winner.profileImage }
                   : finalMatch?.winnerId != null && (finalMatch.player1Id === finalMatch.winnerId ? finalMatch.player1 : finalMatch.player2)

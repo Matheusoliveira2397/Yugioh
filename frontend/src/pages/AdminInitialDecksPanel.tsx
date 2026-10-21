@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import api from '../api/axios';
 import CardImage from '../components/CardImage';
+import { getCardDescription } from '../utils/cardDescription';
 
 interface InitialDeckCard {
   id: string;
@@ -33,11 +34,74 @@ interface Card {
   name: string;
   type: string;
   monsterType?: string;
+  attribute?: string;
+  rarity?: string;
+  description?: string;
+  race?: string;
+  spellType?: string;
+  trapType?: string;
+  archetype?: string;
+  level?: number;
+  rank?: number;
+  atk?: number;
+  def?: number;
+  linkRating?: number;
   cardImage?: string;
   idCarta?: string;
   maxCopiesInDeck?: number;
   isActive?: boolean;
+  isBanned?: boolean;
 }
+
+const PICKER_MONSTER_TYPES = [
+  'Normal',
+  'Effect',
+  'Ritual',
+  'Fusion',
+  'Synchro',
+  'Xyz',
+  'Pendulum',
+  'Link',
+] as const;
+
+const PICKER_ATTRIBUTES = [
+  'DARK',
+  'LIGHT',
+  'WATER',
+  'FIRE',
+  'EARTH',
+  'WIND',
+  'DIVINE',
+] as const;
+
+/** Raças de monstro (alinhado ao cadastro de cartas) */
+const PICKER_RACES = [
+  'Warrior',
+  'Spellcaster',
+  'Dragon',
+  'Zombie',
+  'Fiend',
+  'Machine',
+  'Aqua',
+  'Pyro',
+  'Rock',
+  'Winged Beast',
+  'Plant',
+  'Insect',
+  'Thunder',
+  'Beast',
+  'Beast-Warrior',
+  'Dinosaur',
+  'Fish',
+  'Sea Serpent',
+  'Reptile',
+  'Psychic',
+  'Divine-Beast',
+  'Creator God',
+  'Wyrm',
+  'Cyberse',
+  'Fairy',
+] as const;
 
 const EXTRA_DECK_MONSTER_TYPES = ['Fusion', 'Synchro', 'Xyz', 'Link'];
 function isExtraDeckCard(card: Card): boolean {
@@ -50,7 +114,24 @@ export default function AdminInitialDecksPanel() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingDeck, setEditingDeck] = useState<InitialDeck | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  /** Filtro da lista de decks iniciais (fora do formulário) */
+  const [deckListSearch, setDeckListSearch] = useState('');
+  /** Busca e filtros só no seletor de cartas do formulário */
+  const [cardPickerSearch, setCardPickerSearch] = useState('');
+  const [pickerType, setPickerType] = useState('all');
+  const [pickerRarity, setPickerRarity] = useState('all');
+  const [pickerMonsterType, setPickerMonsterType] = useState('all');
+  const [pickerAttribute, setPickerAttribute] = useState('all');
+  const [pickerRace, setPickerRace] = useState('all');
+  const [pickerAtkMin, setPickerAtkMin] = useState('');
+  const [pickerAtkMax, setPickerAtkMax] = useState('');
+  const [pickerSort, setPickerSort] = useState<
+    'name_asc' | 'name_desc' | 'rarity_desc' | 'atk_asc' | 'atk_desc'
+  >('name_asc');
+  /** Cartas do deck em composição: miniaturas maiores */
+  const [deckPreviewLarge, setDeckPreviewLarge] = useState(false);
+  /** Modal: detalhes completos da carta (efeito, raça, etc.) */
+  const [previewCard, setPreviewCard] = useState<Card | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [formData, setFormData] = useState({
@@ -223,6 +304,16 @@ export default function AdminInitialDecksPanel() {
       cards: [],
     });
     setEditingDeck(null);
+    setCardPickerSearch('');
+    setPickerType('all');
+    setPickerRarity('all');
+    setPickerMonsterType('all');
+    setPickerAttribute('all');
+    setPickerRace('all');
+    setPickerAtkMin('');
+    setPickerAtkMax('');
+    setPickerSort('name_asc');
+    setDeckPreviewLarge(false);
   };
 
   const addCardToDeck = (cardId: string) => {
@@ -338,13 +429,112 @@ export default function AdminInitialDecksPanel() {
     setMessage(null);
   };
 
-  const filteredDecks = decks.filter((deck) =>
-    deck.name.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredDecks = useMemo(
+    () =>
+      decks.filter((deck) => {
+        const q = deckListSearch.trim().toLowerCase();
+        if (!q) return true;
+        return (
+          deck.name.toLowerCase().includes(q) ||
+          (deck.description || '').toLowerCase().includes(q)
+        );
+      }),
+    [decks, deckListSearch],
   );
 
-  const filteredCards = allCards.filter((card) =>
-    card.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredCardsForPicker = useMemo(() => {
+    const q = cardPickerSearch.trim().toLowerCase();
+    const rarityOrder: Record<string, number> = {
+      Common: 0,
+      Rare: 1,
+      'Super Rare': 2,
+      'Ultra Rare': 3,
+      'Secret Rare': 4,
+      Legendary: 5,
+    };
+    const list = allCards.filter((card) => {
+      const desc = (card.description && String(card.description).toLowerCase()) || '';
+      const nameOk =
+        !q || card.name.toLowerCase().includes(q) || desc.includes(q);
+      const typeOk =
+        pickerType === 'all' ||
+        (card.type && card.type.toLowerCase() === pickerType.toLowerCase());
+      const rarityOk =
+        pickerRarity === 'all' || (card.rarity || 'Common') === pickerRarity;
+      const mtOk =
+        pickerMonsterType === 'all' ||
+        (card.type === 'Monster' &&
+          (card.monsterType || '') === pickerMonsterType);
+      const attrOk =
+        pickerAttribute === 'all' ||
+        (card.type === 'Monster' &&
+          String(card.attribute || '')
+            .toUpperCase()
+            .trim() === pickerAttribute.toUpperCase());
+      const raceOk =
+        pickerRace === 'all' ||
+        (card.type === 'Monster' &&
+          String(card.race || '').trim().toLowerCase() ===
+            pickerRace.trim().toLowerCase());
+      const atkOn =
+        (pickerAtkMin !== '' && pickerAtkMin != null) ||
+        (pickerAtkMax !== '' && pickerAtkMax != null);
+      let atkOk = true;
+      if (atkOn) {
+        if (card.type !== 'Monster') atkOk = true;
+        else {
+          const atk = Number(card.atk ?? 0);
+          if (
+            pickerAtkMin !== '' &&
+            !Number.isNaN(Number(pickerAtkMin)) &&
+            atk < Number(pickerAtkMin)
+          )
+            atkOk = false;
+          if (
+            pickerAtkMax !== '' &&
+            !Number.isNaN(Number(pickerAtkMax)) &&
+            atk > Number(pickerAtkMax)
+          )
+            atkOk = false;
+        }
+      }
+      return nameOk && typeOk && rarityOk && mtOk && attrOk && raceOk && atkOk;
+    });
+    return [...list].sort((a, b) => {
+      if (pickerSort === 'name_desc') {
+        return (b.name || '').localeCompare(a.name || '', 'pt-BR');
+      }
+      if (pickerSort === 'rarity_desc') {
+        return (
+          (rarityOrder[b.rarity || 'Common'] ?? 0) -
+          (rarityOrder[a.rarity || 'Common'] ?? 0)
+        );
+      }
+      if (pickerSort === 'atk_asc' || pickerSort === 'atk_desc') {
+        const dir = pickerSort === 'atk_asc' ? 'asc' : 'desc';
+        const tier = (c: (typeof list)[0]) => (c.type === 'Monster' ? 0 : 1);
+        const t = tier(a) - tier(b);
+        if (t !== 0) return t;
+        const atkA = a.type === 'Monster' ? Number(a.atk ?? 0) : 0;
+        const atkB = b.type === 'Monster' ? Number(b.atk ?? 0) : 0;
+        const byAtk = dir === 'asc' ? atkA - atkB : atkB - atkA;
+        if (byAtk !== 0) return byAtk;
+        return (a.name || '').localeCompare(b.name || '', 'pt-BR');
+      }
+      return (a.name || '').localeCompare(b.name || '', 'pt-BR');
+    });
+  }, [
+    allCards,
+    cardPickerSearch,
+    pickerType,
+    pickerRarity,
+    pickerMonsterType,
+    pickerAttribute,
+    pickerRace,
+    pickerAtkMin,
+    pickerAtkMax,
+    pickerSort,
+  ]);
 
   const getCardInDeck = (cardId: string) => {
     const idStr = String(cardId);
@@ -458,20 +648,47 @@ export default function AdminInitialDecksPanel() {
 
               {/* Cartas no Deck */}
               <div>
-                <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-                  <label className="block text-white">
-                    Cartas no Deck ({formData.cards.length} tipos • {getTotalCardsInDeck()} totais)
-                  </label>
-                  <div className="flex gap-4 text-sm font-bold">
-                    <span className={getMainDeckCount() < 40 ? 'text-yellow-400' : getMainDeckCount() > 60 ? 'text-red-400' : 'text-green-400'}>
-                      Principal: {getMainDeckCount()}/40-60
-                    </span>
-                    <span className={getExtraDeckCount() > 15 ? 'text-red-400' : 'text-green-400'}>
-                      Adicional: {getExtraDeckCount()}/15
-                    </span>
+                <div className="flex flex-col gap-3 mb-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="block text-white font-medium">
+                      Composição do deck ({formData.cards.length} tipos • {getTotalCardsInDeck()} cartas)
+                    </label>
+                    <div className="flex flex-wrap gap-3 text-sm font-bold">
+                      <span className={getMainDeckCount() < 40 ? 'text-yellow-400' : getMainDeckCount() > 60 ? 'text-red-400' : 'text-green-400'}>
+                        Principal: {getMainDeckCount()}/40–60
+                      </span>
+                      <span className={getExtraDeckCount() > 15 ? 'text-red-400' : 'text-emerald-400'}>
+                        Adicional: {getExtraDeckCount()}/15
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-slate-400 text-xs uppercase tracking-wide">Visualização</span>
+                    <button
+                      type="button"
+                      onClick={() => setDeckPreviewLarge(false)}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+                        !deckPreviewLarge
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      }`}
+                    >
+                      Compacta
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeckPreviewLarge(true)}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+                        deckPreviewLarge
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      }`}
+                    >
+                      Cartas maiores
+                    </button>
                   </div>
                 </div>
-                <div className="bg-slate-900/50 rounded-lg p-4 min-h-[200px] max-h-[500px] overflow-y-auto space-y-4">
+                <div className="bg-slate-900/50 rounded-lg p-4 min-h-[200px] max-h-[min(560px,70vh)] overflow-y-auto space-y-4 border border-slate-700/80">
                   {formData.cards.length === 0 ? (
                     <p className="text-slate-400 text-center py-8">
                       Nenhuma carta adicionada. Use a lista abaixo para adicionar cartas. Cartas Fusion, Synchro, Xyz e Link vão para o Deck Adicional.
@@ -480,7 +697,13 @@ export default function AdminInitialDecksPanel() {
                     <>
                       <div>
                         <h4 className="text-sm font-bold text-blue-300 mb-2">Deck Principal ({getMainDeckCount()} cartas)</h4>
-                        <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                        <div
+                          className={
+                            deckPreviewLarge
+                              ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4'
+                              : 'grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3'
+                          }
+                        >
                       {formData.cards.filter((c) => !c.isExtraDeck).map((deckCard) => {
                         const card = allCards.find((c) => c.id === deckCard.cardId);
                         if (!card) return null;
@@ -491,9 +714,11 @@ export default function AdminInitialDecksPanel() {
                         return (
                           <div
                             key={deckCard.cardId}
-                            className="bg-slate-800 rounded-lg p-2 border border-slate-700 hover:border-blue-500 transition-all"
+                            className={`bg-slate-800 rounded-lg border border-slate-700 transition-all hover:border-blue-500 ${
+                              deckPreviewLarge ? 'p-3' : 'p-2'
+                            }`}
                           >
-                            <div className="relative mb-2">
+                            <div className={`relative mb-2 ${deckPreviewLarge ? 'max-w-[120px] mx-auto' : ''}`}>
                               <CardImage
                                 card={card}
                                 className="w-full aspect-[59/86] rounded"
@@ -546,6 +771,13 @@ export default function AdminInitialDecksPanel() {
                             </div>
                             <button
                               type="button"
+                              onClick={() => setPreviewCard(card)}
+                              className="w-full mt-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-white text-xs font-medium"
+                            >
+                              Ver carta
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => removeCardFromDeck(deckCard.cardId)}
                               className="w-full mt-1 px-2 py-1 bg-red-700 hover:bg-red-600 rounded text-white text-xs"
                             >
@@ -558,15 +790,26 @@ export default function AdminInitialDecksPanel() {
                       </div>
                       <div>
                         <h4 className="text-sm font-bold text-purple-300 mb-2">Deck Adicional ({getExtraDeckCount()} cartas)</h4>
-                        <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                        <div
+                          className={
+                            deckPreviewLarge
+                              ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4'
+                              : 'grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3'
+                          }
+                        >
                       {formData.cards.filter((c) => c.isExtraDeck).map((deckCard) => {
                         const card = allCards.find((c) => c.id === deckCard.cardId);
                         if (!card) return null;
                         const maxCopies = card.maxCopiesInDeck ?? 3;
                         const isAtMax = deckCard.quantity >= maxCopies;
                         return (
-                          <div key={deckCard.cardId} className="bg-slate-800 rounded-lg p-2 border border-purple-700 hover:border-purple-500 transition-all">
-                            <div className="relative mb-2">
+                          <div
+                            key={deckCard.cardId}
+                            className={`bg-slate-800 rounded-lg border border-purple-700 transition-all hover:border-purple-500 ${
+                              deckPreviewLarge ? 'p-3' : 'p-2'
+                            }`}
+                          >
+                            <div className={`relative mb-2 ${deckPreviewLarge ? 'max-w-[120px] mx-auto' : ''}`}>
                               <CardImage card={card} className="w-full aspect-[59/86] rounded" fallback="/images/fundoCarta.webp" />
                               {isAtMax && <div className="absolute top-1 right-1 bg-yellow-500 text-black text-xs font-bold px-1.5 py-0.5 rounded">MAX</div>}
                             </div>
@@ -576,6 +819,7 @@ export default function AdminInitialDecksPanel() {
                               <span className={`text-xs font-bold flex-1 text-center ${isAtMax ? 'text-yellow-400' : 'text-white'}`}>{deckCard.quantity}/{maxCopies}</span>
                               <button type="button" onClick={() => updateCardQuantity(deckCard.cardId, deckCard.quantity + 1)} disabled={isAtMax} className={`px-1.5 py-0.5 rounded text-white text-xs ${isAtMax ? 'bg-gray-600 cursor-not-allowed opacity-50' : 'bg-green-600 hover:bg-green-500'}`}>+</button>
                             </div>
+                            <button type="button" onClick={() => setPreviewCard(card)} className="w-full mt-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-white text-xs font-medium">Ver carta</button>
                             <button type="button" onClick={() => removeCardFromDeck(deckCard.cardId)} className="w-full mt-1 px-2 py-1 bg-red-700 hover:bg-red-600 rounded text-white text-xs">Remover</button>
                           </div>
                         );
@@ -589,19 +833,244 @@ export default function AdminInitialDecksPanel() {
 
               {/* Lista de Cartas Disponíveis */}
               <div>
-                <label className="block text-white mb-2">
-                  Adicionar Cartas ao Deck
+                <label className="block text-white font-medium mb-2">
+                  Adicionar cartas ao deck
                 </label>
-                <input
-                  type="text"
-                  placeholder="Buscar cartas..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-blue-500 focus:outline-none mb-4"
-                />
-                <div className="bg-slate-900/50 rounded-lg p-4 max-h-[500px] overflow-y-auto">
+                <p className="text-slate-500 text-xs mb-3">
+                  Busca por nome ou texto do efeito. Filtros de subtipo, atributo e raça valem para monstros; magias e armadilhas somem ao usar esses filtros.
+                </p>
+                <div className="space-y-3 mb-4 rounded-lg border border-amber-500/30 bg-slate-900/60 p-4">
+                  <p className="text-sm font-semibold text-amber-200/90">
+                    Filtrar e ordenar por ATK
+                  </p>
+                  <p className="text-xs text-slate-500 -mt-2 mb-2">
+                    Só afeta monstros na filtragem; magias e armadilhas continuam no catálogo. Use a ordem para listar do ATK mais baixo ao mais alto ou o contrário.
+                  </p>
+                  <div className="flex flex-wrap items-end gap-4">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-400">ATK mínimo (≥)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        placeholder="Ex.: 1500"
+                        value={pickerAtkMin}
+                        onChange={(e) => setPickerAtkMin(e.target.value)}
+                        className="w-36 rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-amber-500/70 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-400">ATK máximo (≤)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        placeholder="Ex.: 3000"
+                        value={pickerAtkMax}
+                        onChange={(e) => setPickerAtkMax(e.target.value)}
+                        className="w-36 rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-amber-500/70 focus:outline-none"
+                      />
+                    </div>
+                    <div className="min-w-[200px]">
+                      <label className="mb-1 block text-xs font-semibold text-slate-400">Ordem por ATK</label>
+                      <select
+                        value={
+                          pickerSort === 'atk_asc' || pickerSort === 'atk_desc'
+                            ? pickerSort
+                            : ''
+                        }
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === 'atk_asc' || v === 'atk_desc') {
+                            setPickerSort(v as typeof pickerSort);
+                          } else if (
+                            v === '' &&
+                            (pickerSort === 'atk_asc' ||
+                              pickerSort === 'atk_desc')
+                          ) {
+                            setPickerSort('name_asc');
+                          }
+                        }}
+                        className="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-white focus:border-amber-500/70 focus:outline-none"
+                      >
+                        <option value="">Nome / raridade (abaixo)</option>
+                        <option value="atk_asc">Menor → maior</option>
+                        <option value="atk_desc">Maior → menor</option>
+                      </select>
+                    </div>
+                    {(pickerAtkMin || pickerAtkMax) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPickerAtkMin('');
+                          setPickerAtkMax('');
+                        }}
+                        className="rounded-lg border border-slate-500 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700"
+                      >
+                        Limpar faixa ATK
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-3 mb-4 rounded-lg border border-slate-600 bg-slate-900/40 p-4">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="md:col-span-2">
+                      <label className="mb-1 block text-xs font-semibold text-slate-400">Buscar</label>
+                      <input
+                        type="text"
+                        placeholder="Nome ou palavra no efeito..."
+                        value={cardPickerSearch}
+                        onChange={(e) => setCardPickerSearch(e.target.value)}
+                        className="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-400">Tipo</label>
+                      <select
+                        value={pickerType}
+                        onChange={(e) => setPickerType(e.target.value)}
+                        className="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
+                      >
+                        <option value="all">Todos</option>
+                        <option value="Monster">Monster</option>
+                        <option value="Spell">Spell</option>
+                        <option value="Trap">Trap</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-400">Raridade</label>
+                      <select
+                        value={pickerRarity}
+                        onChange={(e) => setPickerRarity(e.target.value)}
+                        className="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
+                      >
+                        <option value="all">Todas</option>
+                        {['Common', 'Rare', 'Super Rare', 'Ultra Rare', 'Secret Rare', 'Legendary'].map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-400">Subtipo (monstro)</label>
+                      <select
+                        value={pickerMonsterType}
+                        onChange={(e) => setPickerMonsterType(e.target.value)}
+                        className="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
+                      >
+                        <option value="all">Qualquer</option>
+                        {PICKER_MONSTER_TYPES.map((mt) => (
+                          <option key={mt} value={mt}>
+                            {mt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-400">Atributo</label>
+                      <select
+                        value={pickerAttribute}
+                        onChange={(e) => setPickerAttribute(e.target.value)}
+                        className="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
+                      >
+                        <option value="all">Qualquer</option>
+                        {PICKER_ATTRIBUTES.map((at) => (
+                          <option key={at} value={at}>
+                            {at}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-400">Raça</label>
+                      <select
+                        value={pickerRace}
+                        onChange={(e) => setPickerRace(e.target.value)}
+                        className="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
+                      >
+                        <option value="all">Qualquer</option>
+                        {PICKER_RACES.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-400">Ordenar (nome / raridade)</label>
+                      <select
+                        value={
+                          pickerSort === 'name_asc' ||
+                          pickerSort === 'name_desc' ||
+                          pickerSort === 'rarity_desc'
+                            ? pickerSort
+                            : '__atk__'
+                        }
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === '__atk__') return;
+                          setPickerSort(
+                            v as 'name_asc' | 'name_desc' | 'rarity_desc',
+                          );
+                        }}
+                        className="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
+                      >
+                        {(pickerSort === 'atk_asc' ||
+                          pickerSort === 'atk_desc') && (
+                          <option value="__atk__">
+                            {pickerSort === 'atk_asc'
+                              ? 'Ordem atual: ATK menor → maior'
+                              : 'Ordem atual: ATK maior → menor'}
+                          </option>
+                        )}
+                        <option value="name_asc">Nome A–Z</option>
+                        <option value="name_desc">Nome Z–A</option>
+                        <option value="rarity_desc">Raridade (maior)</option>
+                      </select>
+                    </div>
+                    <div className="flex items-end">
+                      {(cardPickerSearch ||
+                        pickerType !== 'all' ||
+                        pickerRarity !== 'all' ||
+                        pickerMonsterType !== 'all' ||
+                        pickerAttribute !== 'all' ||
+                        pickerRace !== 'all' ||
+                        pickerAtkMin !== '' ||
+                        pickerAtkMax !== '' ||
+                        pickerSort !== 'name_asc') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCardPickerSearch('');
+                            setPickerType('all');
+                            setPickerRarity('all');
+                            setPickerMonsterType('all');
+                            setPickerAttribute('all');
+                            setPickerRace('all');
+                            setPickerAtkMin('');
+                            setPickerAtkMax('');
+                            setPickerSort('name_asc');
+                          }}
+                          className="w-full rounded-lg border border-slate-500 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700"
+                        >
+                          Limpar filtros do catálogo
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <p className="text-slate-500 text-xs mb-2">
+                  Mostrando {filteredCardsForPicker.length} de {allCards.length} carta(s) no catálogo
+                </p>
+                <div className="bg-slate-900/50 rounded-lg p-4 max-h-[min(520px,60vh)] overflow-y-auto border border-slate-700/80">
+                  {filteredCardsForPicker.length === 0 ? (
+                    <p className="py-12 text-center text-slate-400 text-sm">
+                      Nenhuma carta com esses filtros. Ajuste a busca ou clique em &quot;Limpar filtros do catálogo&quot;.
+                    </p>
+                  ) : (
                   <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-9 gap-3">
-                    {filteredCards.map((card) => {
+                    {filteredCardsForPicker.map((card) => {
                       const inDeck = getCardInDeck(card.id);
                       const maxCopies = card.maxCopiesInDeck ?? 3;
                       const isBanned = maxCopies === 0;
@@ -648,10 +1117,21 @@ export default function AdminInitialDecksPanel() {
                           }`}>
                             {card.name}
                           </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPreviewCard(card);
+                            }}
+                            className="mt-1.5 w-full rounded bg-slate-600 py-1 text-[10px] font-semibold text-slate-100 hover:bg-slate-500"
+                          >
+                            Ver detalhes
+                          </button>
                         </div>
                       );
                     })}
                   </div>
+                  )}
                 </div>
               </div>
 
@@ -679,6 +1159,16 @@ export default function AdminInitialDecksPanel() {
         )}
 
         {/* Lista de Decks */}
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-lg font-bold text-white">Decks cadastrados</h2>
+          <input
+            type="text"
+            placeholder="Filtrar decks por nome ou descrição..."
+            value={deckListSearch}
+            onChange={(e) => setDeckListSearch(e.target.value)}
+            className="w-full max-w-md rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm text-white placeholder-slate-500 focus:border-violet-500 focus:outline-none"
+          />
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredDecks.map((deck) => (
             <motion.div
@@ -739,6 +1229,160 @@ export default function AdminInitialDecksPanel() {
               Nenhum deck inicial cadastrado ainda.
             </p>
           </div>
+        )}
+
+        {previewCard && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="initial-deck-card-preview-title"
+            onClick={() => setPreviewCard(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-600 bg-slate-900 p-5 shadow-2xl"
+            >
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <h2
+                  id="initial-deck-card-preview-title"
+                  className="text-xl font-bold text-white"
+                >
+                  {previewCard.name}
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setPreviewCard(null)}
+                  className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-800 hover:text-white"
+                  aria-label="Fechar"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="mb-4 flex justify-center">
+                <div className="w-full max-w-[200px]">
+                  <CardImage
+                    card={previewCard}
+                    className="w-full rounded-lg shadow-lg aspect-[59/86] object-cover"
+                    fallback="/images/fundoCarta.webp"
+                  />
+                </div>
+              </div>
+              <dl className="mb-4 space-y-2 text-sm">
+                <div className="flex flex-wrap gap-x-2 border-b border-slate-700 pb-2">
+                  <dt className="text-slate-500">Tipo</dt>
+                  <dd className="font-medium text-slate-200">{previewCard.type}</dd>
+                </div>
+                <div className="flex flex-wrap gap-x-2 border-b border-slate-700 pb-2">
+                  <dt className="text-slate-500">Raridade</dt>
+                  <dd className="font-medium text-slate-200">
+                    {previewCard.rarity || 'Common'}
+                  </dd>
+                </div>
+                {previewCard.idCarta ? (
+                  <div className="flex flex-wrap gap-x-2 border-b border-slate-700 pb-2">
+                    <dt className="text-slate-500">idCarta</dt>
+                    <dd className="break-all font-mono text-xs text-slate-300">
+                      {previewCard.idCarta}
+                    </dd>
+                  </div>
+                ) : null}
+                {previewCard.type === 'Monster' ? (
+                  <>
+                    {previewCard.monsterType ? (
+                      <div className="flex flex-wrap gap-x-2 border-b border-slate-700 pb-2">
+                        <dt className="text-slate-500">Subtipo</dt>
+                        <dd className="text-slate-200">{previewCard.monsterType}</dd>
+                      </div>
+                    ) : null}
+                    {previewCard.attribute ? (
+                      <div className="flex flex-wrap gap-x-2 border-b border-slate-700 pb-2">
+                        <dt className="text-slate-500">Atributo</dt>
+                        <dd className="text-slate-200">{previewCard.attribute}</dd>
+                      </div>
+                    ) : null}
+                    {previewCard.race ? (
+                      <div className="flex flex-wrap gap-x-2 border-b border-slate-700 pb-2">
+                        <dt className="text-slate-500">Raça</dt>
+                        <dd className="text-slate-200">{previewCard.race}</dd>
+                      </div>
+                    ) : null}
+                    {previewCard.level != null ? (
+                      <div className="flex flex-wrap gap-x-2 border-b border-slate-700 pb-2">
+                        <dt className="text-slate-500">Nível</dt>
+                        <dd className="text-slate-200">{previewCard.level}</dd>
+                      </div>
+                    ) : null}
+                    {previewCard.rank != null ? (
+                      <div className="flex flex-wrap gap-x-2 border-b border-slate-700 pb-2">
+                        <dt className="text-slate-500">Rank</dt>
+                        <dd className="text-slate-200">{previewCard.rank}</dd>
+                      </div>
+                    ) : null}
+                    {previewCard.linkRating != null ? (
+                      <div className="flex flex-wrap gap-x-2 border-b border-slate-700 pb-2">
+                        <dt className="text-slate-500">Link</dt>
+                        <dd className="text-slate-200">{previewCard.linkRating}</dd>
+                      </div>
+                    ) : null}
+                    {(previewCard.atk != null || previewCard.def != null) ? (
+                      <div className="flex flex-wrap gap-x-2 border-b border-slate-700 pb-2">
+                        <dt className="text-slate-500">ATK / DEF</dt>
+                        <dd className="text-slate-200">
+                          {previewCard.atk ?? '—'} / {previewCard.def ?? '—'}
+                        </dd>
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
+                {previewCard.type === 'Spell' && previewCard.spellType ? (
+                  <div className="flex flex-wrap gap-x-2 border-b border-slate-700 pb-2">
+                    <dt className="text-slate-500">Tipo de magia</dt>
+                    <dd className="text-slate-200">{previewCard.spellType}</dd>
+                  </div>
+                ) : null}
+                {previewCard.type === 'Trap' && previewCard.trapType ? (
+                  <div className="flex flex-wrap gap-x-2 border-b border-slate-700 pb-2">
+                    <dt className="text-slate-500">Tipo de armadilha</dt>
+                    <dd className="text-slate-200">{previewCard.trapType}</dd>
+                  </div>
+                ) : null}
+                {previewCard.archetype ? (
+                  <div className="flex flex-wrap gap-x-2 border-b border-slate-700 pb-2">
+                    <dt className="text-slate-500">Arquétipo</dt>
+                    <dd className="text-slate-200">{previewCard.archetype}</dd>
+                  </div>
+                ) : null}
+                <div className="flex flex-wrap gap-x-2 pb-2">
+                  <dt className="text-slate-500">Máx. no deck</dt>
+                  <dd className="text-slate-200">
+                    {(previewCard.maxCopiesInDeck ?? 3) === 0
+                      ? 'Banida (0)'
+                      : previewCard.maxCopiesInDeck ?? 3}
+                  </dd>
+                </div>
+              </dl>
+              <div>
+                <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Descrição / efeito
+                </h3>
+                <p className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg bg-slate-950/80 p-3 text-sm leading-relaxed text-slate-300">
+                  {getCardDescription(previewCard)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewCard(null)}
+                className="mt-5 w-full rounded-lg bg-slate-700 py-2.5 font-semibold text-white hover:bg-slate-600"
+              >
+                Fechar
+              </button>
+            </motion.div>
+          </motion.div>
         )}
       </div>
     </div>

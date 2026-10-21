@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, OnModuleInit, Optional, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { ShopItem, ShopItemCurrency } from './entities/shop-item.entity';
@@ -15,6 +15,8 @@ import { EconomyService } from '../economy/economy.service';
 import { CurrencyType, TransactionType } from '../economy/entities/transaction.entity';
 import { CosmeticsService } from '../cosmetics/cosmetics.service';
 import { PromotionsService } from '../promotions/promotions.service';
+import { MissionsService } from '../missions/missions.service';
+import { MissionObjectiveType } from '../missions/mission-objective.types';
 
 // Mantém apenas UMA definição da classe ShopService
 export class ShopService implements OnModuleInit {
@@ -41,6 +43,9 @@ export class ShopService implements OnModuleInit {
     private economyService: EconomyService,
     private cosmeticsService: CosmeticsService,
     private promotionsService: PromotionsService,
+    @Optional()
+    @Inject(forwardRef(() => MissionsService))
+    private missionsService: MissionsService | null,
   ) {}
 
   async onModuleInit() {
@@ -331,7 +336,7 @@ export class ShopService implements OnModuleInit {
       throw new NotFoundException('Carta não encontrada');
     }
 
-    if (!card.isForSale) {
+    if (!card.isActive) {
       throw new BadRequestException('Esta carta não está disponível para compra');
     }
 
@@ -386,6 +391,16 @@ export class ShopService implements OnModuleInit {
       - Total: ${totalPrice} ${purchaseDto.paymentMethod}
       - Saldo restante: ${this.getBalance(user, purchaseDto.paymentMethod)}
     `);
+
+    try {
+      await this.missionsService?.trackEvent(
+        userId,
+        MissionObjectiveType.BUY_SHOP_CARD,
+        quantity,
+      );
+    } catch {
+      /* não falha a compra */
+    }
 
     return {
       success: true,
@@ -600,16 +615,17 @@ export class ShopService implements OnModuleInit {
     maletaLimits: { maxDecks: number; maletaCapacity: number };
   }> {
     try {
+      // Timeout generoso: 1s fazia inventário voltar vazio sob carga (parece “sem cartas”)
       const cards = await Promise.race([
         this.userCardRepository.find({
           where: { userId },
           relations: ['card'],
           order: { createdAt: 'DESC' },
-          take: 1000, // Limite de 1000 itens
+          take: 1000,
         }),
-        new Promise<UserCard[]>((_, reject) => 
-          setTimeout(() => reject(new Error('Query timeout')), 1000)
-        )
+        new Promise<UserCard[]>((_, reject) =>
+          setTimeout(() => reject(new Error('Query timeout')), 8000),
+        ),
       ]).catch(() => []);
 
       // Quantidade de cada carta nos decks do usuário (cardId -> count)
@@ -651,29 +667,24 @@ export class ShopService implements OnModuleInit {
         ],
       });
 
-      const playmats: any[] = [];
-      const skins: any[] = [];
-
       const ownedSleeveIds = Array.isArray(user?.ownedSleeveIds) ? user.ownedSleeveIds : [];
       const ownedPlaymatIds = Array.isArray(user?.ownedPlaymatIds) ? user.ownedPlaymatIds : [];
 
-      for (const id of ownedPlaymatIds) {
-        try {
-          const pm = await this.cosmeticsService.findOnePlaymat(id);
-          playmats.push({ id: pm.id, name: pm.name, image: pm.image });
-        } catch {
-          // Playmat pode ter sido removido do catálogo
-        }
-      }
-
-      for (const id of ownedSleeveIds) {
-        try {
-          const sl = await this.cosmeticsService.findOneSleeve(id);
-          skins.push({ id: sl.id, name: sl.name, image: sl.image });
-        } catch {
-          // Sleeve pode ter sido removido do catálogo
-        }
-      }
+      // Batch em vez de N+1 findOne por cosmético
+      const [ownedPlaymats, ownedSleeves] = await Promise.all([
+        this.cosmeticsService.findPlaymatsByIds(ownedPlaymatIds),
+        this.cosmeticsService.findSleevesByIds(ownedSleeveIds),
+      ]);
+      const playmats = ownedPlaymats.map((pm) => ({
+        id: pm.id,
+        name: pm.name,
+        image: pm.image,
+      }));
+      const skins = ownedSleeves.map((sl) => ({
+        id: sl.id,
+        name: sl.name,
+        image: sl.image,
+      }));
 
       // Talismãs do usuário (com template eager)
       const userTalismans = await this.userTalismanRepository.find({

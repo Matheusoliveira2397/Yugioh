@@ -64,7 +64,7 @@ const TributeSelectionModal: React.FC<TributeSelectionModalProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+          className="fixed inset-0 z-[10000] flex items-center justify-center p-4 duel-modal-scrim"
           onClick={handleCancel}
         >
           <motion.div
@@ -72,7 +72,7 @@ const TributeSelectionModal: React.FC<TributeSelectionModalProps> = ({
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.9, opacity: 0 }}
             onClick={(e) => e.stopPropagation()}
-            className="bg-slate-900/30 backdrop-blur-xl rounded-2xl border-2 border-yellow-500/50 shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+            className="duel-modal-panel rounded-2xl border-2 border-yellow-500/50 shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"
           >
             <div className="p-6">
               {/* Header */}

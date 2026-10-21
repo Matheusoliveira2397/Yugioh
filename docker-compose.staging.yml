@@ -91,6 +91,10 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-yugioh_staging_secret_change_me}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost,http://localhost:80}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-http://localhost:3000/auth/google/callback}
     ports:
       - "3000:3000"
     volumes:

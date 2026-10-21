@@ -78,7 +78,8 @@ export default function CardImage({
   ]);
 
   const possiblePaths = useMemo(() => {
-    return getAllCardImagePaths(card, pathListOptions);
+    // Cap de tentativas: evita cascata de 404 (principal causa de lentidão visual)
+    return getAllCardImagePaths(card, pathListOptions).slice(0, 6);
   }, [
     card?.idCarta,
     card?.id,
@@ -273,7 +274,8 @@ export default function CardImage({
           alt=""
           loading={loading}
           decoding="async"
-          fetchPriority={fp}
+          // React 18: atributo DOM é lowercase (evita warning fetchPriority)
+          {...{ fetchpriority: fp }}
           sizes={sizes}
           className={`absolute inset-0 h-full w-full ${fitClass}`}
           draggable={false}
@@ -307,7 +309,7 @@ export default function CardImage({
         alt=""
         loading={loading}
         decoding="async"
-        fetchPriority={fp}
+        {...{ fetchpriority: fp }}
         sizes={sizes}
         style={{
           position: 'absolute',

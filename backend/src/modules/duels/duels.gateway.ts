@@ -23,10 +23,11 @@ import { ArenaMatchmakingService } from '../arena/arena-matchmaking.service';
 import { ArenaService } from '../arena/arena.service';
 import { ArenaMatchmakingProcessorService } from '../arena/arena-matchmaking-processor.service';
 import { assertActivatorHasLpForSpell } from './utils/spell-activation-lp.util';
+import { getCorsOriginOption } from '../../common/utils/cors-origins.util';
 
 @WebSocketGateway({
   cors: {
-    origin: '*',
+    origin: getCorsOriginOption(),
     credentials: true,
   },
   transports: ['websocket', 'polling'],
@@ -74,11 +75,16 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
   constructor(
     private jwtService: JwtService,
+    @Inject(forwardRef(() => MatchmakingService))
     private matchmakingService: MatchmakingService,
+    @Inject(forwardRef(() => DuelsService))
     private duelsService: DuelsService,
+    @Inject(forwardRef(() => DuelQueueService))
     private duelQueueService: DuelQueueService,
     private usersService: UsersService,
+    @Inject(forwardRef(() => CardEffectHandlersService))
     private cardEffectHandlersService: CardEffectHandlersService,
+    @Inject(forwardRef(() => CardEffectsService))
     private cardEffectsService: CardEffectsService,
     @Inject(forwardRef(() => ArenaMatchmakingService))
     private arenaMatchmakingService: ArenaMatchmakingService,
@@ -416,7 +422,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
   @SubscribeMessage('searchDuel')
   async handleSearchDuel(
-    @MessageBody() data: { userId?: number; animeDeckId?: string },
+    @MessageBody()
+    data: { userId?: number; animeDeckId?: string; mode?: 'casual' | 'ranked' | 'anime' },
     @ConnectedSocket() client: Socket,
   ) {
     try {
@@ -427,42 +434,80 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         return;
       }
 
-      const animeDeckId = data.animeDeckId && String(data.animeDeckId).trim() ? String(data.animeDeckId).trim() : undefined;
+      const animeDeckId =
+        data.animeDeckId && String(data.animeDeckId).trim()
+          ? String(data.animeDeckId).trim()
+          : undefined;
+      const mode =
+        data.mode === 'ranked'
+          ? 'ranked'
+          : animeDeckId || data.mode === 'anime'
+            ? 'anime'
+            : 'casual';
 
-      // Modo Anime Deck: não exige deck equipado; modo normal exige
-      if (!animeDeckId) {
+      // Anime: não exige deck equipado; casual/ranked exigem
+      if (mode !== 'anime') {
         const hasDeck = await this.duelsService.hasEquippedDeck(userId);
         if (!hasDeck) {
           console.error(`❌ [handleSearchDuel] Usuário ${userId} não tem deck equipado`);
-          client.emit('duelError', { 
-            message: 'Você não tem deck equipado. Por favor, equipe um deck antes de procurar duelo.' 
+          client.emit('duelError', {
+            message:
+              'Você não tem deck equipado. Por favor, equipe um deck antes de procurar duelo.',
           });
           return;
         }
       }
-      
+
       const activeDuel = await this.duelsService.getActiveDuelForUser(userId);
       if (activeDuel) {
-        console.error(`❌ [handleSearchDuel] Usuário ${userId} já tem duelo ativo (ID: ${activeDuel.id})`);
-        client.emit('duelError', { 
-          message: 'Você já tem um duelo em andamento. Finalize o duelo atual antes de procurar um novo.',
-          activeDuelId: activeDuel.id
+        console.error(
+          `❌ [handleSearchDuel] Usuário ${userId} já tem duelo ativo (ID: ${activeDuel.id})`,
+        );
+        client.emit('duelError', {
+          message:
+            'Você já tem um duelo em andamento. Finalize o duelo atual antes de procurar um novo.',
+          activeDuelId: activeDuel.id,
         });
         return;
       }
 
       if (this.arenaMatchmakingService.isInArenaQueue(userId)) {
-        console.log(`🔄 [handleSearchDuel] Removendo usuário ${userId} da fila da arena antes de adicionar à fila`);
+        console.log(
+          `🔄 [handleSearchDuel] Removendo usuário ${userId} da fila da arena antes de adicionar à fila`,
+        );
         this.arenaMatchmakingService.removeFromArenaQueue(userId);
       }
-      
-      console.log(`🔍 [handleSearchDuel] Usuário ${userId} procurando duelo ${animeDeckId ? '(Anime Deck)' : ''} (Socket: ${client.id})`);
-      this.matchmakingService.addToQueue(userId, client.id, animeDeckId);
+
+      let rankedPoints: number | undefined;
+      if (mode === 'ranked') {
+        try {
+          const user = await this.usersService.findById(userId);
+          rankedPoints = Number((user as any)?.rankedPoints ?? 1000);
+        } catch {
+          rankedPoints = 1000;
+        }
+      }
+
+      console.log(
+        `🔍 [handleSearchDuel] Usuário ${userId} modo=${mode}${animeDeckId ? ` animeDeck=${animeDeckId}` : ''} (Socket: ${client.id})`,
+      );
+      this.matchmakingService.addToQueue(userId, client.id, {
+        mode: mode as any,
+        animeDeckId,
+        rankedPoints,
+      });
       client.join(`user_${userId}`);
-      client.emit('searchingDuel', { message: animeDeckId ? 'Procurando oponente (Anime Deck)...' : 'Procurando oponente...' });
+      const msg =
+        mode === 'ranked'
+          ? 'Procurando oponente ranqueado...'
+          : mode === 'anime'
+            ? 'Procurando oponente (Anime Deck)...'
+            : 'Procurando oponente...';
+      client.emit('searchingDuel', { message: msg, mode });
     } catch (error) {
       console.error(`❌ [handleSearchDuel] Erro:`, error);
-      const errorMessage = error instanceof Error ? error.message : 'Erro ao processar busca';
+      const errorMessage =
+        error instanceof Error ? error.message : 'Erro ao processar busca';
       client.emit('duelError', { message: errorMessage });
     }
   }
@@ -876,8 +921,11 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       }
 
       // Processar fase DRAW automaticamente se for o turno do jogador e estiver na fase DRAW
+      // Espectador (admin) NÃO deve ser tratado como jogador — evita processar DRAW ao assistir
       const isPlayer1 = duelPlayer1Id === numericUserId;
-      const isCurrentTurn = (isPlayer1 && duel.currentTurn === 1) || (!isPlayer1 && duel.currentTurn === 2);
+      const isCurrentTurn =
+        !isSpectator &&
+        ((isPlayer1 && duel.currentTurn === 1) || (!isPlayer1 && duel.currentTurn === 2));
       if (isCurrentTurn && duel.currentPhase === TurnPhase.DRAW) {
         // Emitir DRAW phase primeiro para mostrar o popup
         const drawPhaseDuelData = {
@@ -2242,6 +2290,19 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
                                       actionType === 'LAST_WILL_CHOICE' ||
                                       actionType === 'MONSTER_REINCARNATION_DISCARD_CHOICE' ||
                                       actionType === 'MONSTER_REINCARNATION_GRAVEYARD_CHOICE' ||
+                                      actionType === 'DARK_MAGICIAN_OF_CHAOS_CHOICE' ||
+                                      actionType === 'DARK_MAGICIAN_OF_CHAOS_SKIP' ||
+                                      actionType === 'MAGICIAN_S_ROD_SEARCH_CHOICE' ||
+                                      actionType === 'MAGICIAN_S_ROD_SEARCH_SKIP' ||
+                                      actionType === 'MAGICIAN_S_ROD_GY_CHOICE' ||
+                                      actionType === 'MAGICIAN_S_ROD_GY_SKIP' ||
+                                      actionType === 'MAGICIAN_S_SALVATION_ETERNAL_SOUL_CHOICE' ||
+                                      actionType === 'MAGICIAN_S_SALVATION_ETERNAL_SOUL_SKIP' ||
+                                      actionType === 'MAGICIAN_S_SALVATION_PAIR_CHOICE' ||
+                                      actionType === 'MAGICIAN_S_SALVATION_PAIR_SKIP' ||
+                                      actionType === 'SKILLED_DARK_MAGICIAN_CHOICE' ||
+                                      actionType === 'SKILLED_DARK_MAGICIAN_SKIP' ||
+                                      actionType === 'START_SKILLED_DARK_MAGICIAN_EFFECT' ||
                                       actionType === 'PLAYER_TARGET_SPELL_RESOLVE' ||
                                       actionType === 'CANCEL_CARD_ACTIVATION' ||
                                       actionType === 'BREAKER_REMOVE_COUNTER';
@@ -3809,10 +3870,27 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
                   }
                 }
                 
-                // Trap cards não podem ser ativadas manualmente do campo
-                // Elas só ativam automaticamente no turno do oponente quando a condição é atendida
-                client.emit('duelError', { message: 'Trap cards não podem ser ativadas manualmente. Elas só ativam automaticamente no turno do oponente quando a condição é atendida.' });
-                return;
+                // Armadilhas com efeito tratado como "player target spell" (ex.: Ring of Destruction)
+                // podem ser ativadas do campo em set — o motor não simula cadeia automática no ataque.
+                const isPlayer1ForTrap = Number(duel.player1Id) === Number(userId);
+                const manualTrapPlayerTargetKind = this.duelsService.detectPlayerTargetSpellKindForDuel(
+                  card,
+                  duel,
+                  isPlayer1ForTrap,
+                );
+                if (!manualTrapPlayerTargetKind) {
+                  client.emit('duelError', {
+                    message:
+                      'Trap cards não podem ser ativadas manualmente. Elas só ativam automaticamente no turno do oponente quando a condição é atendida.',
+                  });
+                  return;
+                }
+                if (this.duelsService.isNormalTrapBlockedSameTurnSet(duel, card)) {
+                  client.emit('duelError', {
+                    message: 'Armadilhas não podem ser ativadas no mesmo turno em que foram colocadas no campo.',
+                  });
+                  return;
+                }
               }
               
               // REGRAS: Spell cards
@@ -3893,6 +3971,28 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           if (!updatedDuel) {
             client.emit('duelError', { message: 'Duelo não encontrado' });
             return;
+          }
+
+          // Magician's Salvation: só 1 ativação por turno
+          {
+            const idLow = String(cardId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const nameLow = String(actionData?.cardName || actionData?.name || '').toLowerCase();
+            const isSalvation =
+              idLow.includes('magicianssalvation') ||
+              idLow.includes('35158295') ||
+              nameLow.includes("magician's salvation") ||
+              nameLow.includes('magicians salvation') ||
+              nameLow.includes('salvação do mago') ||
+              nameLow.includes('salvacao do mago');
+            if (isSalvation) {
+              const isP1Sal = Number(updatedDuel.player1Id) === Number(userId);
+              const pfSal = isP1Sal ? (updatedDuel as any).player1Field : (updatedDuel as any).player2Field;
+              const turnSal = (updatedDuel as any).turnCounter ?? pfSal?.turnCounter ?? 1;
+              if (pfSal?.magiciansSalvationActivatedTurn === turnSal) {
+                client.emit('duelError', { message: 'Só pode ativar 1 "Magician\'s Salvation" por turno.' });
+                return;
+              }
+            }
           }
           
           // Encontrar a carta na mão
@@ -5479,6 +5579,32 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
               }
             }
           }
+
+          // Spell de Equip: só pode ser ativada se houver monstro no campo (face-up) para equipar
+          const ctEquip = (cardToProcess.type || cardToProcess.cardType || '').toString();
+          const stEquip = (cardToProcess.spellType || '').toString().toLowerCase();
+          const nameEquipL = (cardToProcess.name || cardToProcess.cardName || '').toLowerCase();
+          const idEquipL = String(cardToProcess.idCarta || cardToProcess.id || cardToProcess.cardId || '').toLowerCase();
+          const isNamedEquipSpell =
+            idEquipL.includes('unitedwestand') ||
+            nameEquipL.includes('united we stand') ||
+            idEquipL.includes('magepower') ||
+            nameEquipL.includes('mage power');
+          const isEquipSpellActivation =
+            ctEquip === 'Spell' && (stEquip === 'equip' || isNamedEquipSpell);
+          if (isEquipSpellActivation) {
+            const pfEquip = isPlayer1Check
+              ? (updatedDuel as any).player1Field
+              : (updatedDuel as any).player2Field;
+            const nEquipTargets = this.duelsService.countFaceUpMonstersForEquipSpell(pfEquip);
+            if (nEquipTargets < 1) {
+              client.emit('duelError', {
+                message:
+                  'Não há monstro no campo para equipar esta carta (é necessário pelo menos um monstro com a face para cima).',
+              });
+              return;
+            }
+          }
           
           // Colocar no campo e processar efeito
           // IMPORTANTE: Só colocar no campo se zoneIndex é válido
@@ -5993,23 +6119,37 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
                   ...am.monster,
                   zoneIndex: am.zoneIndex, // Incluir zoneIndex no objeto do monstro
                 }));
-                
-                // IMPORTANTE: UnitedWeStand não cria pendingChoice - o frontend gerencia o estado temporário
-                if (availableMonsters.length > 0) {
-                  console.log(`📤 [handleDuelAction] Emitindo unitedWeStandShowMonsters apenas para quem ativou (sem pendingChoice)`);
-                  // Emitir apenas para o cliente que ativou a carta
-                  client.emit('unitedWeStandShowMonsters', {
-                    availableMonsters: availableMonsters,
-                    duelId: duelId,
-                  });
-                  console.log(`✅ [handleDuelAction] Evento unitedWeStandShowMonsters emitido apenas para o cliente que ativou`);
-                } else {
-                  console.log(`ℹ️ [handleDuelAction] Nenhum monstro face-up no campo para equipar UnitedWeStand`);
-                  // Emitir evento mesmo sem monstros para mostrar modal vazio
-                  client.emit('unitedWeStandShowMonsters', {
-                    availableMonsters: [],
-                    duelId: duelId,
-                  });
+
+                await this.duelsService.setPendingChoice(duelId, {
+                  type: 'UNITED_WE_STAND',
+                  userId: Number(userId),
+                  turnWhenStarted: Number((updatedDuel as any).currentTurn) || 1,
+                  phaseWhenStarted: String((updatedDuel as any).currentPhase || 'MAIN1'),
+                  data: {
+                    zoneIndex,
+                    cardWasOnField: actionData?.spellActivatedFromField === true,
+                    originalPosition:
+                      actionData?.spellActivatedFromField === true
+                        ? (actionData?.originalSpellTrapPosition ?? 'set')
+                        : null,
+                    cardInstanceId: cardOnField.instanceId,
+                    cardId: cardIdCarta,
+                    cardName: cardOnField.name || cardOnField.cardName,
+                  },
+                });
+                const duelUwPending =
+                  this.duelsService.findDuelByIdLight(duelId) ||
+                  (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+
+                console.log(
+                  `📤 [handleDuelAction] UnitedWeStand — emitindo modal (${availableMonsters.length} alvo(s)) + pendingChoice para cancelar`,
+                );
+                client.emit('unitedWeStandShowMonsters', {
+                  availableMonsters,
+                  duelId,
+                });
+                if (duelUwPending) {
+                  this.server.to(`duel_${duelId}`).emit('duelUpdate', duelUwPending);
                 }
               }
             }
@@ -6059,23 +6199,37 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
                   ...am.monster,
                   zoneIndex: am.zoneIndex, // Incluir zoneIndex no objeto do monstro
                 }));
-                
-                // IMPORTANTE: MagePower não cria pendingChoice - o frontend gerencia o estado temporário
-                if (availableMonsters.length > 0) {
-                  console.log(`📤 [handleDuelAction] Emitindo magePowerShowMonsters apenas para quem ativou (sem pendingChoice)`);
-                  // Emitir apenas para o cliente que ativou a carta
-                  client.emit('magePowerShowMonsters', {
-                    availableMonsters: availableMonsters,
-                    duelId: duelId,
-                  });
-                  console.log(`✅ [handleDuelAction] Evento magePowerShowMonsters emitido apenas para o cliente que ativou`);
-                } else {
-                  console.log(`ℹ️ [handleDuelAction] Nenhum monstro face-up no campo para equipar MagePower`);
-                  // Emitir evento mesmo sem monstros para mostrar modal vazio
-                  client.emit('magePowerShowMonsters', {
-                    availableMonsters: [],
-                    duelId: duelId,
-                  });
+
+                await this.duelsService.setPendingChoice(duelId, {
+                  type: 'MAGE_POWER',
+                  userId: Number(userId),
+                  turnWhenStarted: Number((updatedDuel as any).currentTurn) || 1,
+                  phaseWhenStarted: String((updatedDuel as any).currentPhase || 'MAIN1'),
+                  data: {
+                    zoneIndex,
+                    cardWasOnField: actionData?.spellActivatedFromField === true,
+                    originalPosition:
+                      actionData?.spellActivatedFromField === true
+                        ? (actionData?.originalSpellTrapPosition ?? 'set')
+                        : null,
+                    cardInstanceId: cardOnField.instanceId,
+                    cardId: cardIdCarta,
+                    cardName: cardOnField.name || cardOnField.cardName,
+                  },
+                });
+                const duelMpPending =
+                  this.duelsService.findDuelByIdLight(duelId) ||
+                  (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+
+                console.log(
+                  `📤 [handleDuelAction] MagePower — emitindo modal (${availableMonsters.length} alvo(s)) + pendingChoice para cancelar`,
+                );
+                client.emit('magePowerShowMonsters', {
+                  availableMonsters,
+                  duelId,
+                });
+                if (duelMpPending) {
+                  this.server.to(`duel_${duelId}`).emit('duelUpdate', duelMpPending);
                 }
               }
             }
@@ -6184,6 +6338,21 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
             client.emit('duelError', { message: 'Erro ao buscar duelo atualizado' });
             return;
           }
+
+          // Magician's Rod GY: após ativar Magia/Armadilha no turno do oponente
+          if (actionType === 'ACTIVATE_SPELL_TRAP' && finalPosition === 'face-up') {
+            const rodStarted = await this.duelsService.queueOrStartMagiciansRodGy(
+              duelId,
+              updatedDuel,
+              Number(userId),
+            );
+            if (rodStarted || (updatedDuel as any).pendingChoice) {
+              const refreshed =
+                this.duelsService.findDuelByIdLight(duelId) ||
+                (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+              if (refreshed) updatedDuel = refreshed;
+            }
+          }
           
           // Nota: A mudança de fase já foi feita antes de colocar a carta no campo (linhas 3996-4012)
           // Não é necessário fazer novamente aqui
@@ -6228,6 +6397,19 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
           const finalUpdatedDuel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
           if (finalUpdatedDuel) {
             updatedDuel = finalUpdatedDuel;
+          }
+
+          // Magician's Rod GY: agenda se a S/T especial criou pendingChoice no turno do oponente
+          if (actionType === 'ACTIVATE_SPELL_TRAP' && finalPosition === 'face-up' && updatedDuel) {
+            await this.duelsService.queueOrStartMagiciansRodGy(
+              duelId,
+              updatedDuel,
+              Number(userId),
+            );
+            const afterRod =
+              this.duelsService.findDuelByIdLight(duelId) ||
+              (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+            if (afterRod) updatedDuel = afterRod;
           }
 
           // Mudar fase automaticamente ao ativar/colocar carta da mão:
@@ -7570,6 +7752,128 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
         console.log(`✅ [SNOWMAN_EATER_CHOICE] Emitindo duelUpdate - id: ${duelData.id}, player1Field: ${!!duelData.player1Field}, player2Field: ${!!duelData.player2Field}, pendingChoice: ${duelData.pendingChoice}`);
         this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
+      } else if (actionType === 'START_SKILLED_DARK_MAGICIAN_EFFECT') {
+        const { monsterZoneIndex } = actionData || {};
+        if (monsterZoneIndex === undefined || monsterZoneIndex === null) {
+          client.emit('duelError', { message: 'Zona inválida' });
+          return;
+        }
+        const result = await this.duelsService.tryStartSkilledDarkMagicianEffect(
+          duelId,
+          userId,
+          Number(monsterZoneIndex),
+        );
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro no efeito Skilled Dark Magician' });
+          return;
+        }
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
+      } else if (actionType === 'SKILLED_DARK_MAGICIAN_CHOICE') {
+        const { source, index } = actionData || {};
+        if (!source || index === undefined || index === null) {
+          client.emit('duelError', { message: 'Escolha inválida' });
+          return;
+        }
+        const result = await this.duelsService.processSkilledDarkMagicianChoice(
+          duelId,
+          userId,
+          source,
+          Number(index),
+        );
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro no efeito Skilled Dark Magician' });
+          return;
+        }
+        await this.createAndEmitDuelLog(
+          duelId,
+          userId,
+          'SPECIAL_SUMMON_CHAOS_SORCERER',
+          result.message || 'Skilled Dark Magician: Dark Magician invocado',
+        );
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', {
+            duelId,
+            reason: 'choice_completed',
+            cardEffectType: 'skilled_dark_magician',
+          });
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
+      } else if (actionType === 'SKILLED_DARK_MAGICIAN_SKIP') {
+        const result = await this.duelsService.skipSkilledDarkMagicianEffect(duelId, userId);
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro ao pular efeito' });
+          return;
+        }
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', {
+            duelId,
+            reason: 'choice_completed',
+            cardEffectType: 'skilled_dark_magician',
+          });
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
       } else if (actionType === 'BREAKER_REMOVE_COUNTER') {
         // Processar remoção de marcador e escolha de alvo para Breaker The Magical Warrior
         const { monsterZoneIndex, targetPlayer, targetZoneIndex } = actionData;
@@ -8212,6 +8516,618 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         };
         
         this.server.to(`duel_${duelId}`).emit('duelUpdate', duelData);
+      } else if (actionType === 'DARK_MAGICIAN_OF_CHAOS_CHOICE') {
+        const { graveyardIndex } = actionData || {};
+        if (graveyardIndex === undefined || graveyardIndex === null) {
+          client.emit('duelError', { message: 'Escolha de magia inválida' });
+          return;
+        }
+        const result = await this.duelsService.processDarkMagicianOfChaosEndPhaseChoice(
+          duelId,
+          userId,
+          Number(graveyardIndex),
+        );
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro no efeito Dark Magician of Chaos' });
+          return;
+        }
+        await this.createAndEmitDuelLog(
+          duelId,
+          userId,
+          'DARK_MAGICIAN_OF_CHAOS_EFFECT',
+          result.message || 'Dark Magician of Chaos: magia do cemitério à mão',
+        );
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', {
+            duelId,
+            reason: 'choice_completed',
+            cardEffectType: 'dark_magician_of_chaos',
+          });
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
+      } else if (actionType === 'DARK_MAGICIAN_OF_CHAOS_SKIP') {
+        const result = await this.duelsService.skipDarkMagicianOfChaosEndPhase(duelId, userId);
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro ao pular efeito' });
+          return;
+        }
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', {
+            duelId,
+            reason: 'choice_completed',
+            cardEffectType: 'dark_magician_of_chaos',
+          });
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
+      } else if (actionType === 'MAGICIAN_S_ROD_SEARCH_CHOICE') {
+        const { deckIndex } = actionData || {};
+        if (deckIndex === undefined || deckIndex === null) {
+          client.emit('duelError', { message: 'Escolha de carta inválida' });
+          return;
+        }
+        const result = await this.duelsService.processMagiciansRodSearchChoice(
+          duelId,
+          userId,
+          Number(deckIndex),
+        );
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || "Erro no efeito Magician's Rod" });
+          return;
+        }
+        await this.createAndEmitDuelLog(
+          duelId,
+          userId,
+          'REINFORCEMENT_OF_THE_ARMY',
+          result.message || "Magician's Rod: carta do deck à mão",
+        );
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', {
+            duelId,
+            reason: 'choice_completed',
+            cardEffectType: 'magicians_rod_search',
+          });
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
+      } else if (actionType === 'MAGICIAN_S_ROD_SEARCH_SKIP') {
+        const result = await this.duelsService.skipMagiciansRodSearch(duelId, userId);
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro ao pular efeito' });
+          return;
+        }
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', {
+            duelId,
+            reason: 'choice_completed',
+            cardEffectType: 'magicians_rod_search',
+          });
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
+      } else if (actionType === 'MAGICIAN_S_ROD_GY_CHOICE') {
+        const { tributeZoneIndex } = actionData || {};
+        if (tributeZoneIndex === undefined || tributeZoneIndex === null) {
+          client.emit('duelError', { message: 'Tributo inválido' });
+          return;
+        }
+        const result = await this.duelsService.processMagiciansRodGyChoice(
+          duelId,
+          userId,
+          Number(tributeZoneIndex),
+        );
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || "Erro no efeito Magician's Rod" });
+          return;
+        }
+        await this.createAndEmitDuelLog(
+          duelId,
+          userId,
+          'MONSTER_REINCARNATION_EFFECT',
+          result.message || "Magician's Rod: reciclado do cemitério",
+        );
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', {
+            duelId,
+            reason: 'choice_completed',
+            cardEffectType: 'magicians_rod_gy',
+          });
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
+      } else if (actionType === 'MAGICIAN_S_ROD_GY_SKIP') {
+        const result = await this.duelsService.skipMagiciansRodGy(duelId, userId);
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro ao pular efeito' });
+          return;
+        }
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', {
+            duelId,
+            reason: 'choice_completed',
+            cardEffectType: 'magicians_rod_gy',
+          });
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
+      } else if (actionType === 'BERFOMET_SEARCH_CHOICE') {
+        const { deckIndex } = actionData || {};
+        if (deckIndex === undefined || deckIndex === null) {
+          client.emit('duelError', { message: 'Escolha de carta inválida' });
+          return;
+        }
+        const result = await this.duelsService.processBerfometSearchChoice(
+          duelId,
+          userId,
+          Number(deckIndex),
+        );
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro no efeito Berfomet' });
+          return;
+        }
+        await this.createAndEmitDuelLog(
+          duelId,
+          userId,
+          'REINFORCEMENT_OF_THE_ARMY',
+          result.message || 'Berfomet: adicionou Gazelle à mão',
+        );
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', {
+            duelId,
+            reason: 'choice_completed',
+            cardEffectType: 'berfomet_search',
+          });
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
+      } else if (actionType === 'BERFOMET_SEARCH_SKIP') {
+        const result = await this.duelsService.skipBerfometSearch(duelId, userId);
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro ao pular efeito' });
+          return;
+        }
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', {
+            duelId,
+            reason: 'choice_completed',
+            cardEffectType: 'berfomet_search',
+          });
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
+      } else if (actionType === 'KINGS_KNIGHT_SEARCH_CHOICE') {
+        const { deckIndex } = actionData || {};
+        if (deckIndex === undefined || deckIndex === null) {
+          client.emit('duelError', { message: 'Escolha de carta inválida' });
+          return;
+        }
+        const result = await this.duelsService.processKingsKnightSearchChoice(
+          duelId,
+          userId,
+          Number(deckIndex),
+        );
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || "Erro no efeito King's Knight" });
+          return;
+        }
+        await this.createAndEmitDuelLog(
+          duelId,
+          userId,
+          'REINFORCEMENT_OF_THE_ARMY',
+          result.message || "King's Knight: invocou Jack's Knight",
+        );
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', {
+            duelId,
+            reason: 'choice_completed',
+            cardEffectType: 'kings_knight_search',
+          });
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
+      } else if (actionType === 'KINGS_KNIGHT_SEARCH_SKIP') {
+        const result = await this.duelsService.skipKingsKnightSearch(duelId, userId);
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro ao pular efeito' });
+          return;
+        }
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', {
+            duelId,
+            reason: 'choice_completed',
+            cardEffectType: 'kings_knight_search',
+          });
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
+      } else if (actionType === 'ACTIVATE_ELECTROMAGNETIC_TURTLE') {
+        const { graveyardIndex } = actionData || {};
+        const result = await this.duelsService.activateElectromagneticTurtle(
+          duelId,
+          userId,
+          graveyardIndex !== undefined ? Number(graveyardIndex) : undefined,
+        );
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro ao ativar Electromagnetic Turtle' });
+          return;
+        }
+        await this.createAndEmitDuelLog(
+          duelId,
+          userId,
+          'TRAP_ACTIVATION',
+          result.message || 'Electromagnetic Turtle: Battle Phase encerrada',
+        );
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
+      } else if (actionType === 'MAGICIAN_S_SALVATION_ETERNAL_SOUL_CHOICE') {
+        const { deckIndex } = actionData || {};
+        if (deckIndex === undefined || deckIndex === null) {
+          client.emit('duelError', { message: 'Escolha inválida' });
+          return;
+        }
+        const result = await this.duelsService.processMagiciansSalvationEternalSoulChoice(
+          duelId,
+          userId,
+          Number(deckIndex),
+        );
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || "Erro no efeito Magician's Salvation" });
+          return;
+        }
+        await this.createAndEmitDuelLog(
+          duelId,
+          userId,
+          'REINFORCEMENT_OF_THE_ARMY',
+          result.message || "Magician's Salvation: Eternal Soul baixada",
+        );
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', {
+            duelId,
+            reason: 'choice_completed',
+            cardEffectType: 'magicians_salvation_eternal_soul',
+          });
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
+      } else if (actionType === 'MAGICIAN_S_SALVATION_ETERNAL_SOUL_SKIP') {
+        const result = await this.duelsService.skipMagiciansSalvationEternalSoul(duelId, userId);
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro ao pular efeito' });
+          return;
+        }
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', {
+            duelId,
+            reason: 'choice_completed',
+            cardEffectType: 'magicians_salvation_eternal_soul',
+          });
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
+      } else if (actionType === 'MAGICIAN_S_SALVATION_PAIR_CHOICE') {
+        const result = await this.duelsService.processMagiciansSalvationPairChoice(duelId, userId);
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || "Erro no efeito Magician's Salvation" });
+          return;
+        }
+        await this.createAndEmitDuelLog(
+          duelId,
+          userId,
+          'MONSTER_REINCARNATION_EFFECT',
+          result.message || "Magician's Salvation: monstro do GY invocado",
+        );
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', {
+            duelId,
+            reason: 'choice_completed',
+            cardEffectType: 'magicians_salvation_pair',
+          });
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
+      } else if (actionType === 'MAGICIAN_S_SALVATION_PAIR_SKIP') {
+        const result = await this.duelsService.skipMagiciansSalvationPair(duelId, userId);
+        if (!result.success) {
+          client.emit('duelError', { message: result.message || 'Erro ao pular efeito' });
+          return;
+        }
+        const updatedDuel =
+          this.duelsService.findDuelByIdLight(duelId) ||
+          (await this.duelsService.findDuelByIdFromDatabase(duelId, true));
+        if (updatedDuel) {
+          this.server.to(`duel_${duelId}`).emit('closePendingChoiceModal', {
+            duelId,
+            reason: 'choice_completed',
+            cardEffectType: 'magicians_salvation_pair',
+          });
+          const turnTimeRemaining = this.duelsService.calculateTurnTimeRemaining(updatedDuel);
+          this.server.to(`duel_${duelId}`).emit('duelUpdate', {
+            id: updatedDuel.id,
+            player1Id: updatedDuel.player1Id,
+            player2Id: updatedDuel.player2Id,
+            player1: (updatedDuel as any).player1,
+            player2: (updatedDuel as any).player2,
+            player1LifePoints: updatedDuel.player1LifePoints,
+            player2LifePoints: updatedDuel.player2LifePoints,
+            currentTurn: updatedDuel.currentTurn,
+            currentPhase: updatedDuel.currentPhase,
+            status: updatedDuel.status,
+            turnCounter: updatedDuel.turnCounter || 1,
+            turnTimeRemaining,
+            player1Field: (updatedDuel as any).player1Field,
+            player2Field: (updatedDuel as any).player2Field,
+            pendingChoice: (updatedDuel as any).pendingChoice || null,
+          });
+        }
       } else if (actionType === 'CONFISCATION_CHOICE') {
         // Processar escolha do Confiscation
         const { instanceId } = actionData;
@@ -8418,7 +9334,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         }
         
         const pendingChoice = (duel as any).pendingChoice;
-        if (!pendingChoice || pendingChoice.userId !== userId) {
+        if (!pendingChoice || Number(pendingChoice.userId) !== Number(userId)) {
           client.emit('duelError', { message: 'Não há escolha pendente para cancelar' });
           return;
         }
@@ -8567,6 +9483,11 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
   /**
    * Faz escolha automática quando o turno mudou durante uma escolha pendente
    */
+  /** Usado pelo BotRunner e por timeouts de turno para resolver modais pendentes. */
+  async autoResolvePendingChoice(duelId: string, userId: number, pendingChoice: any): Promise<void> {
+    return this.handleAutoChoice(duelId, userId, pendingChoice);
+  }
+
   private async handleAutoChoice(duelId: string, userId: number, pendingChoice: any): Promise<void> {
     console.log(`🤖 [handleAutoChoice] ==========================================`);
     console.log(`🤖 [handleAutoChoice] Fazendo escolha automática para ${pendingChoice.type}`);
@@ -8641,6 +9562,24 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         console.log(`🤖 [handleAutoChoice] PLAYER_TARGET_SPELL: limpando pendingChoice e restaurando carta (sem escolha automática)`);
         await this.duelsService.clearPendingChoice(duelId, true);
         console.log(`✅ [handleAutoChoice] PLAYER_TARGET_SPELL: PendingChoice limpo`);
+      } else if (pendingChoice.type === 'DARK_MAGICIAN_OF_CHAOS') {
+        console.log(`🤖 [handleAutoChoice] DARK_MAGICIAN_OF_CHAOS: pulando efeito de End Phase`);
+        await this.duelsService.skipDarkMagicianOfChaosEndPhase(duelId, userId);
+      } else if (pendingChoice.type === 'MAGICIAN_S_ROD_SEARCH') {
+        console.log(`🤖 [handleAutoChoice] MAGICIAN_S_ROD_SEARCH: pulando busca`);
+        await this.duelsService.skipMagiciansRodSearch(duelId, userId);
+      } else if (pendingChoice.type === 'MAGICIAN_S_ROD_GY') {
+        console.log(`🤖 [handleAutoChoice] MAGICIAN_S_ROD_GY: pulando reciclagem`);
+        await this.duelsService.skipMagiciansRodGy(duelId, userId);
+      } else if (pendingChoice.type === 'MAGICIAN_S_SALVATION_ETERNAL_SOUL') {
+        console.log(`🤖 [handleAutoChoice] MAGICIAN_S_SALVATION_ETERNAL_SOUL: pulando`);
+        await this.duelsService.skipMagiciansSalvationEternalSoul(duelId, userId);
+      } else if (pendingChoice.type === 'MAGICIAN_S_SALVATION_PAIR') {
+        console.log(`🤖 [handleAutoChoice] MAGICIAN_S_SALVATION_PAIR: pulando`);
+        await this.duelsService.skipMagiciansSalvationPair(duelId, userId);
+      } else if (pendingChoice.type === 'SKILLED_DARK_MAGICIAN') {
+        console.log(`🤖 [handleAutoChoice] SKILLED_DARK_MAGICIAN: pulando`);
+        await this.duelsService.skipSkilledDarkMagicianEffect(duelId, userId);
       } else if (pendingChoice.type === 'CHANGE_OF_HEART' || pendingChoice.type === 'BRAIN_CONTROL') {
         // Change Of Heart e Brain Control não podem fazer escolha automática
         // Apenas limpar o pendingChoice e restaurar a carta para "set" se estava no campo

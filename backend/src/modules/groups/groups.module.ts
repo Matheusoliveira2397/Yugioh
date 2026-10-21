@@ -11,6 +11,7 @@ import { UserSystemNotification } from '../users/entities/user-system-notificati
 import { UploadModule } from '../upload/upload.module';
 import { SeasonsModule } from '../seasons/seasons.module';
 import { DuelsModule } from '../duels/duels.module';
+import { MissionsModule } from '../missions/missions.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { DuelsModule } from '../duels/duels.module';
     UploadModule,
     SeasonsModule,
     forwardRef(() => DuelsModule),
+    MissionsModule,
   ],
   controllers: [GroupsController],
   providers: [GroupsService],

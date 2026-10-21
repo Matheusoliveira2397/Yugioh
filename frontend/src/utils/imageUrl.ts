@@ -33,12 +33,37 @@ export const DEFAULT_PROFILE_ASSET_PATH = '/images/default.jpg';
  */
 export const DEFAULT_PROFILE_IMAGE_PATH = `${DEFAULT_PROFILE_ASSET_PATH}?v=4`;
 
+/**
+ * Em offline o DNS do Supabase pode falhar (ERR_NAME_NOT_RESOLVED).
+ * Reescreve URLs públicas de cartas para o path local em /images/cards/.
+ */
+export function rewriteStorageUrlToLocal(url: string): string {
+  const trimmed = String(url).trim();
+  if (!trimmed) return trimmed;
+
+  const cardsMatch = trimmed.match(
+    /supabase\.co\/storage\/v1\/object\/public\/cards\/([^/?#]+)/i,
+  );
+  if (cardsMatch?.[1]) {
+    return `/images/cards/${cardsMatch[1]}`;
+  }
+
+  const avatarsMatch = trimmed.match(
+    /supabase\.co\/storage\/v1\/object\/public\/avatars\/([^/?#]+)/i,
+  );
+  if (avatarsMatch?.[1]) {
+    return `/uploads/avatars/${avatarsMatch[1]}`;
+  }
+
+  return trimmed;
+}
+
 export function getImageUrl(
   url: string | null | undefined,
   defaultUrl = DEFAULT_PROFILE_IMAGE_PATH,
 ): string {
   if (url == null || url === undefined) return defaultUrl;
-  const trimmed = String(url).trim();
+  const trimmed = rewriteStorageUrlToLocal(String(url).trim());
   if (!trimmed) return defaultUrl;
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
   // `public/images/*` (ex.: `/images/default.jpg`): servido pelo origin do app, não pela API.
@@ -87,9 +112,10 @@ export function getProfileImageUrl(url: string | null | undefined): string {
  */
 export function getCosmeticImageUrl(url: string | null | undefined): string | undefined {
   if (!url || (typeof url === 'string' && url.trim() === '')) return undefined;
-  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  const normalized = rewriteStorageUrlToLocal(url.trim());
+  if (normalized.startsWith('http://') || normalized.startsWith('https://')) return normalized;
   const base = getImageBaseUrl();
-  return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
+  return `${base}${normalized.startsWith('/') ? '' : '/'}${normalized}`;
 }
 
 /**
@@ -100,14 +126,15 @@ export function getCosmeticImageUrl(url: string | null | undefined): string | un
  */
 export function getCardImageDisplayUrl(url: string | null | undefined): string {
   if (!url || (typeof url === 'string' && url.trim() === '')) return '';
-  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  const normalized = rewriteStorageUrlToLocal(url.trim());
+  if (normalized.startsWith('http://') || normalized.startsWith('https://')) return normalized;
   // Mesmo origin: path relativo evita string extra por frame e reutiliza cache igual
-  if (url.startsWith('/images/cards') || url.startsWith('/images/')) {
-    return url.startsWith('/') ? url : `/${url}`;
+  if (normalized.startsWith('/images/cards') || normalized.startsWith('/images/')) {
+    return normalized.startsWith('/') ? normalized : `/${normalized}`;
   }
   // Uploads ficam no backend
   const base = getImageBaseUrl();
-  return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
+  return `${base}${normalized.startsWith('/') ? '' : '/'}${normalized}`;
 }
 
 /** Path da imagem da sleeve padrão ("Default" / SkinDefault). Usado quando a sleeve equipada não carrega. */

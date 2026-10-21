@@ -6,6 +6,8 @@ import { motion } from 'framer-motion';
 import axios from 'axios';
 import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { formatScore } from '../utils/formatScore';
+import FramedAvatar from '../components/FramedAvatar';
+import { getAvatarFrame } from '../constants/avatarFrames';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -713,17 +715,33 @@ export const ProfilePage: React.FC = () => {
             {/* Foto do Perfil - À esquerda */}
             <motion.div
               whileHover={{ scale: 1.02 }}
-              className="relative flex-shrink-0 order-2 sm:order-1"
+              className="relative flex-shrink-0 order-2 sm:order-1 overflow-visible p-8 sm:p-10 md:p-12"
             >
-              <div className="w-64 h-64 sm:w-72 sm:h-72 md:w-80 md:h-80 rounded-xl overflow-hidden border-2 border-purple-500/50 shadow-2xl">
-                <img
-                  src={currentImageUrl}
-                  alt="Avatar"
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
-                  }}
-                />
+              <div className="w-64 h-64 sm:w-72 sm:h-72 md:w-80 md:h-80 overflow-visible">
+                {getAvatarFrame(profileUser.equippedAvatarFrame) ? (
+                  <FramedAvatar
+                    src={
+                      isOwnProfile && previewUrl
+                        ? previewUrl
+                        : profileUser.profileImage
+                    }
+                    alt="Avatar"
+                    frameId={profileUser.equippedAvatarFrame}
+                    className="w-full h-full"
+                    rounded="xl"
+                  />
+                ) : (
+                  <div className="w-full h-full rounded-xl overflow-hidden border-2 border-purple-500/50">
+                    <img
+                      src={currentImageUrl}
+                      alt="Avatar"
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.src = DEFAULT_PROFILE_IMAGE_PATH;
+                      }}
+                    />
+                  </div>
+                )}
               </div>
               {isOwnProfile && (
                 <label className="absolute bottom-3 right-3 hover:bg-white/10 rounded-full p-3 cursor-pointer transition-all shadow-lg border border-white/20">
@@ -792,6 +810,19 @@ export const ProfilePage: React.FC = () => {
                 <span className="text-slate-300 flex items-center gap-1" title="Estrelas (premiação de torneios e outras recompensas)">
                   <span>🌟</span> <span className="text-base font-bold text-amber-300/90">{(profileUser as any).stars ?? 0}</span> estrelas
                 </span>
+                <span
+                  className="text-slate-300 flex items-center gap-1"
+                  title="Percentual de cartas ativas do jogo que este duelista possui"
+                >
+                  <span>🎴</span>{' '}
+                  <span className="text-base font-bold text-violet-300">
+                    {Number((profileUser as any).collectionPercent ?? 0).toFixed(1)}%
+                  </span>{' '}
+                  cartas
+                  <span className="text-slate-500 text-xs ml-0.5">
+                    ({(profileUser as any).ownedActiveCards ?? 0}/{(profileUser as any).totalActiveCards ?? 0})
+                  </span>
+                </span>
               </div>
             </div>
           </div>
@@ -836,6 +867,30 @@ export const ProfilePage: React.FC = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* Coleção de cartas */}
+                <Link to="/collection" className="block game-panel p-3 hover:border-champion-gold/50 transition-colors">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs md:text-sm text-arena-mist font-medium uppercase tracking-wide flex items-center gap-1.5">
+                      <span className="text-base">🎴</span> % de Cartas
+                    </span>
+                    <span className="font-display text-lg md:text-xl font-bold text-champion-gold">
+                      {Number((profileUser as any).collectionPercent ?? 0).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="game-progress-track mb-2">
+                    <div
+                      className="game-progress-fill"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, Number((profileUser as any).collectionPercent ?? 0)))}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-arena-mist">
+                    {(profileUser as any).ownedActiveCards ?? 0} de{' '}
+                    {(profileUser as any).totalActiveCards ?? 0} cartas ativas · ver coleção →
+                  </p>
+                </Link>
 
                 {/* Outras estatísticas */}
                 <div className="space-y-2">
@@ -1279,7 +1334,7 @@ export const ProfilePage: React.FC = () => {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 duel-modal-scrim flex items-center justify-center z-50 p-4"
             onClick={() => setShowFriendsModal(false)}
           >
             <motion.div
@@ -1360,7 +1415,7 @@ export const ProfilePage: React.FC = () => {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 duel-modal-scrim flex items-center justify-center z-50 p-4"
             onClick={() => setShowFriendsModal(false)}
           >
             <motion.div
@@ -1441,7 +1496,7 @@ export const ProfilePage: React.FC = () => {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 duel-modal-scrim flex items-center justify-center z-50 p-4"
             onClick={() => {
               if (!uploading) {
                 setSelectedFile(null);
@@ -1489,7 +1544,7 @@ export const ProfilePage: React.FC = () => {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 duel-modal-scrim flex items-center justify-center z-50 p-4"
             onClick={handleCloseEditModal}
           >
             <motion.div
@@ -1646,7 +1701,7 @@ export const ProfilePage: React.FC = () => {
         {/* Modal de Próximos Níveis - abre ao clicar no nível no perfil */}
         {showLevelsModal && (
           <div
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 duel-modal-scrim z-50 flex items-center justify-center p-4"
             onClick={() => setShowLevelsModal(false)}
             role="dialog"
             aria-modal="true"

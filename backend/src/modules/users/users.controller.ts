@@ -19,8 +19,11 @@ export class UsersController {
   }
 
   @Get('ranking/general')
-  async getGeneralRanking() {
-    return this.usersService.getGeneralRanking();
+  async getGeneralRanking(@Query('limit') limit?: string) {
+    const parsed = limit != null && limit !== '' ? parseInt(limit, 10) : undefined;
+    return this.usersService.getGeneralRanking(
+      Number.isFinite(parsed) ? parsed : undefined,
+    );
   }
 
   @Get('ranking/season/division/:division')
@@ -103,12 +106,16 @@ export class UsersController {
           equippedPlaymatImage: fullProfile.equippedPlaymatImage || null,
           equippedSkinId: fullProfile.equippedSkinId || null,
           equippedSkinImage: fullProfile.equippedSkinImage || null,
+          equippedAvatarFrame: fullProfile.equippedAvatarFrame || null,
           equippedDeckId: fullProfile.equippedDeckId || null,
           equippedDeckName: fullProfile.equippedDeckName || null,
           stars: fullProfile.stars ?? 0,
           adminAllowedTabs: fullProfile.adminAllowedTabs ?? null,
           maxDecks: fullProfile.maxDecks ?? 3,
           maletaCapacity: fullProfile.maletaCapacity ?? 500,
+          ownedActiveCards: fullProfile.ownedActiveCards ?? 0,
+          totalActiveCards: fullProfile.totalActiveCards ?? 0,
+          collectionPercent: fullProfile.collectionPercent ?? 0,
         };
       })(),
       new Promise((_, reject) => 
@@ -143,6 +150,9 @@ export class UsersController {
         stars: 0,
         maxDecks: 3,
         maletaCapacity: 500,
+        ownedActiveCards: 0,
+        totalActiveCards: 0,
+        collectionPercent: 0,
       };
     });
   }

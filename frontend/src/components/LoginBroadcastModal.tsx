@@ -52,14 +52,14 @@ export default function LoginBroadcastModal() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md"
+        className="fixed inset-0 z-[250] flex items-center justify-center p-4 duel-modal-scrim"
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.94, y: 12 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96 }}
           transition={{ type: 'spring', damping: 26, stiffness: 320 }}
-          className="w-full max-w-lg max-h-[85vh] overflow-hidden rounded-2xl border border-purple-500/35 bg-gradient-to-br from-slate-900/98 to-slate-950/98 shadow-2xl shadow-purple-900/40 flex flex-col"
+          className="duel-modal-panel w-full max-w-lg max-h-[85vh] overflow-hidden rounded-2xl border border-purple-500/35 shadow-2xl shadow-purple-900/40 flex flex-col"
         >
           <div className="px-5 py-4 border-b border-white/10 bg-gradient-to-r from-purple-600/25 to-transparent shrink-0">
             <h2 id="login-broadcast-title" className="text-lg font-bold text-white pr-2">

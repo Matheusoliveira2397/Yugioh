@@ -7,6 +7,7 @@ import { getApiErrorMessage } from '../utils/api-error';
 import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { getDivisionDisplayName, getDivisionImagePath } from '../utils/divisionDisplay';
 import { formatScore } from '../utils/formatScore';
+import { useI18n } from '../i18n/I18nContext';
 
 /** Ranking por classe (torneio): oculto na UI até reativar. */
 const SHOW_CLASS_RANKING_TAB = false;
@@ -98,6 +99,7 @@ export default function RankingPage() {
   const [countdownTick, setCountdownTick] = useState(0);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const { user } = useAuthStore();
+  const { t } = useI18n();
 
   useEffect(() => {
     api
@@ -129,8 +131,8 @@ export default function RankingPage() {
       if (byNum?.name) return { name: byNum.name, number: byNum.seasonNumber };
       return { name: `Season ${publicSeason.currentSeasonNumber}`, number: publicSeason.currentSeasonNumber };
     }
-    return { name: 'Season atual', number: undefined as number | undefined };
-  }, [seasons, publicSeason]);
+      return { name: t('ranking.currentSeason'), number: undefined as number | undefined };
+  }, [seasons, publicSeason, t]);
 
   const seasonCountdownParts = useMemo(() => {
     if (!publicSeason?.seasonEndsAt) return null;
@@ -465,12 +467,12 @@ export default function RankingPage() {
         >
           <h1 className="text-xl sm:text-2xl md:text-4xl font-bold text-white mb-1 flex items-center justify-center gap-2 md:gap-3">
             <span className="text-2xl sm:text-3xl md:text-5xl">📊</span>
-            <span className="hidden sm:inline">Ranking</span>
-            <span className="sm:hidden">Ranking</span>
+            <span className="hidden sm:inline">{t('ranking.title')}</span>
+            <span className="sm:hidden">{t('ranking.title')}</span>
           </h1>
           <p className="text-slate-400 text-xs md:text-sm">
-            {rankingType === 'duelista' && 'Veja os melhores duelistas do jogo'}
-            {rankingType === 'clan' && 'Veja os melhores clãs do jogo'}
+            {rankingType === 'duelista' && t('ranking.subtitle')}
+            {rankingType === 'clan' && t('ranking.subtitle')}
             {SHOW_CLASS_RANKING_TAB && rankingType === 'classe' && 'Ranking por classes Obelisco, Rá e Slifer (pontos de torneio)'}
           </p>
         </motion.div>
@@ -489,14 +491,14 @@ export default function RankingPage() {
                 fetchRanking();
               }}
             >
-              Tentar de novo
+              {t('common.tryAgain')}
             </button>
             <button
               type="button"
               className="px-3 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-xs text-slate-300"
               onClick={() => setFetchError(null)}
             >
-              Fechar
+              {t('common.close')}
             </button>
           </div>
         )}
@@ -515,8 +517,8 @@ export default function RankingPage() {
                 : 'text-slate-400 hover:bg-white/10 hover:text-white hover:scale-105 border border-white/20'
             }`}
           >
-            <span className="hidden sm:inline">⚔️ Duelista</span>
-            <span className="sm:hidden">⚔️ Duelista</span>
+            <span className="hidden sm:inline">⚔️ {t('ranking.duelist')}</span>
+            <span className="sm:hidden">⚔️ {t('ranking.duelist')}</span>
           </button>
           <button
             onClick={() => {
@@ -529,8 +531,8 @@ export default function RankingPage() {
                 : 'text-slate-400 hover:bg-white/10 hover:text-white hover:scale-105 border border-white/20'
             }`}
           >
-            <span className="hidden sm:inline">🏰 Clã</span>
-            <span className="sm:hidden">🏰 Clã</span>
+            <span className="hidden sm:inline">🏰 {t('ranking.clan')}</span>
+            <span className="sm:hidden">🏰 {t('ranking.clan')}</span>
           </button>
           {SHOW_CLASS_RANKING_TAB && (
             <button
@@ -569,8 +571,8 @@ export default function RankingPage() {
                 : 'text-slate-400 hover:bg-white/10 hover:text-white hover:scale-105 border border-white/20'
             }`}
           >
-            <span className="hidden sm:inline">🏆 Ranking da Season</span>
-            <span className="sm:hidden">🏆 Season</span>
+            <span className="hidden sm:inline">🏆 {t('ranking.seasonRanking')}</span>
+            <span className="sm:hidden">🏆 {t('ranking.season')}</span>
           </button>
           <button
             onClick={() => {
@@ -583,8 +585,8 @@ export default function RankingPage() {
                 : 'text-slate-400 hover:bg-white/10 hover:text-white hover:scale-105 border border-white/20'
             }`}
           >
-            <span className="hidden sm:inline">⭐ Ranking Geral</span>
-            <span className="sm:hidden">⭐ Geral</span>
+            <span className="hidden sm:inline">⭐ {t('ranking.generalRanking')}</span>
+            <span className="sm:hidden">⭐ {t('home.general')}</span>
           </button>
         </div>
         )}
@@ -603,10 +605,10 @@ export default function RankingPage() {
                 🏆
               </span>
               <span className="text-[9px] uppercase tracking-wider text-amber-200/50 hidden sm:inline">
-                Season
+                {t('ranking.season')}
               </span>
               {publicSeason === null ? (
-                <span className="text-slate-500">Carregando…</span>
+                <span className="text-slate-500">{t('common.loading')}</span>
               ) : (
                 <>
                   <span className="font-semibold text-slate-200/90 truncate max-w-[42vw] sm:max-w-none">
@@ -622,9 +624,9 @@ export default function RankingPage() {
                   )}
                   <span className="text-slate-500 shrink-0">·</span>
                   {!publicSeason.seasonEndsAt ? (
-                    <span className="text-slate-500">sem data de término</span>
+                    <span className="text-slate-500">{t('ranking.noEndDate')}</span>
                   ) : seasonCountdownParts?.ended ? (
-                    <span className="text-amber-200/70">tempo esgotado</span>
+                    <span className="text-amber-200/70">{t('ranking.timeUp')}</span>
                   ) : seasonCountdownParts ? (
                     <span className="font-mono tabular-nums text-amber-100/75 text-[10px] sm:text-[11px]">
                       {seasonCountdownParts.d}d {String(seasonCountdownParts.h).padStart(2, '0')}:
@@ -657,7 +659,7 @@ export default function RankingPage() {
             className="mb-2"
           >
             <div className="flex flex-wrap gap-2 justify-center items-center">
-              <label className="text-slate-300 text-sm font-medium whitespace-nowrap">Season:</label>
+              <label className="text-slate-300 text-sm font-medium whitespace-nowrap">{t('ranking.season')}:</label>
               <select
                 value={selectedSeasonId ?? ''}
                 onChange={(e) => setSelectedSeasonId(e.target.value ? e.target.value : null)}
@@ -665,11 +667,11 @@ export default function RankingPage() {
                 style={{ colorScheme: 'dark' }}
               >
                 <option value="" className="bg-slate-800 text-white">
-                  Season atual
+                  {t('ranking.currentSeason')}
                 </option>
                 {seasons.map((s) => (
                   <option key={s.id} value={s.id} className="bg-slate-800 text-white">
-                    {s.name} {s.isActive ? '(ativa)' : ''}
+                    {s.name} {s.isActive ? t('ranking.active') : ''}
                   </option>
                 ))}
               </select>
@@ -752,7 +754,7 @@ export default function RankingPage() {
                 <thead>
                   <tr>
                     <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-amber-300 font-bold text-sm lg:text-lg">#</th>
-                    <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-amber-300 font-bold text-sm lg:text-lg">Duelista</th>
+                    <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-amber-300 font-bold text-sm lg:text-lg">{t('ranking.duelist')}</th>
                     <th className="px-4 lg:px-6 py-3 lg:py-4 text-center text-amber-300 font-bold text-sm lg:text-lg">Classe</th>
                     <th className="px-4 lg:px-6 py-3 lg:py-4 text-right text-amber-300 font-bold text-sm lg:text-lg">Pontos</th>
                   </tr>
@@ -760,11 +762,11 @@ export default function RankingPage() {
                 <tbody>
                   {classRankingLoading ? (
                     <tr>
-                      <td colSpan={4} className="px-6 py-12 text-center text-slate-400 text-xl">Carregando ranking...</td>
+                      <td colSpan={4} className="px-6 py-12 text-center text-slate-400 text-xl">{t('ranking.loadingRanking')}</td>
                     </tr>
                   ) : classRanking.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-6 py-12 text-center text-slate-400">Nenhum duelista com pontos de torneio ainda.</td>
+                      <td colSpan={4} className="px-6 py-12 text-center text-slate-400">{t('ranking.noTournamentPoints')}</td>
                     </tr>
                   ) : (
                     classRanking.map((row, index) => {
@@ -802,7 +804,7 @@ export default function RankingPage() {
                                   <span className="truncate max-w-[120px] lg:max-w-none">
                                     {row.clanTag ? `|${row.clanTag}| ${row.nickname}` : row.nickname}
                                   </span>
-                                  {isCurrentUser && <span className="text-xs bg-amber-600 px-1.5 lg:px-2 py-0.5 rounded">VOCÊ</span>}
+                                  {isCurrentUser && <span className="text-xs bg-amber-600 px-1.5 lg:px-2 py-0.5 rounded">{t('ranking.you')}</span>}
                                 </p>
                               </div>
                             </Link>
@@ -824,9 +826,9 @@ export default function RankingPage() {
             </div>
             <div className="md:hidden p-2 space-y-2">
               {classRankingLoading ? (
-                <div className="text-center py-12 text-slate-400 text-lg">Carregando ranking...</div>
+                <div className="text-center py-12 text-slate-400 text-lg">{t('ranking.loadingRanking')}</div>
               ) : classRanking.length === 0 ? (
-                <div className="text-center py-12 text-slate-400">Nenhum duelista com pontos de torneio ainda.</div>
+                <div className="text-center py-12 text-slate-400">{t('ranking.noTournamentPoints')}</div>
               ) : (
                 classRanking.map((row, index) => {
                   const isCurrentUser = String(row.userId) === String(user?.id);
@@ -857,7 +859,7 @@ export default function RankingPage() {
                           <div className="flex-1 min-w-0">
                             <p className="text-white font-bold text-sm flex items-center gap-1">
                               <span className="truncate">{row.clanTag ? `|${row.clanTag}| ${row.nickname}` : row.nickname}</span>
-                              {isCurrentUser && <span className="text-xs bg-amber-600 px-1.5 py-0.5 rounded">VOCÊ</span>}
+                              {isCurrentUser && <span className="text-xs bg-amber-600 px-1.5 py-0.5 rounded">{t('ranking.you')}</span>}
                             </p>
                             <span className="px-2 py-0.5 rounded text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
                               {row.className}
@@ -883,11 +885,11 @@ export default function RankingPage() {
                 <thead>
                   <tr>
                     <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-purple-300 font-bold text-sm lg:text-lg">
-                      {activeTab === 'season' ? 'Posição' : '#'}
+                      {activeTab === 'season' ? t('ranking.position') : '#'}
                     </th>
-                    <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-purple-300 font-bold text-sm lg:text-lg">Duelista</th>
+                    <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-purple-300 font-bold text-sm lg:text-lg">{t('ranking.duelist')}</th>
                     {activeTab === 'general' && (
-                      <th className="px-4 lg:px-6 py-3 lg:py-4 text-center text-purple-300 font-bold text-sm lg:text-lg">Divisão</th>
+                      <th className="px-4 lg:px-6 py-3 lg:py-4 text-center text-purple-300 font-bold text-sm lg:text-lg">{t('ranking.division')}</th>
                     )}
                     <th className="px-4 lg:px-6 py-3 lg:py-4 text-right text-purple-300 font-bold text-sm lg:text-lg">Score</th>
                     <th className="px-4 lg:px-6 py-3 lg:py-4 text-center text-purple-300 font-bold text-sm lg:text-lg">V/D</th>
@@ -897,13 +899,13 @@ export default function RankingPage() {
                   {loading ? (
                     <tr>
                       <td colSpan={activeTab === 'season' ? 4 : 5} className="px-6 py-12 text-center text-slate-400 text-xl">
-                        Carregando ranking...
+                        {t('ranking.loadingRanking')}
                       </td>
                     </tr>
                   ) : sortedPlayers.length === 0 ? (
                     <tr>
                       <td colSpan={activeTab === 'season' ? 4 : 5} className="px-6 py-12 text-center text-slate-400">
-                        Nenhum duelista encontrado
+                        {t('common.noResults')}
                       </td>
                     </tr>
                   ) : (
@@ -953,7 +955,7 @@ export default function RankingPage() {
                                   }
                                 </span>
                                 {isCurrentUser && (
-                                  <span className="text-xs bg-purple-600 px-1.5 lg:px-2 py-0.5 rounded">VOCÊ</span>
+                                  <span className="text-xs bg-purple-600 px-1.5 lg:px-2 py-0.5 rounded">{t('ranking.you')}</span>
                                 )}
                               </p>
                               <p className="text-slate-400 text-xs lg:text-sm">Nível {player.level}</p>
@@ -1012,11 +1014,11 @@ export default function RankingPage() {
           <div className="md:hidden p-2 space-y-2">
             {loading ? (
               <div className="text-center py-12 text-slate-400 text-lg">
-                Carregando ranking...
+                {t('ranking.loadingRanking')}
               </div>
             ) : sortedPlayers.length === 0 ? (
               <div className="text-center py-12 text-slate-400">
-                Nenhum duelista encontrado
+                {t('common.noResults')}
               </div>
             ) : (
               sortedPlayers.map((player, index) => {
@@ -1063,7 +1065,7 @@ export default function RankingPage() {
                               }
                             </span>
                             {isCurrentUser && (
-                              <span className="text-xs bg-purple-600 px-1.5 py-0.5 rounded">VOCÊ</span>
+                              <span className="text-xs bg-purple-600 px-1.5 py-0.5 rounded">{t('ranking.you')}</span>
                             )}
                           </p>
                           <p className="text-slate-400 text-xs">Nível {player.level}</p>
@@ -1085,7 +1087,7 @@ export default function RankingPage() {
                       </div>
                       {activeTab === 'general' && (
                         <div>
-                          <span className="text-slate-400">Divisão: </span>
+                          <span className="text-slate-400">{t('ranking.division')}: </span>
                           <span className={`font-bold ${getDivisionColor(player.division)} flex items-center gap-1`}>
                             {(() => {
                               const divisionImage = getDivisionImage(player.division);
@@ -1121,9 +1123,9 @@ export default function RankingPage() {
                 <thead>
                   <tr>
                     <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-purple-300 font-bold text-sm lg:text-lg">#</th>
-                    <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-purple-300 font-bold text-sm lg:text-lg">Clã</th>
-                    <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-purple-300 font-bold text-sm lg:text-lg">Líder</th>
-                    <th className="px-4 lg:px-6 py-3 lg:py-4 text-center text-purple-300 font-bold text-sm lg:text-lg">Membros</th>
+                    <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-purple-300 font-bold text-sm lg:text-lg">{t('ranking.clan')}</th>
+                    <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-purple-300 font-bold text-sm lg:text-lg">{t('ranking.leader')}</th>
+                    <th className="px-4 lg:px-6 py-3 lg:py-4 text-center text-purple-300 font-bold text-sm lg:text-lg">{t('ranking.members')}</th>
                     <th className="px-4 lg:px-6 py-3 lg:py-4 text-right text-purple-300 font-bold text-sm lg:text-lg">Score</th>
                     <th className="px-4 lg:px-6 py-3 lg:py-4 text-center text-purple-300 font-bold text-sm lg:text-lg">V/D</th>
                   </tr>
@@ -1132,13 +1134,13 @@ export default function RankingPage() {
                   {loading ? (
                     <tr>
                       <td colSpan={6} className="px-6 py-12 text-center text-slate-400 text-xl">
-                        Carregando ranking...
+                        {t('ranking.loadingRanking')}
                       </td>
                     </tr>
                   ) : groups.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
-                        Nenhum clã encontrado
+                        {t('groups.noClans')}
                       </td>
                     </tr>
                   ) : (
@@ -1200,7 +1202,7 @@ export default function RankingPage() {
                                 <span className="text-slate-300 text-sm lg:text-base">{group.leader.nickname}</span>
                               </div>
                             ) : (
-                              <span className="text-slate-500 text-sm">Sem líder</span>
+                              <span className="text-slate-500 text-sm">{t('ranking.noLeader')}</span>
                             )}
                           </td>
                           <td className="px-4 lg:px-6 py-3 lg:py-5 text-center">
@@ -1230,11 +1232,11 @@ export default function RankingPage() {
             <div className="md:hidden p-2 space-y-2">
               {loading ? (
                 <div className="text-center py-12 text-slate-400 text-lg">
-                  Carregando ranking...
+                  {t('ranking.loadingRanking')}
                 </div>
               ) : groups.length === 0 ? (
                 <div className="text-center py-12 text-slate-400">
-                  Nenhum clã encontrado
+                  {t('groups.noClans')}
                 </div>
               ) : (
                 groups.map((group) => {
@@ -1277,7 +1279,7 @@ export default function RankingPage() {
                               [{group.tag}] {group.name}
                             </p>
                             {group.leader && (
-                              <p className="text-slate-400 text-xs">Líder: {group.leader.nickname}</p>
+                              <p className="text-slate-400 text-xs">{t('ranking.leader')}: {group.leader.nickname}</p>
                             )}
                           </div>
                         </Link>
@@ -1290,7 +1292,7 @@ export default function RankingPage() {
                           </span>
                         </div>
                         <div>
-                          <span className="text-slate-400">Membros: </span>
+                          <span className="text-slate-400">{t('ranking.members')}: </span>
                           <span className="text-cyan-400 font-bold">{group.memberCount || 0}</span>
                         </div>
                         <div>

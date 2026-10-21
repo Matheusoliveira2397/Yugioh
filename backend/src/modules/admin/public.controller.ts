@@ -2,6 +2,7 @@ import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { RandomDuelLevelRangesService } from './random-duel-level-ranges.service';
 import { PublicStatsService } from './public-stats.service';
+import { CreditPackagesService } from '../credit-packages/credit-packages.service';
 
 @Controller('public')
 export class PublicController {
@@ -9,6 +10,7 @@ export class PublicController {
     private adminService: AdminService,
     private randomDuelLevelRangesService: RandomDuelLevelRangesService,
     private publicStatsService: PublicStatsService,
+    private creditPackagesService: CreditPackagesService,
   ) {}
 
   // Endpoint público para buscar abas ativas (sem autenticação)
@@ -21,6 +23,12 @@ export class PublicController {
   @Get('social-media/active')
   getActiveSocialMedia() {
     return this.adminService.getActiveSocialMedia();
+  }
+
+  /** Chave PIX e WhatsApp configurados no admin (página de créditos). */
+  @Get('credit-payment-contact')
+  getCreditPaymentContact() {
+    return this.creditPackagesService.getPublicPaymentContact();
   }
 
   // Endpoint público para buscar divisões disponíveis (sem autenticação)

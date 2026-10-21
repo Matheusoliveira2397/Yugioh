@@ -1,13 +1,16 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
+import { AccountProvisioningService } from './account-provisioning.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
 import { LocalMasterStrategy } from './strategies/local-master.strategy';
+import { GoogleStrategy } from './strategies/google.strategy';
+import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { AuthDbMigrationService } from './auth-db-migration.service';
 import { getJwtSecret } from './jwt-secret.util';
@@ -29,7 +32,7 @@ import { CosmeticsModule } from '../cosmetics/cosmetics.module';
     NewAccountSettingsModule,
     DivisionsModule,
     CosmeticsModule,
-    PassportModule,
+    PassportModule.register({ defaultStrategy: 'jwt', session: false }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
@@ -42,7 +45,16 @@ import { CosmeticsModule } from '../cosmetics/cosmetics.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, LocalStrategy, LocalMasterStrategy, JwtStrategy, AuthDbMigrationService],
+  providers: [
+    AuthService,
+    AccountProvisioningService,
+    LocalStrategy,
+    LocalMasterStrategy,
+    JwtStrategy,
+    GoogleStrategy,
+    GoogleAuthGuard,
+    AuthDbMigrationService,
+  ],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

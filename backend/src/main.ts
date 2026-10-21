@@ -8,6 +8,19 @@ import { LoggingInterceptor } from './logging.interceptor';
 import { HttpExceptionFilter } from './http-exception.filter';
 import { RedisIoAdapter } from './redis-io.adapter';
 import * as fs from 'fs';
+import type { RequestHandler } from 'express';
+import { getCorsOriginOption } from './common/utils/cors-origins.util';
+
+/** Subconjunto estável dos cabeçalhos do helmet (CSP desligado, CORP cross-origin). Sem dependência npm. */
+function basicSecurityHeaders(): RequestHandler {
+  return (_req, res, next) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('X-DNS-Prefetch-Control', 'off');
+    next();
+  };
+}
 
 function resolveUploadsRoot(): string {
   const envRoot = process.env.UPLOADS_ROOT?.trim();
@@ -22,6 +35,11 @@ async function bootstrap() {
     bodyParser: true,
     rawBody: false,
   });
+
+  const isProd = process.env.NODE_ENV === 'production';
+
+  // Cabeçalhos HTTP comuns (HSTS depende de HTTPS no proxy)
+  app.use(basicSecurityHeaders());
 
   // Configurar timeouts do servidor HTTP para evitar bloqueios
   // CRÍTICO: Timeouts mais curtos para não bloquear quando há WebSocket ativo
@@ -40,22 +58,6 @@ async function bootstrap() {
 
   // INTERCEPTOR GLOBAL DE LOGGING
   app.useGlobalInterceptors(new LoggingInterceptor());
-
-  // MIDDLEWARE CRÍTICO: Garantir que requisições HTTP tenham prioridade ABSOLUTA sobre WebSocket
-  // Isso evita que requisições HTTP sejam bloqueadas quando há duelos ativos
-  // Usar múltiplos setImmediate para garantir máxima prioridade
-  app.use((req: any, res: any, next: any) => {
-    // CRÍTICO: Múltiplos yields para garantir que HTTP sempre tenha prioridade
-    // Isso força o Event Loop a processar requisições HTTP antes de qualquer WebSocket
-    // Usar 3 níveis de setImmediate para máxima prioridade
-    setImmediate(() => {
-      setImmediate(() => {
-        setImmediate(() => {
-          next();
-        });
-      });
-    });
-  });
 
   // Aumentar limite de body
   app.use(require('express').json({ limit: '10mb' }));
@@ -315,55 +317,51 @@ async function bootstrap() {
     },
   });
 
-  // Habilitar CORS (aceita várias origens separadas por vírgula: https://www.site.com,https://site.com)
-  const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
-  const corsOrigins = corsOrigin.split(',').map((o) => o.trim()).filter(Boolean);
+  // CORS alinhado aos gateways Socket.IO (várias origens: CORS_ORIGIN=a,b)
   app.enableCors({
-    origin: corsOrigins.length > 1 ? corsOrigins : corsOrigins[0] || 'http://localhost:5173',
+    origin: getCorsOriginOption(),
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
 
-  // Validação global
+  // Validação global: rejeita propriedades não declaradas nos DTOs
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
-      forbidNonWhitelisted: false, // DESABILITADO TEMPORARIAMENTE PARA DEBUG
+      forbidNonWhitelisted: true,
       transform: true,
-      disableErrorMessages: false,
-      exceptionFactory: (errors) => {
-        console.error('❌ VALIDATION ERROR DETAILS:', JSON.stringify(errors, null, 2));
-        console.error('❌ VALIDATION ERRORS (full):', errors);
-        return errors;
-      },
+      disableErrorMessages: isProd,
     }),
   );
 
-  // Configuração do Swagger
-  const config = new DocumentBuilder()
-    .setTitle('Yu-Gi-Oh! Online Game API')
-    .setDescription('API completa para o jogo de cartas Yu-Gi-Oh! Online')
-    .setVersion('1.0')
-    .addTag('auth', 'Autenticação e gerenciamento de usuários')
-    .addTag('cards', 'Gerenciamento de cartas')
-    .addTag('decks', 'Gerenciamento de decks')
-    .addTag('duels', 'Sistema de duelos')
-    .addTag('tournaments', 'Sistema de torneios')
-    .addTag('groups', 'Sistema de grupos')
-    .addTag('shop', 'Loja de cartas e itens')
-    .addTag('ranking', 'Ranking de jogadores')
-    .addTag('news', 'Notícias do jogo')
-    .addTag('chat', 'Chat global')
-    .addTag('admin', 'Painel administrativo')
-    .addBearerAuth()
-    .build();
-  
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document, {
-    customSiteTitle: 'Yu-Gi-Oh! API Docs',
-    customfavIcon: 'https://yugioh.fandom.com/wiki/Special:FilePath/Logo_yugioh.png',
-    customCss: '.swagger-ui .topbar { display: none }',
-  });
+  // Swagger: desligado em produção por padrão (mapeamento da API). ENABLE_SWAGGER=true para staging/debug.
+  const enableSwagger = !isProd || process.env.ENABLE_SWAGGER === 'true';
+  if (enableSwagger) {
+    const config = new DocumentBuilder()
+      .setTitle('Yu-Gi-Oh! Online Game API')
+      .setDescription('API completa para o jogo de cartas Yu-Gi-Oh! Online')
+      .setVersion('1.0')
+      .addTag('auth', 'Autenticação e gerenciamento de usuários')
+      .addTag('cards', 'Gerenciamento de cartas')
+      .addTag('decks', 'Gerenciamento de decks')
+      .addTag('duels', 'Sistema de duelos')
+      .addTag('tournaments', 'Sistema de torneios')
+      .addTag('groups', 'Sistema de grupos')
+      .addTag('shop', 'Loja de cartas e itens')
+      .addTag('ranking', 'Ranking de jogadores')
+      .addTag('news', 'Notícias do jogo')
+      .addTag('chat', 'Chat global')
+      .addTag('admin', 'Painel administrativo')
+      .addBearerAuth()
+      .build();
+
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document, {
+      customSiteTitle: 'Yu-Gi-Oh! API Docs',
+      customfavIcon: 'https://yugioh.fandom.com/wiki/Special:FilePath/Logo_yugioh.png',
+      customCss: '.swagger-ui .topbar { display: none }',
+    });
+  }
 
   // Socket.IO: usar Redis adapter em produção quando REDIS_URL estiver definido (múltiplas instâncias)
   const redisIoAdapter = new RedisIoAdapter(app);
@@ -374,7 +372,11 @@ async function bootstrap() {
   await app.listen(port);
 
   console.log(`🚀 Yu-Gi-Oh! Backend running on: http://localhost:${port}`);
-  console.log(`📚 API Documentation: http://localhost:${port}/api/docs`);
+  if (enableSwagger) {
+    console.log(`📚 API Documentation: http://localhost:${port}/api/docs`);
+  } else if (isProd) {
+    console.log('📚 API docs desativados em produção (defina ENABLE_SWAGGER=true para ativar).');
+  }
   console.log(`🎮 WebSocket server ready for duels!`);
 }
 

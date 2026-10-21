@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import api from '../api/axios';
 import { CardType, CardAttribute, CardRarity, MonsterType } from './types';
@@ -185,6 +186,13 @@ function emptyAdminAdvanced(): AdminAdvancedFilters {
   };
 }
 
+/** Preço da carta: inteiro ≥ 0 (0 é válido; evita `parseInt(x) || null`). */
+function parseCardPriceInt(value: unknown): number {
+  if (value === '' || value === undefined || value === null) return 0;
+  const n = parseInt(String(value), 10);
+  return Number.isNaN(n) ? 0 : Math.max(0, n);
+}
+
 function advancedToQueryParams(a: AdminAdvancedFilters): Record<string, string> {
   const p: Record<string, string> = {};
   if (a.types.length) p.type = a.types.join(',');
@@ -270,6 +278,8 @@ export default function AdminCardsPanel() {
 
   // Cache-bust: quando salvamos uma carta, forçar a imagem a recarregar na lista
   const [imageJustSavedAt, setImageJustSavedAt] = useState<Record<string, number>>({});
+  /** Imagem da carta ao abrir edição — se o campo ainda for a mesma URL externa, não baixar de novo. */
+  const initialCardImageOnEditRef = useRef<string>('');
 
   // Estados para sistema de skins
   const [originalCardSearch, setOriginalCardSearch] = useState('');
@@ -304,6 +314,9 @@ export default function AdminCardsPanel() {
   });
 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  /** Seleção para ativar/desativar em lote (ids UUID) */
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   const fetchCounts = useCallback(async () => {
     try {
@@ -382,6 +395,95 @@ export default function AdminCardsPanel() {
     });
     return () => cancelAnimationFrame(id);
   }, [showBulkImport]);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [debouncedSearch, filter, advancedApplied, pageSize]);
+
+  const selectedCount = selectedIds.size;
+  const selectedOnPageInactive = useMemo(
+    () => cards.filter((c) => selectedIds.has(c.id) && !c.isActive).length,
+    [cards, selectedIds],
+  );
+  const selectedOnPageActive = useMemo(
+    () => cards.filter((c) => selectedIds.has(c.id) && c.isActive).length,
+    [cards, selectedIds],
+  );
+
+  const toggleCardSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllOnPage = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const c of cards) next.add(c.id);
+      return next;
+    });
+  };
+
+  const selectNormalMonstersOnPage = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const c of cards) {
+        if (c.type === 'Monster' && c.monsterType === 'Normal') next.add(c.id);
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleBulkSetActive = async (isActive: boolean) => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    if (ids.length > 200) {
+      setMessage({
+        type: 'error',
+        text: 'Selecione no máximo 200 cartas por operação. Reduza a seleção ou faça em etapas.',
+      });
+      return;
+    }
+    const verb = isActive ? 'ativar' : 'desativar';
+    if (
+      !confirm(
+        `Confirma ${verb} ${ids.length} carta(s) selecionada(s)? As que já estão no estado desejado serão ignoradas.`,
+      )
+    ) {
+      return;
+    }
+    setBulkLoading(true);
+    try {
+      const { data } = await api.post<{ updated: number; skipped: number }>(
+        '/cards/admin/bulk-set-active',
+        { ids, isActive },
+      );
+      const u = data?.updated ?? 0;
+      const s = data?.skipped ?? 0;
+      setMessage({
+        type: 'success',
+        text:
+          u > 0
+            ? `✅ ${u} carta(s) ${isActive ? 'ativada(s)' : 'desativada(s)'}.${s > 0 ? ` (${s} ignorada(s) — já no estado desejado ou id não encontrado)` : ''}`
+            : `Nenhuma carta alterada.${s > 0 ? ` (${s} id(s) conferidos)` : ''}`,
+      });
+      setSelectedIds(new Set());
+      await reloadAdminCards();
+    } catch (err: any) {
+      const msg =
+        err.response?.data?.message ||
+        err.message ||
+        `Erro ao ${verb} cartas em lote`;
+      setMessage({ type: 'error', text: String(msg) });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
 
   const activeAdvancedCount = useMemo(
     () => countActiveAdvanced(advancedApplied),
@@ -673,33 +775,48 @@ export default function AdminCardsPanel() {
       }
 
       // Se a imagem é URL externa (ex.: Yugioh API), baixar e salvar no servidor antes de criar/editar
-      // Assim a carta fica com path /images/cards/XXX.jpg e a imagem carrega em produção
-      if (imagePath && (imagePath.startsWith('http://') || imagePath.startsWith('https://'))) {
-        let idCartaForImage = formData.idCarta?.trim();
-        if (!idCartaForImage) {
-          const baseName = formData.name ? formData.name.replace(/[^a-zA-Z0-9]/g, '') : 'card';
-          idCartaForImage = `${baseName}_${Date.now()}`;
-          if (!editingCard) formData.idCarta = idCartaForImage;
-        }
-        try {
-          const downloadRes = await api.post('/cards/yugioh-api/download-image', {
-            imageUrl: imagePath,
-            cardName: formData.name || idCartaForImage,
-            cardId: idCartaForImage,
-          });
-          const newPath = downloadRes.data?.imagePath;
-          if (typeof newPath !== 'string' || newPath.trim() === '') {
-            setMessage({ type: 'error', text: '❌ Resposta inválida ao baixar imagem. Tente novamente.' });
+      // (exceto ao editar sem trocar a imagem: mesma URL de quando abriu o formulário → não baixa de novo)
+      const isSupabaseStorageUrl =
+        typeof imagePath === 'string' && imagePath.startsWith('https://') && imagePath.includes('supabase.co/storage');
+      const isExternalHttp =
+        imagePath &&
+        (imagePath.startsWith('http://') || imagePath.startsWith('https://')) &&
+        !isSupabaseStorageUrl;
+
+      if (isExternalHttp) {
+        const initialImg = initialCardImageOnEditRef.current ?? '';
+        const skipDownload =
+          !!editingCard &&
+          !selectedImageFile &&
+          imagePath === initialImg;
+
+        if (!skipDownload) {
+          let idCartaForImage = formData.idCarta?.trim();
+          if (!idCartaForImage) {
+            const baseName = formData.name ? formData.name.replace(/[^a-zA-Z0-9]/g, '') : 'card';
+            idCartaForImage = `${baseName}_${Date.now()}`;
+            if (!editingCard) formData.idCarta = idCartaForImage;
+          }
+          try {
+            const downloadRes = await api.post('/cards/yugioh-api/download-image', {
+              imageUrl: imagePath,
+              cardName: formData.name || idCartaForImage,
+              cardId: idCartaForImage,
+            });
+            const newPath = downloadRes.data?.imagePath;
+            if (typeof newPath !== 'string' || newPath.trim() === '') {
+              setMessage({ type: 'error', text: '❌ Resposta inválida ao baixar imagem. Tente novamente.' });
+              setLoading(false);
+              return;
+            }
+            imagePath = newPath.trim();
+            console.log('✅ Imagem baixada e salva no servidor:', imagePath);
+          } catch (e: any) {
+            const msg = e.response?.data?.message || e.message || 'Não foi possível baixar e salvar a imagem.';
+            setMessage({ type: 'error', text: `❌ ${msg}` });
             setLoading(false);
             return;
           }
-          imagePath = newPath.trim();
-          console.log('✅ Imagem baixada e salva no servidor:', imagePath);
-        } catch (e: any) {
-          const msg = e.response?.data?.message || e.message || 'Não foi possível baixar e salvar a imagem.';
-          setMessage({ type: 'error', text: `❌ ${msg}` });
-          setLoading(false);
-          return;
         }
       }
 
@@ -777,10 +894,10 @@ export default function AdminCardsPanel() {
           cleanedFormData.maxCopiesInDeck = parseInt(String(formData.maxCopiesInDeck)) || 3;
         }
         if (formData.priceCredits !== undefined && formData.priceCredits !== null) {
-          cleanedFormData.priceCredits = parseInt(String(formData.priceCredits)) || null;
+          cleanedFormData.priceCredits = parseCardPriceInt(formData.priceCredits);
         }
         if (formData.priceCash !== undefined && formData.priceCash !== null) {
-          cleanedFormData.priceCash = parseFloat(String(formData.priceCash)) || null;
+          cleanedFormData.priceCash = parseCardPriceInt(formData.priceCash);
         }
         if (formData.isForSale !== undefined) cleanedFormData.isForSale = Boolean(formData.isForSale);
         
@@ -839,6 +956,8 @@ export default function AdminCardsPanel() {
             } else if (formData.cardImage !== undefined && formData.cardImage !== null) {
               cleanedFormData[key] = formData.cardImage;
             }
+          } else if (key === 'priceCredits' || key === 'priceCash') {
+            cleanedFormData[key] = parseCardPriceInt(formData[key as keyof typeof formData]);
           } else if (formData[key as keyof typeof formData] !== undefined && formData[key as keyof typeof formData] !== null) {
             cleanedFormData[key] = formData[key as keyof typeof formData];
           }
@@ -883,6 +1002,10 @@ export default function AdminCardsPanel() {
 
   const handleEdit = async (card: Card) => {
     console.log('✏️ Editando carta:', card);
+    initialCardImageOnEditRef.current = card.cardImage || '';
+    setSelectedApiCard(null);
+    setAvailableImages([]);
+    setSelectedImageIndex(0);
     setEditingCard(card);
     
     // Validar se idCarta existe, se não, gerar um baseado no nome
@@ -907,8 +1030,8 @@ export default function AdminCardsPanel() {
       def: card.def ?? 0,
       spellType: (card as any).spellType || 'Normal',
       trapType: (card as any).trapType || 'Normal',
-      priceCredits: card.priceCredits ?? 0,
-      priceCash: card.priceCash ?? 0,
+      priceCredits: parseCardPriceInt(card.priceCredits),
+      priceCash: parseCardPriceInt(card.priceCash),
       isForSale: card.isForSale ?? true,
       isActive: (card as any).isActive ?? true,
       cardImage: card.cardImage || '',
@@ -970,7 +1093,12 @@ export default function AdminCardsPanel() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Deseja realmente desativar esta carta?')) return;
+    if (
+      !confirm(
+        'Desativar esta carta?\n\nEla sai da loja, mas continua no banco. Para cadastrar de novo com o mesmo idCarta, use exclusão permanente (🗑️) ou basta salvar de novo — o sistema reativa cartas inativas.',
+      )
+    )
+      return;
 
     try {
       const response = await api.delete(`/cards/${id}`);
@@ -984,7 +1112,12 @@ export default function AdminCardsPanel() {
   };
 
   const handleHardDelete = async (id: string) => {
-    if (!confirm('⚠️ ATENÇÃO! Isso vai DELETAR PERMANENTEMENTE a carta do banco de dados. Tem certeza?')) return;
+    if (
+      !confirm(
+        '⚠️ Exclusão PERMANENTE: remove a carta do banco (e de inventários/decks).\nSó use se precisar liberar o idCarta de verdade. Tem certeza?',
+      )
+    )
+      return;
 
     try {
       const response = await api.delete(`/cards/${id}/hard`);
@@ -1044,6 +1177,7 @@ export default function AdminCardsPanel() {
     setSelectedOriginalCard(null);
     setIsSkin(false);
     setOtherSkins([]);
+    initialCardImageOnEditRef.current = '';
   };
 
   const totalPages = Math.max(1, Math.ceil(listTotal / pageSize) || 1);
@@ -1063,6 +1197,12 @@ export default function AdminCardsPanel() {
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+            <Link
+              to="/admin/cartas/efeitos"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-3 rounded-lg font-bold transition-all text-center"
+            >
+              ✅ Efeitos OK
+            </Link>
             <button
               type="button"
               onClick={() => {
@@ -1122,9 +1262,23 @@ export default function AdminCardsPanel() {
             className="bg-gray-800 rounded-lg p-3 w-full max-w-4xl max-h-[95vh] overflow-y-auto shadow-2xl border border-purple-500/50 text-sm"
           >
           <div className="flex justify-between items-center mb-2 sticky top-0 bg-gray-800/95 z-10 py-1">
-            <h2 className="text-base font-bold">
-              {editingCard ? '✏️ Editar Carta' : '➕ Nova Carta'}
-            </h2>
+            <div>
+              <h2 className="text-base font-bold">
+                {editingCard ? '✏️ Editar Carta' : '➕ Nova Carta'}
+              </h2>
+              {editingCard && (
+                <p className="text-xs text-gray-400 mt-1">
+                  Preço na loja:{' '}
+                  <span className="text-purple-300 font-semibold tabular-nums">
+                    💎 {parseCardPriceInt(formData.priceCredits).toLocaleString('pt-BR')}
+                  </span>
+                  <span className="text-gray-500 mx-1">·</span>
+                  <span className="text-emerald-300 font-semibold tabular-nums">
+                    💵 R$ {parseCardPriceInt(formData.priceCash).toLocaleString('pt-BR')}
+                  </span>
+                </p>
+              )}
+            </div>
             <button
               onClick={() => {
                 resetForm();
@@ -1579,13 +1733,32 @@ export default function AdminCardsPanel() {
             {/* Preços e botões em uma linha */}
             <div className="bg-gray-900/50 rounded p-2 border border-gray-700 flex flex-wrap items-end gap-2">
               <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+                <div className="w-full text-[10px] font-bold text-amber-200/90 uppercase tracking-wide mb-0.5">
+                  💰 Preços na loja (inteiros)
+                </div>
                 <div className="w-20">
                   <label className="block text-xs font-bold mb-0.5">💎 Créd.</label>
-                  <input type="number" min="0" value={formData.priceCredits} onChange={(e) => setFormData({ ...formData, priceCredits: Number(e.target.value) })} className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm" />
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    inputMode="numeric"
+                    value={formData.priceCredits}
+                    onChange={(e) => setFormData({ ...formData, priceCredits: parseCardPriceInt(e.target.value) })}
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm"
+                  />
                 </div>
                 <div className="w-20">
                   <label className="block text-xs font-bold mb-0.5">💵 R$</label>
-                  <input type="number" step="0.01" min="0" value={formData.priceCash} onChange={(e) => setFormData({ ...formData, priceCash: Number(e.target.value) })} className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm" />
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    inputMode="numeric"
+                    value={formData.priceCash}
+                    onChange={(e) => setFormData({ ...formData, priceCash: parseCardPriceInt(e.target.value) })}
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm"
+                  />
                 </div>
                 <div className="w-24">
                   <label className="block text-xs font-bold mb-0.5">Cópias</label>
@@ -2065,6 +2238,71 @@ export default function AdminCardsPanel() {
         ) : null}
       </div>
 
+      <div className="mb-4 rounded-lg border border-purple-500/40 bg-slate-900/80 p-3 shadow-inner">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-sm font-bold text-amber-200">
+              Selecionadas:{' '}
+              <span className="text-2xl font-extrabold text-white tabular-nums">{selectedCount}</span>
+            </p>
+            {selectedCount > 0 ? (
+              <p className="mt-1 text-xs text-slate-400">
+                Nesta página, entre as selecionadas:{' '}
+                <span className="text-emerald-400">{selectedOnPageActive} ativa(s)</span>
+                {' · '}
+                <span className="text-red-300">{selectedOnPageInactive} inativa(s)</span>
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-slate-500">
+                Marque as cartas abaixo ou use os atalhos. Até 200 por operação.
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={!cards.length || bulkLoading}
+              onClick={selectAllOnPage}
+              className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-bold text-white hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Todas na página
+            </button>
+            <button
+              type="button"
+              disabled={!cards.length || bulkLoading}
+              onClick={selectNormalMonstersOnPage}
+              className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-bold text-white hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Monstros normais (página)
+            </button>
+            <button
+              type="button"
+              disabled={selectedCount === 0 || bulkLoading}
+              onClick={clearSelection}
+              className="rounded-lg border border-slate-600 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Limpar seleção
+            </button>
+            <button
+              type="button"
+              disabled={selectedCount === 0 || bulkLoading}
+              onClick={() => void handleBulkSetActive(true)}
+              className="rounded-lg bg-green-700 px-3 py-2 text-xs font-bold text-white hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {bulkLoading ? '…' : 'Ativar selecionadas'}
+            </button>
+            <button
+              type="button"
+              disabled={selectedCount === 0 || bulkLoading}
+              onClick={() => void handleBulkSetActive(false)}
+              className="rounded-lg bg-orange-700 px-3 py-2 text-xs font-bold text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {bulkLoading ? '…' : 'Desativar selecionadas'}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Listagem de Cartas */}
       {loading ? (
         <div className="text-center py-16">
@@ -2081,12 +2319,28 @@ export default function AdminCardsPanel() {
               transition={{ delay: index * 0.02, duration: 0.2 }}
               whileHover={{ scale: 1.05, zIndex: 10 }}
               onClick={() => setSelectedCard(card)}
-              className={`group relative bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg overflow-hidden shadow-lg border-2 transition-all duration-200 cursor-pointer ${
-                card.isActive 
-                  ? 'border-green-500/50 hover:border-green-400' 
-                  : 'border-red-500/50 hover:border-red-400'
+              className={`group relative rounded-lg border-2 bg-gradient-to-br from-slate-800 to-slate-900 shadow-lg transition-all duration-200 cursor-pointer overflow-hidden ${
+                selectedIds.has(card.id)
+                  ? 'border-cyan-400 ring-2 ring-cyan-500/40'
+                  : card.isActive
+                    ? 'border-green-500/50 hover:border-green-400'
+                    : 'border-red-500/50 hover:border-red-400'
               }`}
             >
+              <label
+                className="absolute left-1 top-1 z-20 flex h-6 w-6 cursor-pointer items-center justify-center rounded bg-black/70 ring-1 ring-white/25"
+                title="Selecionar para ação em lote"
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(card.id)}
+                  onChange={() => toggleCardSelected(card.id)}
+                  className="h-3.5 w-3.5 cursor-pointer accent-amber-400"
+                  aria-label={`Selecionar ${card.name}`}
+                />
+              </label>
               {/* Badge de Status */}
               <div className={`absolute top-1 right-1 z-10 w-3 h-3 rounded-full shadow-lg ${
                 card.isActive 
@@ -2114,11 +2368,16 @@ export default function AdminCardsPanel() {
                 </div>
               </div>
 
-              {/* Nome - Apenas */}
+              {/* Nome + preço */}
               <div className="p-2 bg-slate-900/80 backdrop-blur-sm">
                 <h3 className="text-xs font-bold text-white text-center line-clamp-2 min-h-[2rem] group-hover:text-purple-300 transition-colors">
                   {card.name}
                 </h3>
+                <p className="text-[10px] text-center tabular-nums mt-1 leading-tight text-gray-400">
+                  <span className="text-purple-300/95">💎 {parseCardPriceInt(card.priceCredits).toLocaleString('pt-BR')}</span>
+                  <span className="text-gray-600 mx-0.5">·</span>
+                  <span className="text-emerald-300/95">R$ {parseCardPriceInt(card.priceCash).toLocaleString('pt-BR')}</span>
+                </p>
               </div>
             </motion.div>
           ))}
@@ -2166,11 +2425,21 @@ export default function AdminCardsPanel() {
             onClick={(e) => e.stopPropagation()}
             className="bg-gray-800 rounded-lg p-6 w-full max-w-4xl max-h-[95vh] overflow-y-auto shadow-2xl border-2 border-purple-500/50"
           >
-            <div className="flex justify-between items-start mb-6">
-              <h2 className="text-2xl font-bold">{selectedCard.name}</h2>
+            <div className="flex justify-between items-start gap-4 mb-6">
+              <div className="min-w-0 flex-1">
+                <h2 className="text-2xl font-bold">{selectedCard.name}</h2>
+                <div className="flex flex-wrap gap-2 mt-2 tabular-nums">
+                  <span className="bg-purple-600/35 px-2.5 py-1 rounded-md text-sm font-semibold border border-purple-500/40 text-purple-100">
+                    💎 {parseCardPriceInt(selectedCard.priceCredits).toLocaleString('pt-BR')} créd.
+                  </span>
+                  <span className="bg-emerald-600/35 px-2.5 py-1 rounded-md text-sm font-semibold border border-emerald-500/40 text-emerald-100">
+                    💵 R$ {parseCardPriceInt(selectedCard.priceCash).toLocaleString('pt-BR')}
+                  </span>
+                </div>
+              </div>
               <button
                 onClick={() => setSelectedCard(null)}
-                className="text-gray-400 hover:text-white text-2xl font-bold transition-colors"
+                className="text-gray-400 hover:text-white text-2xl font-bold transition-colors flex-shrink-0"
               >
                 ✕
               </button>
@@ -2288,24 +2557,6 @@ export default function AdminCardsPanel() {
                         : ((selectedCard as any).trapType || 'N/A')
                       }
                     </p>
-                  </div>
-                )}
-
-                {(selectedCard.priceCredits || selectedCard.priceCash) && (
-                  <div>
-                    <p className="text-xs text-gray-400 mb-1">Preços</p>
-                    <div className="flex gap-2 flex-wrap">
-                      {selectedCard.priceCredits && selectedCard.priceCredits > 0 && (
-                        <span className="bg-purple-600/30 px-2 py-1 rounded text-xs font-semibold border border-purple-500/30">
-                          💎 {selectedCard.priceCredits.toLocaleString()}
-                        </span>
-                      )}
-                      {selectedCard.priceCash && selectedCard.priceCash > 0 && (
-                        <span className="bg-green-600/30 px-2 py-1 rounded text-xs font-semibold border border-green-500/30">
-                          💵 R$ {selectedCard.priceCash.toLocaleString()}
-                        </span>
-                      )}
-                    </div>
                   </div>
                 )}
 

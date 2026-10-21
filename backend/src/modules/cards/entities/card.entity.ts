@@ -144,6 +144,16 @@ export class Card {
   @Index()
   isActive: boolean;
 
+  /** Quando a carta foi ativada no jogo (ordem da coleção). */
+  @Column({ type: 'timestamptz', nullable: true })
+  @Index()
+  activatedAt?: Date | null;
+
+  /** Admin marcou o efeito desta carta (por nome) como implementado corretamente. */
+  @Column({ default: false })
+  @Index()
+  effectVerified: boolean;
+
   @Column({ default: false })
   isBanned: boolean; // Carta banida (proibida em duelos)
 

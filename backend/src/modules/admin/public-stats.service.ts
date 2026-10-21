@@ -20,7 +20,7 @@ export interface PublicStatsDto {
   totalDuels: number;
   /** Torneios finalizados */
   tournamentsFinished: number;
-  /** Cartas cadastradas no jogo */
+  /** Cartas ativas cadastradas no jogo */
   cardsRegistered: number;
   /** Jogadores online agora */
   playersOnline: number;
@@ -58,7 +58,7 @@ export class PublicStatsService {
       this.userRepo.count(),
       this.duelRepo.count({ where: { status: DuelStatus.FINISHED } }),
       this.tournamentRepo.count({ where: { status: TournamentStatus.FINISHED } }),
-      this.cardRepo.count().catch(() => 0),
+      this.cardRepo.count({ where: { isActive: true } }).catch(() => 0),
       this.userRepo.count({ where: { isOnline: true } }),
     ]);
 

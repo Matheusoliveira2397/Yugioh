@@ -8,7 +8,7 @@ export class ManagedBot {
   @PrimaryGeneratedColumn('uuid') id: string;
   @Column({ name: 'user_id', type: 'int', unique: true }) userId: number;
   @Column({ type: 'varchar', length: 100 }) name: string;
-  @Column({ type: 'varchar', length: 16, default: BotDifficulty.NORMAL }) difficulty: BotDifficulty;
+  @Column({ type: 'varchar', length: 16, default: BotDifficulty.EXPERT }) difficulty: BotDifficulty;
   @Column({ type: 'int', default: 1 }) level: number;
   @Column({ name: 'source_deck_id', type: 'uuid' }) sourceDeckId: string;
   @Column({ name: 'bot_deck_id', type: 'uuid' }) botDeckId: string;

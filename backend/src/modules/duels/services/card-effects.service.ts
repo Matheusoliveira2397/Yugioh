@@ -34,11 +34,14 @@ export class CardEffectsService {
     zoneIndex: number,
     selectedMonsterZoneIndex?: number,
   ): Promise<boolean> {
-    // NOVO: Tentar usar sistema de registro de efeitos
+    // Sistema de registro — match EXATO. Se achou efeito, NÃO cai no fallback antigo
+    // (fallback após erro fazia outro código “consertar” e mascarar regressão).
     const effect = this.cardEffectRegistry.findEffect(card);
+    const cardLabel = card?.name || card?.cardName || card?.idCarta || 'Desconhecida';
+
     if (effect) {
-      logger.info(`✨ [CardEffectsService] Usando novo sistema de efeitos para: ${card?.name || card?.cardName || 'Desconhecida'}`);
-      
+      logger.info(`✨ [CardEffectsService] Efeito registrado: ${cardLabel}`);
+
       const context: CardEffectContext = {
         duelId,
         duel,
@@ -49,26 +52,29 @@ export class CardEffectsService {
         userId: isPlayer1 ? duel.player1Id : duel.player2Id,
       };
 
-      // Verificar se pode ativar
-      if (effect.canActivate && !effect.canActivate(context)) {
-        logger.warn(`⚠️ [CardEffectsService] Efeito não pode ser ativado: ${card?.name || card?.cardName}`);
-        return false;
-      }
-
-      // Processar efeito
       try {
+        if (effect.canActivate) {
+          const ok = await effect.canActivate(context);
+          if (!ok) {
+            logger.warn(`⚠️ [CardEffectsService] Efeito não pode ser ativado: ${cardLabel}`);
+            return false;
+          }
+        }
+
         const result = await effect.process(context);
         logger.info(`✅ [CardEffectsService] Efeito processado: ${result.message || 'Sucesso'}`);
         return result.createdPendingChoice || false;
       } catch (error) {
-        logger.error(`❌ [CardEffectsService] Erro ao processar efeito:`, error);
-        // Fallback para código antigo em caso de erro
-        logger.warn(`⚠️ [CardEffectsService] Fallback para código antigo devido a erro`);
+        logger.error(
+          `❌ [CardEffectsService] Erro no efeito registrado de "${cardLabel}" — sem fallback (isolamento):`,
+          error,
+        );
+        return false;
       }
     }
 
-    // Fallback: Usar código antigo (durante migração gradual)
-    logger.info(`ℹ️ [CardEffectsService] Usando código antigo (fallback) para: ${card?.name || card?.cardName || 'Desconhecida'}`);
+    // Só fallback se a carta NÃO tem efeito no registry
+    logger.info(`ℹ️ [CardEffectsService] Sem registro — fallback legado: ${cardLabel}`);
     return this.duelsService.processCardEffect(
       duelId,
       duel,

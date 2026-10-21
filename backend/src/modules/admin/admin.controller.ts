@@ -12,6 +12,7 @@ import { DuelsService } from '../duels/duels.service';
 import { ShopService } from '../shop/shop.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { CardsService } from '../cards/cards.service';
+import { CreditPackagesService } from '../credit-packages/credit-packages.service';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -26,6 +27,7 @@ export class AdminController {
     private shopService: ShopService,
     private promotionsService: PromotionsService,
     private cardsService: CardsService,
+    private creditPackagesService: CreditPackagesService,
   ) {}
 
   // Gestão de Usuários
@@ -179,7 +181,17 @@ export class AdminController {
   /** Atualizar score por tipo de duelo. */
   @Put('duel-score-settings')
   updateDuelScoreSettings(
-    @Body() body: { scoreRandom?: number; scoreChat?: number; scoreTournament?: number; scoreArena?: number; scoreOther?: number },
+    @Body()
+    body: {
+      scoreRandom?: number;
+      scoreRanked?: number;
+      rankedPointsOnWin?: number;
+      rankedPointsOnLoss?: number;
+      scoreChat?: number;
+      scoreTournament?: number;
+      scoreArena?: number;
+      scoreOther?: number;
+    },
   ) {
     return this.adminService.updateDuelScoreSettings(body);
   }
@@ -652,5 +664,66 @@ export class AdminController {
   async deletePromotion(@Param('id') id: string) {
     await this.promotionsService.remove(id);
     this.cardsService.invalidateShopCache();
+  }
+
+  // ==================== PACOTES DE CRÉDITOS (LOJA) ====================
+
+  @Get('credit-packages')
+  getAllCreditPackages() {
+    return this.creditPackagesService.findAllAdmin();
+  }
+
+  @Post('credit-packages')
+  createCreditPackage(
+    @Body()
+    body: {
+      credits: number;
+      bonusCredits?: number;
+      priceBrl: number;
+      description?: string | null;
+      isPopular?: boolean;
+      sortOrder?: number;
+      isActive?: boolean;
+    },
+  ) {
+    return this.creditPackagesService.create(body);
+  }
+
+  @Put('credit-packages/:id')
+  updateCreditPackage(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      credits?: number;
+      bonusCredits?: number;
+      priceBrl?: number;
+      description?: string | null;
+      isPopular?: boolean;
+      sortOrder?: number;
+      isActive?: boolean;
+    },
+  ) {
+    return this.creditPackagesService.update(id, body);
+  }
+
+  @Delete('credit-packages/:id')
+  deleteCreditPackage(@Param('id') id: string) {
+    return this.creditPackagesService.remove(id);
+  }
+
+  @Get('credit-payment-contact')
+  getCreditPaymentContactAdmin() {
+    return this.creditPackagesService.getPaymentContactAdmin();
+  }
+
+  @Put('credit-payment-contact')
+  updateCreditPaymentContact(
+    @Body()
+    body: {
+      pixKey?: string | null;
+      whatsapp?: string | null;
+    },
+  ) {
+    return this.creditPackagesService.updatePaymentContact(body);
   }
 }

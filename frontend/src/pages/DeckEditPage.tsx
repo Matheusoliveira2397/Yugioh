@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { api } from '../api/axios';
 import { useAuthStore } from '../stores/authStore';
 import CardImage from '../components/CardImage';
+import DeckCopyLimitBadge from '../components/DeckCopyLimitBadge';
 import { CARD_IMAGE_GRID_PROPS } from '../utils/cardImage';
 import { getCardDescription } from '../utils/cardDescription';
 
@@ -63,7 +64,13 @@ export default function DeckEditPage() {
   const [maletaFilterRarity, setMaletaFilterRarity] = useState<string>('all');
   /** Imagem do deck: carta de capa (opcional) */
   const [coverCardId, setCoverCardId] = useState<string | null>(null);
-  const [coverCard, setCoverCard] = useState<{ id: string; name: string; cardImage?: string; idCarta?: string } | null>(null);
+  const [coverCard, setCoverCard] = useState<{
+    id: string;
+    name: string;
+    cardImage?: string;
+    idCarta?: string;
+    maxCopiesInDeck?: number;
+  } | null>(null);
   const [showCoverPicker, setShowCoverPicker] = useState(false);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const deckNameTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -1057,12 +1064,12 @@ export default function DeckEditPage() {
           transition={{ delay: 0.1 }}
           className="mb-8"
         >
-          <div className="flex flex-col lg:flex-row gap-6">
+          <div className="flex flex-col lg:flex-row lg:items-stretch gap-6">
             {/* Deck Principal Section */}
-            <div className="flex-1">
-              <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-4">
-              <h2 className="text-2xl font-semibold text-blue-400 flex items-center gap-2">
+            <div className="flex-1 flex flex-col min-w-0">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+            <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+              <h2 className="text-xl sm:text-2xl font-semibold text-blue-400 flex items-center gap-2">
                 Deck Principal ({getDeckCount()}/60)
               </h2>
               <input
@@ -1113,14 +1120,17 @@ export default function DeckEditPage() {
             <div className="flex items-center gap-4 flex-wrap">
               {coverCard ? (
                 <div className="flex items-center gap-3 p-2 rounded-lg bg-gray-800/50 border border-gray-600">
-                  <CardImage
-                    {...CARD_IMAGE_GRID_PROPS}
-                    card={coverCard}
-                    className="w-16 aspect-[59/86] rounded object-cover"
-                    fallback="/images/fundoCarta.webp"
-                    loading="eager"
-                    fetchPriority="high"
-                  />
+                  <div className="relative w-16 shrink-0 aspect-[59/86] rounded overflow-hidden">
+                    <CardImage
+                      {...CARD_IMAGE_GRID_PROPS}
+                      card={coverCard}
+                      className="w-full h-full object-cover"
+                      fallback="/images/fundoCarta.webp"
+                      loading="eager"
+                      fetchPriority="high"
+                    />
+                    <DeckCopyLimitBadge maxCopiesInDeck={coverCard.maxCopiesInDeck} />
+                  </div>
                   <div>
                     <p className="text-white font-medium text-sm">{coverCard.name}</p>
                     <button
@@ -1165,12 +1175,18 @@ export default function DeckEditPage() {
                             const c = uc.card;
                             if (c) {
                               setCoverCardId(c.id);
-                              setCoverCard({ id: c.id, name: c.name, cardImage: c.cardImage, idCarta: (c as any).idCarta });
+                              setCoverCard({
+                                id: c.id,
+                                name: c.name,
+                                cardImage: c.cardImage,
+                                idCarta: (c as any).idCarta,
+                                maxCopiesInDeck: c.maxCopiesInDeck,
+                              });
                               setShowCoverPicker(false);
                               saveDeckImmediately();
                             }
                           }}
-                          className={`rounded-lg overflow-hidden border-2 transition-all ${
+                          className={`relative rounded-lg overflow-hidden border-2 transition-all ${
                             coverCardId === (uc.card?.id || uc.cardId)
                               ? 'border-amber-400 ring-2 ring-amber-400/50'
                               : 'border-gray-600 hover:border-purple-500'
@@ -1182,6 +1198,7 @@ export default function DeckEditPage() {
                             className="w-full aspect-[59/86] object-cover"
                             fallback="/images/fundoCarta.webp"
                           />
+                          <DeckCopyLimitBadge maxCopiesInDeck={uc.card!.maxCopiesInDeck} />
                         </button>
                       ))
                     )}
@@ -1191,8 +1208,8 @@ export default function DeckEditPage() {
             })()}
           </div>
 
-          <div className="rounded-xl px-8 py-12 bg-transparent backdrop-blur-sm border-2 border-blue-500/50 shadow-2xl overflow-hidden">
-            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 justify-items-center" style={{ gap: '24px' }}>
+          <div className="rounded-xl p-6 sm:p-8 bg-transparent backdrop-blur-sm border-2 border-blue-500/50 shadow-2xl overflow-hidden flex-1 flex flex-col min-h-0">
+            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 justify-items-center gap-6 content-start flex-1">
               {deck.map((slot, idx) => (
                 <motion.div
                   key={idx}
@@ -1208,7 +1225,6 @@ export default function DeckEditPage() {
                 >
                   {slot && slot.card ? (
                     <>
-                      {/* Card Image */}
                       <CardImage
                         {...CARD_IMAGE_GRID_PROPS}
                         card={slot.card}
@@ -1217,20 +1233,16 @@ export default function DeckEditPage() {
                         loading={idx < 40 ? 'eager' : 'lazy'}
                         fetchPriority={idx < 15 ? 'high' : 'auto'}
                       />
-                      
-                      
-                      {/* Card Name Tooltip */}
+                      <DeckCopyLimitBadge maxCopiesInDeck={slot.card.maxCopiesInDeck} />
                       <div className="absolute bottom-0 left-0 right-0 bg-gray-900/80 backdrop-blur-sm text-white text-[8px] px-1 py-0.5 rounded-b-lg line-clamp-1">
                         {slot.card?.name || 'Carta sem nome'}
                       </div>
-                      
-                      {/* Remove Button */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           removeFromDeck(idx);
                         }}
-                        className="absolute top-1 right-1 bg-red-500/30 backdrop-blur-sm border-2 border-red-500/70 hover:bg-red-500/40 text-red-200 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center transition-colors"
+                        className="absolute top-1 left-1 bg-red-500/30 backdrop-blur-sm border-2 border-red-500/70 hover:bg-red-500/40 text-red-200 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center transition-colors z-30"
                       >
                         ✖
                       </button>
@@ -1247,10 +1259,10 @@ export default function DeckEditPage() {
           </div>
 
           {/* Extra Deck Section */}
-          <div className="lg:w-96 xl:w-[28rem] 2xl:w-[32rem] flex-shrink-0">
-              <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col min-w-0 w-full lg:w-[22rem] xl:w-96 2xl:w-[28rem] flex-shrink-0">
+              <div className="flex items-center justify-between mb-4 min-h-[2.75rem]">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-semibold text-purple-400 flex items-center gap-2">
+                  <h2 className="text-xl sm:text-2xl font-semibold text-purple-400 flex items-center gap-2">
                     ⭐ Extra Deck ({getExtraDeckCount()}/15)
                   </h2>
                 </div>
@@ -1268,9 +1280,9 @@ export default function DeckEditPage() {
                   </button>
                 )}
               </div>
-              <div className="text-xs text-gray-200 mb-2">Apenas monstros Fusion</div>
-              <div className="rounded-xl p-16 bg-transparent backdrop-blur-sm border-2 border-purple-500/50 shadow-2xl overflow-hidden">
-                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-5 xl:grid-cols-6 justify-items-start" style={{ gap: '36px' }}>
+              <div className="text-xs text-gray-200 mb-2 min-h-[1.25rem]">Apenas monstros Fusion</div>
+              <div className="rounded-xl p-6 sm:p-8 bg-transparent backdrop-blur-sm border-2 border-purple-500/50 shadow-2xl overflow-hidden flex-1 flex flex-col min-h-0">
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 justify-items-center gap-6 content-start flex-1">
               {extraDeck.map((slot, idx) => (
                 <motion.div
                   key={idx}
@@ -1294,6 +1306,7 @@ export default function DeckEditPage() {
                         loading={idx < 20 ? 'eager' : 'lazy'}
                         fetchPriority={idx < 8 ? 'high' : 'auto'}
                       />
+                      <DeckCopyLimitBadge maxCopiesInDeck={slot.card.maxCopiesInDeck} />
                       <div className="absolute bottom-0 left-0 right-0 bg-gray-900/80 backdrop-blur-sm text-white text-[8px] px-1 py-0.5 rounded-b-lg line-clamp-1">
                         {slot.card?.name || 'Carta sem nome'}
                       </div>
@@ -1302,7 +1315,7 @@ export default function DeckEditPage() {
                           e.stopPropagation();
                           removeFromExtraDeck(idx);
                         }}
-                        className="absolute top-1 right-1 bg-red-500/30 backdrop-blur-sm border-2 border-red-500/70 hover:bg-red-500/40 text-red-200 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center transition-colors"
+                        className="absolute top-1 left-1 bg-red-500/30 backdrop-blur-sm border-2 border-red-500/70 hover:bg-red-500/40 text-red-200 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center transition-colors z-30"
                       >
                         ✖
                       </button>
@@ -1369,7 +1382,7 @@ export default function DeckEditPage() {
               </div>
             </div>
           ) : (
-            <>
+            <div className="contents">
               <div className="mb-4 p-4 rounded-xl bg-gray-900/30 backdrop-blur-sm border border-amber-500/20 flex flex-col sm:flex-row gap-3 flex-wrap">
                 <div className="flex-1 min-w-[200px]">
                   <label className="block text-amber-400/90 text-xs font-medium mb-1.5">Buscar</label>
@@ -1441,7 +1454,7 @@ export default function DeckEditPage() {
                       </button>
                     </div>
                   ) : (
-                    <>
+                    <div className="contents">
                       <p className="text-amber-400/80 text-sm mb-4">
                         Mostrando {filteredMaleta.length} de {maleta.length} tipo(s)
                       </p>
@@ -1487,6 +1500,7 @@ export default function DeckEditPage() {
                           loading={maletaIdx < 48 ? 'eager' : 'lazy'}
                           fetchPriority={maletaIdx < 16 ? 'high' : 'auto'}
                         />
+                        <DeckCopyLimitBadge maxCopiesInDeck={card.maxCopiesInDeck} />
                         {qtyMaleta > 0 && (
                           <div className="absolute top-1 left-1 min-w-[20px] h-5 px-1.5 rounded-md bg-amber-900/90 border border-amber-500/50 flex items-center justify-center">
                             <span className="text-amber-200 text-xs font-bold">{qtyMaleta}</span>
@@ -1504,11 +1518,11 @@ export default function DeckEditPage() {
                     );
                   })}
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
               </div>
-            </>
+            </div>
           )}
         </motion.div>
         </div>
@@ -1518,7 +1532,7 @@ export default function DeckEditPage() {
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 duel-modal-scrim flex items-center justify-center z-50 p-4"
           onClick={() => setSelectedCard(null)}
         >
           <motion.div
@@ -1527,7 +1541,7 @@ export default function DeckEditPage() {
             className={`bg-gradient-to-br ${getRarityColor(selectedCard.card?.rarity || 'Common')} rounded-xl p-6 max-w-md w-full border-2 border-purple-500/50 shadow-2xl backdrop-blur-sm`}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="w-full mb-4" style={{ maxHeight: '400px' }}>
+            <div className="relative w-full mb-4" style={{ maxHeight: '400px' }}>
               <CardImage
                 {...CARD_IMAGE_GRID_PROPS}
                 card={selectedCard.card}
@@ -1536,8 +1550,23 @@ export default function DeckEditPage() {
                 loading="eager"
                 fetchPriority="high"
               />
+              <DeckCopyLimitBadge maxCopiesInDeck={selectedCard.card?.maxCopiesInDeck} />
             </div>
             <h3 className="text-2xl font-bold text-white mb-2">{selectedCard.card?.name || 'Carta sem nome'}</h3>
+            <div className="flex flex-wrap gap-2 mb-3 tabular-nums">
+              <span className="bg-purple-900/60 px-2.5 py-1 rounded-md text-sm font-semibold border border-purple-500/40 text-purple-100">
+                💎{' '}
+                {Math.max(
+                  0,
+                  parseInt(String((selectedCard.card as any).priceCredits ?? 0), 10) || 0,
+                ).toLocaleString('pt-BR')}{' '}
+                créd.
+              </span>
+              <span className="bg-emerald-900/60 px-2.5 py-1 rounded-md text-sm font-semibold border border-emerald-500/40 text-emerald-100">
+                💵 R${' '}
+                {Math.max(0, Math.round(Number((selectedCard.card as any).priceCash ?? 0)) || 0).toLocaleString('pt-BR')}
+              </span>
+            </div>
             <p className="text-white/80 mb-4">{getCardDescription(selectedCard?.card)}</p>
             {selectedCard.card?.type === 'Monster' && (
               <div className="flex gap-4 mb-4">

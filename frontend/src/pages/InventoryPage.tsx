@@ -3,9 +3,16 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { useCosmeticsStore } from '../stores/cosmeticsStore';
 import api from '../api/axios';
+import { useI18n } from '../i18n/I18nContext';
+import { AVATAR_FRAMES, type AvatarFrameId } from '../constants/avatarFrames';
+import FramedAvatar from '../components/FramedAvatar';
 
 export default function InventoryPage() {
-  const { user } = useAuthStore();
+  const { t } = useI18n();
+  const { user, setUser } = useAuthStore();
+  const [equippedFrameId, setEquippedFrameId] = useState<string | null>(
+    user?.equippedAvatarFrame ?? null,
+  );
   const {
     ownedPlaymats,
     ownedSkins,
@@ -102,6 +109,11 @@ export default function InventoryPage() {
           if (userData.equippedSkinId) {
             equipSkin(userData.equippedSkinId);
           }
+          if (userData.equippedAvatarFrame) {
+            setEquippedFrameId(userData.equippedAvatarFrame);
+          } else {
+            setEquippedFrameId(null);
+          }
         } catch (userError) {
           console.error('Erro ao buscar dados do usuário:', userError);
         }
@@ -174,6 +186,20 @@ export default function InventoryPage() {
     }
   };
 
+  const handleToggleFrame = async (frameId: AvatarFrameId, isEquipped: boolean) => {
+    try {
+      const next = isEquipped ? null : frameId;
+      await api.patch('/me/cosmetics', { equippedAvatarFrame: next });
+      setEquippedFrameId(next);
+      if (user) {
+        setUser({ ...user, equippedAvatarFrame: next });
+      }
+    } catch (err: any) {
+      console.error('Erro ao equipar moldura:', err);
+      alert(err.response?.data?.message || 'Erro ao equipar moldura');
+    }
+  };
+
   const handleUnequipTalisman = async () => {
     try {
       await api.post('/shop/talisman/unequip');
@@ -194,8 +220,8 @@ export default function InventoryPage() {
         {/* Header */}
         <div className="rounded-lg p-6 mb-8 border border-green-500/30">
           <div>
-            <h1 className="text-4xl font-bold mb-2">🎒 Inventário</h1>
-            <p className="text-gray-300">Gerencie suas cartas e cosméticos visuais</p>
+            <h1 className="text-4xl font-bold mb-2">🎒 {t('inventory.title')}</h1>
+            <p className="text-gray-300">{t('inventory.subtitle')}</p>
           </div>
         </div>
 
@@ -207,7 +233,7 @@ export default function InventoryPage() {
         >
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
             <div>
-              <h2 className="text-2xl font-bold text-amber-200 flex items-center gap-2">🧳 Minha maleta</h2>
+              <h2 className="text-2xl font-bold text-amber-200 flex items-center gap-2">🧳 {t('inventory.myBriefcase')}</h2>
               <p className="text-gray-400 text-sm mt-1">
                 Limites que valem para criar decks e guardar cartas fora dos decks
               </p>
@@ -217,20 +243,19 @@ export default function InventoryPage() {
                 {loading ? (user?.maxDecks ?? maletaLimits.maxDecks) : maletaLimits.maxDecks} decks
                 <span className="text-gray-400 font-normal mx-2">•</span>
                 {loading ? (user?.maletaCapacity ?? maletaLimits.maletaCapacity) : maletaLimits.maletaCapacity}{' '}
-                cartas na maleta
+                {t('inventory.cardsInBriefcase')}
               </p>
             </div>
           </div>
           {loading ? (
-            <p className="text-gray-400 text-sm">Carregando dados da maleta...</p>
+            <p className="text-gray-400 text-sm">{t('inventory.loadingBriefcase')}</p>
           ) : ownedMaletas.length === 0 ? (
             <p className="text-gray-400 text-sm">
-              Você ainda não comprou níveis de maleta na loja. Abra a aba{' '}
-              <span className="text-amber-200/90">📦 Itens</span> na loja para aumentar decks e capacidade.
+              {t('inventory.noBriefcase')}
             </p>
           ) : (
             <div className="space-y-3">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Níveis adquiridos</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">{t('inventory.levelsOwned')}</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {ownedMaletas.map((m) => {
                   const imageSrc = m.image
@@ -281,15 +306,15 @@ export default function InventoryPage() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-2xl font-bold text-blue-300 flex items-center gap-2">
-                  🎨 Playmats
+                  🎨 {t('inventory.playmats')}
                 </h2>
                 <p className="text-gray-400 text-sm">
-                  Tapetes usados como campo de duelo
+                  {t('inventory.playmatsHint')}
                 </p>
               </div>
               {equippedPlaymatId && (
                 <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-600/30 border border-blue-400 text-blue-100">
-                  1 equipado
+                  {t('inventory.oneEquipped')}
                 </span>
               )}
             </div>
@@ -297,7 +322,7 @@ export default function InventoryPage() {
             {ownedPlaymats.length === 0 ? (
               <div className="text-center py-10 text-gray-400 rounded-lg border border-dashed border-blue-500/40">
                 <p className="text-3xl mb-2">🛒</p>
-                <p className="font-semibold">Você ainda não possui playmats</p>
+                <p className="font-semibold">{t('inventory.noPlaymats')}</p>
                 <p className="text-xs mt-1">Compre playmats na loja para personalizar seu campo de duelo</p>
               </div>
             ) : (
@@ -350,7 +375,7 @@ export default function InventoryPage() {
                             : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md'
                         }`}
                       >
-                        {isEquipped ? 'Desequipar' : 'Equipar'}
+                        {isEquipped ? t('inventory.unequip') : t('inventory.equip')}
                       </button>
                     </div>
                   );
@@ -376,7 +401,7 @@ export default function InventoryPage() {
               </div>
               {equippedSkinId && (
                 <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-600/30 border border-emerald-400 text-emerald-100">
-                  1 equipada
+                  {t('inventory.oneEquipped')}
                 </span>
               )}
             </div>
@@ -384,7 +409,7 @@ export default function InventoryPage() {
             {ownedSkins.length === 0 ? (
               <div className="text-center py-10 text-gray-400 rounded-lg border border-dashed border-emerald-500/40">
                 <p className="text-3xl mb-2">🛒</p>
-                <p className="font-semibold">Você ainda não possui sleeves</p>
+                <p className="font-semibold">{t('inventory.noSleeves')}</p>
                 <p className="text-xs mt-1">Compre skins na loja para personalizar o verso das cartas</p>
               </div>
             ) : (
@@ -437,13 +462,74 @@ export default function InventoryPage() {
                             : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md'
                         }`}
                       >
-                        {isEquipped ? 'Desequipar' : 'Equipar'}
+                        {isEquipped ? t('inventory.unequip') : t('inventory.equip')}
                       </button>
                     </div>
                   );
                 })}
               </div>
             )}
+          </motion.div>
+
+          {/* Molduras de avatar (Deuses Egípcios) */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl p-5 border border-violet-500/40 lg:col-span-2"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-2xl font-bold text-violet-300 flex items-center gap-2">
+                  🖼️ {t('inventory.frames')}
+                </h2>
+                <p className="text-gray-400 text-sm">{t('inventory.framesHint')}</p>
+              </div>
+              {equippedFrameId && (
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-violet-600/30 border border-violet-400 text-violet-100">
+                  {t('inventory.oneEquipped')}
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {AVATAR_FRAMES.map((frame) => {
+                const isEquipped = equippedFrameId === frame.id;
+                return (
+                  <div
+                    key={frame.id}
+                    className={`flex flex-col items-center gap-3 rounded-lg border p-4 overflow-visible ${
+                      isEquipped
+                        ? 'border-violet-400 shadow-lg shadow-violet-500/30'
+                        : 'border-white/15'
+                    }`}
+                  >
+                    <div className="overflow-visible p-8">
+                      <FramedAvatar
+                        src={user?.profileImage}
+                        alt={frame.name}
+                        frameId={frame.id}
+                        className="w-28 h-28"
+                        rounded="full"
+                      />
+                    </div>
+                    <div className="text-center">
+                      <p className="font-bold text-white">{frame.name}</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">{frame.description}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleFrame(frame.id, isEquipped)}
+                      className={`w-full px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                        isEquipped
+                          ? 'text-violet-200 border border-violet-400 hover:bg-white/10'
+                          : 'bg-violet-600 hover:bg-violet-500 text-white shadow-md'
+                      }`}
+                    >
+                      {isEquipped ? t('inventory.unequip') : t('inventory.equip')}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </motion.div>
 
           {/* Talismãs */}
@@ -463,7 +549,7 @@ export default function InventoryPage() {
               </div>
               {talismans.some((t) => t.equipped) && (
                 <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-600/30 border border-amber-400 text-amber-100">
-                  1 equipado
+                  {t('inventory.oneEquipped')}
                 </span>
               )}
             </div>
@@ -471,7 +557,7 @@ export default function InventoryPage() {
             {talismans.length === 0 ? (
               <div className="text-center py-10 text-gray-400 rounded-lg border border-dashed border-amber-500/40">
                 <p className="text-3xl mb-2">✨</p>
-                <p className="font-semibold">Você ainda não possui talismãs</p>
+                <p className="font-semibold">{t('inventory.noTalismans')}</p>
                 <p className="text-xs mt-1">Compre talismãs na loja para ganhar bônus na Arena</p>
               </div>
             ) : (
@@ -484,48 +570,43 @@ export default function InventoryPage() {
                   return (
                     <div
                       key={talisman.id}
-                      className={`flex gap-3 items-center rounded-lg border p-3 ${
-                        isEquipped ? 'border-amber-400 shadow-lg shadow-amber-500/40' : 'border-white/20'
+                      className={`flex gap-4 items-center py-2 border-b border-white/10 last:border-0 ${
+                        isEquipped ? 'ring-1 ring-amber-400/50 ring-inset rounded-lg px-2 -mx-2' : ''
                       }`}
                     >
-                      <div className="flex flex-col items-center flex-shrink-0 w-14">
-                        <div className="relative w-14 h-14 rounded-lg overflow-hidden border border-amber-400/60 bg-gradient-to-br from-amber-500/30 to-yellow-500/30 flex items-center justify-center">
+                      <div
+                        className="flex flex-col items-center flex-shrink-0 w-[5.5rem]"
+                        title={`${talisman.charges ?? 0}/${talisman.initialCharges ?? 10} cargas (arena)`}
+                      >
+                        <div className="w-full aspect-square flex items-center justify-center">
                           {imageSrc ? (
                             <img
                               src={imageSrc}
-                              alt={talisman.name || 'Talismã'}
-                              className="w-full h-full object-cover"
+                              alt=""
+                              className="max-w-full max-h-full w-auto h-auto object-contain"
                               loading="lazy"
                               decoding="async"
                               onError={(e) => {
                                 (e.target as HTMLImageElement).style.display = 'none';
                               }}
                             />
-                          ) : (
-                            <span className="text-2xl">✨</span>
-                          )}
+                          ) : null}
                         </div>
-                        <p className="font-bold text-white text-center text-[10px] mt-1 w-full break-words">{talisman.name || 'Talismã'}</p>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-amber-200/80">
-                          Score +{talisman.bonusScorePct ?? 0}% • Cash +{talisman.bonusCashPct ?? 0}% • Arena +{talisman.bonusArenaPointsPct ?? 0}%
-                        </p>
-                        <p className="text-xs text-amber-300/90 mt-0.5">
-                          ⚡ {talisman.charges ?? 0}/{talisman.initialCharges ?? 10} cargas (1 por duelo na arena)
+                        <p className="text-[10px] text-white text-center font-semibold leading-tight mt-1 line-clamp-2 w-full">
+                          {talisman.name || 'Talismã'}
                         </p>
                       </div>
                       <button
                         onClick={() =>
                           isEquipped ? handleUnequipTalisman() : handleEquipTalisman(talisman.id)
                         }
-                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex-shrink-0 ${
+                        className={`ml-auto px-4 py-2 rounded-lg text-xs font-bold transition-all flex-shrink-0 ${
                           isEquipped
                             ? 'text-amber-200 border border-amber-400 hover:bg-white/10'
                             : 'bg-amber-600 hover:bg-amber-700 text-white shadow-md'
                         }`}
                       >
-                        {isEquipped ? 'Desequipar' : 'Equipar'}
+                        {isEquipped ? t('inventory.unequip') : t('inventory.equip')}
                       </button>
                     </div>
                   );

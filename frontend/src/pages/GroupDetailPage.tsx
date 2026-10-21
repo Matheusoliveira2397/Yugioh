@@ -1148,7 +1148,7 @@ export default function GroupDetailPage() {
       {/* Modal de Edição */}
       {showEditModal && (
         <div 
-          className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+          className="fixed inset-0 duel-modal-scrim flex items-center justify-center p-4 overflow-y-auto"
           style={{ zIndex: 10000 }}
         >
           <motion.div
@@ -1388,7 +1388,7 @@ export default function GroupDetailPage() {
       {/* Modal de Confirmação de Exclusão */}
       {showDeleteModal && (
         <div 
-          className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+          className="fixed inset-0 duel-modal-scrim flex items-center justify-center p-4"
           style={{ zIndex: 10002 }}
         >
           <motion.div

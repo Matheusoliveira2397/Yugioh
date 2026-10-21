@@ -7,6 +7,7 @@ import { getSocialIcon } from '../components/SocialMediaIcons';
 import axios from 'axios';
 import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { requestActiveDuelRefresh } from '../utils/activeDuelRefresh';
+import { useI18n } from '../i18n/I18nContext';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -39,6 +40,7 @@ interface PrivateChat {
 }
 
 export default function ChatPage() {
+  const { t } = useI18n();
   const { user } = useAuthStore();
   const navigate = useNavigate();
   const { connect, emit, on, isConnected, getSocket } = useSocketStore();
@@ -629,14 +631,14 @@ export default function ChatPage() {
                   onClick={() => setSelectedTab('global')}
                   className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedTab === 'global' ? 'bg-white/20 text-white ring-2 ring-white/50' : 'text-white/80 hover:bg-white/10'}`}
                 >
-                  💬 Global
+                  💬 {t('chat.global')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setSelectedTab('clan')}
                   className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedTab === 'clan' ? 'bg-white/20 text-white ring-2 ring-white/50' : 'text-white/80 hover:bg-white/10'}`}
                 >
-                  🏴 {user?.clanTag ? `|${user.clanTag}|` : 'Clã'}
+                  🏴 {user?.clanTag ? `|${user.clanTag}|` : t('chat.clan')}
                 </button>
                 {Array.from(privateChats.entries()).map(([userId, chat]) => (
                   <div
@@ -669,7 +671,7 @@ export default function ChatPage() {
                         setSelectedTab(selectedTab === userId ? 'global' : selectedTab);
                       }}
                       className="text-white/70 hover:text-white ml-0.5"
-                      title="Fechar aba"
+                      title={t('chat.closeTab')}
                     >
                       ×
                     </button>
@@ -678,9 +680,9 @@ export default function ChatPage() {
               </div>
               <div className="flex items-center gap-2">
                 {isConnected ? (
-                  <span className="text-green-400 text-xs sm:text-sm">(● Conectado)</span>
+                  <span className="text-green-400 text-xs sm:text-sm">(● {t('chat.connected')})</span>
                 ) : (
-                  <span className="text-red-400 text-xs sm:text-sm">(○ Desconectado)</span>
+                  <span className="text-red-400 text-xs sm:text-sm">(○ {t('chat.disconnected')})</span>
                 )}
               </div>
             </div>
@@ -688,7 +690,7 @@ export default function ChatPage() {
               <span className="text-sm sm:text-base font-bold text-white whitespace-nowrap">
                 👥 Online ({onlineUsers.length})
               </span>
-              <span className="text-xs text-white/70">Duelistas no chat</span>
+              <span className="text-xs text-white/70">{t('chat.duelistsInChat')}</span>
             </div>
           </div>
 
@@ -715,7 +717,7 @@ export default function ChatPage() {
                     onClick={() => setMentionNotification(null)}
                     className="mt-2 text-xs text-blue-300 hover:text-white underline"
                   >
-                    Fechar
+                    {t('common.close')}
                   </button>
                 </motion.div>
               )}
@@ -731,14 +733,14 @@ export default function ChatPage() {
                       <div className="p-3 border-b border-white/20 flex items-center justify-between flex-wrap gap-2">
                         <span className="text-sm font-bold text-purple-200">
                           💬 {chat.clanTag ? `|${chat.clanTag}| ` : ''}{chat.username}
-                          {(chat.level ?? 0) > 0 && <span className="text-yellow-300/90 text-xs ml-1">Nível {chat.level}</span>}
+                          {(chat.level ?? 0) > 0 && <span className="text-yellow-300/90 text-xs ml-1">{t('profileCard.level')} {chat.level}</span>}
                         </span>
                         {selectedTab !== (user?.id ? String(user.id) : '') && (
                           <button
                             onClick={() => handleChallengePlayer(selectedTab, chat.username, chat.clanTag)}
                             className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-1.5 px-3 rounded text-xs"
                           >
-                            ⚔️ Desafiar
+                            ⚔️ {t('chat.challenge')}
                           </button>
                         )}
                       </div>
@@ -746,7 +748,7 @@ export default function ChatPage() {
                         {chat.messages.length === 0 ? (
                           <div className="text-center text-gray-500 py-8">
                             <p className="text-2xl mb-2">💭</p>
-                            <p className="text-sm">Nenhuma mensagem ainda. Comece a conversar!</p>
+                            <p className="text-sm">{t('chat.noMessages')}</p>
                           </div>
                         ) : (
                           chat.messages.map((msg, idx) => {
@@ -766,8 +768,8 @@ export default function ChatPage() {
                                   <p className="text-white">{msg.content}</p>
                                   {isChallenge && challenge && (
                                     <div className="flex gap-2 mt-2">
-                                      <button onClick={() => handleAcceptChallenge(challenge.challengerId)} className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-1.5 rounded text-xs">✅ Aceitar</button>
-                                      <button onClick={() => handleRejectChallenge(challenge.challengerId)} className="flex-1 border border-white/20 text-white py-1.5 rounded text-xs">❌ Recusar</button>
+                                      <button onClick={() => handleAcceptChallenge(challenge.challengerId)} className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-1.5 rounded text-xs">✅ {t('chat.accept')}</button>
+                                      <button onClick={() => handleRejectChallenge(challenge.challengerId)} className="flex-1 border border-white/20 text-white py-1.5 rounded text-xs">❌ {t('chat.decline')}</button>
                                     </div>
                                   )}
                                 </div>
@@ -789,11 +791,11 @@ export default function ChatPage() {
                               });
                             }}
                             onKeyPress={(e) => e.key === 'Enter' && handleSendPrivateMessage(selectedTab)}
-                            placeholder="Digite sua mensagem..."
+                            placeholder={t('chat.placeholder')}
                             className="flex-1 bg-gray-800 text-white px-4 py-3 rounded-lg border border-white/20 focus:ring-2 focus:ring-purple-500"
                             disabled={!isConnected}
                           />
-                          <button onClick={() => handleSendPrivateMessage(selectedTab)} disabled={!isConnected || !input.trim()} className="btn-primary px-6">Enviar</button>
+                          <button onClick={() => handleSendPrivateMessage(selectedTab)} disabled={!isConnected || !input.trim()} className="btn-primary px-6">{t('chat.send')}</button>
                         </div>
                       </div>
                     </>
@@ -809,14 +811,14 @@ export default function ChatPage() {
           {selectedTab === 'clan' && !user?.clanTag ? (
             <div className="text-center text-gray-400 py-8 sm:py-16 px-4">
               <p className="text-4xl mb-4">🏴</p>
-              <p className="text-base font-medium text-white/90 mb-2">Chat do clã</p>
-              <p className="text-sm">Entre em um clã para ver e enviar mensagens aqui. Apenas membros do mesmo clã têm acesso.</p>
+              <p className="text-base font-medium text-white/90 mb-2">{t('chat.clanChat')}</p>
+              <p className="text-sm">{t('chat.joinClanToSee')}</p>
             </div>
           ) : messages.length === 0 ? (
             <div className="text-center text-gray-500 py-8 sm:py-16">
               <p className="text-2xl sm:text-4xl mb-2 sm:mb-4">💭</p>
               <p className="text-sm sm:text-base">
-                {selectedTab === 'clan' ? 'Nenhuma mensagem no chat do clã. Seja o primeiro!' : 'Nenhuma mensagem ainda. Seja o primeiro a falar!'}
+                {t('chat.noMessages')}
               </p>
             </div>
           ) : (
@@ -902,7 +904,7 @@ export default function ChatPage() {
                     value={messageInput}
                     onChange={(e) => setMessageInput(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder={selectedTab === 'clan' && !user?.clanTag ? 'Entre em um clã para enviar mensagens' : 'Digite sua mensagem... (@nick para mencionar)'}
+                    placeholder={selectedTab === 'clan' && !user?.clanTag ? t('chat.joinClanToSend') : t('chat.placeholder')}
                     className="flex-1 bg-gray-800 text-white placeholder-gray-400 px-4 py-3 rounded-lg border border-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     disabled={!isConnected || (selectedTab === 'clan' && !user?.clanTag)}
                   />
@@ -911,7 +913,7 @@ export default function ChatPage() {
                     disabled={!isConnected || !messageInput.trim() || (selectedTab === 'clan' && !user?.clanTag)}
                     className="btn-primary px-6"
                   >
-                    Enviar
+                    {t('chat.send')}
                   </button>
                 </div>
                 <p className="text-xs text-gray-500 mt-1.5">
@@ -933,7 +935,7 @@ export default function ChatPage() {
                 {onlineUsers.length === 0 ? (
                   <div className="text-center text-gray-500 py-3">
                     <p className="text-xl mb-1">👤</p>
-                    <p className="text-xs">Nenhum usuário online</p>
+                    <p className="text-xs">{t('chat.noUsersOnline')}</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -1043,6 +1045,7 @@ function ChatMessageContent({
 
 // Componente para exibir redes sociais
 function SocialMediaLinks() {
+  const { t } = useI18n();
   const [socialMedia, setSocialMedia] = useState<Array<{
     id: string;
     platform: string;
@@ -1068,7 +1071,7 @@ function SocialMediaLinks() {
   return (
     <div className="bg-gray-800/50 border-t border-gray-700 p-4">
       <div className="flex flex-wrap items-center justify-center gap-4">
-        <span className="text-gray-400 text-sm">Siga-nos:</span>
+        <span className="text-gray-400 text-sm">{t('chat.followUs')}</span>
         {socialMedia.map((social) => {
           const icon = getSocialIcon(social.platform, "w-5 h-5");
           

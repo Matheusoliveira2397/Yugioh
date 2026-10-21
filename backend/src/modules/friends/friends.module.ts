@@ -8,11 +8,13 @@ import { FriendsGateway } from './friends.gateway';
 import { Friendship } from './entities/friendship.entity';
 import { PrivateMessage } from './entities/private-message.entity';
 import { User } from '../users/entities/user.entity';
+import { MissionsModule } from '../missions/missions.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Friendship, PrivateMessage, User]),
     AuthModule,
+    MissionsModule,
   ],
   controllers: [FriendsController, MessagesController],
   providers: [FriendsService, FriendsGateway],

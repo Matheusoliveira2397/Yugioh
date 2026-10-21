@@ -15,6 +15,17 @@ import { Deck } from '../decks/entities/deck.entity';
 import { DeckCard } from '../decks/entities/deck-card.entity';
 import { UserSystemNotification } from './entities/user-system-notification.entity';
 import { LoginBroadcast } from '../admin/entities/login-broadcast.entity';
+import { UserCard } from '../shop/entities/user-card.entity';
+import { Card } from '../cards/entities/card.entity';
+
+export type CardCollectionStats = {
+  /** Cartas ativas que o duelista possui (tipos únicos com quantity > 0) */
+  ownedActiveCards: number;
+  /** Total de cartas ativas no jogo */
+  totalActiveCards: number;
+  /** Percentual 0–100 (1 casa decimal) */
+  collectionPercent: number;
+};
 
 @Injectable()
 export class UsersService implements OnModuleInit {
@@ -37,6 +48,10 @@ export class UsersService implements OnModuleInit {
     private systemNotificationRepository: Repository<UserSystemNotification>,
     @InjectRepository(LoginBroadcast)
     private loginBroadcastRepository: Repository<LoginBroadcast>,
+    @InjectRepository(UserCard)
+    private userCardRepository: Repository<UserCard>,
+    @InjectRepository(Card)
+    private cardRepository: Repository<Card>,
     private levelsService: LevelsService,
     private mailService: MailService,
     private redisService: RedisService,
@@ -174,13 +189,37 @@ export class UsersService implements OnModuleInit {
     return new Date(until) > new Date();
   }
 
-  /** Se o ban expirou (bannedUntil no passado), limpa isBanned/banReason/bannedUntil. */
-  async clearExpiredBan(userId: number): Promise<void> {
-    const user = await this.usersRepository.findOne({ where: { id: userId }, select: ['id', 'isBanned', 'bannedUntil'] });
+  /**
+   * Se o ban expirou (bannedUntil no passado), limpa isBanned/banReason/bannedUntil.
+   * Passe `known` (ex.: resultado de findByIdForAuth) para evitar SELECT extra no JWT.
+   */
+  async clearExpiredBan(
+    userId: number,
+    known?: { isBanned: boolean; bannedUntil?: Date | null },
+  ): Promise<void> {
+    if (known) {
+      if (!known.isBanned) return;
+      const until = known.bannedUntil;
+      if (until == null || new Date(until) > new Date()) return;
+      await this.usersRepository.update(userId, {
+        isBanned: false,
+        banReason: null,
+        bannedUntil: null,
+      });
+      return;
+    }
+    const user = await this.usersRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'isBanned', 'bannedUntil'],
+    });
     if (!user || !user.isBanned) return;
     const until = user.bannedUntil;
     if (until != null && new Date(until) <= new Date()) {
-      await this.usersRepository.update(userId, { isBanned: false, banReason: null, bannedUntil: null });
+      await this.usersRepository.update(userId, {
+        isBanned: false,
+        banReason: null,
+        bannedUntil: null,
+      });
     }
   }
 
@@ -194,6 +233,9 @@ export class UsersService implements OnModuleInit {
           'username',
           'email',
           'password',
+          'googleId',
+          'authProvider',
+          'profileSetupCompleted',
           'role',
           'winsGeral',
           'lossesGeral',
@@ -203,6 +245,7 @@ export class UsersService implements OnModuleInit {
           'cash',
           'level',
           'totalScore',
+          'rankedPoints',
           'tournamentPoints',
           'profileImage',
           'isOnline',
@@ -219,6 +262,7 @@ export class UsersService implements OnModuleInit {
           'equippedPlaymatImage',
           'equippedSkinId',
           'equippedSkinImage',
+          'equippedAvatarFrame',
           'equippedDeckId',
           'equippedDeckName',
           'createdAt',
@@ -264,6 +308,7 @@ export class UsersService implements OnModuleInit {
       winsSeason: user.winsSeason ?? 0,
       lossesSeason: user.lossesSeason ?? 0,
       totalScore: user.totalScore != null ? Number(user.totalScore) : 0,
+      rankedPoints: user.rankedPoints != null ? Number(user.rankedPoints) : 1000,
       playerClass: user.playerClass ?? null,
       division: user.division ?? null,
       biography: user.biography ?? null,
@@ -272,6 +317,7 @@ export class UsersService implements OnModuleInit {
       equippedPlaymatImage: user.equippedPlaymatImage ?? null,
       equippedSkinId: user.equippedSkinId ?? null,
       equippedSkinImage: user.equippedSkinImage ?? null,
+      equippedAvatarFrame: user.equippedAvatarFrame ?? null,
     };
   }
 
@@ -293,6 +339,7 @@ export class UsersService implements OnModuleInit {
         'cash',
         'level',
         'totalScore',
+        'rankedPoints',
         'profileImage',
         'isOnline',
         'isBanned',
@@ -308,6 +355,7 @@ export class UsersService implements OnModuleInit {
         'equippedPlaymatImage',
         'equippedSkinId',
         'equippedSkinImage',
+          'equippedAvatarFrame',
         'equippedDeckId',
           'equippedDeckName',
         'createdAt',
@@ -316,6 +364,61 @@ export class UsersService implements OnModuleInit {
         'maletaCapacity',
       ]
     });
+  }
+
+  async findByGoogleId(googleId: string): Promise<User | null> {
+    if (!googleId?.trim()) return null;
+    return this.usersRepository.findOne({ where: { googleId: googleId.trim() } });
+  }
+
+  async linkGoogleAccount(
+    userId: number,
+    googleId: string,
+    opts?: { markEmailVerified?: boolean; requireNicknameSetup?: boolean },
+  ): Promise<User> {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new BadRequestException('Usuário não encontrado.');
+    }
+    const nextProvider =
+      user.authProvider === 'google' || user.authProvider === 'local_google'
+        ? user.authProvider
+        : user.password
+          ? 'local_google'
+          : 'google';
+    const patch: Partial<User> = {
+      googleId,
+      authProvider: nextProvider,
+    };
+    if (opts?.markEmailVerified) {
+      patch.isEmailVerified = true;
+      patch.emailVerificationToken = null;
+    }
+    // Nunca aplicar foto do Google — jogador usa avatar do jogo
+    if (opts?.requireNicknameSetup) {
+      patch.profileSetupCompleted = false;
+    }
+    await this.usersRepository.update(userId, patch);
+    return this.findById(userId);
+  }
+
+  async completeGoogleNicknameSetup(userId: number, nickname: string): Promise<User> {
+    const trimmed = (nickname || '').trim();
+    if (trimmed.length < 3) {
+      throw new BadRequestException('Nickname deve ter pelo menos 3 caracteres.');
+    }
+    if (trimmed.length > 50) {
+      throw new BadRequestException('Nickname muito longo. Máximo 50 caracteres.');
+    }
+    const existingUser = await this.findByNickname(trimmed);
+    if (existingUser && existingUser.id !== userId) {
+      throw new BadRequestException('Este nickname já está em uso.');
+    }
+    await this.usersRepository.update(userId, {
+      nickname: trimmed,
+      profileSetupCompleted: true,
+    });
+    return this.findById(userId);
   }
 
   async findByEmail(email: string): Promise<User | null> {
@@ -327,6 +430,8 @@ export class UsersService implements OnModuleInit {
         'username',
         'email',
         'password',
+        'googleId',
+        'authProvider',
         'role',
         'winsGeral',
         'lossesGeral',
@@ -336,6 +441,7 @@ export class UsersService implements OnModuleInit {
         'cash',
         'level',
         'totalScore',
+        'rankedPoints',
         'profileImage',
         'isOnline',
         'isBanned',
@@ -351,6 +457,7 @@ export class UsersService implements OnModuleInit {
         'equippedPlaymatImage',
         'equippedSkinId',
         'equippedSkinImage',
+          'equippedAvatarFrame',
         'equippedDeckId',
           'equippedDeckName',
         'createdAt',
@@ -379,6 +486,7 @@ export class UsersService implements OnModuleInit {
         'cash',
         'level',
         'totalScore',
+        'rankedPoints',
         'profileImage',
         'isOnline',
         'isBanned',
@@ -394,6 +502,7 @@ export class UsersService implements OnModuleInit {
         'equippedPlaymatImage',
         'equippedSkinId',
         'equippedSkinImage',
+          'equippedAvatarFrame',
         'createdAt',
         'updatedAt',
         'maxDecks',
@@ -1378,11 +1487,15 @@ export class UsersService implements OnModuleInit {
     }
   }
 
-  async getGeneralRanking(): Promise<any[]> {
+  async getGeneralRanking(limit?: number): Promise<any[]> {
+    const take =
+      limit != null && Number.isFinite(limit)
+        ? Math.min(Math.max(Math.floor(limit), 1), 100)
+        : 100;
     const users = await this.usersRepository.find({
       select: ['id', 'nickname', 'clanTag', 'profileImage', 'winsGeral', 'lossesGeral', 'winsSeason', 'lossesSeason', 'totalScore', 'level', 'division'],
       order: { totalScore: 'DESC', level: 'DESC' }, // Ordenar primeiro por totalScore, depois por level
-      take: 100,
+      take,
     });
 
     // Busca os dados da season ativa para cada usuário (usar QueryBuilder para evitar erro se divisionPrizes não existir)
@@ -1788,6 +1901,37 @@ export class UsersService implements OnModuleInit {
 
   // Obter perfil completo do usuário com rankings
   // includePrivateFields: quando false (perfil de outro usuário), username/email não são retornados
+  /**
+   * % de cartas do duelista = (cartas ativas que ele tem) / (cartas ativas no jogo) * 100.
+   * Conta tipos únicos (cardId) com quantity > 0; só cartas com isActive = true.
+   */
+  async getCardCollectionStats(userId: number): Promise<CardCollectionStats> {
+    try {
+      const totalActiveCards = await this.cardRepository.count({ where: { isActive: true } });
+      if (totalActiveCards <= 0) {
+        return { ownedActiveCards: 0, totalActiveCards: 0, collectionPercent: 0 };
+      }
+
+      const raw = await this.userCardRepository
+        .createQueryBuilder('uc')
+        .innerJoin('uc.card', 'c')
+        .select('COUNT(DISTINCT uc.cardId)', 'owned')
+        .where('uc.userId = :userId', { userId })
+        .andWhere('uc.quantity > 0')
+        .andWhere('c.isActive = :active', { active: true })
+        .getRawOne();
+
+      const ownedActiveCards = Number(raw?.owned || 0);
+      const collectionPercent =
+        Math.round(Math.min(100, (ownedActiveCards / totalActiveCards) * 100) * 10) / 10;
+
+      return { ownedActiveCards, totalActiveCards, collectionPercent };
+    } catch (error: any) {
+      console.error('❌ [getCardCollectionStats]', error?.message || error);
+      return { ownedActiveCards: 0, totalActiveCards: 0, collectionPercent: 0 };
+    }
+  }
+
   async getFullProfile(userId: number, options?: { includePrivateFields?: boolean }): Promise<any> {
     // Buscar usuário com division explicitamente
     const user = await this.usersRepository.findOne({ 
@@ -1807,6 +1951,7 @@ export class UsersService implements OnModuleInit {
         'cash',
         'level',
         'totalScore',
+        'rankedPoints',
         'profileImage',
         'isOnline',
         'isBanned',
@@ -1822,6 +1967,7 @@ export class UsersService implements OnModuleInit {
         'equippedPlaymatImage',
         'equippedSkinId',
         'equippedSkinImage',
+          'equippedAvatarFrame',
         'equippedDeckId',
         'equippedDeckName',
         'stars',
@@ -1831,15 +1977,15 @@ export class UsersService implements OnModuleInit {
         'adminAllowedTabs',
         'maxDecks',
         'maletaCapacity',
+        'profileSetupCompleted',
+        'googleId',
+        'authProvider',
       ]
     });
     
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    
-    // Log para debug - verificar se division está sendo retornado
-    console.log(`🔍 [getFullProfile] User ${userId} - division do banco:`, user.division);
     
     // Buscar season ativa (usar QueryBuilder para evitar erro se divisionPrizes não existir)
     const activeSeasonRaw = await this.seasonRepository
@@ -1860,12 +2006,10 @@ export class UsersService implements OnModuleInit {
       });
 
       if (seasonRanking && activeSeason.id) {
-        // Usar o rank salvo se disponível, caso contrário calcular dinamicamente
+        // Preferir rank salvo; COUNT só se necessário
         if (seasonRanking.rank && seasonRanking.rank > 0) {
           seasonRank = seasonRanking.rank;
-          console.log(`📊 [getFullProfile] User ${userId} - seasonRank do banco: ${seasonRank}`);
         } else {
-          // Calcular rank na season - contar usuários com score maior
           const countBetter = await this.seasonRankingRepository.count({
             where: {
               seasonId: activeSeason.id,
@@ -1873,73 +2017,45 @@ export class UsersService implements OnModuleInit {
             },
           });
           seasonRank = countBetter + 1;
-          console.log(`📊 [getFullProfile] User ${userId} - seasonRank calculado: ${seasonRank} (${countBetter} melhores)`);
         }
       } else {
-        // Se não tem season ranking, calcular posição baseado em todos os usuários com season ranking
         const totalWithRanking = await this.seasonRankingRepository.count({
           where: { seasonId: activeSeason.id }
         });
-        seasonRank = totalWithRanking + 1; // Posição após todos que têm ranking
-        console.log(`📊 [getFullProfile] User ${userId} - sem season ranking, posição: ${seasonRank} (total com ranking: ${totalWithRanking})`);
+        seasonRank = totalWithRanking + 1;
       }
-    } else {
-      console.log(`📊 [getFullProfile] User ${userId} - sem season ativa`);
     }
 
-    // Calcular rank geral baseado em totalScore (depois level como desempate)
     const userTotalScore = parseFloat(String(user.totalScore || 0));
-    
-    // Recalcular e atualizar nível baseado no totalScore atual ANTES de calcular ranking
-    await this.updateUserLevel(userId, userTotalScore);
-    
-    // Buscar nível atualizado após recálculo
-    const updatedUser = await this.usersRepository.findOne({
-      where: { id: userId },
-      select: ['id', 'level'],
-    });
-    const userLevel = updatedUser?.level || user.level || 1;
-    
-    // Atualizar o objeto user com o nível atualizado
-    user.level = userLevel;
-    
-    // Contar usuários com totalScore maior OU (totalScore igual E level maior)
-    // Excluir o próprio usuário da contagem
+    const userLevel = user.level || 1;
+
+    // Nível/classe: não recalcular em todo GET /me (evita writes + queries extras no hot path)
+    // updateUserLevel deve rodar após duelos / quando score muda.
+
+    // Rank geral: comparação numérica sem CAST em toda a tabela (mais barato no Postgres remoto)
     try {
       const countBetterGeneral = await this.usersRepository
         .createQueryBuilder('u')
         .where('u.id != :userId', { userId })
         .andWhere(
-          '(CAST(u.totalScore AS DECIMAL) > :totalScore OR (CAST(u.totalScore AS DECIMAL) = :totalScore AND u.level > :level))',
-          { 
-            totalScore: userTotalScore, 
-            level: userLevel 
-          }
+          '(u.totalScore > :totalScore OR (u.totalScore = :totalScore AND u.level > :level))',
+          {
+            totalScore: userTotalScore,
+            level: userLevel,
+          },
         )
         .getCount();
-      
+
       generalRank = countBetterGeneral + 1;
-      
-      // Log para debug
-      console.log(`📊 [getFullProfile] User ${userId} - totalScore: ${userTotalScore}, level: ${userLevel}, generalRank: ${generalRank}`);
     } catch (error: any) {
       console.error('❌ [getFullProfile] Erro ao calcular ranking geral:', error.message);
-      // Em caso de erro, calcular de forma mais simples
-      const allUsers = await this.usersRepository.find({
-        select: ['id', 'totalScore', 'level'],
-        order: { totalScore: 'DESC', level: 'DESC' }
-      });
-      
-      const userIndex = allUsers.findIndex(u => u.id === userId);
-      generalRank = userIndex >= 0 ? userIndex + 1 : null;
+      generalRank = null;
     }
 
-    // Calcular classe baseada em score e nível
     const playerClass = this.calculatePlayerClass(userTotalScore, userLevel);
-
-    // Atualizar classe do usuário se necessário
     if (user.playerClass !== playerClass) {
-      await this.usersRepository.update(userId, { playerClass });
+      // Fire-and-forget: não bloqueia a resposta HTTP
+      void this.usersRepository.update(userId, { playerClass }).catch(() => undefined);
       user.playerClass = playerClass;
     }
 
@@ -1974,55 +2090,25 @@ export class UsersService implements OnModuleInit {
             tag: group.tag,
             logo: group.logo,
           };
-          // Atualizar clanTag do usuário se estiver diferente
           if (user.clanTag !== clanTag) {
-            await this.usersRepository.update(userId, { clanTag });
+            void this.usersRepository.update(userId, { clanTag }).catch(() => undefined);
             user.clanTag = clanTag;
           }
-        } else {
-          // Usuário não está em um grupo ativo, limpar clanTag se existir
-          if (user.clanTag) {
-            await this.usersRepository.update(userId, { clanTag: null as any });
-            user.clanTag = null;
-          }
-        }
-      } else {
-        // Usuário não está em um grupo ativo, limpar clanTag se existir
-        if (user.clanTag) {
-          await this.usersRepository.update(userId, { clanTag: null as any });
+        } else if (user.clanTag) {
+          void this.usersRepository.update(userId, { clanTag: null as any }).catch(() => undefined);
           user.clanTag = null;
         }
+      } else if (user.clanTag) {
+        void this.usersRepository.update(userId, { clanTag: null as any }).catch(() => undefined);
+        user.clanTag = null;
       }
     } catch (error) {
       console.error('❌ [getFullProfile] Erro ao carregar grupo:', error);
     }
 
-    // Formatar nick com clã
     const displayNick = clanTag ? `|${clanTag}| ${user.nickname}` : user.nickname;
 
-    // Usar divisão do próprio usuário (da tabela users) - sempre dinâmica, não fixa
-    // Buscar division diretamente do banco se não vier no objeto
-    let division = user.division;
-    
-    // Se division não veio no objeto, buscar diretamente do banco
-    if (!division || division === undefined || division === null) {
-      try {
-        const userWithDivision = await this.usersRepository
-          .createQueryBuilder('u')
-          .select('u.division', 'division')
-          .where('u.id = :id', { id: userId })
-          .getRawOne();
-        
-        if (userWithDivision && userWithDivision.division) {
-          division = userWithDivision.division;
-          console.log(`🔍 [getFullProfile] Division buscada diretamente do banco:`, division);
-        }
-      } catch (error) {
-        console.error(`❌ [getFullProfile] Erro ao buscar division do banco:`, error);
-      }
-    }
-    
-    // Normalizar divisão para sempre retornar em inglês (evitar mistura PT/EN na interface)
+    let division = user.division || 'Bronze';
     if (division) {
       const divUpper = (division as string).trim().toUpperCase();
       if (divUpper === 'BRONZE') division = 'Bronze';
@@ -2032,10 +2118,10 @@ export class UsersService implements OnModuleInit {
       else if (divUpper === 'DIAMOND' || divUpper === 'DIAMANTE') division = 'Diamond';
       else if (divUpper === 'MASTER' || divUpper === 'MESTRE') division = 'Master';
       else if (divUpper === 'LEGENDARY' || divUpper === 'DESAFIANTE') division = 'Legendary';
-      else division = 'Bronze'; // fallback
+      else division = 'Bronze';
     }
-    
-    console.log(`✅ [getFullProfile] Division final para user ${userId}:`, division);
+
+    const collection = await this.getCardCollectionStats(userId);
 
     const includePrivate = options?.includePrivateFields === true;
     const result: any = {
@@ -2061,6 +2147,9 @@ export class UsersService implements OnModuleInit {
       seasonRank: seasonRank,
       generalRank: generalRank,
       globalRank: generalRank,
+      ownedActiveCards: collection.ownedActiveCards,
+      totalActiveCards: collection.totalActiveCards,
+      collectionPercent: collection.collectionPercent,
     };
     if (includePrivate) {
       result.lastIpAddress = user.lastIpAddress || null;
@@ -2222,27 +2311,28 @@ export class UsersService implements OnModuleInit {
     return { message: 'Email alterado com sucesso. Use o novo email para fazer login.' };
   }
 
-  // Atualizar senha
+  // Atualizar senha (contas só-Google: currentPassword vazio define a primeira senha)
   async updatePassword(userId: number, currentPassword: string, newPassword: string): Promise<User> {
     const user = await this.findById(userId);
     if (!user) {
       throw new BadRequestException('Usuário não encontrado.');
     }
-    
-    // Verificar senha atual
-    const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
-    if (!isPasswordValid) {
-      throw new BadRequestException('Senha atual incorreta.');
-    }
-    
-    // Validar nova senha
+
     if (!newPassword || newPassword.length < 6) {
       throw new BadRequestException('A nova senha deve ter pelo menos 6 caracteres.');
     }
-    
-    // Hash da nova senha
+
+    if (user.password) {
+      const isPasswordValid = await bcrypt.compare(currentPassword || '', user.password);
+      if (!isPasswordValid) {
+        throw new BadRequestException('Senha atual incorreta.');
+      }
+    }
+
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await this.usersRepository.update(userId, { password: hashedPassword });
+    const authProvider =
+      user.googleId && user.authProvider === 'google' ? 'local_google' : user.authProvider || 'local';
+    await this.usersRepository.update(userId, { password: hashedPassword, authProvider });
     return this.findById(userId);
   }
 
@@ -2254,6 +2344,7 @@ export class UsersService implements OnModuleInit {
       equippedPlaymatImage?: string | null;
       equippedSkinId?: string | null;
       equippedSkinImage?: string | null;
+      equippedAvatarFrame?: string | null;
       equippedDeckId?: string | null;
       equippedDeckName?: string | null;
     },
@@ -2279,6 +2370,15 @@ export class UsersService implements OnModuleInit {
     }
     if (cosmetics.equippedSkinImage !== undefined) {
       updates.equippedSkinImage = cosmetics.equippedSkinImage;
+    }
+
+    if (cosmetics.equippedAvatarFrame !== undefined) {
+      const frame = cosmetics.equippedAvatarFrame?.trim().toLowerCase() || null;
+      const allowed = new Set(['obelisk', 'ra', 'slifer']);
+      if (frame && !allowed.has(frame)) {
+        throw new BadRequestException('Moldura inválida. Use: obelisk, ra ou slifer.');
+      }
+      updates.equippedAvatarFrame = frame;
     }
 
     // Só pode haver 1 deck equipado por vez. Usar equippedDeckId (identifica o deck mesmo com nomes repetidos).

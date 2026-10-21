@@ -3,35 +3,425 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --arena-void: #07090f;
+    --arena-ink: #0c1220;
+    --arena-navy: #121a2e;
+    --arena-steel: #1e2a44;
+    --arena-mist: #8b9bb8;
+    --champion-gold: #e8c547;
+    --champion-amber: #c9a227;
+    --champion-bronze: #a67c3d;
+    --champion-crimson: #c43c3c;
+    --champion-cyan: #3db8c5;
+    --panel-bg: rgba(12, 18, 32, 0.72);
+    --panel-border: rgba(232, 197, 71, 0.18);
+    --panel-border-strong: rgba(232, 197, 71, 0.4);
+  }
+
   html {
     overflow-x: hidden;
+    height: 100%;
   }
+
   body {
-    @apply bg-gray-900 text-white;
+    @apply text-white font-sans antialiased;
+    background-color: var(--arena-void);
     overflow-x: hidden;
+    height: 100%;
     min-height: 100dvh;
+  }
+
+  #root {
+    height: 100%;
+    min-height: 100dvh;
+  }
+
+  h1, h2, .font-display {
+    font-family: "Cinzel", Georgia, serif;
+  }
+
+  /* Listas nativas de <select> — evita fundo branco no Windows/Chrome */
+  select {
+    color-scheme: dark;
+  }
+  select option,
+  select optgroup {
+    background-color: #0c1220;
+    color: #f3f4f6;
+  }
+
+  ::selection {
+    background: rgba(232, 197, 71, 0.35);
+    color: #fff;
   }
 }
 
 @layer components {
+  /* ——— Surfaces ——— */
+  .game-shell {
+    @apply relative flex flex-col;
+    background-color: var(--arena-void);
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+
+  /* Páginas com min-h-screen passam a caber na área útil (sem forçar scroll da janela) */
+  .game-shell main .min-h-screen {
+    min-height: 100%;
+  }
+
+  .game-overlay {
+    background:
+      radial-gradient(ellipse 90% 55% at 50% -15%, rgba(201, 162, 39, 0.1), transparent 50%),
+      radial-gradient(ellipse 60% 40% at 100% 100%, rgba(196, 60, 60, 0.06), transparent 45%),
+      linear-gradient(180deg, rgba(7, 9, 15, 0.55) 0%, rgba(7, 9, 15, 0.72) 100%);
+  }
+
+  /**
+   * Fundo de menus/modais do duelo (efeitos, escolhas, etc.):
+   * transparente + blur forte para o campo continuar visível atrás.
+   */
+  .duel-modal-scrim {
+    background: rgba(7, 9, 15, 0.22);
+    backdrop-filter: blur(28px) saturate(1.15);
+    -webkit-backdrop-filter: blur(28px) saturate(1.15);
+  }
+
+  .duel-modal-panel {
+    background: rgba(12, 18, 32, 0.42);
+    backdrop-filter: blur(20px) saturate(1.1);
+    -webkit-backdrop-filter: blur(20px) saturate(1.1);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  .game-panel {
+    @apply rounded-xl overflow-hidden;
+    background:
+      linear-gradient(135deg, rgba(232, 197, 71, 0.07) 0%, transparent 42%),
+      linear-gradient(180deg, rgba(18, 26, 46, 0.85) 0%, rgba(12, 18, 32, 0.88) 100%);
+    border: 1px solid var(--panel-border);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .game-panel-header {
+    @apply px-3 sm:px-4 py-2.5 border-b flex items-center gap-2;
+    border-color: rgba(255, 255, 255, 0.08);
+    background: linear-gradient(90deg, rgba(232, 197, 71, 0.12), transparent 70%);
+  }
+
+  .game-panel-title {
+    @apply text-xs sm:text-sm font-bold text-white tracking-wide;
+    font-family: "Cinzel", Georgia, serif;
+  }
+
+  .game-nav {
+    background: transparent;
+    border-bottom: 1px solid rgba(232, 197, 71, 0.12);
+  }
+
+  .game-nav-tab {
+    @apply relative flex flex-col items-center justify-center gap-0.5 md:gap-1
+      px-2 md:px-3 py-1.5 md:py-2 rounded-lg md:rounded-xl
+      text-xs md:text-sm font-semibold whitespace-nowrap overflow-hidden
+      flex-shrink-0 transition-all duration-300;
+  }
+
+  /* Nav em uma linha: abas compactas, scroll horizontal quando necessário */
+  .game-nav-tab--compact {
+    @apply px-1 xl:px-1.5 py-0.5 gap-0 text-[9px] xl:text-[10px] rounded-md;
+    min-width: 3.1rem;
+    min-height: 2.75rem;
+  }
+
+  .game-nav-tab--idle {
+    @apply text-gray-300 hover:text-white border-2 border-transparent;
+  }
+
+  .game-nav-tab--idle:hover {
+    background: rgba(232, 197, 71, 0.08);
+    border-color: rgba(232, 197, 71, 0.25);
+    transform: translateY(-1px);
+  }
+
+  .game-nav-tab--active {
+    @apply text-white border-2 scale-[1.03];
+    background: linear-gradient(135deg, rgba(201, 162, 39, 0.35), rgba(166, 124, 61, 0.25));
+    border-color: rgba(232, 197, 71, 0.55);
+    box-shadow: 0 0 18px rgba(232, 197, 71, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+
+  .game-nav-tab--active::after {
+    content: '';
+    position: absolute;
+    left: 18%;
+    right: 18%;
+    bottom: 0;
+    height: 2px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, transparent, var(--champion-gold), transparent);
+    animation: nav-underline 0.25s ease-out forwards;
+  }
+
+  .game-stat-chip {
+    @apply px-2.5 py-2 sm:px-3 sm:py-2.5 rounded-lg text-center whitespace-nowrap;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+  }
+
+  .game-input {
+    @apply py-2.5 px-3 rounded-lg text-sm text-white placeholder-white/45
+      focus:outline-none transition-shadow;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+  }
+
+  .game-input:focus {
+    border-color: rgba(232, 197, 71, 0.55);
+    box-shadow: 0 0 0 2px rgba(232, 197, 71, 0.2);
+  }
+
+  .game-select {
+    @apply game-input appearance-none cursor-pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23e8c547' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    padding-right: 2rem;
+  }
+
+  .game-page-title {
+    @apply text-2xl sm:text-3xl font-display font-bold text-white tracking-wide;
+    text-shadow: 0 2px 18px rgba(232, 197, 71, 0.18);
+  }
+
+  .game-page-sub {
+    @apply text-sm sm:text-base text-arena-mist max-w-3xl leading-relaxed;
+  }
+
+  .game-progress-track {
+    @apply h-2.5 rounded-full overflow-hidden;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(232, 197, 71, 0.12);
+  }
+
+  .game-progress-fill {
+    @apply h-full rounded-full transition-all duration-500;
+    background: linear-gradient(90deg, #a67c3d, #e8c547 55%, #3db8c5);
+    box-shadow: 0 0 12px rgba(232, 197, 71, 0.35);
+  }
+
+  .game-cta-tile {
+    @apply relative overflow-hidden rounded-xl p-4 text-left transition-all duration-300;
+    background:
+      linear-gradient(135deg, rgba(232, 197, 71, 0.1) 0%, transparent 50%),
+      linear-gradient(180deg, rgba(18, 26, 46, 0.9) 0%, rgba(12, 18, 32, 0.92) 100%);
+    border: 1px solid rgba(232, 197, 71, 0.22);
+  }
+
+  .game-cta-tile:hover {
+    border-color: rgba(232, 197, 71, 0.5);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35), 0 0 20px rgba(232, 197, 71, 0.12);
+  }
+
+  /* Sidebar do duelist — tema carta Yu-Gi-Oh */
+  .user-sidebar {
+    background:
+      linear-gradient(180deg, rgba(10, 8, 4, 0.55) 0%, rgba(12, 18, 32, 0.25) 100%);
+  }
+
+  .user-sidebar-panel {
+    position: relative;
+    border-radius: 0.65rem;
+    border: 2px solid #c9a227;
+    background:
+      linear-gradient(165deg, rgba(232, 197, 71, 0.14) 0%, transparent 28%),
+      linear-gradient(180deg, #1a1420 0%, #0d1018 48%, #12101a 100%);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.65),
+      0 0 0 3px rgba(166, 124, 61, 0.45),
+      0 10px 28px rgba(0, 0, 0, 0.45),
+      inset 0 1px 0 rgba(255, 240, 180, 0.12);
+    overflow: hidden;
+  }
+
+  .user-sidebar-panel::before {
+    content: '';
+    position: absolute;
+    inset: 5px;
+    border-radius: 0.4rem;
+    border: 1px solid rgba(232, 197, 71, 0.22);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .user-sidebar-panel > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .ygo-duelist-banner {
+    @apply relative text-center mb-2.5;
+    padding: 0.4rem 0.5rem 0.55rem;
+    background:
+      linear-gradient(90deg, transparent, rgba(201, 162, 39, 0.35), transparent),
+      linear-gradient(180deg, #2a1f0a 0%, #1a1408 100%);
+    border-top: 1px solid rgba(232, 197, 71, 0.45);
+    border-bottom: 1px solid rgba(232, 197, 71, 0.35);
+    box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.35);
+  }
+
+  .ygo-duelist-banner::before,
+  .ygo-duelist-banner::after {
+    content: '◆';
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--champion-gold);
+    font-size: 0.55rem;
+    opacity: 0.75;
+  }
+  .ygo-duelist-banner::before { left: 0.45rem; }
+  .ygo-duelist-banner::after { right: 0.45rem; }
+
+  .ygo-stat-board {
+    @apply mb-2.5 overflow-hidden;
+    border-radius: 0.4rem;
+    border: 1px solid rgba(232, 197, 71, 0.28);
+    background:
+      linear-gradient(180deg, rgba(40, 32, 12, 0.55) 0%, rgba(12, 14, 22, 0.75) 100%);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+  }
+
+  .ygo-stat-row {
+    @apply flex justify-between items-center px-2 py-1.5 text-xs;
+    border-bottom: 1px solid rgba(232, 197, 71, 0.12);
+  }
+  .ygo-stat-row:last-child {
+    border-bottom: none;
+  }
+  .ygo-stat-row:hover {
+    background: rgba(232, 197, 71, 0.08);
+  }
+
+  .ygo-resource-chip {
+    @apply flex flex-col items-center rounded-md p-1.5 transition-all duration-200;
+    border: 1px solid rgba(232, 197, 71, 0.35);
+    background:
+      linear-gradient(180deg, rgba(232, 197, 71, 0.12) 0%, rgba(0, 0, 0, 0.35) 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 240, 180, 0.1);
+  }
+  .ygo-resource-chip:hover {
+    border-color: rgba(232, 197, 71, 0.65);
+    transform: translateY(-1px);
+  }
+  .ygo-resource-chip--cyan {
+    border-color: rgba(61, 184, 197, 0.4);
+    background:
+      linear-gradient(180deg, rgba(61, 184, 197, 0.14) 0%, rgba(0, 0, 0, 0.35) 100%);
+  }
+  .ygo-resource-chip--cyan:hover {
+    border-color: rgba(61, 184, 197, 0.7);
+  }
+
+  .ygo-shortcut-card {
+    @apply relative block overflow-hidden mb-2 last:mb-0 cursor-pointer transition-all duration-300;
+    border-radius: 0.4rem;
+    border: 1px solid rgba(232, 197, 71, 0.35);
+    background: linear-gradient(180deg, #1a1520 0%, #0c1018 100%);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 240, 180, 0.08);
+  }
+  .ygo-shortcut-card:hover {
+    border-color: rgba(232, 197, 71, 0.7);
+    transform: translateY(-1px);
+    box-shadow: 0 0 16px rgba(232, 197, 71, 0.18);
+  }
+
+  .ygo-level-badge {
+    @apply absolute -bottom-1 left-1/2 -translate-x-1/2 z-30 inline-flex items-center gap-0.5 px-2 py-0.5 text-[9px] font-bold whitespace-nowrap;
+    color: #1a1200;
+    background: linear-gradient(180deg, #f0d878 0%, #c9a227 55%, #a67c3d 100%);
+    border: 1px solid rgba(255, 240, 180, 0.55);
+    border-radius: 999px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+    font-family: "Cinzel", Georgia, serif;
+  }
+
+  .home-news-progress {
+    height: 2px;
+    background: linear-gradient(90deg, var(--champion-gold), var(--champion-cyan, #3db8c5));
+    transform-origin: left center;
+    animation: home-news-progress 5.5s linear forwards;
+  }
+
+  @keyframes home-news-progress {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+
+  /* ——— Cards & field ——— */
   .card-yugioh {
-    @apply relative bg-gradient-to-br from-amber-600 to-amber-800 rounded-lg shadow-2xl border-4 border-amber-400 overflow-hidden transition-transform hover:scale-105;
+    @apply relative rounded-lg shadow-2xl overflow-hidden transition-transform hover:scale-105;
+    background: linear-gradient(145deg, #c9a227, #8a6420);
+    border: 3px solid var(--champion-gold);
   }
 
   .duel-field-zone {
-    @apply border-2 border-blue-500 rounded-lg p-2 min-h-[120px] bg-gray-800 bg-opacity-50 hover:bg-opacity-70 transition-all;
+    @apply border-2 rounded-lg p-2 min-h-[120px] transition-all;
+    border-color: rgba(232, 197, 71, 0.35);
+    background: rgba(18, 26, 46, 0.45);
   }
 
+  .duel-field-zone:hover {
+    background: rgba(18, 26, 46, 0.65);
+    border-color: rgba(232, 197, 71, 0.55);
+  }
+
+  /* ——— Buttons ——— */
   .btn-primary {
-    @apply bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-lg;
+    @apply text-white font-bold py-3 px-6 rounded-lg transition-all shadow-lg;
+    background: linear-gradient(135deg, #d4af37, #a67c3d);
+  }
+
+  .btn-primary:hover {
+    background: linear-gradient(135deg, #e8c547, #c9a227);
+    box-shadow: 0 0 20px rgba(232, 197, 71, 0.35);
+    transform: translateY(-1px);
   }
 
   .btn-secondary {
-    @apply bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-lg;
+    @apply text-white font-bold py-3 px-6 rounded-lg transition-all shadow-lg;
+    background: linear-gradient(135deg, #1e2a44, #2a3a5c);
+    border: 1px solid rgba(232, 197, 71, 0.3);
+  }
+
+  .btn-secondary:hover {
+    background: linear-gradient(135deg, #2a3a5c, #3a4d72);
+    border-color: rgba(232, 197, 71, 0.5);
   }
 
   .btn-danger {
-    @apply bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors;
+    @apply text-white font-bold py-2 px-4 rounded-lg transition-all;
+    background: linear-gradient(135deg, #c43c3c, #8f2a2a);
+  }
+
+  .btn-danger:hover {
+    background: linear-gradient(135deg, #d94a4a, #c43c3c);
+  }
+
+  .btn-champion {
+    @apply text-white font-semibold py-2.5 px-5 rounded-lg text-sm transition-all active:scale-[0.98];
+    background: linear-gradient(135deg, #c9a227, #a67c3d 55%, #8a5520);
+    box-shadow: 0 4px 16px rgba(201, 162, 39, 0.3);
+  }
+
+  .btn-champion:hover {
+    background: linear-gradient(135deg, #e8c547, #c9a227 55%, #a67c3d);
+    box-shadow: 0 6px 22px rgba(232, 197, 71, 0.4);
   }
 
   .scrollbar-hide {
@@ -48,11 +438,15 @@
   }
 
   .gradient-text.blue-purple {
-    @apply bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400;
+    background-image: linear-gradient(90deg, #e8c547, #f0d878, #c9a227);
   }
 
   .gradient-text.red-orange {
     @apply bg-gradient-to-r from-red-500 via-orange-500 to-yellow-500;
+  }
+
+  .gradient-text.champion {
+    background-image: linear-gradient(90deg, #f0d878, #e8c547, #c9a227, #e8c547);
   }
 
   .gradient {
@@ -60,7 +454,10 @@
   }
 
   .gradient.blue-purple {
-    @apply bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700;
+    background-image: linear-gradient(90deg, #c9a227, #a67c3d);
+  }
+  .gradient.blue-purple:hover {
+    background-image: linear-gradient(90deg, #e8c547, #c9a227);
   }
 
   .gradient.red-orange {
@@ -72,7 +469,10 @@
   }
 
   .gradient.purple-pink {
-    @apply bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700;
+    background-image: linear-gradient(90deg, #c9a227, #8a5520);
+  }
+  .gradient.purple-pink:hover {
+    background-image: linear-gradient(90deg, #e8c547, #a67c3d);
   }
 
   .gradient.yellow-orange {
@@ -84,40 +484,59 @@
   }
 
   .scrollbar-thumb-purple-500 {
-    scrollbar-color: rgb(168, 85, 247) rgb(30, 41, 59);
+    scrollbar-color: var(--champion-amber) rgb(12, 18, 32);
   }
 
   .scrollbar-track-slate-800 {
-    scrollbar-color: rgb(168, 85, 247) rgb(30, 41, 59);
+    scrollbar-color: var(--champion-amber) rgb(12, 18, 32);
+  }
+
+  /* Scroll tema Yu-Gi-Oh — trilho escuro + polegar dourado */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #c9a227 rgba(10, 12, 20, 0.85);
   }
 
   .custom-scrollbar::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 11px;
+    height: 11px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-corner {
+    background: transparent;
   }
 
   .custom-scrollbar::-webkit-scrollbar-track {
-    background: rgba(15, 23, 42, 0.6);
-    border-radius: 10px;
-    margin: 4px 0;
+    margin: 6px 0;
+    background:
+      linear-gradient(90deg, transparent 3px, rgba(232, 197, 71, 0.12) 3px, rgba(232, 197, 71, 0.12) 4px, transparent 4px),
+      linear-gradient(180deg, rgba(8, 10, 16, 0.95), rgba(18, 22, 34, 0.9));
+    border-radius: 999px;
+    border: 1px solid rgba(232, 197, 71, 0.18);
+    box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.45);
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, #a855f7, #6366f1, #8b5cf6);
-    border-radius: 10px;
-    border: 2px solid rgba(15, 23, 42, 0.8);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    border-radius: 999px;
+    border: 2px solid rgba(10, 12, 20, 0.92);
+    background:
+      linear-gradient(180deg, #f0d878 0%, #e8c547 28%, #c9a227 62%, #8a6420 100%);
+    box-shadow:
+      0 0 8px rgba(232, 197, 71, 0.35),
+      inset 0 1px 0 rgba(255, 245, 200, 0.55),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.35);
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(180deg, #9333ea, #4f46e5, #7c3aed);
-    box-shadow: 0 2px 8px rgba(168, 85, 247, 0.5);
+    background:
+      linear-gradient(180deg, #fff1a8 0%, #f0d878 30%, #e8c547 65%, #c9a227 100%);
+    box-shadow:
+      0 0 14px rgba(232, 197, 71, 0.55),
+      inset 0 1px 0 rgba(255, 250, 220, 0.7);
   }
 
-  /* Firefox */
-  .custom-scrollbar {
-    scrollbar-width: thin;
-    scrollbar-color: #a855f7 rgba(15, 23, 42, 0.6);
+  .custom-scrollbar::-webkit-scrollbar-thumb:active {
+    background: linear-gradient(180deg, #e8c547, #a67c3d);
   }
 
   /* Marquee infinito — Cartas na Loja */
@@ -129,6 +548,15 @@
     0% { transform: translateX(-50%); }
     100% { transform: translateX(0); }
   }
+  @keyframes nav-underline {
+    0% { transform: scaleX(0); }
+    100% { transform: scaleX(1); }
+  }
+  @keyframes gold-shimmer {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 200% 50%; }
+  }
+
   .shop-marquee-track {
     animation: shop-cards-marquee-left 45s linear infinite;
   }
@@ -141,18 +569,25 @@
   }
 
   .glass-effect {
-    background: rgba(30, 41, 59, 0.4);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(12, 18, 32, 0.55);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(232, 197, 71, 0.12);
   }
 
   .glow-effect {
-    box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+    box-shadow: 0 0 20px rgba(232, 197, 71, 0.22);
   }
 
   .glow-effect:hover {
-    box-shadow: 0 0 30px rgba(139, 92, 246, 0.5);
+    box-shadow: 0 0 30px rgba(232, 197, 71, 0.4);
+  }
+
+  .text-champion {
+    background: linear-gradient(90deg, #f0d878, #e8c547, #c9a227);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 
   .modal-overlay-transparent {
