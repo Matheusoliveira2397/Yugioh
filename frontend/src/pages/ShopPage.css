@@ -1,0 +1,327 @@
+/* Mercado dos Duelistas — identidade local, não interfere no HUD/engine do duelo.
+   Obsidiana, vinho, ouro antigo e imagens do atlas original. */
+.duelist-market {
+  --market-ink: #0d080a;
+  --market-wine: #291317;
+  --market-gold: #e8bf69;
+  --market-soft: #d1b8a0;
+  color: #faf1e5;
+  background:
+    radial-gradient(ellipse 60% 26% at 86% 0%, rgba(143, 42, 45, .15), transparent 75%),
+    radial-gradient(ellipse 45% 27% at 7% 54%, rgba(114, 75, 33, .12), transparent 75%),
+    transparent;
+}
+.duelist-market .market-eyebrow {
+  color: #f1c778;
+  font-size: .64rem;
+  font-weight: 850;
+  letter-spacing: .21em;
+  line-height: 1.6;
+  text-transform: uppercase;
+}
+.duelist-market .market-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 290px);
+  gap: clamp(1rem, 3vw, 2.5rem);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 225px;
+  padding: clamp(1.1rem, 2.5vw, 2.2rem);
+  margin-bottom: 1rem;
+  border: 1px solid rgba(230, 185, 91, .47);
+  border-radius: 1.3rem;
+  background:
+    radial-gradient(ellipse 55% 90% at 92% 38%, rgba(185, 105, 51, .19), transparent 72%),
+    radial-gradient(ellipse 57% 85% at 2% 0%, rgba(113, 34, 44, .36), transparent 68%),
+    linear-gradient(120deg, rgba(29, 14, 17, .99), rgba(12, 9, 11, .97));
+  box-shadow: 0 18px 55px rgba(0, 0, 0, .35), inset 0 1px rgba(255, 238, 171, .07);
+}
+.duelist-market .market-hero::before {
+  content: '';
+  position: absolute;
+  width: 26rem;
+  height: 26rem;
+  border: 1px solid rgba(236, 176, 83, .13);
+  box-shadow: 0 0 0 22px rgba(236, 176, 83, .018), 0 0 0 64px rgba(236, 176, 83, .018);
+  transform: rotate(42deg);
+  left: 43%;
+  top: -22rem;
+  z-index: -1;
+  pointer-events: none;
+}
+.duelist-market .market-hero::after {
+  content: '✦';
+  color: rgba(242, 197, 96, .15);
+  position: absolute;
+  right: 20rem;
+  bottom: -5rem;
+  font-size: 19rem;
+  line-height: .8;
+  z-index: -1;
+  pointer-events: none;
+}
+.duelist-market .market-hero-copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  align-self: center;
+}
+.duelist-market .market-hero-heading {
+  display: flex;
+  gap: .9rem;
+  align-items: center;
+  margin: .75rem 0 1.1rem;
+}
+.duelist-market .market-hero-emblem {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 4.25rem;
+  height: 4.25rem;
+  border: 1px solid rgba(241, 193, 98, .48);
+  border-radius: 1.1rem;
+  background: linear-gradient(155deg, rgba(107, 46, 30, .56), rgba(23, 12, 13, .85));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .3);
+}
+.duelist-market .market-hero h1 {
+  font-family: 'Cinzel', Georgia, serif;
+  font-weight: 800;
+  font-size: clamp(1.65rem, 2.95vw, 3rem);
+  line-height: 1.16;
+  color: #ffecbf;
+  text-shadow: 0 4px 20px rgba(0, 0, 0, .5);
+}
+.duelist-market .market-hero-heading p {
+  max-width: 45rem;
+  margin-top: .4rem;
+  color: #e2cec2;
+  font-size: clamp(.8rem, 1.1vw, .97rem);
+  line-height: 1.55;
+}
+.duelist-market .market-hero-links { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.duelist-market .market-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  padding: .55rem .85rem;
+  min-height: 44px;
+  border: 1px solid rgba(232, 189, 113, .4);
+  border-radius: .8rem;
+  background: rgba(62, 31, 31, .8);
+  color: #fff1dc;
+  font-size: .82rem;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+  transition: border-color .18s, background .18s, transform .18s;
+}
+.duelist-market .market-link:hover {
+  border-color: #f2cd85;
+  background: rgba(104, 49, 42, .85);
+  transform: translateY(-1px);
+}
+.duelist-market .market-link--primary {
+  color: #22120a;
+  border-color: #fbe2a3;
+  background: linear-gradient(135deg, #ffdf98, #d59d43);
+}
+.duelist-market .market-link--primary:hover { background: linear-gradient(135deg, #fff0be, #e6b45d); }
+.duelist-market .market-hero-aside {
+  position: relative;
+  padding: 1rem 1rem .85rem;
+  border: 1px solid rgba(242, 187, 94, .28);
+  border-radius: 1rem;
+  background: linear-gradient(155deg, rgba(51, 24, 26, .91), rgba(14, 10, 12, .92));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .045);
+  align-self: stretch;
+}
+.duelist-market .market-hero-crest {
+  position: absolute;
+  top: -.45rem;
+  right: .6rem;
+  opacity: .28;
+  pointer-events: none;
+}
+.duelist-market .market-balance-list { margin-top: .8rem; display: grid; gap: .65rem; }
+.duelist-market .market-balance {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .45rem;
+  padding: .5rem .65rem;
+  border: 1px solid rgba(235, 186, 89, .19);
+  border-radius: .75rem;
+  background: rgba(13, 8, 10, .65);
+  color: #e8d3bb;
+  font-size: .78rem;
+}
+.duelist-market .market-balance strong {
+  color: #fff0b4;
+  font-size: 1rem;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+.duelist-market .market-balance-gem {
+  width: 30px;
+  color: #ffcb7a;
+  font-size: 1.65rem;
+  text-align: center;
+  line-height: 1;
+}
+.duelist-market .market-aside-caption { color: #bda79a; margin-top: .85rem; font-size: .74rem; line-height: 1.5; }
+.duelist-market .market-mode-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+  margin: 1rem 0;
+  padding: .45rem;
+  border: 1px solid rgba(242, 187, 94, .23);
+  background: rgba(21, 12, 14, .88);
+  border-radius: 1rem;
+}
+.duelist-market .market-mode {
+  display: flex;
+  gap: .35rem;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: .5rem 1.35rem;
+  border: 1px solid transparent;
+  border-radius: .7rem;
+  font-weight: 800;
+  color: #cdb8ac;
+  transition: background .2s, color .2s;
+}
+.duelist-market .market-mode:hover { background: rgba(105, 50, 39, .26); color: #fff3dc; }
+.duelist-market .market-mode.is-active {
+  color: #fbe6ad;
+  background: linear-gradient(145deg, rgba(134, 57, 49, .48), rgba(128, 86, 33, .3));
+  border-color: rgba(235, 190, 100, .55);
+  box-shadow: inset 0 1px rgba(255, 246, 206, .09);
+}
+.duelist-market .market-mode-hint { margin-left: auto; padding-right: .55rem; color: #bbaaa1; font-size: .75rem; }
+.duelist-market .market-categories {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: .65rem;
+  margin-bottom: 1.45rem;
+}
+.duelist-market .market-category {
+  display: flex;
+  min-width: 0;
+  min-height: 90px;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  padding: .6rem .5rem;
+  border: 1px solid rgba(214, 167, 90, .31);
+  border-radius: .9rem;
+  background: linear-gradient(150deg, rgba(47, 25, 27, .95), rgba(15, 11, 13, .97));
+  color: #d3c5bb;
+  text-align: left;
+  transition: transform .2s, border-color .2s, background .2s, box-shadow .2s;
+}
+.duelist-market .market-category:hover {
+  transform: translateY(-2px);
+  border-color: rgba(248, 205, 121, .65);
+  background: linear-gradient(150deg, rgba(79, 36, 33, .95), rgba(28, 15, 16, .98));
+}
+.duelist-market .market-category.is-active {
+  background: linear-gradient(150deg, rgba(115, 52, 40, .75), rgba(50, 24, 22, .97));
+  border-color: #e9b45c;
+  box-shadow: 0 0 0 1px rgba(226, 178, 81, .18), 0 12px 24px rgba(0, 0, 0, .24);
+  color: #fff6dd;
+}
+.duelist-market .market-category-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+}
+.duelist-market .market-category-copy { display: grid; min-width: 0; gap: .1rem; }
+.duelist-market .market-category-copy strong { display: block; font-size: .8rem; line-height: 1.25; overflow-wrap: anywhere; }
+.duelist-market .market-category-copy small { color: #d1ae78; font-size: .67rem; }
+.duelist-market .market-section-intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin: 1.25rem 0;
+}
+.duelist-market .market-section-intro h2 { color: #fce4af; font: 800 clamp(1.25rem, 2.5vw, 1.8rem) 'Cinzel', Georgia, serif; line-height: 1.3; }
+.duelist-market .market-results-badge {
+  padding: .45rem .8rem;
+  border: 1px solid rgba(235, 188, 104, .35);
+  border-radius: 999px;
+  color: #f3d7a0;
+  background: rgba(46, 24, 22, .9);
+  font-size: .77rem;
+  font-weight: 700;
+}
+.duelist-market .market-search label { display: block; color: #d9c0a0; margin-bottom: .5rem; font-size: .8rem; font-weight: 700; }
+.duelist-market .market-search-field { display: flex; align-items: center; gap: .5rem; border: 1px solid rgba(239, 192, 109, .39); background: rgba(18, 11, 13, .95); border-radius: .9rem; padding: 0 .95rem; transition: border-color .2s; }
+.duelist-market .market-search-field:focus-within { border-color: #f5d48c; box-shadow: 0 0 0 2px rgba(240, 187, 91, .17); }
+.duelist-market .market-search-glyph { color: #e8c17b; font-size: 1.7rem; line-height: 1; }
+.duelist-market .market-search-input { width: 100%; min-height: 49px; background: transparent; outline: none; color: white; font-size: .95rem; }
+.duelist-market .market-search-input::placeholder { color: #bcaea7; }
+.duelist-market .market-filter-bar, .duelist-market .market-featured-panel {
+  border: 1px solid rgba(222, 179, 94, .25);
+  background: linear-gradient(155deg, rgba(36, 21, 22, .92), rgba(13, 10, 12, .94));
+  box-shadow: 0 12px 27px rgba(0, 0, 0, .21);
+}
+.duelist-market .market-filter-bar button { border-color: rgba(228, 182, 103, .3); }
+.duelist-market .market-filter-bar button:hover { border-color: #e2b66c; }
+.duelist-market .market-filter-bar input { background: rgba(15, 10, 12, .95); border-color: rgba(236, 181, 98, .36); }
+.duelist-market .market-product-card,
+.duelist-market .ui-market-card {
+  min-width: 0;
+  border: 1px solid rgba(229, 185, 98, .25);
+  border-radius: .9rem;
+  background: linear-gradient(165deg, rgba(48, 26, 27, .95), rgba(15, 10, 13, .97));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .19);
+  transition: border-color .2s, box-shadow .2s;
+}
+.duelist-market .market-product-card:hover,
+.duelist-market .ui-market-card:hover {
+  border-color: rgba(252, 217, 143, .76);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, .35), 0 0 24px rgba(232, 166, 64, .07);
+}
+.duelist-market .ui-card-frame { border: 1px solid rgba(230, 190, 114, .25); border-radius: .7rem; }
+.duelist-market .market-product-card button {
+  min-height: 34px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .4);
+}
+.duelist-market .market-product-card button:hover { filter: brightness(1.13); }
+.duelist-market .market-catalog { border: 1px solid rgba(207, 155, 83, .14); border-radius: 1rem; background: rgba(12, 9, 11, .22); }
+.duelist-market :where(button, a, input, select):focus-visible { outline: 2px solid #ffdb8a; outline-offset: 3px; }
+@media (max-width: 1199px) {
+  .duelist-market .market-categories { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 767px) {
+  .duelist-market .market-hero { grid-template-columns: minmax(0,1fr); }
+  .duelist-market .market-hero-aside { display: grid; grid-template-columns: 1fr; gap: .2rem; }
+  .duelist-market .market-balance-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .duelist-market .market-balance { grid-template-columns: 25px minmax(0,1fr); }
+  .duelist-market .market-balance strong { grid-column: 2; }
+  .duelist-market .market-mode-hint { display: none; }
+}
+@media (max-width: 520px) {
+  .duelist-market .market-hero-heading { align-items: flex-start; }
+  .duelist-market .market-hero-emblem { width: 3.7rem; height: 3.7rem; }
+  .duelist-market .market-hero-links { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .duelist-market .market-link { padding: .5rem .35rem; font-size: .72rem; }
+  .duelist-market .market-link:first-child { grid-column: span 2; }
+  .duelist-market .market-categories { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .duelist-market .market-category { min-height: 78px; }
+  .duelist-market .market-mode { flex: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .duelist-market .market-category, .duelist-market .market-mode, .duelist-market .market-link { transition: none; }
+  .duelist-market .market-category:hover, .duelist-market .market-link:hover { transform: none; }
+}
