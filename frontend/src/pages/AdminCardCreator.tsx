@@ -34,6 +34,7 @@ interface CardForm {
   priceCash?: number;
   isForSale: boolean;
   isActive: boolean;
+  isLimited?: boolean;
 
   // Avançado
   archetype?: string;
