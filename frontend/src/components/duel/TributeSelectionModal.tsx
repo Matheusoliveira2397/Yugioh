@@ -18,7 +18,6 @@ const TributeSelectionModal: React.FC<TributeSelectionModalProps> = ({
   onConfirm,
   monsters,
   requiredTributes,
-  summoningCard,
   position,
 }) => {
   const [selectedTributes, setSelectedTributes] = useState<number[]>([]);
