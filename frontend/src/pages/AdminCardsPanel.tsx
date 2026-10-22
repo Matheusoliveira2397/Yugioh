@@ -19,6 +19,7 @@ function cardImageSrc(url: string | undefined | null): string {
 
 interface Card {
   id: string;
+  idCarta?: string;
   name: string;
   description: string;
   type: CardType;
@@ -299,6 +300,7 @@ export default function AdminCardsPanel() {
     attribute: 'DARK' as CardAttribute | undefined,
     race: 'Warrior' as string | undefined,
     level: 4,
+    rank: 0,
     atk: 0,
     def: 0,
     spellType: 'Normal' as string | undefined,
