@@ -1,3 +1,4 @@
+import GameIcon from '../components/GameIcon';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
@@ -253,10 +254,10 @@ export default function StoryModePage() {
       <main className="mx-auto max-w-5xl px-3 py-6 text-white">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold sm:text-3xl">Modo História</h1>
+            <h1 className="game-screen-heading"><span className="game-screen-icon"><GameIcon route="/story" size={26} /></span>Modo História</h1>
             <p className="text-slate-300">Crie seu duelista para entrar na Academia</p>
           </div>
-          <button onClick={() => navigate('/home')} className="rounded bg-indigo-700 px-3 py-2">
+          <button onClick={() => navigate('/home')} className="ui-button-secondary">
             Sair
           </button>
         </div>
@@ -274,16 +275,16 @@ export default function StoryModePage() {
     <main className="mx-auto max-w-5xl px-3 py-6 text-white">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold">Academia de Duelos</h1>
+          <h1 className="game-screen-heading"><span className="game-screen-icon"><GameIcon route="/story" size={26} /></span>Academia de Duelos</h1>
           <p className="text-slate-300">
             Modo História · <span className="text-amber-300">{character.name}</span> · Capítulo 1 — Primeiro dia
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => setEditingCharacter(true)} className="rounded bg-amber-700/80 px-3 py-2 text-sm">
+          <button onClick={() => setEditingCharacter(true)} className="ui-button-primary">
             Personagem
           </button>
-          <button onClick={recreateCharacter} className="rounded bg-slate-700 px-3 py-2 text-sm">
+          <button onClick={recreateCharacter} className="ui-button-secondary">
             Novo personagem
           </button>
           <button onClick={reset} className="rounded bg-slate-700 px-3 py-2 text-sm">
