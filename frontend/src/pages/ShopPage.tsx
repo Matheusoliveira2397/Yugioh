@@ -2548,12 +2548,12 @@ export default function ShopPage() {
                   <span className="font-semibold">Preço:</span>{' '}
                   {purchaseItem.method === 'credits' ? '💰' : '💵'}{' '}
                   {purchaseItem.method === 'credits' 
-                    ? ((purchaseItem.item.effectivePriceCredits ?? purchaseItem.item.priceCredits) || 0) * (category === 'cards' ? purchaseQuantity : 1)
-                    : Math.floor((Number(purchaseItem.item.effectivePriceCash ?? purchaseItem.item.priceCash) || 0) * (category === 'cards' ? purchaseQuantity : 1))}{' '}
+                    ? ((('effectivePriceCredits' in purchaseItem.item ? purchaseItem.item.effectivePriceCredits : undefined) ?? purchaseItem.item.priceCredits) || 0) * (category === 'cards' ? purchaseQuantity : 1)
+                    : Math.floor((Number(('effectivePriceCash' in purchaseItem.item ? purchaseItem.item.effectivePriceCash : undefined) ?? purchaseItem.item.priceCash) || 0) * (category === 'cards' ? purchaseQuantity : 1))}{' '}
                   {purchaseItem.method === 'credits' ? 'Créditos' : 'Cash'}
                   {category === 'cards' && purchaseQuantity > 1 && (
                     <span className="text-white/60 text-sm ml-1">
-                      ({purchaseQuantity} × {purchaseItem.method === 'credits' ? (purchaseItem.item.effectivePriceCredits ?? purchaseItem.item.priceCredits) : Math.floor(Number(purchaseItem.item.effectivePriceCash ?? purchaseItem.item.priceCash))})
+                      ({purchaseQuantity} × {purchaseItem.method === 'credits' ? (('effectivePriceCredits' in purchaseItem.item ? purchaseItem.item.effectivePriceCredits : undefined) ?? purchaseItem.item.priceCredits) : Math.floor(Number(('effectivePriceCash' in purchaseItem.item ? purchaseItem.item.effectivePriceCash : undefined) ?? purchaseItem.item.priceCash))})
                     </span>
                   )}
                 </p>
