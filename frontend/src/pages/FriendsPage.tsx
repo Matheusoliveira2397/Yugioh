@@ -160,7 +160,7 @@ export default function FriendsPage() {
     }
   }, [selectedFriend]);
 
-  const currentConversation = selectedFriend ? conversations.get(selectedFriend.id) : null;
+  const currentConversation = selectedFriend ? conversations.get(String(selectedFriend.id)) : null;
 
   // Escutar mensagens em tempo real via WebSocket
   useEffect(() => {
@@ -314,7 +314,7 @@ export default function FriendsPage() {
         unreadCount: 0
       };
       
-      setConversations(prev => new Map(prev).set(friendId, conversation));
+      setConversations(prev => new Map(prev).set(String(friendId), conversation));
     } catch (error) {
       console.error('Erro ao carregar mensagens:', error);
       // Mensagens mockadas
@@ -323,16 +323,16 @@ export default function FriendsPage() {
       const mockMessages: Message[] = [
         {
           id: '1',
-          senderId: friendId,
-          receiverId: user.id,
+          senderId: String(friendId),
+          receiverId: String(user.id),
           content: 'E aí! Bora duelar?',
           createdAt: new Date(Date.now() - 3600000).toISOString(),
           read: true
         },
         {
           id: '2',
-          senderId: user.id,
-          receiverId: friendId,
+          senderId: String(user.id),
+          receiverId: String(friendId),
           content: 'Bora sim! Vou montar meu deck.',
           createdAt: new Date(Date.now() - 1800000).toISOString(),
           read: true
@@ -371,7 +371,7 @@ export default function FriendsPage() {
 
     setConversations(prev => {
       const newMap = new Map(prev);
-      const conversation = newMap.get(selectedFriend.id);
+      const conversation = newMap.get(String(selectedFriend.id));
       if (conversation) {
         conversation.messages.push(tempMessage);
       }
