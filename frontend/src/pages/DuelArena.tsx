@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import axios from 'axios';
 import { useAuthStore } from '../stores/authStore';
 import { useSocket } from '../hooks/useSocket';
 import DuelChat from '../components/duel/DuelChat';
@@ -13,7 +12,7 @@ import {
   DUEL_FIELD_DESKTOP_CARD_VISUAL_MULT,
 } from '../constants/duelLayout';
 import CardImage from '../components/CardImage';
-import { getCardImage, getAllCardImagePaths, CARD_IMAGE_GRID_PROPS } from '../utils/cardImage';
+import { getAllCardImagePaths, CARD_IMAGE_GRID_PROPS } from '../utils/cardImage';
 import { getCardDescription } from '../utils/cardDescription';
 import {
   getProfileImageUrl,
@@ -351,6 +350,11 @@ interface DuelData {
   id: string;
   player1: any;
   player2: any;
+  player1Id?: number | null;
+  player2Id?: number | null;
+  turnCounter?: number;
+  duelTime?: number;
+  createdAt?: string | Date;
   player1LifePoints: number;
   player2LifePoints: number;
   currentTurn: number;
@@ -363,11 +367,15 @@ interface DuelData {
     deck: any[];
     hand: any[];
     graveyard: any[];
+    monsters?: any[];
+    electromagneticTurtleUsedThisDuel?: boolean;
   };
   player2Field?: {
     deck: any[];
     hand: any[];
     graveyard: any[];
+    monsters?: any[];
+    electromagneticTurtleUsedThisDuel?: boolean;
   };
 }
 
@@ -387,8 +395,8 @@ function loadPersistedArenaLayout(): {
 
 const DuelArena: React.FC = () => {
   const { duelId } = useParams();
-  const { user, token } = useAuthStore();
-  const { duelFound, chatMessages, duelLogs, currentTurn, duelUpdate, sendChatMessage, joinDuelRoom, endTurn, performAction, getSocket, isConnected } = useSocket();
+  const { user } = useAuthStore();
+  const { duelFound, chatMessages, duelLogs, currentTurn, duelUpdate, sendChatMessage, joinDuelRoom, performAction, getSocket, isConnected } = useSocket();
   const joinDuelRoomRef = useRef(joinDuelRoom);
   joinDuelRoomRef.current = joinDuelRoom;
   
@@ -413,8 +421,8 @@ const DuelArena: React.FC = () => {
   const [opponentLifePoints, setOpponentLifePoints] = useState(8000);
   
   // Estados para animação de dano
-  const [myDamage, setMyDamage] = useState<number | null>(null);
-  const [opponentDamage, setOpponentDamage] = useState<number | null>(null);
+  const [, setMyDamage] = useState<number | null>(null);
+  const [, setOpponentDamage] = useState<number | null>(null);
   const previousMyLifePoints = useRef(8000);
   const previousOpponentLifePoints = useRef(8000);
   
@@ -436,7 +444,6 @@ const DuelArena: React.FC = () => {
   } | null>(null);
   
   // Refs para rastrear cartas antes do ataque
-  const previousMyMonsters = useRef<any[]>(Array(5).fill(null));
   const previousOpponentMonstersRef = useRef<any[]>(Array(5).fill(null));
   
   // Ref para o container do campo de duelo (para centralizar a animação)
@@ -705,7 +712,7 @@ const DuelArena: React.FC = () => {
   // Refs para valores que precisamos no interval sem causar re-renders
   const isMyTurnRef = useRef(false);
   const duelIdRef = useRef<string | undefined>(duelId);
-  const userIdRef = useRef<number | undefined>(user?.id);
+  const userIdRef = useRef<string | number | undefined>(user?.id);
   const turnStartedAtRef = useRef<Date | null>(null);
   const turnTimeLimitRef = useRef<number>(90);
   const duelDataRef = useRef<DuelData | null>(null);
@@ -1029,7 +1036,7 @@ const DuelArena: React.FC = () => {
   } | null>(null);
   
   // Estado para controlar qual carta está selecionada para colocar no campo
-  const [selectedCardForField, setSelectedCardForField] = useState<any | null>(null);
+  const [, setSelectedCardForField] = useState<any | null>(null);
   
   // Estado para controlar seleção de slot de spell/trap
   const [selectingSpellTrapSlot, setSelectingSpellTrapSlot] = useState<{ card: any; position: 'set' | 'face-up' } | null>(null);
@@ -2483,8 +2490,8 @@ const DuelArena: React.FC = () => {
           console.log('🔒 [closePendingChoiceModal] ✅ Condições atendidas - fechando modais - motivo:', data.reason);
           
           // Se o motivo for 'choice_completed', fechar modais de Confiscation/ForcefulSentry/GracefulCharity
+          const cardEffectTypeFromData = (data as any).cardEffectType;
           if (data.reason === 'choice_completed') {
-            const cardEffectTypeFromData = (data as any).cardEffectType;
             if (cardEffectTypeFromData === 'confiscation' || cardEffectType === 'confiscation') {
               console.log('🔒 [closePendingChoiceModal] Fechando modal Confiscation (choice_completed)');
               setShowOpponentHandRevealed(false);
@@ -2661,6 +2668,7 @@ const DuelArena: React.FC = () => {
             currentPendingChoice.type === 'FORCEFUL_SENTRY'
           );
           
+          const cardEffectTypeFromData = (data as any).cardEffectType;
           if (data.reason === 'choice_completed') {
             justResolvedChoiceRef.current = currentPendingChoice ? { type: currentPendingChoice.type, at: Date.now() } : null;
             setCurrentPendingChoice(null);
@@ -2798,35 +2806,6 @@ const DuelArena: React.FC = () => {
         currentSocket.off('duelEnded');
         currentSocket.off('timeExpired');
         currentSocket.off('needsDiscard');
-        currentSocket.off('forcefulSentryShowHand', forcefulSentryListener);
-        currentSocket.off('confiscationShowHand', confiscationListener);
-        currentSocket.off('gracefulCharityShowHand', gracefulCharityListener);
-        currentSocket.off('closePendingChoiceModal', closePendingChoiceModalListener);
-        currentSocket.off('chaosSorcererSummonShowMonsters', chaosSorcererSummonListener);
-        currentSocket.off('chaosSorcererEffectShowTargets', chaosSorcererEffectListener);
-        currentSocket.off('blsEffectShowTargets', blsEffectListener);
-        currentSocket.off('darkArmedDragonSummonShowZones', darkArmedDragonSummonListener);
-        currentSocket.off('darkArmedDragonEffectShowModal', darkArmedDragonEffectListener);
-        currentSocket.off('redEyesDarknessMetalDragonSummonShowDragons', redEyesDarknessMetalDragonSummonListener);
-        currentSocket.off('redEyesDarknessMetalDragonEffectShowDragons', redEyesDarknessMetalDragonEffectListener);
-        currentSocket.off('cyberSteinEffectShowExtraDeck', cyberSteinEffectListener);
-        currentSocket.off('mysticalSpaceTyphoonShowTargets', mysticalSpaceTyphoonListener);
-        currentSocket.off('snowmanEaterShowTargets', snowmanEaterListener);
-        currentSocket.off('soulTakerShowOpponentMonsters', soulTakerListener);
-        currentSocket.off('playerTargetSpellShow', playerTargetSpellListener);
-        currentSocket.off('lightningStormShowOptions', lightningStormListener);
-        currentSocket.off('exiledForceShowTargets', exiledForceListener);
-        currentSocket.off('monsterRebornShowGraveyards', monsterRebornListener);
-        currentSocket.off('prematureBurialShowGraveyard', prematureBurialListener);
-        currentSocket.off('autonomousActionUnitShowOpponentGraveyard', autonomousActionUnitListener);
-        currentSocket.off('monsterReincarnationShowHand', monsterReincarnationDiscardListener);
-        currentSocket.off('monsterReincarnationShowGraveyard', monsterReincarnationGraveyardListener);
-        currentSocket.off('changeOfHeartShowOpponentMonsters', changeOfHeartListener);
-        currentSocket.off('brainControlShowOpponentMonsters', brainControlListener);
-        currentSocket.off('unitedWeStandShowMonsters', unitedWeStandListener);
-        currentSocket.off('magePowerShowMonsters', magePowerListener);
-        currentSocket.off('reinforcementOfTheArmyShowDeck', reinforcementOfTheArmyListener);
-        currentSocket.off('lastWillShowDeck', lastWillListener);
         currentSocket.off('attackSucceeded');
         currentSocket.off('disconnect', disconnectListener);
         currentSocket.off('connect', resyncJoinAfterReconnect);
@@ -3032,9 +3011,7 @@ const DuelArena: React.FC = () => {
 
   // Escutar atualizações do duelo (quando comprar carta, etc)
   // Usar useRef para evitar loops de renderização
-  const lastDuelUpdateIdRef = useRef<string | null>(null);
   const processedUpdatesRef = useRef<Set<string>>(new Set());
-  const processedLogsRef = useRef<Set<string>>(new Set());
   
   // Removido: detecção automática de ataques via logs - animação só aparece quando o jogador ataca diretamente
   
@@ -5288,7 +5265,7 @@ const DuelArena: React.FC = () => {
               }}
               isMyTurn={effectiveIsMyTurn}
               currentPhase={currentPhase}
-              currentTurn={currentTurn}
+              currentTurn={currentTurn ?? undefined}
               turnCounter={duelData?.turnCounter ?? myTurnCounter ?? 1}
               positionChangedThisTurn={positionChangedThisTurn}
               onSpellTrapSlotClick={(zoneIndex) => {
@@ -6004,7 +5981,7 @@ const DuelArena: React.FC = () => {
                     }
                     title={card.name || `Carta ${index + 1}`}
                     draggable={canDrag}
-                    onDragStart={(e) => {
+                    onDragStartCapture={(e) => {
                       if (canDrag) {
                         e.dataTransfer.effectAllowed = 'move';
                         e.dataTransfer.setData(
@@ -6025,7 +6002,7 @@ const DuelArena: React.FC = () => {
                         setTimeout(() => document.body.removeChild(dragImage), 0);
                       }
                     }}
-                    onDragEnd={(e) => {
+                    onDragEndCapture={() => {
                       // Limpar qualquer feedback visual
                     }}
                       onClick={(e) => {
@@ -7316,7 +7293,7 @@ const DuelArena: React.FC = () => {
                   const canActivateTurtle = isElectromagneticTurtle && 
                                             !isMyTurn && 
                                             currentPhase === 'BATTLE' && 
-                                            !myField?.electromagneticTurtleUsedThisDuel;
+                                            !(duelData?.player1Field?.electromagneticTurtleUsedThisDuel || duelData?.player2Field?.electromagneticTurtleUsedThisDuel);
                   
                   return (
                     <motion.div
@@ -9859,7 +9836,7 @@ const DuelArena: React.FC = () => {
                                 <div
                                   className="w-full h-full"
                                   style={{
-                                    backgroundImage: `url(${player === 'opponent' ? opponentSkinImageUrl : playerSkinImageUrl})`,
+                                    backgroundImage: `url(${player === 'opponent' ? opponentSkinImageUrl : mySkinImageUrl})`,
                                     backgroundSize: 'cover',
                                     backgroundPosition: 'center',
                                     backgroundRepeat: 'no-repeat',
@@ -9955,7 +9932,7 @@ const DuelArena: React.FC = () => {
                                           <div
                                             className="w-full h-full"
                                             style={{
-                                              backgroundImage: `url(${player === 'opponent' ? opponentSkinImageUrl : playerSkinImageUrl})`,
+                                              backgroundImage: `url(${player === 'opponent' ? opponentSkinImageUrl : mySkinImageUrl})`,
                                               backgroundSize: 'cover',
                                               backgroundPosition: 'center',
                                               backgroundRepeat: 'no-repeat',
