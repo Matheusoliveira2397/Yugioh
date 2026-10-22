@@ -4172,7 +4172,7 @@ const DuelArena: React.FC = () => {
   return (
     <div
       ref={duelArenaRootRef}
-      className="h-[100dvh] min-h-[100svh] w-full relative flex flex-col overflow-x-hidden overflow-y-auto lg:overflow-hidden min-h-0 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]"
+      className="ui-duel-view h-[100dvh] min-h-[100svh] w-full relative flex flex-col overflow-x-hidden overflow-y-auto lg:overflow-hidden min-h-0 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]"
     >
 
       <ArenaFullBleedBackground basePathWithoutExt="/images/background" zIndexClass="-z-10" />
@@ -4210,7 +4210,7 @@ const DuelArena: React.FC = () => {
           initial={{ y: -100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.5, ease: "easeOut" }}
-          className="flex flex-col flex-shrink-0 mb-0.5 py-1 sm:mb-1 sm:py-1.5 bg-black/20 shadow-2xl lg:mb-0 lg:py-0 lg:bg-transparent lg:shadow-none"
+          className="ui-duel-hud flex flex-col flex-shrink-0 mb-0.5 py-1 sm:mb-1 sm:py-1.5 bg-black/20 shadow-2xl lg:mb-0 lg:py-0 lg:bg-transparent lg:shadow-none"
         >
           <div className="flex gap-0 w-full min-w-0 items-stretch lg:hidden">
             {/* Mobile: oponente + timer + você — mesma faixa do topo */}
