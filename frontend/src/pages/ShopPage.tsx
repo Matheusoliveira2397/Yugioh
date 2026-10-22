@@ -13,6 +13,8 @@ import { useCosmeticsStore } from '../stores/cosmeticsStore';
 import { getCardDescription } from '../utils/cardDescription';
 import { useI18n } from '../i18n/I18nContext';
 import './ShopPage.css';
+import ShopFeaturedShelf from './ShopFeaturedShelf';
+import ShopFeaturedTile from './ShopFeaturedTile';
 
 interface Card {
   id: string;
@@ -1169,164 +1171,122 @@ export default function ShopPage() {
         )}
 
         {category === null ? (
-          /* ---------- Aba Destaques: itens em destaque primeiro, depois cartas em promoção ---------- */
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.3 }}
-            className="market-featured-content space-y-8"
+            transition={{ duration: 0.25 }}
+            className="market-featured-content"
           >
-            {/* Itens em destaque */}
-            <div>
-              <div className="flex items-center gap-3 mb-4">
-                <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-400">
-                  ⭐ {t('shop.featuredItems')}
-                </h2>
-                <div className="flex-1 h-px bg-gradient-to-r from-yellow-400/50 to-transparent" />
+            <header className="market-featured-intro">
+              <div>
+                <p className="market-eyebrow">Escolhas da arena</p>
+                <h2><span aria-hidden="true">✦</span> {t('shop.featuredItems')}</h2>
+                <p>Cartas, acessórios e artefatos em destaque. Selecione um item para explorar sua categoria.</p>
               </div>
-              <div className="market-featured-panel rounded-2xl p-4 sm:p-5 space-y-6">
-                {featuredCardsMarquee.length > 0 && (
-                  <div>
-                    <p className="text-sm text-gray-400 mb-2">🎴 {t('shop.latestCards')}</p>
-                    <div className="max-w-full -mx-2 md:mx-0">
-                      <LatestCardsMarquee
-                        cards={featuredCardsMarquee}
-                        showVerLoja={false}
-                        hideTitle
-                        onCardClick={(c) => {
-                          const full = cards.find((x) => x.id === c.id);
-                          if (full) {
-                            setCategory('cards');
-                            setMode('buy');
-                            setSelectedCard(full);
-                            setCurrentPage(1);
-                          }
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-                {/* Cartas em promoção — logo abaixo das últimas cartas cadastradas */}
-                {promotionCardsMarquee.length > 0 && (
-                  <div>
-                    <p className="text-sm text-gray-400 mb-2">🏷️ {t('shop.promoCards')}</p>
-                    <div className="max-w-full -mx-2 md:mx-0">
-                      <LatestCardsMarquee
-                        cards={promotionCardsMarquee}
-                        showVerLoja={false}
-                        hideTitle
-                        showPromotionBadge
-                        onCardClick={(c) => {
-                          const full = cards.find((x) => x.id === c.id);
-                          if (full) {
-                            setCategory('cards');
-                            setMode('buy');
-                            setSelectedCard(full);
-                            setCurrentPage(1);
-                          }
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-                {featuredPlaymats.length > 0 && (
-                  <div>
-                    <p className="text-sm text-gray-400 mb-2">🎨 {t('shop.playmats')}</p>
-                    <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                      {featuredPlaymats.map((pm) => {
-                        const src = pm.image ? (pm.image.startsWith('http') ? pm.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${pm.image}`) : '';
-                        return (
-                          <motion.div
-                            key={pm.id}
-                            whileHover={{ scale: 1.03 }}
-                            onClick={() => { setCategory('playmats'); setMode('buy'); setCurrentPage(1); }}
-                            className="flex-shrink-0 w-32 cursor-pointer rounded-lg overflow-hidden border border-white/20 bg-slate-800/50"
-                          >
-                            {src ? <img src={src} alt={pm.name} className="w-full aspect-video object-cover" /> : <div className="w-full aspect-video flex items-center justify-center text-2xl">🎨</div>}
-                            <p className="text-[10px] text-white truncate p-1">{pm.name}</p>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {featuredSleeves.length > 0 && (
-                  <div>
-                    <p className="text-sm text-gray-400 mb-2">🎭 {t('shop.sleeves')}</p>
-                    <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                      {featuredSleeves.map((sl) => {
-                        const src = sl.image ? (sl.image.startsWith('http') ? sl.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${sl.image}`) : '';
-                        return (
-                          <motion.div
-                            key={sl.id}
-                            whileHover={{ scale: 1.03 }}
-                            onClick={() => { setCategory('sleeves'); setMode('buy'); setCurrentPage(1); }}
-                            className="flex-shrink-0 w-20 cursor-pointer rounded-lg overflow-hidden border border-white/20 bg-slate-800/50"
-                          >
-                            {src ? <img src={src} alt={sl.name} className="w-full aspect-[2/3] object-cover" /> : <div className="w-full aspect-[2/3] flex items-center justify-center text-xl">🎭</div>}
-                            <p className="text-[10px] text-white truncate p-1">{sl.name}</p>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {featuredTalismans.length > 0 && (
-                  <div>
-                    <p className="text-sm text-gray-400 mb-2">✨ {t('shop.talismans')}</p>
-                    <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                      {featuredTalismans.map((t) => {
-                        const src = t.image ? (t.image.startsWith('http') ? t.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${t.image}`) : '';
-                        return (
-                          <motion.button
-                            key={t.id}
-                            type="button"
-                            whileHover={{ scale: 1.03 }}
-                            onClick={() => { setCategory('talismans'); setMode('buy'); setCurrentPage(1); }}
-                            className="flex-shrink-0 w-24 cursor-pointer flex flex-col items-center gap-1 bg-transparent p-0 border-0 text-left"
-                          >
-                            <span className="w-full aspect-square flex items-center justify-center">
-                              {src ? (
-                                <img src={src} alt="" className="max-w-full max-h-full object-contain" />
-                              ) : null}
-                            </span>
-                            <span className="text-[10px] text-white text-center leading-tight line-clamp-2 w-full">{t.name}</span>
-                          </motion.button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {featuredMaletas.length > 0 && (
-                  <div>
-                    <p className="text-sm text-gray-400 mb-2">🧳 Maletas</p>
-                    <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                      {featuredMaletas.map((m) => {
-                        const src = m.image ? (m.image.startsWith('http') ? m.image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${m.image}`) : '';
-                        return (
-                          <motion.div
-                            key={m.id}
-                            whileHover={{ scale: 1.03 }}
-                            onClick={() => { setCategory('items'); setMode('buy'); setCurrentPage(1); }}
-                            className="flex-shrink-0 w-28 cursor-pointer rounded-lg overflow-hidden border border-amber-400/40 bg-slate-800/50"
-                          >
-                            {src ? (
-                              <img src={src} alt={m.name} className="w-full aspect-[4/3] object-cover" />
-                            ) : (
-                              <div className="w-full aspect-[4/3] flex items-center justify-center text-2xl bg-amber-900/40">🧳</div>
-                            )}
-                            <p className="text-[10px] text-white truncate p-1">{m.name}</p>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {featuredCardsMarquee.length === 0 && featuredPlaymats.length === 0 && featuredSleeves.length === 0 && featuredTalismans.length === 0 && featuredMaletas.length === 0 && (
-                  <p className="text-gray-400 text-sm text-center py-4">{t('common.loading')}</p>
-                )}
+            </header>
+
+            {featuredCardsMarquee.length > 0 && (
+              <ShopFeaturedShelf title={t('shop.latestCards')} route="/collection"
+                onExplore={() => { setCategory('cards'); setMode('buy'); setCurrentPage(1); }}>
+                <LatestCardsMarquee
+                  cards={featuredCardsMarquee}
+                  className="market-featured-marquee"
+                  showVerLoja={false}
+                  hideTitle
+                  onCardClick={(card) => {
+                    const full = cards.find((item) => item.id === card.id);
+                    if (full) {
+                      setCategory('cards');
+                      setMode('buy');
+                      setSelectedCard(full);
+                      setCurrentPage(1);
+                    }
+                  }}
+                />
+              </ShopFeaturedShelf>
+            )}
+
+            {promotionCardsMarquee.length > 0 && (
+              <ShopFeaturedShelf title={t('shop.promoCards')} route="/credit"
+                onExplore={() => { setCategory('cards'); setMode('buy'); setCurrentPage(1); }}>
+                <LatestCardsMarquee
+                  cards={promotionCardsMarquee}
+                  className="market-featured-marquee"
+                  showVerLoja={false}
+                  hideTitle
+                  showPromotionBadge
+                  onCardClick={(card) => {
+                    const full = cards.find((item) => item.id === card.id);
+                    if (full) {
+                      setCategory('cards');
+                      setMode('buy');
+                      setSelectedCard(full);
+                      setCurrentPage(1);
+                    }
+                  }}
+                />
+              </ShopFeaturedShelf>
+            )}
+
+            {featuredPlaymats.length > 0 && (
+              <ShopFeaturedShelf title={t('shop.playmats')} route="/arena"
+                onExplore={() => { setCategory('playmats'); setMode('buy'); setCurrentPage(1); }}>
+                <div className="market-featured-grid">
+                  {featuredPlaymats.map((item) => (
+                    <ShopFeaturedTile key={item.id} name={item.name} image={item.image}
+                      category="playmats" credits={item.priceCredits} cash={item.priceCash}
+                      onExplore={() => { setCategory('playmats'); setMode('buy'); setCurrentPage(1); }} />
+                  ))}
+                </div>
+              </ShopFeaturedShelf>
+            )}
+
+            {featuredSleeves.length > 0 && (
+              <ShopFeaturedShelf title={t('shop.sleeves')} route="/deck-builder"
+                onExplore={() => { setCategory('sleeves'); setMode('buy'); setCurrentPage(1); }}>
+                <div className="market-featured-grid">
+                  {featuredSleeves.map((item) => (
+                    <ShopFeaturedTile key={item.id} name={item.name} image={item.image}
+                      category="sleeves" credits={item.priceCredits} cash={item.priceCash}
+                      onExplore={() => { setCategory('sleeves'); setMode('buy'); setCurrentPage(1); }} />
+                  ))}
+                </div>
+              </ShopFeaturedShelf>
+            )}
+
+            {featuredTalismans.length > 0 && (
+              <ShopFeaturedShelf title={t('shop.talismans')} route="/missions"
+                onExplore={() => { setCategory('talismans'); setMode('buy'); setCurrentPage(1); }}>
+                <div className="market-featured-grid">
+                  {featuredTalismans.map((item) => (
+                    <ShopFeaturedTile key={item.id} name={item.name} image={item.image}
+                      category="talismans" credits={item.priceCredits} cash={item.priceCash}
+                      onExplore={() => { setCategory('talismans'); setMode('buy'); setCurrentPage(1); }} />
+                  ))}
+                </div>
+              </ShopFeaturedShelf>
+            )}
+
+            {featuredMaletas.length > 0 && (
+              <ShopFeaturedShelf title="Maletas" route="/inventory"
+                onExplore={() => { setCategory('items'); setMode('buy'); setCurrentPage(1); }}>
+                <div className="market-featured-grid">
+                  {featuredMaletas.map((item) => (
+                    <ShopFeaturedTile key={item.id} name={item.name} image={item.image}
+                      category="items" credits={item.priceCredits} cash={item.priceCash}
+                      onExplore={() => { setCategory('items'); setMode('buy'); setCurrentPage(1); }} />
+                  ))}
+                </div>
+              </ShopFeaturedShelf>
+            )}
+
+            {featuredCardsMarquee.length === 0 && promotionCardsMarquee.length === 0 &&
+             featuredPlaymats.length === 0 && featuredSleeves.length === 0 &&
+             featuredTalismans.length === 0 && featuredMaletas.length === 0 && (
+              <div className="market-featured-empty" role="status">
+                {loading || loadingMaletas ? t('common.loading') : 'Ainda não há itens em destaque. Explore as categorias acima.'}
               </div>
-            </div>
+            )}
           </motion.div>
         ) : (
           <>
