@@ -339,7 +339,7 @@ export default function FriendsPage() {
         }
       ];
       
-      setConversations(prev => new Map(prev).set(friendId, {
+      setConversations(prev => new Map(prev).set(String(friendId), {
         friend: selectedFriend!,
         messages: mockMessages,
         unreadCount: 0
@@ -391,7 +391,7 @@ export default function FriendsPage() {
       // Substituir mensagem temporária pela mensagem real do servidor
       setConversations(prev => {
         const newMap = new Map(prev);
-        const conversation = newMap.get(selectedFriend.id);
+        const conversation = newMap.get(String(selectedFriend.id));
         if (conversation) {
           // Remover mensagem temporária
           conversation.messages = conversation.messages.filter(m => m.id !== tempMessage.id);
