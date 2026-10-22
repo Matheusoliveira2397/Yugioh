@@ -283,8 +283,6 @@ export default function AdminCardsPanel() {
   const initialCardImageOnEditRef = useRef<string>('');
 
   // Estados para sistema de skins
-  const [originalCardSearch, setOriginalCardSearch] = useState('');
-  const [originalCardResults, setOriginalCardResults] = useState<Card[]>([]);
   const [selectedOriginalCard, setSelectedOriginalCard] = useState<Card | null>(null);
   const [isSkin, setIsSkin] = useState(false);
   const [otherSkins, setOtherSkins] = useState<Card[]>([]); // Outras skins da mesma carta
@@ -531,64 +529,6 @@ export default function AdminCardsPanel() {
     }
   };
 
-  // Função para buscar cartas existentes (para criar skin) — servidor (lista paginada no painel)
-  const searchOriginalCards = async (query: string) => {
-    if (query.length < 2) {
-      setOriginalCardResults([]);
-      return;
-    }
-    try {
-      const { data } = await api.get<{ items: Card[] }>('/cards/admin/list', {
-        params: { page: 1, limit: 15, search: query.trim(), status: 'active' },
-      });
-      setOriginalCardResults((data.items ?? []).slice(0, 10));
-    } catch {
-      setOriginalCardResults([]);
-    }
-  };
-
-  // Função para selecionar carta original (ao criar skin)
-  const selectOriginalCard = (originalCard: Card) => {
-    console.log('✅ Selecionando carta original:', originalCard);
-    setSelectedOriginalCard(originalCard);
-    setOriginalCardSearch('');
-    setOriginalCardResults([]);
-    
-    // Preencher campos compartilhados (bloqueados para edição)
-    setFormData({
-      ...formData,
-      name: originalCard.name, // Mesmo nome
-      description: originalCard.description || '',
-      type: originalCard.type,
-      monsterType: originalCard.monsterType,
-      attribute: originalCard.attribute,
-      race: (originalCard as any).race || 'Warrior',
-      level: originalCard.level || 4,
-      atk: originalCard.atk || 0,
-      def: originalCard.def || 0,
-      spellType: (originalCard as any).spellType || 'Normal',
-      trapType: (originalCard as any).trapType || 'Normal',
-      archetype: (originalCard as any).archetype || '',
-      isBanned: (originalCard as any).isBanned || false,
-      maxCopiesInDeck: (originalCard as any).maxCopiesInDeck || 3,
-      // Campos únicos da skin (podem ser diferentes)
-      // Gerar idCarta único automaticamente baseado no idCarta original + timestamp
-      idCarta: `${(originalCard as any).idCarta || originalCard.name.replace(/[^a-zA-Z0-9]/g, '')}_skin_${Date.now()}`,
-      cardImage: '',
-      rarity: originalCard.rarity, // Pode ser diferente
-      priceCredits: 0,
-      priceCash: 0,
-      isForSale: true,
-      isActive: (originalCard as any).isActive ?? true,
-    });
-    
-    setMessage({ 
-      type: 'success', 
-      text: `✅ Carta original "${originalCard.name}" selecionada! Um ID único foi gerado automaticamente. Você pode alterá-lo se desejar.` 
-    });
-  };
-
-  // Função para selecionar carta da API e preencher formulário
   const selectCardFromApi = async (apiCard: any) => {
     try {
       setLoadingSearch(true);
@@ -1028,6 +968,7 @@ export default function AdminCardsPanel() {
       attribute: card.attribute || 'DARK' as CardAttribute | undefined,
       race: (card as any).race || 'Warrior',
       level: card.level ?? 4,
+      rank: (card as any).rank ?? 0,
       rank: (card as any).rank ?? 0,
       atk: card.atk ?? 0,
       def: card.def ?? 0,
