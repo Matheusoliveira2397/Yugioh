@@ -424,10 +424,10 @@ export const ProfilePage: React.FC = () => {
   };
 
   const handleSaveBiography = async () => {
-    if (!token || !isOwnProfile) return;
+    if (!token || !isOwnProfile || !currentUser) return;
 
     try {
-      const userId = typeof currentUser?.id === 'string' ? parseInt(currentUser.id, 10) : Number(currentUser.id);
+      const userId = typeof currentUser.id === 'string' ? parseInt(currentUser.id, 10) : Number(currentUser.id);
       await axios.patch(
         `${API_URL}/users/${userId}/biography`,
         { biography },
