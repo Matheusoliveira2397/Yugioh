@@ -482,25 +482,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                       e.currentTarget.classList.add('ring-4', 'ring-blue-400/70', 'bg-blue-400/20', 'scale-105');
                     }
                   } else if (!isOpponent && hasMonster && (monster.position === 'attack' || monster.position === 'defense')) {
-                    // Permitir drop de spell equip em monstro face-up do próprio campo
-                    // Tentar verificar se é uma spell Equip sendo arrastada
-                    let isEquipSpell = false;
-                    try {
-                      // Tentar ler os dados (pode não funcionar em todos os navegadores no onDragOver)
-                      if (e.dataTransfer.types.includes('application/json')) {
-                        const cardData = e.dataTransfer.getData('application/json');
-                        if (cardData) {
-                          const { card } = parseHandDragPayload(cardData);
-                          const cardType = card?.type || card?.cardType;
-                          const spellType = card?.spellType;
-                          isEquipSpell = cardType === 'Spell' && spellType === 'Equip';
-                        }
-                      }
-                    } catch (err) {
-                      // Se não conseguir ler, assumir que pode ser spell equip e verificar no onDrop
-                      // Permitir drop em qualquer caso se houver safeOnEquipSpellDrop
-                    }
-                    
+                    // The drop handler validates card type; do not parse untrusted payload during hover.
                     // Permitir drop se for spell equip ou se tiver safeOnEquipSpellDrop (verificação completa no onDrop)
                     if (safeOnEquipSpellDrop) {
                       e.preventDefault();
