@@ -633,7 +633,7 @@ export default function DeckEditPage() {
       // O mínimo de 40 no deck principal só é exigido ao equipar o deck (DeckBuilderPage + backend).
 
       // Remover a carta e reorganizar o array para não deixar espaços vazios
-      const cardsWithoutNull = prev.filter((slot, index) => index !== idx);
+      const cardsWithoutNull = prev.filter((_, index) => index !== idx);
       // Preencher o array até 60 slots com null no final
       const newDeck = [...cardsWithoutNull, ...Array(60 - cardsWithoutNull.length).fill(null)];
       
@@ -739,7 +739,7 @@ export default function DeckEditPage() {
       const cardToRemove = prev[idx];
       
       // Remover a carta e reorganizar o array para não deixar espaços vazios
-      const cardsWithoutNull = prev.filter((slot, index) => index !== idx);
+      const cardsWithoutNull = prev.filter((_, index) => index !== idx);
       // Preencher o array até 15 slots com null no final
       const newExtraDeck = [...cardsWithoutNull, ...Array(15 - cardsWithoutNull.length).fill(null)];
       
