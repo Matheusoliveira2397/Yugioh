@@ -325,3 +325,292 @@
   .duelist-market .market-category, .duelist-market .market-mode, .duelist-market .market-link { transition: none; }
   .duelist-market .market-category:hover, .duelist-market .market-link:hover { transform: none; }
 }
+
+
+/* Loja transparente: preserva a arte full-screen atrás de cada seção.
+   Elementos funcionais (modais, inputs e preços) mantêm contraste suficiente. */
+.game-shell:has(.duelist-market) .game-overlay {
+  background:
+    radial-gradient(ellipse at top, rgba(17, 8, 10, .16), transparent 68%),
+    linear-gradient(180deg, rgba(9, 5, 8, .27), rgba(9, 5, 8, .38));
+}
+.duelist-market { background: transparent; }
+.duelist-market .market-hero,
+.duelist-market .market-hero-aside,
+.duelist-market .market-mode-switch,
+.duelist-market .market-featured-panel,
+.duelist-market .market-filter-bar,
+.duelist-market .market-catalog,
+.duelist-market .market-featured-shelf {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.duelist-market .market-hero {
+  border: 1px solid rgba(237, 192, 91, .42);
+  box-shadow: none;
+  overflow: visible;
+}
+.duelist-market .market-hero::before,
+.duelist-market .market-hero::after { display: none; }
+.duelist-market .market-hero-aside {
+  border-color: rgba(237, 192, 91, .34);
+  box-shadow: none;
+}
+.duelist-market .market-hero-emblem,
+.duelist-market .market-balance {
+  background: rgba(16, 8, 11, .24);
+  backdrop-filter: blur(3px);
+}
+.duelist-market .market-mode-switch {
+  border-color: rgba(232, 188, 96, .28);
+}
+.duelist-market .market-mode:not(.is-active) { background: transparent; }
+.duelist-market .market-mode.is-active {
+  background: rgba(86, 36, 29, .27);
+}
+.duelist-market .market-category {
+  background: rgba(15, 7, 10, .11);
+  border-color: rgba(240, 196, 116, .42);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  box-shadow: none;
+}
+.duelist-market .market-category:hover {
+  background: rgba(66, 27, 24, .21);
+}
+.duelist-market .market-category.is-active {
+  background: rgba(116, 46, 34, .30);
+  border-color: #f2c66b;
+  box-shadow: inset 0 0 0 1px rgba(246, 196, 97, .2);
+}
+.duelist-market .market-search-field {
+  background: rgba(13, 8, 11, .22);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+.duelist-market .market-filter-bar {
+  box-shadow: none;
+  border-color: rgba(238, 193, 111, .35);
+}
+.duelist-market .market-filter-bar input {
+  background: rgba(15, 8, 11, .37);
+}
+.duelist-market .market-product-card,
+.duelist-market .ui-market-card,
+.duelist-market .market-cosmetic-card {
+  background: rgba(17, 8, 11, .12);
+  border: 1px solid rgba(241, 196, 103, .35);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  box-shadow: none;
+}
+.duelist-market .market-cosmetic-card .market-item-image-frame {
+  background: rgba(0, 0, 0, .07);
+  border-color: rgba(241, 196, 103, .30);
+  box-shadow: none;
+}
+.duelist-market .market-cosmetic-card .market-item-image-glow {
+  background: transparent;
+  box-shadow: none;
+}
+.duelist-market .market-catalog {
+  box-shadow: none;
+  border-color: transparent;
+}
+.duelist-market .market-results-badge { background: rgba(18, 9, 12, .24); }
+.duelist-market .market-section-intro h2,
+.duelist-market .market-hero h1,
+.duelist-market .market-featured-intro h2,
+.duelist-market .market-featured-shelf-heading h3 {
+  text-shadow: 0 2px 9px rgba(0, 0, 0, .9);
+}
+.duelist-market .market-hero-heading p,
+.duelist-market .market-featured-intro p,
+.duelist-market .market-featured-shelf-link {
+  text-shadow: 0 1px 5px rgba(0, 0, 0, .9);
+}
+
+/* Destaques: prateleiras separadas visualmente por traços, não por blocos sólidos. */
+.duelist-market .market-featured-content { display: grid; gap: clamp(1.15rem, 2vw, 2rem); }
+.duelist-market .market-featured-intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .7rem;
+  margin: .15rem 0 0;
+}
+.duelist-market .market-featured-intro h2 {
+  font: 800 clamp(1.55rem, 2.7vw, 2.15rem) 'Cinzel', Georgia, serif;
+  color: #ffe3a0;
+  line-height: 1.2;
+}
+.duelist-market .market-featured-intro p:last-child {
+  margin-top: .35rem;
+  color: #f2e5d5;
+  font-size: .82rem;
+  line-height: 1.5;
+}
+.duelist-market .market-featured-shelf {
+  min-width: 0;
+  padding: 0 0 .65rem;
+  border: 0;
+  border-top: 1px solid rgba(237, 190, 99, .40);
+}
+.duelist-market .market-featured-shelf-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .8rem;
+  padding: .8rem .25rem 1rem;
+}
+.duelist-market .market-featured-shelf-title { display: flex; align-items: center; gap: .7rem; min-width: 0; }
+.duelist-market .market-featured-shelf-icon { display: inline-grid; flex: 0 0 auto; place-items: center; width: 2.9rem; height: 2.9rem; }
+.duelist-market .market-featured-shelf-heading h3 {
+  font: 750 clamp(.96rem, 1.8vw, 1.35rem) 'Cinzel', Georgia, serif;
+  color: #ffedc1;
+  line-height: 1.25;
+}
+.duelist-market .market-featured-shelf-link {
+  color: #f9dc9b;
+  padding: .45rem .7rem;
+  border: 1px solid rgba(248, 206, 127, .45);
+  border-radius: .65rem;
+  background: rgba(15, 8, 10, .13);
+  font-size: .74rem;
+  font-weight: 800;
+}
+.duelist-market .market-featured-shelf-link:hover { border-color: #ffde9b; background: rgba(78, 34, 27, .23); }
+.duelist-market .market-featured-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
+  gap: .85rem;
+}
+.duelist-market .market-featured-tile {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(245, 192, 95, .35);
+  border-radius: .9rem;
+  background: rgba(11, 6, 9, .15);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  box-shadow: none;
+  transition: border-color 180ms ease, transform 180ms ease;
+}
+.duelist-market .market-featured-tile:hover {
+  border-color: #ffdf99;
+  transform: translateY(-2px);
+  background: rgba(45, 18, 16, .19);
+}
+.duelist-market .market-featured-image {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  width: 100%;
+  height: 157px;
+  padding: .65rem;
+  background: transparent;
+}
+.duelist-market .market-featured-image--playmats { height: 148px; }
+.duelist-market .market-featured-image--sleeves,
+.duelist-market .market-featured-image--talismans { height: 160px; }
+.duelist-market .market-featured-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 9px rgba(0, 0, 0, .38));
+  transition: transform 180ms ease;
+}
+.duelist-market .market-featured-tile:hover img { transform: scale(1.04); }
+.duelist-market .market-featured-image-fallback {
+  display: grid;
+  place-items: center;
+  width: 4.5rem;
+  height: 4.5rem;
+  opacity: .95;
+}
+.duelist-market .market-featured-info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: .5rem;
+  padding: .75rem .85rem .85rem;
+  border-top: 1px solid rgba(242, 187, 99, .22);
+  background: rgba(8, 5, 7, .09);
+}
+.duelist-market .market-featured-name {
+  color: #fff6dc;
+  font-weight: 800;
+  font-size: .82rem;
+  line-height: 1.35;
+  min-height: 2.25em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.duelist-market .market-featured-prices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem .65rem;
+  margin-top: auto;
+  color: #f7dca3;
+  font-size: .73rem;
+  font-weight: 800;
+}
+.duelist-market .market-featured-visit {
+  color: #e5be77;
+  font-size: .73rem;
+  font-weight: 800;
+  margin-top: auto;
+}
+.duelist-market .market-featured-empty {
+  padding: 1.5rem;
+  text-align: center;
+  border: 1px solid rgba(236, 185, 96, .35);
+  border-radius: 1rem;
+  color: #fff1d7;
+  background: rgba(12, 7, 9, .15);
+}
+.duelist-market .market-featured-marquee {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: .25rem 0 .5rem;
+  --tw-ring-shadow: 0 0 #0000;
+}
+.duelist-market .market-featured-marquee .shop-marquee-track > [role="button"] > div {
+  width: clamp(102px, 10vw, 147px);
+  height: clamp(150px, 14vw, 208px);
+  border-color: rgba(242, 194, 103, .6);
+}
+.duelist-market .market-featured-marquee .shop-marquee-track [role="button"] p:first-child {
+  font-size: .64rem;
+  line-height: 1.25;
+}
+.duelist-market .market-featured-marquee .shop-marquee-track [role="button"] p:last-child {
+  color: #ead7b2;
+  font-size: .56rem;
+}
+.duelist-market .market-featured-marquee .shop-cards-wrap > div.pointer-events-none {
+  opacity: .28;
+}
+@media (max-width: 680px) {
+  .duelist-market .market-featured-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: .6rem; }
+  .duelist-market .market-featured-image,
+  .duelist-market .market-featured-image--playmats,
+  .duelist-market .market-featured-image--sleeves,
+  .duelist-market .market-featured-image--talismans { height: 126px; }
+  .duelist-market .market-featured-info { padding: .6rem; }
+  .duelist-market .market-featured-shelf-heading { padding: .8rem 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .duelist-market .market-featured-tile, .duelist-market .market-featured-image img { transition: none; }
+  .duelist-market .market-featured-tile:hover { transform: none; }
+}
