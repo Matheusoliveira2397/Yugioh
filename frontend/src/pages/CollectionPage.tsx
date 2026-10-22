@@ -1,3 +1,4 @@
+import GameIcon from '../components/GameIcon';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -95,10 +96,11 @@ export default function CollectionPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-[clamp(0.75rem,2.5vw,1.75rem)] py-5 text-white">
-      <div className="mb-5">
-        <h1 className="game-page-title mb-1">{t('collection.title')}</h1>
-        <p className="game-page-sub">{t('collection.subtitle')}</p>
-      </div>
+      <header className="game-screen-hero mb-5">
+        <p className="game-screen-kicker">Galeria de cartas</p>
+        <h1 className="game-screen-heading"><span className="game-screen-icon"><GameIcon route="/collection" size={27} /></span>{t('collection.title')}</h1>
+        <p className="game-screen-subtitle">{t('collection.subtitle')}</p>
+      </header>
 
       <div className="game-panel p-4 mb-5">
         <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
