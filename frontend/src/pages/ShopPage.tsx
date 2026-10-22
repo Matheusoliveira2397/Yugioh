@@ -1804,9 +1804,9 @@ export default function ShopPage() {
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: index * 0.05 }}
                           whileHover={{ scale: 1.03, zIndex: 10 }}
-                          className="flex flex-col bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-sm rounded-xl p-5 border border-white/10 hover:border-amber-400/50 shadow-xl hover:shadow-2xl transition-all w-full max-w-md mx-auto"
+                          className="market-cosmetic-card flex flex-col rounded-xl p-4 sm:p-5 border border-amber-400/35 hover:border-amber-300/60 transition-all w-full"
                         >
-                          <div className="relative w-full aspect-[21/9] mb-4 bg-gradient-to-br from-amber-500/30 via-amber-500/20 to-amber-500/30 rounded-xl overflow-hidden border border-amber-300/40 shadow-[0_0_25px_rgba(59,130,246,0.5)]">
+                          <div className="market-item-image-frame relative w-full aspect-[21/9] mb-4 rounded-xl overflow-hidden border border-amber-300/40">
                             {imageSrc ? (
                               <img
                                 src={imageSrc}
@@ -1877,9 +1877,9 @@ export default function ShopPage() {
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: index * 0.05 }}
                           whileHover={{ scale: 1.03, zIndex: 10 }}
-                          className="flex flex-col items-center w-full max-w-md mx-auto gap-2"
+                          className="market-cosmetic-card flex flex-col items-center w-full rounded-xl border border-amber-400/35 p-3 sm:p-4 gap-2"
                         >
-                          <div className="relative w-full aspect-square flex items-center justify-center">
+                          <div className="market-item-image-frame relative w-full aspect-square flex items-center justify-center">
                             {imageSrc ? (
                               <img
                                 src={imageSrc}
@@ -1927,9 +1927,9 @@ export default function ShopPage() {
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: index * 0.05 }}
                           whileHover={{ scale: 1.03, zIndex: 10 }}
-                          className="flex flex-col bg-gradient-to-br from-amber-900/40 to-yellow-900/30 backdrop-blur-sm rounded-xl p-5 border border-amber-500/35 hover:border-amber-400/50 shadow-xl hover:shadow-2xl transition-all w-full max-w-md mx-auto"
+                          className="market-cosmetic-card flex flex-col rounded-xl p-4 sm:p-5 border border-amber-400/35 hover:border-amber-300/60 transition-all w-full"
                         >
-                          <div className="relative w-full aspect-[4/3] mb-4 bg-gradient-to-br from-amber-500/25 to-yellow-600/20 rounded-xl overflow-hidden border border-amber-400/40 flex items-center justify-center">
+                          <div className="market-item-image-frame relative w-full aspect-[4/3] mb-4 rounded-xl overflow-hidden border border-amber-400/40 flex items-center justify-center">
                             {imageSrc ? (
                               <img
                                 src={imageSrc}
@@ -1996,10 +1996,10 @@ export default function ShopPage() {
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: index * 0.05 }}
                           whileHover={{ scale: 1.05, zIndex: 10 }}
-                          className="flex flex-col bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-sm rounded-xl p-3 border border-white/10 hover:border-emerald-500/50 shadow-lg hover:shadow-2xl transition-all"
+                          className="market-cosmetic-card flex flex-col rounded-xl p-3 border border-amber-400/35 hover:border-amber-300/60 transition-all"
                         >
                           <div className="relative w-full aspect-[2/3] mb-3 rounded-lg overflow-hidden">
-                            <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-green-500/40 via-emerald-500/20 to-orange-500/30 shadow-[0_0_20px_rgba(16,185,129,0.6)]" />
+                            <div className="market-item-image-glow absolute inset-0 rounded-xl pointer-events-none" />
                             <div className="relative w-full h-full rounded-xl border border-white/40 overflow-hidden">
                               {sleeveImageSrc ? (
                                 <img
