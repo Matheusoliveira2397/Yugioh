@@ -1701,7 +1701,7 @@ export default function ShopPage() {
               <div className="market-catalog p-1 sm:p-3 mb-6">
                 <div className={category === 'playmats' || category === 'talismans' || category === 'items'
                   ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5"
-                  : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-4"
+                  : "market-card-grid"
                 }>
                   {paginatedItems.map((item, index) => {
                     if (category === 'cards') {
@@ -1713,10 +1713,10 @@ export default function ShopPage() {
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: index * 0.05 }}
                           whileHover={{ scale: 1.05, zIndex: 10 }}
-                          className="ui-market-card market-product-card flex flex-col p-2.5 sm:p-3"
+                          className="ui-market-card market-product-card market-playing-card flex flex-col p-2"
                         >
                           <div 
-                            className="ui-card-frame w-full mb-2 cursor-pointer"
+                            className="ui-card-frame market-card-visual w-full mb-2 cursor-pointer"
                             role="button"
                             tabIndex={0}
                             aria-label={`Ver detalhes da carta ${card.name}`}
@@ -1740,7 +1740,7 @@ export default function ShopPage() {
                               <DeckCopyLimitBadge maxCopiesInDeck={card.maxCopiesInDeck} variant="inline" showStandardLimit />
                               {card.promotionDiscountPercent ? (
                                 <div
-                                  className="flex items-center justify-center min-w-[28px] h-7 px-1.5 rounded-md bg-rose-500/95 text-white text-xs font-bold shadow-lg border border-rose-300/50"
+                                  className="flex items-center justify-center min-w-[24px] h-6 px-1 rounded-md bg-rose-500/95 text-white text-xs font-bold shadow-lg border border-rose-300/50"
                                   title={card.promotionLabel || `${card.promotionDiscountPercent}% off`}
                                 >
                                   -{card.promotionDiscountPercent}%
@@ -1749,22 +1749,22 @@ export default function ShopPage() {
                             </div>
                             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity rounded-lg"></div>
                           </div>
-                          <div className="space-y-2 flex-1">
+                          <div className="market-card-details space-y-1 flex-1">
                             <h3 
-                              className="text-xs sm:text-sm font-bold text-white line-clamp-2 min-h-[2.5rem] cursor-pointer hover:text-amber-200 transition-colors" 
+                              className="market-card-name text-[11px] font-bold text-white line-clamp-2 cursor-pointer hover:text-amber-200 transition-colors" 
                               title={card.name}
                               onClick={() => setSelectedCard(card)}
                             >
                               {card.name}
                             </h3>
-                            <div className="flex items-center gap-2 flex-wrap">
+                            <div className="market-card-prices flex flex-col gap-1">
                               {(card.effectivePriceCredits ?? card.priceCredits) ? (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handlePurchaseClick(card, 'credits');
                                   }}
-                                  className="flex-1 inline-flex justify-center items-center gap-1 bg-gradient-to-r from-amber-600 to-yellow-700 hover:from-amber-500 hover:to-amber-700 px-2 py-1.5 rounded-lg text-[11px] font-bold text-white transition-all shadow-md"
+                                  className="flex-1 inline-flex justify-center items-center gap-1 bg-gradient-to-r from-amber-600 to-yellow-700 hover:from-amber-500 hover:to-amber-700 px-1.5 py-1 rounded-md text-[10px] font-bold text-white transition-all shadow-md"
                                 >
                                   💰 {card.effectivePriceCredits ?? card.priceCredits}
                                   {card.promotionDiscountPercent ? (
@@ -1778,7 +1778,7 @@ export default function ShopPage() {
                                     e.stopPropagation();
                                     handlePurchaseClick(card, 'cash');
                                   }}
-                                  className="flex-1 inline-flex justify-center items-center gap-1 bg-gradient-to-r from-rose-900 to-red-800 hover:from-rose-800 hover:to-red-700 px-2 py-1.5 rounded-lg text-[11px] font-bold text-white transition-all shadow-md"
+                                  className="flex-1 inline-flex justify-center items-center gap-1 bg-gradient-to-r from-rose-900 to-red-800 hover:from-rose-800 hover:to-red-700 px-1.5 py-1 rounded-md text-[10px] font-bold text-white transition-all shadow-md"
                                 >
                                   💵 {Math.floor(Number(card.effectivePriceCash ?? card.priceCash))}
                                   {card.promotionDiscountPercent ? (
@@ -2145,7 +2145,7 @@ export default function ShopPage() {
                   return (
                   <>
                   <div className="market-catalog p-1 sm:p-3 mb-6">
-                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                    <div className="market-card-grid">
                       {listToShow.map((userCard: any, index: number) => {
                         if (!userCard?.card) return null;
                         const card = userCard.card;
@@ -2160,9 +2160,9 @@ export default function ShopPage() {
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: index * 0.05 }}
                             whileHover={{ scale: 1.05, zIndex: 10 }}
-                            className="ui-market-card market-product-card flex flex-col p-2.5 sm:p-3"
+                            className="ui-market-card market-product-card market-playing-card flex flex-col p-2"
                           >
-                            <div className="ui-card-frame w-full mb-2">
+                            <div className="ui-card-frame market-card-visual w-full mb-2">
                               <CardImage
                                 {...CARD_IMAGE_GRID_PROPS}
                                 card={card}
@@ -2182,8 +2182,8 @@ export default function ShopPage() {
                                 );
                               })()}
                             </div>
-                            <div className="space-y-2 flex-1">
-                              <h3 className="text-xs font-bold text-white line-clamp-2 min-h-[2rem]" title={card.name}>
+                            <div className="market-card-details space-y-1 flex-1">
+                              <h3 className="market-card-name text-[11px] font-bold text-white line-clamp-2" title={card.name}>
                                 {card.name}
                               </h3>
                               {card.type === 'Monster' && (
@@ -2218,7 +2218,7 @@ export default function ShopPage() {
                                     onClick={() => canSell && handleSellClick(userCard)}
                                     disabled={isSelling || !canSell}
                                     title={sellableQty <= 0 ? 'Cartas em deck não podem ser vendidas. Só a maleta.' : undefined}
-                                    className="w-full mt-2 px-3 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg text-xs font-bold transition-all shadow-md hover:shadow-lg text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="w-full mt-1 px-1.5 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg text-xs font-bold transition-all shadow-md hover:shadow-lg text-white disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
                                     {isSelling ? '⏳ Vendendo...' : sellableQty <= 0 ? '🔒 Em deck' : `💰 ${t('shop.sell')}`}
                                   </button>
