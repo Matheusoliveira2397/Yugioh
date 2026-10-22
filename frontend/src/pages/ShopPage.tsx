@@ -1385,8 +1385,8 @@ export default function ShopPage() {
                           setSortBy('name');
                           setOpenDropdown(null);
                         }}
-                        className={`w-full text-left px-4 py-2 hover:bg-purple-500/20 transition-colors ${
-                          sortBy === 'name' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
+                        className={`w-full text-left px-4 py-2 hover:bg-rose-500/20 transition-colors ${
+                          sortBy === 'name' ? 'bg-rose-600/50 text-amber-300' : 'text-white'
                         }`}
                       >
                         Nome
@@ -1396,8 +1396,8 @@ export default function ShopPage() {
                           setSortBy('priceAsc');
                           setOpenDropdown(null);
                         }}
-                        className={`w-full text-left px-4 py-2 hover:bg-purple-500/20 transition-colors ${
-                          sortBy === 'priceAsc' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
+                        className={`w-full text-left px-4 py-2 hover:bg-rose-500/20 transition-colors ${
+                          sortBy === 'priceAsc' ? 'bg-rose-600/50 text-amber-300' : 'text-white'
                         }`}
                       >
                         Preço: Menor → Maior
@@ -1407,8 +1407,8 @@ export default function ShopPage() {
                           setSortBy('priceDesc');
                           setOpenDropdown(null);
                         }}
-                        className={`w-full text-left px-4 py-2 hover:bg-purple-500/20 transition-colors ${
-                          sortBy === 'priceDesc' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
+                        className={`w-full text-left px-4 py-2 hover:bg-rose-500/20 transition-colors ${
+                          sortBy === 'priceDesc' ? 'bg-rose-600/50 text-amber-300' : 'text-white'
                         }`}
                       >
                         Preço: Maior → Menor
@@ -1418,8 +1418,8 @@ export default function ShopPage() {
                           setSortBy('atkAsc');
                           setOpenDropdown(null);
                         }}
-                        className={`w-full text-left px-4 py-2 hover:bg-purple-500/20 transition-colors ${
-                          sortBy === 'atkAsc' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
+                        className={`w-full text-left px-4 py-2 hover:bg-rose-500/20 transition-colors ${
+                          sortBy === 'atkAsc' ? 'bg-rose-600/50 text-amber-300' : 'text-white'
                         }`}
                       >
                         ATK: Menor → Maior
@@ -1429,8 +1429,8 @@ export default function ShopPage() {
                           setSortBy('atkDesc');
                           setOpenDropdown(null);
                         }}
-                        className={`w-full text-left px-4 py-2 hover:bg-purple-500/20 transition-colors ${
-                          sortBy === 'atkDesc' ? 'bg-purple-600/50 text-purple-300' : 'text-white'
+                        className={`w-full text-left px-4 py-2 hover:bg-rose-500/20 transition-colors ${
+                          sortBy === 'atkDesc' ? 'bg-rose-600/50 text-amber-300' : 'text-white'
                         }`}
                       >
                         ATK: Maior → Menor
@@ -1461,7 +1461,7 @@ export default function ShopPage() {
                           placeholder="Min"
                           value={priceMin}
                           onChange={(e) => setPriceMin(e.target.value)}
-                          className="w-full px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded text-white text-sm focus:outline-none focus:border-purple-500/50"
+                          className="w-full px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded text-white text-sm focus:outline-none focus:border-amber-500/50"
                         />
                       </div>
                       <div>
@@ -1471,7 +1471,7 @@ export default function ShopPage() {
                           placeholder="Max"
                           value={priceMax}
                           onChange={(e) => setPriceMax(e.target.value)}
-                          className="w-full px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded text-white text-sm focus:outline-none focus:border-purple-500/50"
+                          className="w-full px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded text-white text-sm focus:outline-none focus:border-amber-500/50"
                         />
                       </div>
                       {(priceMin || priceMax) && (
@@ -1480,7 +1480,7 @@ export default function ShopPage() {
                             setPriceMin('');
                             setPriceMax('');
                           }}
-                          className="w-full px-3 py-1 bg-purple-600/80 hover:bg-purple-600 rounded text-sm font-medium transition-colors backdrop-blur-sm"
+                          className="w-full px-3 py-1 bg-rose-600/80 hover:bg-rose-600 rounded text-sm font-medium transition-colors backdrop-blur-sm"
                         >
                           Limpar
                         </button>
@@ -1517,7 +1517,7 @@ export default function ShopPage() {
                           placeholder="Ex.: 1500"
                           value={atkMin}
                           onChange={(e) => setAtkMin(e.target.value)}
-                          className="w-full px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded text-white text-sm focus:outline-none focus:border-purple-500/50"
+                          className="w-full px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded text-white text-sm focus:outline-none focus:border-amber-500/50"
                         />
                       </div>
                       <div>
@@ -1528,7 +1528,7 @@ export default function ShopPage() {
                           placeholder="Ex.: 2000"
                           value={atkMax}
                           onChange={(e) => setAtkMax(e.target.value)}
-                          className="w-full px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded text-white text-sm focus:outline-none focus:border-purple-500/50"
+                          className="w-full px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded text-white text-sm focus:outline-none focus:border-amber-500/50"
                         />
                       </div>
                       {(atkMin || atkMax) && (
@@ -1537,7 +1537,7 @@ export default function ShopPage() {
                             setAtkMin('');
                             setAtkMax('');
                           }}
-                          className="w-full px-3 py-1 bg-purple-600/80 hover:bg-purple-600 rounded text-sm font-medium transition-colors backdrop-blur-sm"
+                          className="w-full px-3 py-1 bg-rose-600/80 hover:bg-rose-600 rounded text-sm font-medium transition-colors backdrop-blur-sm"
                         >
                           Limpar faixa
                         </button>
@@ -1550,8 +1550,8 @@ export default function ShopPage() {
                             onClick={() => setSortBy('atkAsc')}
                             className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
                               sortBy === 'atkAsc'
-                                ? 'bg-purple-600/55 text-purple-100'
-                                : 'text-white hover:bg-purple-500/20'
+                                ? 'bg-rose-600/55 text-amber-100'
+                                : 'text-white hover:bg-rose-500/20'
                             }`}
                           >
                             Menor → maior
@@ -1561,8 +1561,8 @@ export default function ShopPage() {
                             onClick={() => setSortBy('atkDesc')}
                             className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
                               sortBy === 'atkDesc'
-                                ? 'bg-purple-600/55 text-purple-100'
-                                : 'text-white hover:bg-purple-500/20'
+                                ? 'bg-rose-600/55 text-amber-100'
+                                : 'text-white hover:bg-rose-500/20'
                             }`}
                           >
                             Maior → menor
@@ -1572,8 +1572,8 @@ export default function ShopPage() {
                             onClick={() => setSortBy('name')}
                             className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
                               sortBy !== 'atkAsc' && sortBy !== 'atkDesc'
-                                ? 'bg-purple-600/55 text-purple-100'
-                                : 'text-white hover:bg-purple-500/20'
+                                ? 'bg-rose-600/55 text-amber-100'
+                                : 'text-white hover:bg-rose-500/20'
                             }`}
                           >
                             Nome / preço (menu Ordenar)
@@ -1605,7 +1605,7 @@ export default function ShopPage() {
                             type="checkbox"
                             checked={typeFilters.includes(type)}
                             onChange={() => toggleTypeFilter(type)}
-                            className="w-4 h-4 text-purple-600 bg-white/10 border-white/20 rounded focus:ring-purple-500"
+                            className="w-4 h-4 text-amber-600 bg-white/10 border-white/20 rounded focus:ring-amber-500"
                           />
                           <span className="text-sm text-white">
                             {type === 'Monster' ? 'Monstro' : type === 'Spell' ? 'Magia' : 'Armadilha'}
@@ -1638,7 +1638,7 @@ export default function ShopPage() {
                             type="checkbox"
                             checked={attributeFilters.includes(attr)}
                             onChange={() => toggleAttributeFilter(attr)}
-                            className="w-4 h-4 text-purple-600 bg-white/10 border-white/20 rounded focus:ring-purple-500"
+                            className="w-4 h-4 text-amber-600 bg-white/10 border-white/20 rounded focus:ring-amber-500"
                           />
                           <span className="text-sm text-white">
                             {attr}
@@ -1650,7 +1650,7 @@ export default function ShopPage() {
                     {attributeFilters.length > 0 && (
                       <button
                         onClick={() => setAttributeFilters([])}
-                        className="w-full mt-3 px-3 py-1 bg-purple-600/80 hover:bg-purple-600 rounded text-sm font-medium transition-colors backdrop-blur-sm"
+                        className="w-full mt-3 px-3 py-1 bg-rose-600/80 hover:bg-rose-600 rounded text-sm font-medium transition-colors backdrop-blur-sm"
                       >
                         Limpar
                       </button>
@@ -1679,7 +1679,7 @@ export default function ShopPage() {
                             type="checkbox"
                             checked={monsterTypeFilters.includes(mt)}
                             onChange={() => toggleMonsterTypeFilter(mt)}
-                            className="w-4 h-4 text-purple-600 bg-white/10 border-white/20 rounded focus:ring-purple-500"
+                            className="w-4 h-4 text-amber-600 bg-white/10 border-white/20 rounded focus:ring-amber-500"
                           />
                           <span className="text-sm text-white">
                             {mt === 'Normal' ? 'Normal' : mt === 'Effect' ? 'Effect' : 'Fusion'}
@@ -1691,7 +1691,7 @@ export default function ShopPage() {
                     {monsterTypeFilters.length > 0 && (
                       <button
                         onClick={() => setMonsterTypeFilters([])}
-                        className="w-full mt-3 px-3 py-1 bg-purple-600/80 hover:bg-purple-600 rounded text-sm font-medium transition-colors backdrop-blur-sm"
+                        className="w-full mt-3 px-3 py-1 bg-rose-600/80 hover:bg-rose-600 rounded text-sm font-medium transition-colors backdrop-blur-sm"
                       >
                         Limpar
                       </button>
@@ -1725,8 +1725,8 @@ export default function ShopPage() {
 
             {/* Grid de Itens */}
             {(mode === 'buy' && category === 'items' ? loadingMaletas : loading) ? (
-              <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
-                <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
+              <div className="game-panel text-center py-12 rounded-xl">
+                <div className="inline-block animate-spin rounded-full h-12 w-12 border-2 border-amber-800 border-t-amber-300"></div>
                 <p className="mt-4 text-gray-200">{t('common.loading')}</p>
               </div>
             ) : error ? (
@@ -1734,7 +1734,7 @@ export default function ShopPage() {
                 <p className="text-red-300">{error}</p>
               </div>
             ) : paginatedItems.length === 0 ? (
-              <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
+              <div className="game-panel text-center py-12 rounded-xl">
                 <p className="text-gray-200 text-lg">{t('shop.noItems')}</p>
               </div>
             ) : (
@@ -1791,7 +1791,7 @@ export default function ShopPage() {
                           </div>
                           <div className="space-y-2 flex-1">
                             <h3 
-                              className="text-xs font-bold text-white line-clamp-2 min-h-[2rem] cursor-pointer hover:text-amber-200 transition-colors" 
+                              className="text-xs sm:text-sm font-bold text-white line-clamp-2 min-h-[2.5rem] cursor-pointer hover:text-amber-200 transition-colors" 
                               title={card.name}
                               onClick={() => setSelectedCard(card)}
                             >
@@ -1804,7 +1804,7 @@ export default function ShopPage() {
                                     e.stopPropagation();
                                     handlePurchaseClick(card, 'credits');
                                   }}
-                                  className="flex items-center gap-1 bg-gradient-to-r from-yellow-500/90 to-yellow-600/90 hover:from-yellow-500 hover:to-yellow-600 backdrop-blur-sm px-2 py-1 rounded-lg text-[10px] font-bold text-white transition-all shadow-md hover:shadow-lg"
+                                  className="flex-1 inline-flex justify-center items-center gap-1 bg-gradient-to-r from-amber-600 to-yellow-700 hover:from-amber-500 hover:to-amber-700 px-2 py-1.5 rounded-lg text-[11px] font-bold text-white transition-all shadow-md"
                                 >
                                   💰 {card.effectivePriceCredits ?? card.priceCredits}
                                   {card.promotionDiscountPercent ? (
@@ -1818,7 +1818,7 @@ export default function ShopPage() {
                                     e.stopPropagation();
                                     handlePurchaseClick(card, 'cash');
                                   }}
-                                  className="flex items-center gap-1 bg-gradient-to-r from-emerald-500/90 to-emerald-600/90 hover:from-emerald-500 hover:to-emerald-600 backdrop-blur-sm px-2 py-1 rounded-lg text-[10px] font-bold text-white transition-all shadow-md hover:shadow-lg"
+                                  className="flex-1 inline-flex justify-center items-center gap-1 bg-gradient-to-r from-rose-900 to-red-800 hover:from-rose-800 hover:to-red-700 px-2 py-1.5 rounded-lg text-[11px] font-bold text-white transition-all shadow-md"
                                 >
                                   💵 {Math.floor(Number(card.effectivePriceCash ?? card.priceCash))}
                                   {card.promotionDiscountPercent ? (
@@ -1844,9 +1844,9 @@ export default function ShopPage() {
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: index * 0.05 }}
                           whileHover={{ scale: 1.03, zIndex: 10 }}
-                          className="flex flex-col bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-sm rounded-xl p-5 border border-white/10 hover:border-blue-400/50 shadow-xl hover:shadow-2xl transition-all w-full max-w-md mx-auto"
+                          className="flex flex-col bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-sm rounded-xl p-5 border border-white/10 hover:border-amber-400/50 shadow-xl hover:shadow-2xl transition-all w-full max-w-md mx-auto"
                         >
-                          <div className="relative w-full aspect-[21/9] mb-4 bg-gradient-to-br from-blue-500/30 via-cyan-500/20 to-purple-500/30 rounded-xl overflow-hidden border border-blue-300/40 shadow-[0_0_25px_rgba(59,130,246,0.5)]">
+                          <div className="relative w-full aspect-[21/9] mb-4 bg-gradient-to-br from-amber-500/30 via-amber-500/20 to-amber-500/30 rounded-xl overflow-hidden border border-amber-300/40 shadow-[0_0_25px_rgba(59,130,246,0.5)]">
                             {imageSrc ? (
                               <img
                                 src={imageSrc}
@@ -1857,7 +1857,7 @@ export default function ShopPage() {
                                 }}
                               />
                             ) : (
-                              <div className="w-full h-full flex items-center justify-center text-5xl text-blue-200/80">
+                              <div className="w-full h-full flex items-center justify-center text-5xl text-amber-200/80">
                                 🎨
                               </div>
                             )}
@@ -1886,7 +1886,7 @@ export default function ShopPage() {
                               {playmat.priceCredits ? (
                                 <button
                                   onClick={() => handlePurchaseClick(playmat, 'credits')}
-                                  className="flex-1 px-3 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 rounded text-xs font-bold transition-all shadow-lg hover:shadow-blue-500/60 text-white"
+                                  className="flex-1 px-3 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 rounded text-xs font-bold transition-all shadow-lg hover:shadow-amber-500/60 text-white"
                                 >
                                   💰 {playmat.priceCredits}
                                 </button>
@@ -2039,7 +2039,7 @@ export default function ShopPage() {
                           className="flex flex-col bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-sm rounded-xl p-3 border border-white/10 hover:border-emerald-500/50 shadow-lg hover:shadow-2xl transition-all"
                         >
                           <div className="relative w-full aspect-[2/3] mb-3 rounded-lg overflow-hidden">
-                            <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-green-500/40 via-emerald-500/20 to-cyan-500/30 shadow-[0_0_20px_rgba(16,185,129,0.6)]" />
+                            <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-green-500/40 via-emerald-500/20 to-orange-500/30 shadow-[0_0_20px_rgba(16,185,129,0.6)]" />
                             <div className="relative w-full h-full rounded-xl border border-white/40 overflow-hidden">
                               {sleeveImageSrc ? (
                                 <img
@@ -2108,7 +2108,7 @@ export default function ShopPage() {
                           onClick={() => setCurrentPage(pageNum)}
                           className={`px-4 py-2 rounded-lg backdrop-blur-sm transition-all ${
                             currentPage === pageNum
-                              ? 'bg-purple-600/80 text-white shadow-lg'
+                              ? 'bg-rose-600/80 text-white shadow-lg'
                               : 'bg-white/10 text-gray-200 hover:bg-white/20 border border-white/20'
                           }`}
                         >
@@ -2153,7 +2153,7 @@ export default function ShopPage() {
             {category === 'cards' ? (
               <>
                 {loading ? (
-                  <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
+                  <div className="game-panel text-center py-12 rounded-xl">
                     <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
                     <p className="mt-4 text-gray-200">Carregando inventário...</p>
                   </div>
@@ -2168,7 +2168,7 @@ export default function ShopPage() {
                   const listToShow = noResults ? [] : paginatedItems as any[];
                   if (sellListEmpty) {
                     return (
-                      <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
+                      <div className="game-panel text-center py-12 rounded-xl">
                         <p className="text-gray-200 text-lg mb-2">📦 Nenhuma carta na maleta para vender</p>
                         <p className="text-gray-400 text-sm">Só aparecem aqui as cartas que não estão em nenhum deck.</p>
                       </div>
@@ -2176,7 +2176,7 @@ export default function ShopPage() {
                   }
                   if (noResults) {
                     return (
-                      <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
+                      <div className="game-panel text-center py-12 rounded-xl">
                         <p className="text-gray-200 text-lg mb-2">{t('common.noResults')}</p>
                         <p className="text-gray-400 text-sm">Tente alterar pesquisa ou filtros.</p>
                       </div>
@@ -2184,7 +2184,7 @@ export default function ShopPage() {
                   }
                   return (
                   <>
-                  <div className="bg-transparent p-4 mb-6">
+                  <div className="market-catalog p-1 sm:p-3 mb-6">
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
                       {listToShow.map((userCard: any, index: number) => {
                         if (!userCard?.card) return null;
@@ -2231,7 +2231,7 @@ export default function ShopPage() {
                                   <div className="bg-red-500/80 backdrop-blur-sm px-1.5 py-0.5 rounded text-[10px]">
                                     <span className="text-white font-bold">ATK {card.atk || 0}</span>
                                   </div>
-                                  <div className="bg-blue-500/80 backdrop-blur-sm px-1.5 py-0.5 rounded text-[10px]">
+                                  <div className="bg-amber-500/80 backdrop-blur-sm px-1.5 py-0.5 rounded text-[10px]">
                                     <span className="text-white font-bold">DEF {card.def || 0}</span>
                                   </div>
                                 </div>
@@ -2329,7 +2329,7 @@ export default function ShopPage() {
                 })()}
               </>
             ) : (
-              <div className="text-center py-12 bg-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl">
+              <div className="game-panel text-center py-12 rounded-xl">
                 <p className="text-gray-200 text-lg">
                   {category === 'items' || category === 'talismans'
                     ? 'Esta categoria é só para compra. Use a aba Comprar.'
@@ -2357,8 +2357,8 @@ export default function ShopPage() {
               animate={{ scale: 1 }}
               className={`bg-gradient-to-br backdrop-blur-xl ${
                 selectedCard.rarity === 'Common' ? 'from-gray-600/80 to-gray-700/80' :
-                selectedCard.rarity === 'Rare' ? 'from-blue-600/80 to-blue-700/80' :
-                selectedCard.rarity === 'Super Rare' ? 'from-purple-600/80 to-purple-700/80' :
+                selectedCard.rarity === 'Rare' ? 'from-amber-600/80 to-orange-700/80' :
+                selectedCard.rarity === 'Super Rare' ? 'from-rose-600/80 to-amber-700/80' :
                 selectedCard.rarity === 'Ultra Rare' ? 'from-yellow-600/80 to-yellow-700/80' :
                 selectedCard.rarity === 'Secret Rare' ? 'from-yellow-400/80 to-orange-500/80' :
                 'from-gray-600/80 to-gray-700/80'
@@ -2416,11 +2416,11 @@ export default function ShopPage() {
                     <div className="bg-red-500/80 px-3 py-1 rounded">
                       <span className="text-white font-bold">ATK: {selectedCard.atk || 0}</span>
                     </div>
-                    <div className="bg-blue-500/80 px-3 py-1 rounded">
+                    <div className="bg-amber-500/80 px-3 py-1 rounded">
                       <span className="text-white font-bold">DEF: {selectedCard.def || 0}</span>
                     </div>
                     {selectedCard.level && (
-                      <div className="bg-purple-500/80 px-3 py-1 rounded">
+                      <div className="bg-rose-500/80 px-3 py-1 rounded">
                         <span className="text-white font-bold">Nível: {selectedCard.level}</span>
                       </div>
                     )}
@@ -2710,7 +2710,7 @@ export default function ShopPage() {
                   </div>
                   <button
                     onClick={() => setSuccessModal(null)}
-                    className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold transition-all"
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-rose-600 to-amber-700 hover:from-rose-700 hover:to-amber-800 text-white font-bold transition-all"
                   >
                     OK
                   </button>
