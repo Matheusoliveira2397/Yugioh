@@ -95,9 +95,9 @@ export default function CardImage({
   );
 
   const [imageSrc, setImageSrc] = useState<string | null>(null);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [, setCurrentIndex] = useState(0);
   const [hasError, setHasError] = useState(false);
-  const [attemptedPaths, setAttemptedPaths] = useState<Set<string>>(new Set());
+  const [, setAttemptedPaths] = useState<Set<string>>(new Set());
   
   // Usar refs para acessar valores atualizados dentro de callbacks
   const currentIndexRef = useRef(0);
