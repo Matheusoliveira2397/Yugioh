@@ -7270,7 +7270,7 @@ const DuelArena: React.FC = () => {
                   const canActivateTurtle = isElectromagneticTurtle && 
                                             !isMyTurn && 
                                             currentPhase === 'BATTLE' && 
-                                            !(duelData?.player1Field?.electromagneticTurtleUsedThisDuel || duelData?.player2Field?.electromagneticTurtleUsedThisDuel);
+                                            !((isPlayer1 ? duelData?.player1Field : duelData?.player2Field)?.electromagneticTurtleUsedThisDuel);
                   
                   return (
                     <motion.div
