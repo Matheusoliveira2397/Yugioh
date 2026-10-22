@@ -73,7 +73,6 @@ export default function DeckEditPage() {
   } | null>(null);
   const [showCoverPicker, setShowCoverPicker] = useState(false);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const deckNameTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const savingRef = useRef(false);
   
   // Refs para armazenar os valores mais recentes do estado
@@ -556,18 +555,6 @@ export default function DeckEditPage() {
     }
     // Fallback: contar por cardId (compatibilidade)
     return extraDeck.filter(slot => slot && slot.cardId === cardId).length;
-  };
-
-  const getAvailableCount = (userCard: UserCard) => {
-    // IMPORTANTE: Disponibilidade é por SKIN (cardId), não por nome
-    // Cada skin é independente na maleta, mas o limite de deck é por nome
-    const cardsInMainDeck = deck.filter(slot => slot && slot.cardId === userCard.cardId).length;
-    const cardsInExtra = extraDeck.filter(slot => slot && slot.cardId === userCard.cardId).length;
-    const totalInDecks = cardsInMainDeck + cardsInExtra; // Quantidade desta SKIN específica no deck
-    
-    // Buscar quantidade total desta SKIN específica (de allUserCards)
-    const totalOwned = allUserCards.find(uc => uc.cardId === userCard.cardId)?.quantity || userCard.quantity;
-    return totalOwned - totalInDecks; // Disponibilidade desta SKIN específica
   };
 
   const addToDeck = (userCard: UserCard) => {
