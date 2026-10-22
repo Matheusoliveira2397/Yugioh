@@ -585,18 +585,11 @@
   padding: .25rem 0 .5rem;
   --tw-ring-shadow: 0 0 #0000;
 }
+/* Mantém as cartas dos destaques no mesmo tamanho padrão dos demais
+   carrosséis (w-16/h-24 no celular; w-20/h-28 em sm; w-24/h-32 em md).
+   Não fixe width/height aqui: LatestCardsMarquee define o padrão compartilhado. */
 .duelist-market .market-featured-marquee .shop-marquee-track > [role="button"] > div {
-  width: clamp(102px, 10vw, 147px);
-  height: clamp(150px, 14vw, 208px);
   border-color: rgba(242, 194, 103, .6);
-}
-.duelist-market .market-featured-marquee .shop-marquee-track [role="button"] p:first-child {
-  font-size: .64rem;
-  line-height: 1.25;
-}
-.duelist-market .market-featured-marquee .shop-marquee-track [role="button"] p:last-child {
-  color: #ead7b2;
-  font-size: .56rem;
 }
 .duelist-market .market-featured-marquee .shop-cards-wrap > div.pointer-events-none {
   opacity: .28;
