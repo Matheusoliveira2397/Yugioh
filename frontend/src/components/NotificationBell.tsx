@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
 import api from '../api/axios';
@@ -50,6 +51,7 @@ function saveStoredNotifications(userId: number | string | undefined, list: Syst
 
 export default function NotificationBell() {
   const { token, user } = useAuthStore();
+  const navigate = useNavigate();
   const { connect, getSocket, isConnected } = useSocketStore();
   const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
   const [systemNotifications, setSystemNotifications] = useState<SystemNotification[]>(() =>
