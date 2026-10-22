@@ -412,7 +412,7 @@ export default function FriendsPage() {
       // Remover mensagem temporária em caso de erro
       setConversations(prev => {
         const newMap = new Map(prev);
-        const conversation = newMap.get(selectedFriend.id);
+        const conversation = newMap.get(String(selectedFriend.id));
         if (conversation) {
           conversation.messages = conversation.messages.filter(m => m.id !== tempMessage.id);
         }
