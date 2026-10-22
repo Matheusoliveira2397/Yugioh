@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { api } from '../api/axios';
 import { useAuthStore } from '../stores/authStore';
 import CardImage from '../components/CardImage';
+import CardArtViewer from '../components/CardArtViewer';
 import DeckCopyLimitBadge from '../components/DeckCopyLimitBadge';
 import { CARD_IMAGE_GRID_PROPS } from '../utils/cardImage';
 import { getCardDescription } from '../utils/cardDescription';
@@ -72,6 +73,7 @@ export default function DeckEditPage() {
     maxCopiesInDeck?: number;
   } | null>(null);
   const [showCoverPicker, setShowCoverPicker] = useState(false);
+  const [inspectedCover, setInspectedCover] = useState(false);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const savingRef = useRef(false);
   
@@ -1019,9 +1021,10 @@ export default function DeckEditPage() {
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="ui-deck-header mb-8"
         >
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 bg-clip-text text-transparent drop-shadow-2xl">
+          <p className="ui-eyebrow mb-1.5">Oficina do duelista</p>
+          <h1 className="ui-hero-title mb-2">
             Editor de Deck
           </h1>
           <p className="text-gray-200 font-medium">Monte seu deck com até 60 cartas</p>
@@ -1133,10 +1136,15 @@ export default function DeckEditPage() {
               <button
                 type="button"
                 onClick={() => setShowCoverPicker(!showCoverPicker)}
-                className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium"
+                className="ui-button-secondary"
               >
                 {coverCardId ? 'Trocar carta' : 'Escolher carta'}
               </button>
+              {coverCard && (
+                <button type="button" className="ui-button-secondary" onClick={() => setInspectedCover(true)}>
+                  🔍 Ampliar capa
+                </button>
+              )}
             </div>
             {showCoverPicker && (() => {
               const slotsWithCards = [...deck, ...extraDeck].filter((s): s is UserCard => s !== null && !!s.card);
@@ -1592,6 +1600,7 @@ export default function DeckEditPage() {
           </motion.div>
         </motion.div>
       )}
+      {inspectedCover && coverCard && <CardArtViewer card={coverCard} onClose={() => setInspectedCover(false)} />}
     </div>
   );
 }
