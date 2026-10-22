@@ -6,6 +6,7 @@ import axios from 'axios';
 import { logger } from '../utils/logger';
 import LatestCardsMarquee from '../components/LatestCardsMarquee';
 import GameIcon from '../components/GameIcon';
+import './NewHomePage.css';
 
 import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { formatScore } from '../utils/formatScore';
@@ -18,37 +19,31 @@ const HOME_QUICK_ACTIONS = [
     to: '/random-duel',
     label: 'Duelo',
     hint: 'Encontre um oponente',
-    accent: 'from-champion-gold/20 to-transparent',
   },
   {
     to: '/arena',
     label: 'Arena',
     hint: 'Desafios agendados',
-    accent: 'from-champion-crimson/20 to-transparent',
   },
   {
     to: '/shop',
     label: 'Loja',
     hint: 'Cartas e cosméticos',
-    accent: 'from-champion-cyan/20 to-transparent',
   },
   {
     to: '/ranking',
     label: 'Ranking',
     hint: 'Top duelistas',
-    accent: 'from-amber-500/15 to-transparent',
   },
   {
     to: '/tournaments',
     label: 'Torneios',
     hint: 'Competições oficiais',
-    accent: 'from-violet-500/15 to-transparent',
   },
   {
     to: '/groups',
     label: 'Clãs',
     hint: 'Jogue em equipe',
-    accent: 'from-rose-500/15 to-transparent',
   },
 ] as const;
 
@@ -352,7 +347,7 @@ export default function HomePage() {
   const homePanel = 'game-panel';
 
   return (
-    <div className="w-full min-w-0 px-2 sm:px-3 py-2 sm:py-3 pb-5">
+    <div className="duelist-home w-full min-w-0 px-1.5 sm:px-3 py-2 sm:py-3 pb-6">
       {loading && topPlayers.length === 0 && news.length === 0 && (
         <div className="mb-3 flex items-center gap-2 text-arena-mist text-sm">
           <div className="h-4 w-4 rounded-full border-2 border-champion-gold/30 border-t-champion-gold animate-spin" aria-hidden />
@@ -360,70 +355,44 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Portal de entrada: hierarquia clara entre jogar e preparar o deck. */}
-      <section
-        className="relative isolate mb-5 overflow-hidden rounded-[1.75rem] border border-champion-gold/30 bg-[#090e22] shadow-[0_24px_65px_rgba(0,0,0,0.32)]"
-        aria-labelledby="home-feature-heading"
-      >
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_70%_20%,rgba(49,104,195,0.34),transparent_50%),radial-gradient(ellipse_at_10%_100%,rgba(211,163,55,0.16),transparent_55%)]"
-        />
-        <img
-          src="/images/blueEyes.png"
-          alt=""
-          aria-hidden="true"
-          loading="lazy"
-          className="pointer-events-none absolute -right-14 top-[-15%] h-[120%] w-auto max-w-none object-contain opacity-20 sm:opacity-25 lg:right-[25%] lg:opacity-30"
-        />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#090e22]/95 via-[#090e22]/75 to-[#090e22]/50" aria-hidden="true" />
-        <div className="relative z-10 grid gap-5 p-5 sm:p-7 lg:grid-cols-[minmax(0,1.3fr)_minmax(260px,0.7fr)] lg:gap-8 lg:p-9">
-          <div className="flex min-w-0 flex-col justify-center">
-            <p className="mb-3 inline-flex w-fit items-center gap-2 rounded-full border border-champion-gold/35 bg-champion-gold/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-champion-gold">
-              <span className="h-1.5 w-1.5 rounded-full bg-champion-gold" aria-hidden="true" />
-              Academia de duelistas
+      {/* O cenário do jogo permanece visível atrás do portal e de seu menu. */}
+      <section className="home-hero relative mb-5 rounded-2xl" aria-labelledby="home-feature-heading">
+        <div className="home-hero-content grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(250px,0.75fr)] lg:items-center">
+          <div className="min-w-0">
+            <p className="home-eyebrow inline-flex items-center gap-2">
+              <GameIcon route="/arena" size={23} /> Academia de duelistas
             </p>
-            <h2 id="home-feature-heading" className="max-w-2xl font-display text-3xl font-extrabold leading-[1.12] tracking-tight text-white sm:text-4xl xl:text-5xl">
+            <h2 id="home-feature-heading" className="home-hero-title mt-3 max-w-2xl font-display text-3xl font-extrabold leading-[1.12] sm:text-4xl xl:text-5xl">
               Prepare seu deck. <span className="text-champion-gold">Domine a arena.</span>
             </h2>
-            <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-200/85 sm:text-base">
-              Seu próximo desafio está a um clique. Entre em um duelo, construa sua estratégia ou explore a Academia no modo história.
+            <p className="home-hero-subtitle mt-3 max-w-xl text-sm leading-relaxed sm:text-base">
+              Enfrente outros duelistas, construa sua estratégia e avance na sua própria história.
             </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link
-                to="/random-duel"
-                className="ui-button-primary inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champion-gold"
-              >
-                <span aria-hidden="true">⚔️</span> Iniciar duelo <span aria-hidden="true">→</span>
+            <div className="mt-5 flex flex-wrap gap-2.5">
+              <Link to="/random-duel" className="home-main-action home-main-action--primary inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5">
+                <GameIcon route="/random-duel" size={22} /> Iniciar duelo <span aria-hidden="true">→</span>
               </Link>
-              <Link
-                to="/story"
-                className="ui-button-secondary inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champion-gold"
-              >
-                <span aria-hidden="true">🎮</span> Modo história
+              <Link to="/story" className="home-main-action inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5">
+                <GameIcon route="/story" size={22} /> Modo história
               </Link>
             </div>
           </div>
-          <nav className="self-center rounded-2xl border border-white/15 bg-slate-950/70 p-4 shadow-xl backdrop-blur-md sm:p-5" aria-label="Acesso rápido à preparação">
-            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-champion-cyan">Seu caminho para a vitória</p>
-            <h3 className="mb-4 mt-1 text-lg font-bold text-white">Prepare-se para duelar</h3>
-            <div className="space-y-2">
+          <nav className="home-preparation self-stretch p-3 sm:p-4" aria-label="Acesso rápido à preparação">
+            <p className="home-eyebrow">Sua jornada começa aqui</p>
+            <h3 className="mt-1 mb-3 text-lg font-bold text-white">Prepare-se para duelar</h3>
+            <div className="grid gap-2">
               {[
-                { to: '/deck-builder', number: '01', title: 'Montar meu deck', description: 'Ajuste sua estratégia' },
-                { to: '/collection', number: '02', title: 'Ver minha coleção', description: 'Explore suas cartas' },
-                { to: '/missions', number: '03', title: 'Concluir missões', description: 'Avance e ganhe recompensas' },
+                { to: '/deck-builder', title: 'Montar meu deck', description: 'Ajuste sua estratégia' },
+                { to: '/collection', title: 'Ver minha coleção', description: 'Explore suas cartas' },
+                { to: '/missions', title: 'Concluir missões', description: 'Avance e ganhe recompensas' },
               ].map((item) => (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className="group flex min-h-14 items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 transition hover:border-champion-gold/50 hover:bg-champion-gold/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-champion-gold"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-champion-gold/25 bg-champion-gold/10 text-xs font-bold text-champion-gold">{item.number}</span>
+                <Link key={item.to} to={item.to} className="home-preparation-link group flex min-h-14 items-center gap-3 rounded-lg p-2.5">
+                  <span className="home-preparation-icon"><GameIcon route={item.to} size={23} /></span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold text-white">{item.title}</span>
-                    <span className="block text-xs text-slate-400">{item.description}</span>
+                    <span className="block text-xs text-[#e2d3c8]">{item.description}</span>
                   </span>
-                  <span className="text-champion-gold transition-transform group-hover:translate-x-1" aria-hidden="true">→</span>
+                  <span aria-hidden="true" className="text-champion-gold transition-transform group-hover:translate-x-1">→</span>
                 </Link>
               ))}
             </div>
@@ -435,7 +404,7 @@ export default function HomePage() {
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mb-4"
+        className="home-dashboard-intro mb-5"
       >
         <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
           <div>
@@ -450,7 +419,7 @@ export default function HomePage() {
             </h1>
           </div>
           {publicStats && (
-            <div className="flex items-center gap-2 rounded-full border border-champion-cyan/30 bg-champion-cyan/10 px-3.5 py-2">
+            <div className="home-online-counter flex items-center gap-2 rounded-full border border-champion-gold/35 px-3.5 py-2">
               <span className="relative flex h-2.5 w-2.5">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-champion-cyan opacity-60" />
                 <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-champion-cyan" />
@@ -471,12 +440,8 @@ export default function HomePage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.04 }}
               onClick={() => navigate(action.to)}
-              className="game-cta-tile ui-action-tile group !p-3 sm:!p-3.5 flex flex-col items-center text-center justify-center min-h-[8rem] sm:min-h-[8.5rem] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champion-gold"
+              className="home-action-tile game-cta-tile ui-action-tile group !p-3 sm:!p-3.5 flex flex-col items-center text-center justify-center min-h-[8rem] sm:min-h-[8.5rem] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champion-gold"
             >
-              <div
-                className={`absolute inset-0 bg-gradient-to-br ${action.accent} opacity-80 pointer-events-none`}
-                aria-hidden
-              />
               <span className="game-screen-icon relative z-10 mb-1 transition-transform duration-300 group-hover:scale-110 group-hover:-translate-y-0.5">
                 <GameIcon route={action.to} size={27} />
               </span>
@@ -496,9 +461,9 @@ export default function HomePage() {
               key={action.to}
               type="button"
               onClick={() => navigate(action.to)}
-              className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-xs sm:text-sm font-semibold text-white/85 hover:border-champion-gold/40 hover:bg-champion-gold/10 hover:text-white transition-colors"
+              className="home-secondary-action inline-flex items-center gap-2 rounded-lg border border-champion-gold/30 px-3 py-2 text-xs sm:text-sm font-semibold text-white/90 transition-colors"
             >
-              <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-champion-gold/25 bg-champion-gold/10 text-champion-gold">
+              <span className="inline-flex h-7 w-7 items-center justify-center text-champion-gold">
                 <GameIcon route={action.to} size={18} />
               </span>
               {action.label}
@@ -627,7 +592,7 @@ export default function HomePage() {
           >
             <div
               className="game-panel-header !px-3.5 !py-2.5"
-              style={{ background: 'linear-gradient(90deg, rgba(196, 60, 60, 0.14), transparent 70%)' }}
+              
             >
               <h2 className="game-panel-title !text-sm flex items-center gap-1.5">
                 <span aria-hidden>⚔️</span> {t('home.top5Clans')}
@@ -721,7 +686,7 @@ export default function HomePage() {
           >
             <div
               className="game-panel-header !px-3.5 !py-2.5"
-              style={{ background: 'linear-gradient(90deg, rgba(61, 184, 197, 0.14), transparent 70%)' }}
+              
             >
               <h2 className="game-panel-title !text-sm flex items-center gap-1.5">
                 <span aria-hidden>📰</span> {t('home.latestNews')}
@@ -786,7 +751,7 @@ export default function HomePage() {
                                   (e.target as HTMLImageElement).style.display = 'none';
                                 }}
                               />
-                              <div className="absolute inset-0 bg-gradient-to-r from-[#0c1220] via-[#0c1220]/85 to-[#0c1220]/50" />
+                              <div className="home-news-image-overlay absolute inset-0" />
                             </div>
                           )}
                           <div className="relative z-10 flex h-full flex-col">
@@ -901,7 +866,7 @@ export default function HomePage() {
                   <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-arena-mist leading-tight">Duelos</p>
                   <p className="text-white font-semibold text-sm sm:text-base tabular-nums mt-0.5">{publicStats.totalDuels.toLocaleString('pt-BR')}</p>
                 </div>
-                <div className="game-stat-chip col-span-3 sm:col-span-2" style={{ background: 'rgba(61, 184, 197, 0.1)', borderColor: 'rgba(61, 184, 197, 0.25)' }}>
+                <div className="game-stat-chip col-span-3 sm:col-span-2" >
                   <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-arena-mist leading-tight">Online</p>
                   <p className="text-champion-cyan font-bold text-lg sm:text-xl tabular-nums leading-tight mt-0.5">
                     {publicStats.playersOnline.toLocaleString('pt-BR')}
