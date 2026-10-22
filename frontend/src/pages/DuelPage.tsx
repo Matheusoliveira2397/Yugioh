@@ -309,7 +309,7 @@ export default function DuelPage() {
               <h4 className="text-sm font-bold text-gray-300">📚 Deck ({playerDeck.length})</h4>
             </div>
             <div className="flex gap-1">
-              {playerDeck.slice(0, 10).map((card: any, i: number) => (
+              {playerDeck.slice(0, 10).map((_: any, i: number) => (
                 <div
                   key={i}
                   className="w-12 h-16 bg-gradient-to-br from-blue-900 to-purple-900 border-2 border-yellow-500 rounded cursor-pointer hover:scale-110 transition-transform"
