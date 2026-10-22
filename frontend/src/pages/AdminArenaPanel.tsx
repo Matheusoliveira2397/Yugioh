@@ -54,6 +54,8 @@ interface ChallengeArena {
   config?: {
     levelRanges?: LevelRange[];
     rewards?: ArenaRewards;
+    dailyStartTime?: string;
+    durationMinutes?: number;
   };
   createdAt: string;
   updatedAt: string;
@@ -61,7 +63,6 @@ interface ChallengeArena {
 
 export default function AdminArenaPanel() {
   const { user } = useAuthStore();
-  const navigate = useNavigate();
   const [arenas, setArenas] = useState<ChallengeArena[]>([]);
   const [loading, setLoading] = useState(true);
 
