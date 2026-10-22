@@ -24,15 +24,7 @@ export default function AdminSocialMediaPanel() {
   const [socialMedia, setSocialMedia] = useState<SocialMedia[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
-    platform: '',
-    url: '',
-    label: '',
-    icon: '',
-    order: 0,
-    isActive: true,
-  });
+
 
   // Proteção: apenas ADMIN ou MASTER
   if (!user || (user.role !== 'ADMIN' && user.role !== 'MASTER')) {
@@ -56,106 +48,6 @@ export default function AdminSocialMediaPanel() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleCreate = async () => {
-    if (!formData.platform || !formData.url) {
-      alert('Preencha pelo menos a plataforma e a URL');
-      return;
-    }
-
-    try {
-      setSaving(true);
-      await axios.post(
-        `${API_URL}/admin/social-media`,
-        {
-          ...formData,
-          label: formData.label || null,
-          icon: formData.icon || null,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      await fetchSocialMedia();
-      resetForm();
-      alert('Rede social criada com sucesso!');
-    } catch (error: any) {
-      console.error('Erro ao criar rede social:', error);
-      alert(error.response?.data?.message || 'Erro ao criar rede social');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleUpdate = async (id: string) => {
-    try {
-      setSaving(true);
-      await axios.put(
-        `${API_URL}/admin/social-media/${id}`,
-        {
-          ...formData,
-          label: formData.label || null,
-          icon: formData.icon || null,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      await fetchSocialMedia();
-      setEditingId(null);
-      resetForm();
-      alert('Rede social atualizada com sucesso!');
-    } catch (error: any) {
-      console.error('Erro ao atualizar rede social:', error);
-      alert(error.response?.data?.message || 'Erro ao atualizar rede social');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta rede social?')) {
-      return;
-    }
-
-    try {
-      setSaving(true);
-      await axios.delete(`${API_URL}/admin/social-media/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      await fetchSocialMedia();
-      alert('Rede social excluída com sucesso!');
-    } catch (error: any) {
-      console.error('Erro ao excluir rede social:', error);
-      alert(error.response?.data?.message || 'Erro ao excluir rede social');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const startEdit = (social: SocialMedia) => {
-    setEditingId(social.id);
-    setFormData({
-      platform: social.platform,
-      url: social.url,
-      label: social.label || '',
-      icon: social.icon || '',
-      order: social.order,
-      isActive: social.isActive,
-    });
-  };
-
-  const cancelEdit = () => {
-    setEditingId(null);
-    resetForm();
-  };
-
-  const resetForm = () => {
-    setFormData({
-      platform: '',
-      url: '',
-      label: '',
-      icon: '',
-      order: 0,
-      isActive: true,
-    });
   };
 
   const handleSocialMediaUpdate = (platform: string, url: string) => {
