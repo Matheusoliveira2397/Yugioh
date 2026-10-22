@@ -183,7 +183,7 @@ const getSocketForCurrentTab = (): Socket => {
       console.error(`❌ [${tabId}] Erro ao tentar reconectar:`, error);
       // Em caso de erro, remover e criar novo
       socketRegistry.delete(tabId);
-      existingSocket = null;
+      existingSocket = undefined;
     }
   }
   
