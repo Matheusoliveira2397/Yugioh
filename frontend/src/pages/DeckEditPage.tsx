@@ -182,7 +182,7 @@ export default function DeckEditPage() {
           })
           .filter((cardId): cardId is string => cardId !== null && cardId !== undefined && cardId.trim() !== '');
 
-        const payload: Record<string, unknown> = {
+        const payload: { name: string; cardIds: string[]; extraDeckCardIds?: string[]; coverCardId?: string; originalDeckName?: string } = {
           name: currentDeckName.trim() || 'Meu Deck',
           cardIds,
           extraDeckCardIds: extraDeckCardIds.length > 0 ? extraDeckCardIds : undefined,
