@@ -1231,7 +1231,6 @@ export const ProfilePage: React.FC = () => {
                       }
                     } else {
                       const player1Id = typeof duel.player1?.id === 'string' ? parseInt(duel.player1.id, 10) : Number(duel.player1?.id);
-                      const player2Id = typeof duel.player2?.id === 'string' ? parseInt(duel.player2.id, 10) : Number(duel.player2?.id);
                       const isPlayer1 = player1Id === currentUserId;
                       opponent = isPlayer1 ? duel.player2 : duel.player1;
                       won = duel.winnerId === currentUserId;
