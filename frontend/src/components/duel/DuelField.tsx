@@ -218,7 +218,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
   React.useEffect(() => {
     const handleMouseMove = (e: MouseEvent | DragEvent) => {
       if (draggingCardIndex !== null) {
-        setDragClientPos({ x: dragEvent.clientX, y: dragEvent.clientY });
+        setDragClientPos({ x: e.clientX, y: e.clientY });
       }
     };
 
@@ -830,7 +830,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                         }
                       }
                     }}
-                    onDragStart={(e) => {
+                    onDragStartCapture={(e) => {
                       // Permitir arrastar monstro para atacar em STANDBY, MAIN1 ou BATTLE
                       if (!isOpponent && isMyTurn && (currentPhase === 'STANDBY' || currentPhase === 'MAIN1' || currentPhase === 'BATTLE')) {
                         // Verificar se é MatazaTheZapper (pode atacar 2 vezes)
@@ -867,10 +867,10 @@ const DuelField: React.FC<DuelFieldProps> = ({
                         if (canDrag) {
                           const el = e.currentTarget as HTMLElement;
                           const rect = el.getBoundingClientRect();
-                          const dragEvent = e as React.DragEvent<HTMLElement>;
+                          const dragEvent = e;
                           setDragGrabOffset({ x: dragEvent.clientX - rect.left, y: dragEvent.clientY - rect.top });
                           setDragGhostSize({ w: rect.width, h: rect.height });
-                          setDragClientPos({ x: e.clientX, y: e.clientY });
+                          setDragClientPos({ x: dragEvent.clientX, y: dragEvent.clientY });
                           setDraggingCardIndex(index);
                           setDraggingCard(monster);
                           dragEvent.dataTransfer.setData('attackerZoneIndex', index.toString());
