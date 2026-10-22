@@ -165,6 +165,7 @@ export default function AdminCardCreator() {
           type: 'Monster',
           rarity: 'Common',
           isForSale: true,
+          isActive: true,
           maxCopiesInDeck: 3,
         });
         setEffectForm({
