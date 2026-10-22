@@ -2670,7 +2670,6 @@ const DuelArena: React.FC = () => {
             currentPendingChoice.type === 'FORCEFUL_SENTRY'
           );
           
-          const cardEffectTypeFromData = (data as any).cardEffectType;
           if (data.reason === 'choice_completed') {
             justResolvedChoiceRef.current = currentPendingChoice ? { type: currentPendingChoice.type, at: Date.now() } : null;
             setCurrentPendingChoice(null);
@@ -3046,7 +3045,7 @@ const DuelArena: React.FC = () => {
     // Limpar updates antigos (manter apenas os últimos 100)
     if (processedUpdatesRef.current.size > 100) {
       const firstKey = processedUpdatesRef.current.values().next().value;
-      processedUpdatesRef.current.delete(firstKey);
+      if (firstKey !== undefined) processedUpdatesRef.current.delete(firstKey);
     }
     
     // Atualizar life points
@@ -4111,7 +4110,6 @@ const DuelArena: React.FC = () => {
   // Numeric IDs (legacy); UUID/auth string ids: usar comparação estrita em string.
   const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
   const player1Id = typeof duelData.player1?.id === 'string' ? parseInt(duelData.player1.id, 10) : Number(duelData.player1?.id);
-  const player2Id = typeof duelData.player2?.id === 'string' ? parseInt(duelData.player2.id, 10) : Number(duelData.player2?.id);
   const isPlayer1 = isSpectator
     ? true
     : duelIdsEqual(user.id, duelData.player1?.id) ||
@@ -4162,8 +4160,6 @@ const DuelArena: React.FC = () => {
   const bottomFieldExtraDeck = isSpectator ? opponentExtraDeck : myExtraDeck;
   const bottomFieldDeckCount = isSpectator ? opponentDeck.length : myDeck.length;
   const bottomFieldHandCount = isSpectator ? opponentHand.length : myHand.length;
-  const topHandCountSpectator = isSpectator ? myHand.length : opponentHand.length;
-  const bottomHandCountSpectator = isSpectator ? opponentHand.length : myHand.length;
 
   // Bônus Banner of Courage (+200 ATK) durante a Fase de Batalha do dono da carta — para exibir no ATK e no cálculo de dano
   const turnNum = duelData?.currentTurn ?? currentTurn ?? 1;
@@ -9557,8 +9553,7 @@ const DuelArena: React.FC = () => {
                         }
                         const isFaceDown = monster.position === 'set';
                         const isDefense = monster.position === 'defense';
-                        const isAttack = monster.position === 'attack';
-                        
+                                                
                         // Para monstros em defesa ou face down, precisamos rotacionar 90 graus
                         // Carta padrão: 120px x 175px (largura x altura)
                         // Após rotação: 175px x 120px (largura x altura)
@@ -9785,8 +9780,7 @@ const DuelArena: React.FC = () => {
                                          selectedChaosSorcererEffectMonster?.player === player;
                         const isFaceDown = monster.position === 'set';
                         const isDefense = monster.position === 'defense';
-                        const isAttack = monster.position === 'attack';
-                        const needsRotation = isDefense || isFaceDown;
+                                                const needsRotation = isDefense || isFaceDown;
                         const cardWidth = '120px';
                         const cardHeight = '175px';
                         const containerSize = needsRotation ? '175px' : '120px';
@@ -9881,8 +9875,7 @@ const DuelArena: React.FC = () => {
                                                    selectedChaosSorcererEffectMonster?.player === player;
                                   const isFaceDown = monster.position === 'set';
                                   const isDefense = monster.position === 'defense';
-                                  const isAttack = monster.position === 'attack';
-                                  const needsRotation = isDefense || isFaceDown;
+                                                                    const needsRotation = isDefense || isFaceDown;
                                   const cardWidth = '120px';
                                   const cardHeight = '175px';
                                   const containerSize = needsRotation ? '175px' : '120px';
@@ -10716,8 +10709,7 @@ const DuelArena: React.FC = () => {
                         const realZoneIndex = monster.zoneIndex !== undefined ? monster.zoneIndex : index;
                         const isSelected = selectedUnitedWeStandMonster === realZoneIndex;
                         const isDefense = monster.position === 'defense';
-                        const isAttack = monster.position === 'attack';
-                        
+                                                
                         // Para monstros em defesa, precisamos rotacionar 90 graus
                         const needsRotation = isDefense;
                         const containerSize = needsRotation ? '175px' : '120px';
@@ -11001,8 +10993,7 @@ const DuelArena: React.FC = () => {
                         const realZoneIndex = monster.zoneIndex !== undefined ? monster.zoneIndex : index;
                         const isSelected = selectedMagePowerMonster === realZoneIndex;
                         const isDefense = monster.position === 'defense';
-                        const isAttack = monster.position === 'attack';
-                        
+                                                
                         // Para monstros em defesa, precisamos rotacionar 90 graus
                         const needsRotation = isDefense;
                         const containerSize = needsRotation ? '175px' : '120px';
@@ -11213,8 +11204,7 @@ const DuelArena: React.FC = () => {
                           });
                         }
                         const isDefense = monster.position === 'defense';
-                        const isAttack = monster.position === 'attack';
-                        
+                                                
                         // Para monstros em defesa, precisamos rotacionar 90 graus
                         const needsRotation = isDefense;
                         const containerSize = needsRotation ? '175px' : '120px';
@@ -11497,8 +11487,7 @@ const DuelArena: React.FC = () => {
                         const realZoneIndex = monster.zoneIndex !== undefined ? monster.zoneIndex : index;
                         const isSelected = selectedSoulTakerMonster === realZoneIndex;
                         const isDefense = monster.position === 'defense';
-                        const isAttack = monster.position === 'attack';
-                        
+                                                
                         // Para monstros em defesa, precisamos rotacionar 90 graus
                         const needsRotation = isDefense;
                         const containerSize = needsRotation ? '175px' : '120px';
@@ -12276,9 +12265,7 @@ const DuelArena: React.FC = () => {
                       <div className="grid grid-cols-5 gap-2">
                         {myMonsters.map((monster: any, index: number) => {
                           if (!monster || monster === null) return null;
-                          const isSelected = selectedCardToDestroy?.player === 'player' && 
-                                           selectedCardToDestroy?.type === 'monster' && 
-                                           selectedCardToDestroy?.zoneIndex === index;
+                          const isSelected = false; // This selection list is displayed only while selectedCardToDestroy is null.
                           return (
                             <motion.div
                               key={`player-monster-${index}`}
@@ -12316,9 +12303,7 @@ const DuelArena: React.FC = () => {
                       <div className="grid grid-cols-5 gap-2">
                         {mySpellTraps.map((spellTrap: any, index: number) => {
                           if (!spellTrap || spellTrap === null) return null;
-                          const isSelected = selectedCardToDestroy?.player === 'player' && 
-                                           selectedCardToDestroy?.type === 'spellTrap' && 
-                                           selectedCardToDestroy?.zoneIndex === index;
+                          const isSelected = false; // Selection step: no target is selected yet.
                           return (
                             <motion.div
                               key={`player-spelltrap-${index}`}
@@ -12356,9 +12341,7 @@ const DuelArena: React.FC = () => {
                       <div className="grid grid-cols-5 gap-2">
                         {opponentMonsters.map((monster: any, index: number) => {
                           if (!monster || monster === null) return null;
-                          const isSelected = selectedCardToDestroy?.player === 'opponent' && 
-                                           selectedCardToDestroy?.type === 'monster' && 
-                                           selectedCardToDestroy?.zoneIndex === index;
+                          const isSelected = false; // Selection step: no target is selected yet.
                           const isFaceDown = monster.position === 'set';
                           return (
                             <motion.div
@@ -12406,9 +12389,7 @@ const DuelArena: React.FC = () => {
                       <div className="grid grid-cols-5 gap-2">
                         {opponentSpellTraps.map((spellTrap: any, index: number) => {
                           if (!spellTrap || spellTrap === null) return null;
-                          const isSelected = selectedCardToDestroy?.player === 'opponent' && 
-                                           selectedCardToDestroy?.type === 'spellTrap' && 
-                                           selectedCardToDestroy?.zoneIndex === index;
+                          const isSelected = false; // Selection step: no target is selected yet.
                           const isFaceDown = spellTrap.position === 'set';
                           return (
                             <motion.div
@@ -12719,7 +12700,7 @@ const DuelArena: React.FC = () => {
         {showRedEyesDarknessMetalDragonModal && redEyesDarknessMetalDragonData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher o dragão
             }}
           >
@@ -12856,7 +12837,7 @@ const DuelArena: React.FC = () => {
         {showRedEyesDarknessMetalDragonEffectModal && redEyesDarknessMetalDragonEffectData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher o dragão
             }}
           >
