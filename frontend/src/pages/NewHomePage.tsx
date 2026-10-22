@@ -365,6 +365,21 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* Entrada principal do jogo: clareza nas ações mais importantes */}
+      <section className="ui-hero mb-4 px-4 py-5 sm:px-6 sm:py-6" aria-labelledby="home-feature-heading">
+        <div className="relative z-10 flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+          <div className="max-w-xl">
+            <p className="ui-eyebrow mb-1.5">Central do duelista</p>
+            <h2 id="home-feature-heading" className="ui-hero-title">Seu próximo duelo começa aqui.</h2>
+            <p className="ui-hero-subtitle mt-2">Encontre adversários, prepare seu deck ou explore a Academia de Duelos no modo história.</p>
+          </div>
+          <div className="ui-hero-actions flex flex-wrap gap-2 md:justify-end">
+            <Link to="/random-duel" className="ui-button-primary">⚔️ Iniciar duelo <span aria-hidden>→</span></Link>
+            <Link to="/story" className="ui-button-secondary">🎮 Modo história</Link>
+          </div>
+        </div>
+      </section>
+
       {/* Saudação + hub de ações */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
@@ -405,7 +420,7 @@ export default function HomePage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.04 }}
               onClick={() => navigate(action.to)}
-              className="game-cta-tile group !p-2.5 sm:!p-3 flex flex-col items-center text-center justify-center min-h-[5.75rem] sm:min-h-[6.75rem]"
+              className="game-cta-tile ui-action-tile group !p-2.5 sm:!p-3 flex flex-col items-center text-center justify-center min-h-[5.75rem] sm:min-h-[6.75rem]"
             >
               <div
                 className={`absolute inset-0 bg-gradient-to-br ${action.accent} opacity-80 pointer-events-none`}

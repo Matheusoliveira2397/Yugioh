@@ -46,7 +46,7 @@ export default function CardImage({
   singleLayerImage = true,
   sizes,
   fetchPriority,
-  objectFit = 'cover',
+  objectFit = 'contain',
 }: CardImageProps) {
   // Memoizar o cardId para evitar recálculos desnecessários
   const cardId = useMemo(() => {
@@ -271,13 +271,14 @@ export default function CardImage({
       <div className={`relative overflow-hidden ${className}`} style={style}>
         <img
           src={displaySrc}
-          alt=""
+          alt={card?.name ? `Carta ${card.name}` : 'Imagem de carta'}
           loading={loading}
           decoding="async"
           // React 18: atributo DOM é lowercase (evita warning fetchPriority)
           {...{ fetchpriority: fp }}
           sizes={sizes}
-          className={`absolute inset-0 h-full w-full ${fitClass}`}
+          className={`absolute inset-0 block h-full w-full ${fitClass}`}
+          style={{ objectPosition: 'center', imageRendering: 'auto' }}
           draggable={false}
           onError={() => {
             handleImageError();
@@ -306,7 +307,7 @@ export default function CardImage({
     >
       <img
         src={displaySrc}
-        alt=""
+        alt={card?.name ? `Carta ${card.name}` : 'Imagem de carta'}
         loading={loading}
         decoding="async"
         {...{ fetchpriority: fp }}

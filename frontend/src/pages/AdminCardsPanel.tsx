@@ -267,6 +267,7 @@ export default function AdminCardsPanel() {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>('');
+  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
   
   // Estados para busca na API YGOPRODeck
   const [searchQuery, setSearchQuery] = useState('');
@@ -1457,7 +1458,16 @@ export default function AdminCardsPanel() {
                         if (file) {
                           setSelectedImageFile(file);
                           const reader = new FileReader();
-                          reader.onloadend = () => setImagePreview(reader.result as string);
+                          setImageDimensions(null);
+                          reader.onloadend = () => {
+                            const previewData = reader.result;
+                            if (typeof previewData !== 'string') return;
+                            setImagePreview(previewData);
+                            const image = new Image();
+                            image.onload = () => setImageDimensions({ width: image.naturalWidth, height: image.naturalHeight });
+                            image.onerror = () => setImageDimensions(null);
+                            image.src = previewData;
+                          };
                           reader.readAsDataURL(file);
                           setFormData({ ...formData, cardImage: '' });
                         }
@@ -1473,6 +1483,14 @@ export default function AdminCardsPanel() {
                       />
                     )}
                   </div>
+                  <p className="mt-1 text-[11px] text-slate-400">Para cartas nítidas ao ampliar, prefira arquivo original em alta resolução (recomendação: 800 × 1160 px ou maior).</p>
+                  {imageDimensions && (
+                    <p className={`mt-1 text-xs font-semibold ${imageDimensions.width < 800 || imageDimensions.height < 1160 ? 'text-amber-300' : 'text-emerald-300'}`} role="status">
+                      {imageDimensions.width} × {imageDimensions.height} px — {imageDimensions.width < 800 || imageDimensions.height < 1160
+                        ? 'resolução baixa para ampliações; recomendamos uma arte maior'
+                        : 'boa resolução para exibição ampliada'}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
