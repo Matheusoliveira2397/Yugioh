@@ -129,6 +129,7 @@ export default function HomePage() {
   const location = useLocation();
 
   // Estados
+  const [loading, setLoading] = useState(false);
   const [topPlayers, setTopPlayers] = useState<RankingPlayer[]>([]);
   const [topSeasonPlayers, setTopSeasonPlayers] = useState<RankingPlayer[]>([]);
   const [topClansGeneral, setTopClansGeneral] = useState<Clan[]>([]);
