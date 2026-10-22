@@ -38,7 +38,7 @@ interface Sleeve {
 
 export default function AdminNewAccountSettingsPanel() {
   const { user } = useAuthStore();
-  const [settings, setSettings] = useState<NewAccountSettings | null>(null);
+  const [, setSettings] = useState<NewAccountSettings | null>(null);
   const [allDecks, setAllDecks] = useState<InitialDeck[]>([]);
   const [allPlaymats, setAllPlaymats] = useState<Playmat[]>([]);
   const [allSleeves, setAllSleeves] = useState<Sleeve[]>([]);
