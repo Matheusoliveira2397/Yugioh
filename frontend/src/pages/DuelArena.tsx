@@ -765,7 +765,6 @@ const DuelArena: React.FC = () => {
   
   // Estado para descarte de cartas
   const [, setSelectedCardsToDiscard] = useState<string[]>([]);
-  const [isDiscarding, setIsDiscarding] = useState(false); // Evitar múltiplos cliques ao descartar
   
   // Estado para modal do cemitério
   const [showGraveyardModal, setShowGraveyardModal] = useState(false);
@@ -1843,7 +1842,7 @@ const DuelArena: React.FC = () => {
       socket.on('duelEnded', duelEndedListener);
       
       // Listener para quando o tempo do oponente expira (recebido do backend)
-      const timeExpiredListener = (data: any) => {
+      const timeExpiredListener = () => {
         if (!isMyTurn) {
           setTimeExpired(true);
         }
@@ -1851,7 +1850,7 @@ const DuelArena: React.FC = () => {
       socket.on('timeExpired', timeExpiredListener);
       
       // Listener para quando precisa descartar cartas (não usado mais, mas mantido para compatibilidade)
-      const needsDiscardListener = (data: any) => {
+      const needsDiscardListener = () => {
         // Não fazer nada - o descarte agora é feito diretamente clicando nas cartas
       };
       socket.on('needsDiscard', needsDiscardListener);
@@ -3546,35 +3545,6 @@ const DuelArena: React.FC = () => {
 
   // Função para finalizar turno
   // Função para descartar uma carta individualmente (na fase END quando tem mais de 6 cartas)
-  const handleDiscardCard = (card: any) => {
-    if (isSpectator) return;
-    // Verificações de segurança
-    if (!duelId || !user?.id || normalizeDuelPhase(currentPhase) !== 'END' || myHand.length <= 6) return;
-    if (isDiscarding) return; // Evitar múltiplos cliques
-    
-    const cardId = card.id || card.cardId || card.idCarta;
-    if (!cardId) return;
-
-    const cardIdStr = cardId.toString();
-    
-    // Marcar como descartando para evitar múltiplos cliques
-    setIsDiscarding(true);
-    
-    // Descartar carta imediatamente para o cemitério
-    const socket = getSocket();
-    if (socket && socket.connected) {
-      socket.emit('discardCard', { 
-        duelId, 
-        userId: user.id,
-        cardId: cardIdStr
-      });
-    }
-    
-    // Resetar após um pequeno delay para permitir nova ação
-    setTimeout(() => {
-      setIsDiscarding(false);
-    }, 500);
-  };
 
   // Função para finalizar turno (só funciona na fase END)
   // Agora chama nextPhase que descarta automaticamente e avança o turno
@@ -3817,7 +3787,7 @@ const DuelArena: React.FC = () => {
   // Função para colocar carta no campo
   const handlePlaceCardOnField = async (
     card: any,
-    position: 'attack' | 'defense' | 'set',
+    position: 'attack' | 'defense' | 'set' | 'face-up',
     zoneIndex: number,
     cardType?: string,
     isDragged: boolean = false,
@@ -5920,29 +5890,7 @@ const DuelArena: React.FC = () => {
                     container.scrollLeft += dy;
                   }}
                 >
-                {(() => {
-                  // Log todas as cartas na mão para debug do Dark Armed Dragon
-                  const darkArmedDragonInHand = myHand.find((c: any) => {
-                    if (!c) return false;
-                    const name = (c?.name || c?.cardName || '').toLowerCase().trim();
-                    const idCarta = (c?.idCarta || '').toLowerCase().trim();
-                    // Verificação exata - deve ser exatamente "Dark Armed Dragon"
-                    const isDarkArmedDragon = name === 'dark armed dragon' || name === 'dark-armed dragon' ||
-                           idCarta === 'darkarmeddragon' || idCarta === 'dark-armeddragon' || idCarta === 'darkarmed-dragon' ||
-                           idCarta === 'darkarmeddragon';
-                    if (isDarkArmedDragon) {
-                      console.log('🔍 [Dark Armed Dragon] Dark Armed Dragon encontrado na mão:', {
-                        name: c.name || c.cardName,
-                        idCarta: c.idCarta,
-                        id: c.id,
-                        cardId: c.cardId,
-                        fullCard: c
-                      });
-                    }
-                    return isDarkArmedDragon;
-                  });
-                  return null;
-                })()}
+
                 {myHand.map((card: any, index: number) => {
                   const uniqueKey = card.instanceId
                     ? `my-hand-${card.instanceId}`
@@ -7817,7 +7765,7 @@ const DuelArena: React.FC = () => {
         {showMonsterRebornModal && monsterRebornData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
           >
@@ -8046,7 +7994,7 @@ const DuelArena: React.FC = () => {
         {showPrematureBurialModal && prematureBurialGraveyard.length > 0 && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {}}
+            onClick={() => {}}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -8159,7 +8107,7 @@ const DuelArena: React.FC = () => {
         {showAutonomousActionUnitModal && autonomousActionUnitGraveyard.length > 0 && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {}}
+            onClick={() => {}}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -8334,7 +8282,7 @@ const DuelArena: React.FC = () => {
           return (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher os monstros
             }}
           >
@@ -8604,7 +8552,7 @@ const DuelArena: React.FC = () => {
         {showMonsterReincarnationDiscardModal && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher uma carta
             }}
           >
@@ -9342,7 +9290,7 @@ const DuelArena: React.FC = () => {
         {showMonsterReincarnationGraveyardModal && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
           >
@@ -10112,7 +10060,7 @@ const DuelArena: React.FC = () => {
         {showMysticalSpaceTyphoonModal && mysticalSpaceTyphoonData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher uma carta
             }}
           >
@@ -10661,7 +10609,7 @@ const DuelArena: React.FC = () => {
         {showUnitedWeStandModal && unitedWeStandData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
           >
@@ -10945,7 +10893,7 @@ const DuelArena: React.FC = () => {
         {showMagePowerModal && magePowerData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
           >
@@ -11438,7 +11386,7 @@ const DuelArena: React.FC = () => {
               backdropFilter: 'blur(12px)',
               WebkitBackdropFilter: 'blur(12px)',
             } as React.CSSProperties}
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
           >
@@ -11939,7 +11887,7 @@ const DuelArena: React.FC = () => {
         {showExiledForceModal && exiledForceData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
           >
@@ -13035,7 +12983,7 @@ const DuelArena: React.FC = () => {
         {showCyberSteinModal && cyberSteinData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
           >
