@@ -1772,11 +1772,20 @@ export default function ShopPage() {
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: index * 0.05 }}
                           whileHover={{ scale: 1.05, zIndex: 10 }}
-                          className="flex flex-col bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-sm rounded-xl p-2 border border-white/10 hover:border-purple-500/50 shadow-lg hover:shadow-2xl transition-all"
+                          className="ui-market-card flex flex-col p-2.5"
                         >
                           <div 
                             className="ui-card-frame w-full mb-2 cursor-pointer"
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Ver detalhes da carta ${card.name}`}
                             onClick={() => setSelectedCard(card)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                setSelectedCard(card);
+                              }
+                            }}
                           >
                             <CardImage
                               {...CARD_IMAGE_GRID_PROPS}
