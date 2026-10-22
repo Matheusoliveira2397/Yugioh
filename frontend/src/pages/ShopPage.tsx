@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
 import api from '../api/axios';
 import CardImage from '../components/CardImage';
+import CardArtViewer from '../components/CardArtViewer';
 import DeckCopyLimitBadge from '../components/DeckCopyLimitBadge';
 import LatestCardsMarquee, { type MarqueeCard } from '../components/LatestCardsMarquee';
 import { CARD_IMAGE_GRID_PROPS } from '../utils/cardImage';
@@ -118,6 +119,7 @@ export default function ShopPage() {
   const [error, setError] = useState<string | null>(null);
   const [sellingCardId, setSellingCardId] = useState<string | null>(null);
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+  const [inspectedCard, setInspectedCard] = useState<Card | null>(null);
   const [showPurchaseConfirm, setShowPurchaseConfirm] = useState(false);
   const [purchaseItem, setPurchaseItem] = useState<{ item: Card | Playmat | Sleeve | TalismanTemplate; method: 'credits' | 'cash' } | null>(null);
   const [purchaseQuantity, setPurchaseQuantity] = useState(1);
@@ -1071,19 +1073,20 @@ export default function ShopPage() {
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-6"
+          className="ui-hero mb-6 p-5 sm:p-6"
         >
-          <h1 className="text-4xl font-bold mb-2 flex items-center gap-3 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-red-400">
+          <p className="ui-eyebrow mb-2">Mercado de Duelistas</p>
+          <h1 className="ui-hero-title mb-3 flex items-center gap-3">
             <img src="/images/Icones/Shop.png" alt="" className="w-12 h-12 sm:w-14 sm:h-14 object-contain flex-shrink-0" aria-hidden />
             {t('shop.title')}
           </h1>
           <div className="flex flex-wrap gap-2 mb-3">
-            <a href="/loot-boxes" className="btn-champion inline-flex items-center gap-1.5 text-sm px-4 py-2">
+            <a href="/loot-boxes" className="ui-button-primary">
               🎴 {t('shop.openLootBoxes')}
             </a>
             <a
               href="/collection"
-              className="btn-secondary inline-flex items-center gap-1.5 text-sm px-4 py-2"
+              className="ui-button-secondary"
             >
               📚 Coleção
             </a>
@@ -1772,7 +1775,7 @@ export default function ShopPage() {
                           className="flex flex-col bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-sm rounded-xl p-2 border border-white/10 hover:border-purple-500/50 shadow-lg hover:shadow-2xl transition-all"
                         >
                           <div 
-                            className="relative w-full aspect-[2/3] mb-2 cursor-pointer rounded-lg overflow-hidden"
+                            className="ui-card-frame w-full mb-2 cursor-pointer"
                             onClick={() => setSelectedCard(card)}
                           >
                             <CardImage
@@ -2207,9 +2210,9 @@ export default function ShopPage() {
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: index * 0.05 }}
                             whileHover={{ scale: 1.05, zIndex: 10 }}
-                            className="flex flex-col bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-sm rounded-xl p-2 border border-white/10 hover:border-green-500/50 shadow-lg hover:shadow-2xl transition-all"
+                            className="ui-market-card flex flex-col p-2.5"
                           >
-                            <div className="relative w-full aspect-[2/3] mb-2 rounded-lg overflow-hidden">
+                            <div className="ui-card-frame w-full mb-2">
                               <CardImage
                                 {...CARD_IMAGE_GRID_PROPS}
                                 card={card}
@@ -2406,6 +2409,9 @@ export default function ShopPage() {
                 </div>
               </div>
               
+              <button type="button" className="ui-button-secondary mb-4 w-full" onClick={() => setInspectedCard(selectedCard)} aria-label={`Ampliar imagem de ${selectedCard.name}`}>
+                🔍 Ver arte da carta em tamanho maior
+              </button>
               <h3 className="text-xl font-bold text-white mb-2">{selectedCard.name}</h3>
               <p className="mb-2 text-sm font-semibold text-amber-200/95">
                 {(selectedCard.maxCopiesInDeck ?? 3) === 0
@@ -2758,6 +2764,7 @@ export default function ShopPage() {
             </motion.div>
           </motion.div>
         )}
+        {inspectedCard && <CardArtViewer card={inspectedCard} onClose={() => setInspectedCard(null)} />}
       </div>
     </div>
   );
