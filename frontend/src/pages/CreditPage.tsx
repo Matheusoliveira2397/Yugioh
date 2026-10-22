@@ -201,7 +201,7 @@ export default function CreditPage() {
               </p>
             </div>
           )}
-        </div>
+        </header>
 
         {showPaymentContact && (
           <motion.div
