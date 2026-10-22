@@ -1740,6 +1740,8 @@ const DuelArena: React.FC = () => {
     
     // Se não há socket ou não está conectado, aguardar a conexão
     // O useSocket já cria o socket automaticamente, mas pode levar alguns milissegundos
+    // Each duel subscription belongs to this effect, not to every consumer of the socket.
+    const subscribedHandlers: Array<() => void> = [];
     const setupSocket = () => {
       // Obter socket novamente (pode ter sido criado enquanto aguardávamos)
       socket = getSocket();
@@ -1747,13 +1749,16 @@ const DuelArena: React.FC = () => {
       if (!socket || !socket.connected) {
         return false;
       }
+      const subscribedSocket = socket;
 
       // Registrar listeners
       socket.on('duelUpdate', handleDuelUpdate);
+      subscribedHandlers.push(() => subscribedSocket.off('duelUpdate', handleDuelUpdate));
       socket.on('duelError', handleDuelError);
+      subscribedHandlers.push(() => subscribedSocket.off('duelError', handleDuelError));
       
       // Animação de batalha só quando o servidor confirma sucesso (evita animar se Mirror Force etc. negar)
-      socket.on('attackSucceeded', (data: {
+      const attackSucceededListener = (data: {
         duelId: string | number;
         attackerUserId: string | number;
         attackerZoneIndex: number;
@@ -1796,7 +1801,9 @@ const DuelArena: React.FC = () => {
         }
 
         setTimeout(() => setAttackAnimation(null), 1200);
-      });
+      };
+      socket.on('attackSucceeded', attackSucceededListener);
+      subscribedHandlers.push(() => subscribedSocket.off('attackSucceeded', attackSucceededListener));
       
       // Listener para quando o duelo é encerrado
       const duelEndedListener = (data: any) => {
@@ -1840,6 +1847,7 @@ const DuelArena: React.FC = () => {
         requestActiveDuelRefresh();
       };
       socket.on('duelEnded', duelEndedListener);
+      subscribedHandlers.push(() => subscribedSocket.off('duelEnded', duelEndedListener));
       
       // Listener para quando o tempo do oponente expira (recebido do backend)
       const timeExpiredListener = () => {
@@ -1848,12 +1856,14 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('timeExpired', timeExpiredListener);
+      subscribedHandlers.push(() => subscribedSocket.off('timeExpired', timeExpiredListener));
       
       // Listener para quando precisa descartar cartas (não usado mais, mas mantido para compatibilidade)
       const needsDiscardListener = () => {
         // Não fazer nada - o descarte agora é feito diretamente clicando nas cartas
       };
       socket.on('needsDiscard', needsDiscardListener);
+      subscribedHandlers.push(() => subscribedSocket.off('needsDiscard', needsDiscardListener));
       
       // Listener para The Forceful Sentry
       const forcefulSentryListener = (data: { opponentHand: any[]; duelId: string | number }) => {
@@ -1899,7 +1909,9 @@ const DuelArena: React.FC = () => {
       };
       
       socket.on('forcefulSentryShowHand', forcefulSentryListener);
+      subscribedHandlers.push(() => subscribedSocket.off('forcefulSentryShowHand', forcefulSentryListener));
       socket.on('confiscationShowHand', confiscationListener);
+      subscribedHandlers.push(() => subscribedSocket.off('confiscationShowHand', confiscationListener));
 
       // Listener para GracefulCharity
       const gracefulCharityListener = (data: { playerHand: any[]; duelId: string | number }) => {
@@ -1927,6 +1939,7 @@ const DuelArena: React.FC = () => {
         console.log('✨ [GracefulCharity Listener] ==========================================');
       };
       socket.on('gracefulCharityShowHand', gracefulCharityListener);
+      subscribedHandlers.push(() => subscribedSocket.off('gracefulCharityShowHand', gracefulCharityListener));
       console.log('✅ [DuelArena] Listener gracefulCharityShowHand registrado');
 
       // Listener para MonsterReborn
@@ -1948,6 +1961,7 @@ const DuelArena: React.FC = () => {
         setSelectedMonsterReborn(null);
       };
       socket.on('monsterRebornShowGraveyards', monsterRebornListener);
+      subscribedHandlers.push(() => subscribedSocket.off('monsterRebornShowGraveyards', monsterRebornListener));
       console.log('✅ [DuelArena] Listener monsterRebornShowGraveyards registrado');
       
       // Listener para Premature Burial (escolher monstro do próprio cemitério)
@@ -1958,6 +1972,7 @@ const DuelArena: React.FC = () => {
         setSelectedPrematureBurialIndex(null);
       };
       socket.on('prematureBurialShowGraveyard', prematureBurialListener);
+      subscribedHandlers.push(() => subscribedSocket.off('prematureBurialShowGraveyard', prematureBurialListener));
       console.log('✅ [DuelArena] Listener prematureBurialShowGraveyard registrado');
       
       // Listener para Autonomous Action Unit (escolher monstro do cemitério do oponente)
@@ -1968,6 +1983,7 @@ const DuelArena: React.FC = () => {
         setSelectedAutonomousActionUnitIndex(null);
       };
       socket.on('autonomousActionUnitShowOpponentGraveyard', autonomousActionUnitListener);
+      subscribedHandlers.push(() => subscribedSocket.off('autonomousActionUnitShowOpponentGraveyard', autonomousActionUnitListener));
       console.log('✅ [DuelArena] Listener autonomousActionUnitShowOpponentGraveyard registrado');
       
       // Listener para Monster Reincarnation - descartar carta da mão
@@ -1987,6 +2003,7 @@ const DuelArena: React.FC = () => {
         setSelectedMonsterReincarnationCard(null);
       };
       socket.on('monsterReincarnationShowHand', monsterReincarnationDiscardListener);
+      subscribedHandlers.push(() => subscribedSocket.off('monsterReincarnationShowHand', monsterReincarnationDiscardListener));
       console.log('✅ [DuelArena] Listener monsterReincarnationShowHand registrado');
       
       // Listener para Monster Reincarnation - escolher monstro do cemitério
@@ -2006,6 +2023,7 @@ const DuelArena: React.FC = () => {
         setSelectedMonsterReincarnationMonster(null);
       };
       socket.on('monsterReincarnationShowGraveyard', monsterReincarnationGraveyardListener);
+      subscribedHandlers.push(() => subscribedSocket.off('monsterReincarnationShowGraveyard', monsterReincarnationGraveyardListener));
       console.log('✅ [DuelArena] Listener monsterReincarnationShowGraveyard registrado');
       
       // Listener para ChangeOfHeart
@@ -2023,6 +2041,7 @@ const DuelArena: React.FC = () => {
         setSelectedChangeOfHeartMonster(null);
       };
       socket.on('changeOfHeartShowOpponentMonsters', changeOfHeartListener);
+      subscribedHandlers.push(() => subscribedSocket.off('changeOfHeartShowOpponentMonsters', changeOfHeartListener));
       console.log('✅ [DuelArena] Listener changeOfHeartShowOpponentMonsters registrado');
       
       // Listener para BrainControl
@@ -2040,6 +2059,7 @@ const DuelArena: React.FC = () => {
         setSelectedBrainControlMonster(null);
       };
       socket.on('brainControlShowOpponentMonsters', brainControlListener);
+      subscribedHandlers.push(() => subscribedSocket.off('brainControlShowOpponentMonsters', brainControlListener));
       console.log('✅ [DuelArena] Listener brainControlShowOpponentMonsters registrado');
       
       // Listener para SoulTaker
@@ -2052,6 +2072,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('soulTakerShowOpponentMonsters', soulTakerListener);
+      subscribedHandlers.push(() => subscribedSocket.off('soulTakerShowOpponentMonsters', soulTakerListener));
       console.log('✅ [DuelArena] Listener soulTakerShowOpponentMonsters registrado');
 
       const playerTargetSpellListener = (data: any) => {
@@ -2062,6 +2083,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('playerTargetSpellShow', playerTargetSpellListener);
+      subscribedHandlers.push(() => subscribedSocket.off('playerTargetSpellShow', playerTargetSpellListener));
       console.log('✅ [DuelArena] Listener playerTargetSpellShow registrado');
 
       // Listener para Lightning Storm (escolher 1 efeito: destruir monstros em ataque OU magias/armadilhas do oponente)
@@ -2071,6 +2093,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('lightningStormShowOptions', lightningStormListener);
+      subscribedHandlers.push(() => subscribedSocket.off('lightningStormShowOptions', lightningStormListener));
       console.log('✅ [DuelArena] Listener lightningStormShowOptions registrado');
 
       // Listener para Exiled Force
@@ -2086,6 +2109,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('exiledForceShowTargets', exiledForceListener);
+      subscribedHandlers.push(() => subscribedSocket.off('exiledForceShowTargets', exiledForceListener));
       console.log('✅ [DuelArena] Listener exiledForceShowTargets registrado');
 
       // Listener para UnitedWeStand
@@ -2104,6 +2128,7 @@ const DuelArena: React.FC = () => {
       };
 
       socket.on('unitedWeStandShowMonsters', unitedWeStandListener);
+      subscribedHandlers.push(() => subscribedSocket.off('unitedWeStandShowMonsters', unitedWeStandListener));
       console.log('✅ [DuelArena] Listener unitedWeStandShowMonsters registrado');
 
       // Listener para MagePower
@@ -2122,6 +2147,7 @@ const DuelArena: React.FC = () => {
       };
 
       socket.on('magePowerShowMonsters', magePowerListener);
+      subscribedHandlers.push(() => subscribedSocket.off('magePowerShowMonsters', magePowerListener));
       console.log('✅ [DuelArena] Listener magePowerShowMonsters registrado');
       
       // Listener para Reinforcement Of The Army
@@ -2139,6 +2165,7 @@ const DuelArena: React.FC = () => {
         setSelectedReinforcementOfTheArmyMonster(null);
       };
       socket.on('reinforcementOfTheArmyShowDeck', reinforcementOfTheArmyListener);
+      subscribedHandlers.push(() => subscribedSocket.off('reinforcementOfTheArmyShowDeck', reinforcementOfTheArmyListener));
       console.log('✅ [DuelArena] Listener reinforcementOfTheArmyShowDeck registrado');
 
       // Listener para Last Will
@@ -2156,6 +2183,7 @@ const DuelArena: React.FC = () => {
         setSelectedLastWillMonster(null);
       };
       socket.on('lastWillShowDeck', lastWillListener);
+      subscribedHandlers.push(() => subscribedSocket.off('lastWillShowDeck', lastWillListener));
       console.log('✅ [DuelArena] Listener lastWillShowDeck registrado');
 
       // Listener para Chaos Sorcerer Summon
@@ -2179,6 +2207,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('chaosSorcererSummonShowMonsters', chaosSorcererSummonListener);
+      subscribedHandlers.push(() => subscribedSocket.off('chaosSorcererSummonShowMonsters', chaosSorcererSummonListener));
       console.log('✅ [DuelArena] Listener chaosSorcererSummonShowMonsters registrado');
 
       // Listener para Chaos Sorcerer Effect
@@ -2197,6 +2226,7 @@ const DuelArena: React.FC = () => {
         setSelectedChaosSorcererEffectMonster(null);
       };
       socket.on('chaosSorcererEffectShowTargets', chaosSorcererEffectListener);
+      subscribedHandlers.push(() => subscribedSocket.off('chaosSorcererEffectShowTargets', chaosSorcererEffectListener));
       console.log('✅ [DuelArena] Listener chaosSorcererEffectShowTargets registrado');
 
       // Listener para Black Luster Soldier - Envoy of the Beginning
@@ -2211,6 +2241,7 @@ const DuelArena: React.FC = () => {
         setShowBlsEffectModal(true);
       };
       socket.on('blsEffectShowTargets', blsEffectListener);
+      subscribedHandlers.push(() => subscribedSocket.off('blsEffectShowTargets', blsEffectListener));
       console.log('✅ [DuelArena] Listener blsEffectShowTargets registrado');
 
       // Listener para Dark Armed Dragon Summon
@@ -2244,6 +2275,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('darkArmedDragonSummonShowZones', darkArmedDragonSummonListener);
+      subscribedHandlers.push(() => subscribedSocket.off('darkArmedDragonSummonShowZones', darkArmedDragonSummonListener));
       console.log('✅ [DuelArena] Listener darkArmedDragonSummonShowZones registrado');
 
       // Listener para Dark Armed Dragon Effect
@@ -2264,6 +2296,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('darkArmedDragonEffectShowModal', darkArmedDragonEffectListener);
+      subscribedHandlers.push(() => subscribedSocket.off('darkArmedDragonEffectShowModal', darkArmedDragonEffectListener));
       console.log('✅ [DuelArena] Listener darkArmedDragonEffectShowModal registrado');
 
       // Listener para Red-Eyes Darkness Metal Dragon Summon
@@ -2284,6 +2317,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('redEyesDarknessMetalDragonSummonShowDragons', redEyesDarknessMetalDragonSummonListener);
+      subscribedHandlers.push(() => subscribedSocket.off('redEyesDarknessMetalDragonSummonShowDragons', redEyesDarknessMetalDragonSummonListener));
       console.log('✅ [DuelArena] Listener redEyesDarknessMetalDragonSummonShowDragons registrado');
 
       // Listener para Red-Eyes Darkness Metal Dragon Effect
@@ -2307,6 +2341,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('redEyesDarknessMetalDragonEffectShowDragons', redEyesDarknessMetalDragonEffectListener);
+      subscribedHandlers.push(() => subscribedSocket.off('redEyesDarknessMetalDragonEffectShowDragons', redEyesDarknessMetalDragonEffectListener));
       console.log('✅ [DuelArena] Listener redEyesDarknessMetalDragonEffectShowDragons registrado');
 
       // Listener para Cyber-Stein Effect
@@ -2327,6 +2362,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('cyberSteinEffectShowExtraDeck', cyberSteinEffectListener);
+      subscribedHandlers.push(() => subscribedSocket.off('cyberSteinEffectShowExtraDeck', cyberSteinEffectListener));
       console.log('✅ [DuelArena] Listener cyberSteinEffectShowExtraDeck registrado');
 
       // Listener para Mystical Space Typhoon
@@ -2412,6 +2448,7 @@ const DuelArena: React.FC = () => {
         });
       };
       socket.on('mysticalSpaceTyphoonShowTargets', mysticalSpaceTyphoonListener);
+      subscribedHandlers.push(() => subscribedSocket.off('mysticalSpaceTyphoonShowTargets', mysticalSpaceTyphoonListener));
       console.log('✅ [DuelArena] Listener mysticalSpaceTyphoonShowTargets registrado');
 
       // Listener para Snowman Eater
@@ -2426,6 +2463,7 @@ const DuelArena: React.FC = () => {
         // Os dados necessários já estão disponíveis no estado do componente
       };
       socket.on('snowmanEaterShowTargets', snowmanEaterListener);
+      subscribedHandlers.push(() => subscribedSocket.off('snowmanEaterShowTargets', snowmanEaterListener));
       console.log('✅ [DuelArena] Listener snowmanEaterShowTargets registrado');
 
       // Listener para fechar modal quando turno é roubado ou muda
@@ -2683,12 +2721,16 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('closePendingChoiceModal', closePendingChoiceModalListener);
+      subscribedHandlers.push(() => subscribedSocket.off('closePendingChoiceModal', closePendingChoiceModalListener));
       console.log('✅ [DuelArena] Listener closePendingChoiceModal registrado');
       
       // Perda de conexão: overlay; em `connect` / `reconnect`, reentrar na sala e aguardar duelUpdate.
       socket.on('disconnect', disconnectListener);
+      subscribedHandlers.push(() => subscribedSocket.off('disconnect', disconnectListener));
       socket.on('connect', resyncJoinAfterReconnect);
+      subscribedHandlers.push(() => subscribedSocket.off('connect', resyncJoinAfterReconnect));
       socket.on('reconnect', resyncJoinAfterReconnect);
+      subscribedHandlers.push(() => subscribedSocket.off('reconnect', resyncJoinAfterReconnect));
       
       // Verificar se o listener foi registrado corretamente
       if (typeof socket.hasListeners === 'function') {
@@ -2799,22 +2841,12 @@ const DuelArena: React.FC = () => {
       if (retryInterval) {
         clearInterval(retryInterval);
       }
+      // Unsubscribe exactly the handlers registered for this duel, including card effects.
+      // Calling socket.off(event) without a handler would remove other subscribers too.
+      for (const unsubscribe of subscribedHandlers) unsubscribe();
+      subscribedHandlers.length = 0;
       const currentSocket = getSocket();
-      if (currentSocket) {
-        currentSocket.off('duelUpdate', handleDuelUpdate);
-        currentSocket.off('duelError', handleDuelError);
-        currentSocket.off('duelEnded');
-        currentSocket.off('timeExpired');
-        currentSocket.off('needsDiscard');
-        currentSocket.off('attackSucceeded');
-        currentSocket.off('disconnect', disconnectListener);
-        currentSocket.off('connect', resyncJoinAfterReconnect);
-        currentSocket.off('reconnect', resyncJoinAfterReconnect);
-        // Remover listener de conexão se ainda estiver ativo
-        if (connectListener) {
-          currentSocket.off('connect', connectListener);
-        }
-      }
+      if (currentSocket && connectListener) currentSocket.off('connect', connectListener);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [duelId, user?.id]);
