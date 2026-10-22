@@ -1,13 +1,51 @@
 import type { ReactNode } from 'react';
 
 /**
- * Ícones vetoriais do jogo: sem dependência de PNGs, com contraste e dimensões consistentes.
- * Use sempre o caminho da tela (não o rótulo traduzido) para escolher a metáfora visual.
+ * Ícones ilustrados autorais, inspirados na fantasia dos duelos.
+ * Para rotas sem arte específica, mantém um SVG acessível como fallback.
  */
 interface GameIconProps {
   route: string;
   size?: number;
   className?: string;
+}
+
+
+/**
+ * Atlas ilustrado original em 4x4: artes inspiradas na ambientação dos duelos,
+ * com 16 cenas/relíquias em vez de pictogramas monocromáticos.
+ * A ordem corresponde à posição de cada célula em /images/ui/yugioh-fantasy-icons.webp.
+ * SVG permanece como fallback somente para rotas sem arte própria.
+ */
+const ILLUSTRATED_ICONS: Record<string, number> = {
+  '/': 0, '/home': 0,
+  '/random-duel': 1, '/duel': 1,
+  '/arena': 2,
+  '/tournaments': 3, '/tournament': 3,
+  '/deck-builder': 4, '/deck-edit': 4, '/decks': 4,
+  '/collection': 5, '/marketplace/cards': 5, '/inventory': 5,
+  '/shop': 6, '/marketplace/accounts': 6,
+  '/loot-boxes': 7, '/drops': 7,
+  '/ranking': 8,
+  '/missions': 9,
+  '/story': 10, '/story-mode': 10,
+  '/battle-pass': 11,
+  '/groups': 12, '/clans': 12,
+  '/chat': 13, '/friends': 13,
+  '/credit': 14, '/redeem': 14,
+  '/help': 15, '/feedback': 15,
+};
+
+function illustratedIconForRoute(route: string): number | undefined {
+  const path = route.split('?')[0].replace(/\/$/, '') || '/';
+  if (Object.prototype.hasOwnProperty.call(ILLUSTRATED_ICONS, path)) {
+    return ILLUSTRATED_ICONS[path];
+  }
+  // Menus podem ser configurados no banco; mantém a identidade nas sub-rotas.
+  const match = Object.keys(ILLUSTRATED_ICONS)
+    .filter((prefix) => prefix !== '/' && path.startsWith(prefix + '/'))
+    .sort((a, b) => b.length - a.length)[0];
+  return match === undefined ? undefined : ILLUSTRATED_ICONS[match];
 }
 
 function iconArtwork(route: string): ReactNode {
@@ -79,6 +117,26 @@ function iconArtwork(route: string): ReactNode {
 }
 
 export default function GameIcon({ route, size = 22, className = '' }: GameIconProps) {
+  const slot = illustratedIconForRoute(route);
+  if (slot !== undefined) {
+    const column = slot % 4;
+    const row = Math.floor(slot / 4);
+    const artSize = Math.min(44, size + 8);
+    return (
+      <span
+        className={`game-icon-illustrated ${className}`}
+        style={{
+          width: artSize,
+          height: artSize,
+          backgroundImage: "url('/images/ui/yugioh-fantasy-icons.webp')",
+          backgroundSize: '400% 400%',
+          backgroundPosition: `${column * (100 / 3)}% ${row * (100 / 3)}%`,
+          backgroundRepeat: 'no-repeat',
+        }}
+        aria-hidden="true"
+      />
+    );
+  }
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
