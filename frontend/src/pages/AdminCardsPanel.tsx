@@ -969,7 +969,6 @@ export default function AdminCardsPanel() {
       race: (card as any).race || 'Warrior',
       level: card.level ?? 4,
       rank: (card as any).rank ?? 0,
-      rank: (card as any).rank ?? 0,
       atk: card.atk ?? 0,
       def: card.def ?? 0,
       spellType: (card as any).spellType || 'Normal',
@@ -1117,8 +1116,6 @@ export default function AdminCardsPanel() {
     setSelectedImageIndex(0);
     setSearchQuery('');
     setSearchResults([]);
-    setOriginalCardSearch('');
-    setOriginalCardResults([]);
     setSelectedOriginalCard(null);
     setIsSkin(false);
     setOtherSkins([]);
@@ -1359,9 +1356,7 @@ export default function AdminCardsPanel() {
                       setIsSkin(e.target.checked);
                       if (!e.target.checked) {
                         setSelectedOriginalCard(null);
-                        setOriginalCardSearch('');
-                        setOriginalCardResults([]);
-                        setOtherSkins([]);
+                                                                setOtherSkins([]);
                       }
                     }}
                     disabled={editingCard !== null && otherSkins.length > 0}
