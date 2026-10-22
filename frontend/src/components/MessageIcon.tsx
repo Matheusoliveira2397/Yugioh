@@ -18,7 +18,7 @@ interface MessageNotification {
 export default function MessageIcon() {
   const { token, user } = useAuthStore();
   const navigate = useNavigate();
-  const { connect, on, getSocket, isConnected } = useSocketStore();
+  const { connect, getSocket, isConnected } = useSocketStore();
   const [messageNotifications, setMessageNotifications] = useState<MessageNotification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -54,7 +54,7 @@ export default function MessageIcon() {
     }
 
     function setupMessageListener(socketInstance: any) {
-      const currentUserId = typeof user.id === 'string' ? user.id : user.id.toString();
+      const currentUserId = String(user?.id ?? '');
 
       const handlePrivateMessage = (data: any) => {
         const senderId = data.userId || data.senderId;

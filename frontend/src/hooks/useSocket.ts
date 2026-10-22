@@ -24,11 +24,12 @@ function getSocketUrl(): string {
 interface DuelFoundData {
   duelId: string | null;
   matchId?: string;
-  player1Id?: number;
-  player2Id?: number;
+  player1Id?: number | null;
+  player2Id?: number | null;
   opponent: {
     id: string | number;
     username?: string;
+    nickname?: string;
     clanTag?: string;
     level?: number;
     profileImage?: string;
@@ -176,7 +177,7 @@ const getSocketForCurrentTab = (): Socket => {
       } else {
         // Socket foi substituído - criar novo abaixo
         console.log(`⚠️ [${tabId}] Socket foi substituído. Criando novo...`);
-        existingSocket = null;
+        existingSocket = undefined;
       }
     } catch (error) {
       console.error(`❌ [${tabId}] Erro ao tentar reconectar:`, error);

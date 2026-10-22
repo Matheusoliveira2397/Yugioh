@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { useSocket } from '../hooks/useSocket';
-import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
+import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import api from '../api/axios';
 import CardImage from '../components/CardImage';
 import { useI18n } from '../i18n/I18nContext';
@@ -697,7 +697,7 @@ export default function RandomDuelPage() {
                       const { tabId: lockerTabId, timestamp } = JSON.parse(lockAttempt);
                       // Se outra aba já está abrindo (menos de 5s), não abrir
                       if (lockerTabId !== currentTabId && (now - timestamp < 5000)) {
-                        console.log(`⚠️ [RandomDuelPage] Outra aba (${lockerTabId}) já está abrindo o duelo ${duelId}. Esta aba ignorando.`);
+                        console.log(`⚠️ [RandomDuelPage] Outra aba (${lockerTabId}) já está abrindo o duelo ${duelIdStr}. Esta aba ignorando.`);
                         return;
                       }
                     } catch (e) {
