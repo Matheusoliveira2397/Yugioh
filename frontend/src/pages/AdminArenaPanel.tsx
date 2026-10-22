@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate, Navigate, Link } from 'react-router-dom';
+import { Navigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import api from '../api/axios';
 
