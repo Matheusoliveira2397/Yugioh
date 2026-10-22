@@ -758,6 +758,14 @@
     border-radius: 1.2rem;
     background: linear-gradient(125deg, rgba(26, 38, 66, .95), rgba(12, 20, 35, .91));
   }
+  .ui-duel-hud {
+    border-bottom: 1px solid rgba(238, 202, 128, 0.22);
+    background: linear-gradient(120deg, rgba(11, 19, 34, 0.93), rgba(26, 36, 64, 0.84));
+    box-shadow: 0 5px 22px rgba(0, 0, 0, 0.22);
+  }
+  @media (min-width: 1024px) {
+    .ui-duel-hud { border-bottom-color: transparent; background: transparent; box-shadow: none; }
+  }
   .ui-duel-view .duel-modal-panel { border-color: rgba(232, 197, 71, 0.3); }
   .ui-duel-view button:focus-visible { outline: 3px solid #eed27f; outline-offset: 2px; }
 
