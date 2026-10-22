@@ -1,0 +1,231 @@
+/* Página inicial: o próprio cenário do jogo é a base visual.
+ * Apenas traços dourados e tipografia identificam seções — nada de fundos
+ * azuis, roxos ou painéis opacos sobre a ilustração global. */
+.duelist-home {
+  color: #fff7e7;
+  isolation: isolate;
+}
+.duelist-home .home-eyebrow {
+  color: #ffe2a4;
+  font-size: .68rem;
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  text-shadow: 0 2px 7px rgba(0, 0, 0, .85);
+}
+.duelist-home .home-hero {
+  overflow: visible;
+  border: 1px solid rgba(239, 193, 105, .55);
+  background: transparent;
+  box-shadow: none;
+}
+.duelist-home .home-hero-content {
+  padding: clamp(1.1rem, 2.3vw, 2rem);
+}
+.duelist-home .home-hero-title,
+.duelist-home .home-dashboard-intro h1 {
+  color: #fff9ec;
+  text-shadow: 0 3px 15px rgba(0, 0, 0, .96), 0 0 3px rgba(0, 0, 0, .55);
+}
+.duelist-home .home-hero-subtitle {
+  color: #f6eadc;
+  text-shadow: 0 2px 9px rgba(0, 0, 0, .95);
+}
+.duelist-home .home-main-action {
+  border: 1px solid rgba(255, 218, 156, .75);
+  background: rgba(9, 6, 9, .16);
+  color: #fff1cb;
+  font-weight: 750;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .85);
+  transition: background .18s ease, border-color .18s ease, transform .18s ease;
+}
+.duelist-home .home-main-action--primary {
+  border-color: #f3c981;
+  background: rgba(143, 91, 29, .2);
+  color: #fff3d5;
+}
+.duelist-home .home-main-action:hover {
+  border-color: #fff2c8;
+  background: rgba(147, 91, 35, .24);
+  transform: translateY(-1px);
+}
+.duelist-home .home-preparation {
+  border: 1px solid rgba(241, 196, 107, .3);
+  border-radius: 1rem;
+  background: transparent;
+  box-shadow: none;
+}
+.duelist-home .home-preparation > h3 {
+  text-shadow: 0 2px 8px rgba(0, 0, 0, .9);
+}
+.duelist-home .home-preparation-link {
+  border: 1px solid rgba(235, 193, 116, .27);
+  background: transparent;
+  transition: background .16s ease, border-color .16s ease;
+}
+.duelist-home .home-preparation-link:hover {
+  background: rgba(18, 9, 11, .16);
+  border-color: rgba(248, 213, 142, .65);
+}
+.duelist-home .home-preparation-link span {
+  text-shadow: 0 2px 7px rgba(0, 0, 0, .9);
+}
+.duelist-home .home-preparation-icon {
+  display: grid;
+  place-items: center;
+  width: 2.8rem;
+  height: 2.8rem;
+  flex: 0 0 auto;
+}
+.duelist-home .home-online-counter {
+  background: transparent;
+  text-shadow: 0 2px 5px rgba(0,0,0,.85);
+}
+.duelist-home .home-action-tile {
+  background: transparent !important;
+  border: 1px solid rgba(239, 195, 108, .46);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transition: border-color .2s ease, background .2s ease, transform .2s ease;
+}
+.duelist-home .home-action-tile:hover {
+  border-color: #f8d791;
+  background: rgba(34, 14, 13, .16) !important;
+  box-shadow: none;
+}
+.duelist-home .home-action-tile .game-screen-icon {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.duelist-home .home-action-tile strong,
+.duelist-home .home-action-tile span {
+  text-shadow: 0 2px 7px rgba(0, 0, 0, .92);
+}
+.duelist-home .home-action-tile span.text-slate-300 { color: #f1e6d9; }
+.duelist-home .home-secondary-action {
+  background: transparent;
+  border-color: rgba(230, 187, 101, .34);
+  color: #fff3df;
+  text-shadow: 0 2px 6px rgba(0,0,0,.9);
+}
+.duelist-home .home-secondary-action:hover {
+  background: rgba(30, 13, 14, .14);
+  border-color: rgba(255, 221, 159, .8);
+}
+.duelist-home .game-panel {
+  background: transparent !important;
+  border-color: rgba(240, 190, 101, .40);
+  box-shadow: none !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.duelist-home .game-panel-header {
+  background: transparent !important;
+  border-bottom-color: rgba(236, 194, 107, .27);
+}
+.duelist-home .game-panel-title,
+.duelist-home .game-panel p,
+.duelist-home .game-panel h3 {
+  text-shadow: 0 2px 7px rgba(0, 0, 0, .9);
+}
+.duelist-home .game-stat-chip {
+  background: transparent !important;
+  border-color: rgba(244, 199, 112, .35) !important;
+}
+.duelist-home .home-news-image-overlay {
+  background: linear-gradient(90deg, rgba(7, 5, 6, .4), rgba(7, 5, 6, .08));
+}
+.duelist-home .shop-cards-wrap .pointer-events-none.bg-gradient-to-r,
+.duelist-home .shop-cards-wrap .pointer-events-none.bg-gradient-to-l {
+  opacity: .25;
+}
+
+/* O cartão de perfil é um irmão da home no layout global;
+   :has limita o refinamento à home, sem mudar a aparência de outras rotas. */
+.game-shell:has(.duelist-home) .game-overlay {
+  background: linear-gradient(180deg, rgba(8, 5, 6, .24), rgba(8, 5, 6, .38));
+}
+.game-shell:has(.duelist-home) .game-nav {
+  background: rgba(13, 6, 8, .10);
+  border-color: rgba(237, 191, 99, .3);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.game-shell:has(.duelist-home) .user-sidebar,
+.game-shell:has(.duelist-home) .user-sidebar-panel {
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.game-shell:has(.duelist-home) .user-sidebar-panel {
+  border: 1px solid rgba(239, 191, 97, .54);
+  border-radius: .9rem;
+  overflow: visible;
+}
+.game-shell:has(.duelist-home) .user-sidebar-panel::before { display: none; }
+.game-shell:has(.duelist-home) .ygo-duelist-banner {
+  background: transparent;
+  box-shadow: none;
+  border-top: 0;
+  border-bottom: 1px solid rgba(239, 190, 99, .44);
+  margin-bottom: .75rem;
+  padding: .55rem .7rem .8rem;
+}
+.game-shell:has(.duelist-home) .ygo-duelist-banner h3 {
+  color: #ffecbd;
+  font-size: .95rem;
+  line-height: 1.35;
+  text-shadow: 0 2px 8px rgba(0,0,0,.93);
+}
+.game-shell:has(.duelist-home) .ygo-level-badge {
+  border: 1px solid rgba(247, 206, 123, .75);
+  color: #fff0cd;
+  text-shadow: 0 1px 4px black;
+}
+.game-shell:has(.duelist-home) .ygo-resource-chip,
+.game-shell:has(.duelist-home) .ygo-stat-board,
+.game-shell:has(.duelist-home) .ygo-shortcut-card {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-color: rgba(239, 194, 110, .36);
+}
+.game-shell:has(.duelist-home) .ygo-resource-chip--cyan {
+  border-color: rgba(239, 194, 110, .36);
+}
+.game-shell:has(.duelist-home) .ygo-stat-board > div:first-child {
+  background: transparent;
+  border-bottom-color: rgba(239, 194, 110, .3);
+}
+.game-shell:has(.duelist-home) .ygo-stat-row:hover {
+  background: rgba(43, 19, 18, .15);
+}
+.game-shell:has(.duelist-home) .ygo-stat-row span,
+.game-shell:has(.duelist-home) .ygo-resource-chip p {
+  text-shadow: 0 1px 6px rgba(0,0,0,.88);
+}
+.game-shell:has(.duelist-home) .ygo-shortcut-card > div.absolute {
+  background: linear-gradient(0deg, rgba(4, 3, 4, .5), rgba(4,3,4, .07)) !important;
+}
+.game-shell:has(.duelist-home) .ygo-shortcut-card:hover {
+  border-color: #ffe0a3;
+  background: rgba(32, 12, 14, .1) !important;
+}
+.game-shell:has(.duelist-home) footer {
+  background: transparent !important;
+}
+@media (max-width: 639px) {
+  .duelist-home .home-hero-content { padding: 1.1rem .95rem; }
+  .duelist-home .home-preparation { padding: .75rem; }
+  .duelist-home .home-action-tile { min-height: 7.75rem; }
+  .game-shell:has(.duelist-home) .user-sidebar-panel { border-width: 1px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .duelist-home .home-main-action,
+  .duelist-home .home-action-tile,
+  .duelist-home .home-preparation-link { transition: none; }
+  .duelist-home .home-main-action:hover { transform: none; }
+}
