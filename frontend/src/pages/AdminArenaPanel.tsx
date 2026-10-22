@@ -731,8 +731,7 @@ export default function AdminArenaPanel() {
             const endTime = new Date(arena.endTime);
             const isActive = !isTemplate && startTime <= now && endTime > now;
             const isPast = !isTemplate && endTime < now;
-            const isFuture = !isTemplate && startTime > now;
-
+          
             return (
               <motion.div
                 key={arena.id}
