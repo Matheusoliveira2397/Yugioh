@@ -180,7 +180,7 @@ export default function GroupDetailPage() {
     }
   };
 
-  const fetchRanking = async (type: 'weekly' | 'season' | 'total') => {
+  const fetchRanking = async (type: 'weekly' | 'season' | 'total' | 'members') => {
     try {
       const response = await axios.get(`${API_URL}/groups/${id}/ranking/${type}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -353,7 +353,7 @@ export default function GroupDetailPage() {
     }
   };
 
-  const handlePromoteMember = async (memberUserId: number) => {
+  const handlePromoteMember = async (memberUserId: string | number) => {
     if (!confirm('Tem certeza que deseja promover este membro a Oficial (Co-Líder)?')) {
       return;
     }
@@ -377,7 +377,7 @@ export default function GroupDetailPage() {
     }
   };
 
-  const handleDemoteMember = async (memberUserId: number) => {
+  const handleDemoteMember = async (memberUserId: string | number) => {
     if (!confirm('Tem certeza que deseja rebaixar este membro a Membro?')) {
       return;
     }
