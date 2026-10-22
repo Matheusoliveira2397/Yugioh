@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
 import api from '../api/axios';
-import { useNavigate, useLocation } from 'react-router-dom';
 import { useSocketStore } from '../stores/socketStore';
 import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 
@@ -51,9 +50,7 @@ function saveStoredNotifications(userId: number | string | undefined, list: Syst
 
 export default function NotificationBell() {
   const { token, user } = useAuthStore();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { connect, on, getSocket, isConnected } = useSocketStore();
+  const { connect, getSocket, isConnected } = useSocketStore();
   const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
   const [systemNotifications, setSystemNotifications] = useState<SystemNotification[]>(() =>
     loadStoredNotifications(user?.id)
@@ -232,11 +229,6 @@ export default function NotificationBell() {
       console.error('Erro ao rejeitar solicitação:', error);
       alert('Erro ao rejeitar solicitação');
     }
-  };
-
-  const handleViewAll = () => {
-    setIsOpen(false);
-    navigate('/friends');
   };
 
   return (
