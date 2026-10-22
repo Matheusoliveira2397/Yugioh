@@ -365,18 +365,74 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Entrada principal do jogo: clareza nas ações mais importantes */}
-      <section className="ui-hero mb-4 px-4 py-5 sm:px-6 sm:py-6" aria-labelledby="home-feature-heading">
-        <div className="relative z-10 flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-          <div className="max-w-xl">
-            <p className="ui-eyebrow mb-1.5">Central do duelista</p>
-            <h2 id="home-feature-heading" className="ui-hero-title">Seu próximo duelo começa aqui.</h2>
-            <p className="ui-hero-subtitle mt-2">Encontre adversários, prepare seu deck ou explore a Academia de Duelos no modo história.</p>
+      {/* Portal de entrada: hierarquia clara entre jogar e preparar o deck. */}
+      <section
+        className="relative isolate mb-5 overflow-hidden rounded-[1.75rem] border border-champion-gold/30 bg-[#090e22] shadow-[0_24px_65px_rgba(0,0,0,0.32)]"
+        aria-labelledby="home-feature-heading"
+      >
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_70%_20%,rgba(49,104,195,0.34),transparent_50%),radial-gradient(ellipse_at_10%_100%,rgba(211,163,55,0.16),transparent_55%)]"
+        />
+        <img
+          src="/images/blueEyes.png"
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          className="pointer-events-none absolute -right-14 top-[-15%] h-[120%] w-auto max-w-none object-contain opacity-20 sm:opacity-25 lg:right-[25%] lg:opacity-30"
+        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#090e22]/95 via-[#090e22]/75 to-[#090e22]/50" aria-hidden="true" />
+        <div className="relative z-10 grid gap-5 p-5 sm:p-7 lg:grid-cols-[minmax(0,1.3fr)_minmax(260px,0.7fr)] lg:gap-8 lg:p-9">
+          <div className="flex min-w-0 flex-col justify-center">
+            <p className="mb-3 inline-flex w-fit items-center gap-2 rounded-full border border-champion-gold/35 bg-champion-gold/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-champion-gold">
+              <span className="h-1.5 w-1.5 rounded-full bg-champion-gold" aria-hidden="true" />
+              Academia de duelistas
+            </p>
+            <h2 id="home-feature-heading" className="max-w-2xl font-display text-3xl font-extrabold leading-[1.12] tracking-tight text-white sm:text-4xl xl:text-5xl">
+              Prepare seu deck. <span className="text-champion-gold">Domine a arena.</span>
+            </h2>
+            <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-200/85 sm:text-base">
+              Seu próximo desafio está a um clique. Entre em um duelo, construa sua estratégia ou explore a Academia no modo história.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                to="/random-duel"
+                className="ui-button-primary inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champion-gold"
+              >
+                <span aria-hidden="true">⚔️</span> Iniciar duelo <span aria-hidden="true">→</span>
+              </Link>
+              <Link
+                to="/story"
+                className="ui-button-secondary inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champion-gold"
+              >
+                <span aria-hidden="true">🎮</span> Modo história
+              </Link>
+            </div>
           </div>
-          <div className="ui-hero-actions flex flex-wrap gap-2 md:justify-end">
-            <Link to="/random-duel" className="ui-button-primary">⚔️ Iniciar duelo <span aria-hidden>→</span></Link>
-            <Link to="/story" className="ui-button-secondary">🎮 Modo história</Link>
-          </div>
+          <nav className="self-center rounded-2xl border border-white/15 bg-slate-950/70 p-4 shadow-xl backdrop-blur-md sm:p-5" aria-label="Acesso rápido à preparação">
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-champion-cyan">Seu caminho para a vitória</p>
+            <h3 className="mb-4 mt-1 text-lg font-bold text-white">Prepare-se para duelar</h3>
+            <div className="space-y-2">
+              {[
+                { to: '/deck-builder', number: '01', title: 'Montar meu deck', description: 'Ajuste sua estratégia' },
+                { to: '/collection', number: '02', title: 'Ver minha coleção', description: 'Explore suas cartas' },
+                { to: '/missions', number: '03', title: 'Concluir missões', description: 'Avance e ganhe recompensas' },
+              ].map((item) => (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className="group flex min-h-14 items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 transition hover:border-champion-gold/50 hover:bg-champion-gold/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-champion-gold"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-champion-gold/25 bg-champion-gold/10 text-xs font-bold text-champion-gold">{item.number}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-white">{item.title}</span>
+                    <span className="block text-xs text-slate-400">{item.description}</span>
+                  </span>
+                  <span className="text-champion-gold transition-transform group-hover:translate-x-1" aria-hidden="true">→</span>
+                </Link>
+              ))}
+            </div>
+          </nav>
         </div>
       </section>
 
@@ -420,7 +476,7 @@ export default function HomePage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.04 }}
               onClick={() => navigate(action.to)}
-              className="game-cta-tile ui-action-tile group !p-2.5 sm:!p-3 flex flex-col items-center text-center justify-center min-h-[5.75rem] sm:min-h-[6.75rem]"
+              className="game-cta-tile ui-action-tile group !p-2.5 sm:!p-3 flex flex-col items-center text-center justify-center min-h-[5.75rem] sm:min-h-[6.75rem] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champion-gold"
             >
               <div
                 className={`absolute inset-0 bg-gradient-to-br ${action.accent} opacity-80 pointer-events-none`}
