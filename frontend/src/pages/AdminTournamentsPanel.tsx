@@ -45,6 +45,7 @@ const DEFAULT_PRIZE_DETAILS = (): Record<number, { credit: number; cash: number;
 
 interface Card {
   id: string;
+  isActive?: boolean;
   idCarta: string;
   name: string;
   type: string;
