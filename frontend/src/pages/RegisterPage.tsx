@@ -322,7 +322,7 @@ export default function RegisterPage() {
   }
 
   const inputBase =
-    'w-full px-4 py-3 rounded-xl bg-white/5 border text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-500/50 transition-all';
+    'w-full min-h-12 px-4 py-3 rounded-xl bg-white/5 border text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-champion-gold/60 focus:border-champion-gold/50 transition-all';
   const inputValid = 'border-emerald-500/50';
   const inputInvalid = 'border-red-500/50';
 
@@ -334,26 +334,62 @@ export default function RegisterPage() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
-        className="w-full max-w-lg relative z-10"
+        className="w-full max-w-6xl relative z-10"
       >
-        <div className="rounded-2xl shadow-2xl overflow-hidden border border-white/10 bg-slate-900/80 backdrop-blur-xl">
+        <div className="overflow-hidden rounded-[1.75rem] border border-champion-gold/25 bg-slate-950/85 shadow-[0_30px_100px_rgba(0,0,0,0.65)] backdrop-blur-xl lg:grid lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+          <aside className="relative hidden min-h-full flex-col justify-between overflow-hidden border-r border-champion-gold/20 bg-[#090e22] p-10 lg:flex" aria-label="Bem-vindo à academia">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_15%,rgba(47,100,193,0.25),transparent_62%)]" aria-hidden="true" />
+            <img src="/images/yugiLogin.png" alt="" aria-hidden="true" className="pointer-events-none absolute bottom-0 right-[-12%] h-[70%] w-auto max-w-none object-contain opacity-40" loading="lazy" />
+            <div className="relative z-10">
+              <Link to="/login" className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-champion-gold transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-champion-gold">
+                <span aria-hidden="true">←</span> Voltar ao portal
+              </Link>
+              <p className="mt-12 text-xs font-bold uppercase tracking-[0.25em] text-champion-cyan">Sua jornada começa aqui</p>
+              <h2 className="mt-3 max-w-xs font-display text-4xl font-extrabold leading-tight text-white">
+                Torne-se um <span className="text-champion-gold">duelista.</span>
+              </h2>
+              <p className="mt-4 max-w-xs text-sm leading-7 text-slate-300">
+                Crie sua identidade, organize seu deck e desafie jogadores na arena.
+              </p>
+            </div>
+            <div className="relative z-10 rounded-2xl border border-white/15 bg-[#080d1d]/80 p-5 backdrop-blur-sm">
+              <p className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-champion-gold">Comece em 3 passos</p>
+              <ol className="space-y-3 text-sm text-slate-200">
+                <li className="flex gap-3"><span className="font-bold text-champion-gold">01</span> Crie sua conta</li>
+                <li className="flex gap-3"><span className="font-bold text-champion-gold">02</span> Confirme seu e-mail</li>
+                <li className="flex gap-3"><span className="font-bold text-champion-gold">03</span> Prepare seu primeiro deck</li>
+              </ol>
+            </div>
+          </aside>
+          <div className="min-w-0">
           {/* Header do card */}
-          <div className="px-8 pt-8 pb-6 border-b border-white/5 relative">
+          <div className="px-6 pt-8 pb-6 border-b border-white/10 relative sm:px-8">
             <div className="absolute top-4 right-4">
               <LanguageSelector variant="compact" />
             </div>
+            <p className="mb-2 text-center text-[11px] font-bold uppercase tracking-[0.22em] text-champion-gold">Entre para a arena</p>
             <h1 className="text-2xl sm:text-3xl font-bold text-white text-center">
               {t('register.title')}
             </h1>
             <p className="text-slate-400 text-center text-sm mt-1">
               {t('register.subtitle')}
             </p>
+            <div className="mt-6" aria-label={`Cadastro: ${completedFields} de 6 campos preenchidos`}>
+              <div className="mb-2 flex justify-between text-xs text-slate-400">
+                <span>Seu progresso</span>
+                <span className="font-semibold tabular-nums text-champion-gold">{completedFields}/6</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full rounded-full bg-gradient-to-r from-champion-cyan to-champion-gold transition-all duration-300" style={{ width: `${(completedFields / 6) * 100}%` }} />
+              </div>
+            </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-8 space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6 p-6 sm:p-8">
             {/* Seção: Identificação */}
             <div className="space-y-4">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <h2 className="flex items-center gap-3 text-xs font-bold uppercase tracking-[0.12em] text-champion-gold">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-champion-gold/10 text-champion-gold">01</span>
                 {t('register.sectionIdentity')}
               </h2>
               <div>
@@ -442,7 +478,8 @@ export default function RegisterPage() {
 
             {/* Seção: Email */}
             <div className="space-y-4">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <h2 className="flex items-center gap-3 text-xs font-bold uppercase tracking-[0.12em] text-champion-gold">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-champion-gold/10 text-champion-gold">02</span>
                 {t('register.email')}
               </h2>
               <div>
@@ -514,7 +551,8 @@ export default function RegisterPage() {
 
             {/* Seção: Senha */}
             <div className="space-y-4">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <h2 className="flex items-center gap-3 text-xs font-bold uppercase tracking-[0.12em] text-champion-gold">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-champion-gold/10 text-champion-gold">03</span>
                 {t('register.password')}
               </h2>
               <div>
@@ -602,13 +640,14 @@ export default function RegisterPage() {
             <GoogleSignInButton label={t('register.google')} showConfigHint />
           </form>
 
-          <div className="px-8 pb-8 pt-2 text-center">
+          <div className="px-6 pb-8 pt-2 text-center sm:px-8">
             <p className="text-slate-400 text-sm">
               {t('register.haveAccountFull')}{' '}
-              <Link to="/login" className="text-blue-400 hover:text-blue-300 font-semibold">
+              <Link to="/login" className="text-champion-gold hover:text-white font-semibold">
                 {t('register.loginLink')}
               </Link>
             </p>
+          </div>
           </div>
         </div>
       </motion.div>
