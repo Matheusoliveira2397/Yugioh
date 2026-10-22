@@ -910,7 +910,6 @@ export default function GroupDetailPage() {
                 <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar pr-2">
                   {members.map((member, index) => {
                     const memberId = member.user?.id ? (typeof member.user.id === 'string' ? parseInt(member.user.id, 10) : Number(member.user.id)) : null;
-                    const isCurrentUser = memberId === userId;
                     const isMemberOfficer = member.role === 'Co-Leader' || member.role === 'CO_LEADER' || member.role === 'LEADER';
                     const isMemberLeader = memberId === leaderId;
                     
