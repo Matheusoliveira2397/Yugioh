@@ -400,6 +400,7 @@ export default function RegisterPage() {
                   id="nickname"
                   type="text"
                   value={nickname}
+                  autoComplete="nickname"
                   onChange={(e) => {
                      nicknameRequestId.current += 1;
                      setNickname(e.target.value);
@@ -440,6 +441,9 @@ export default function RegisterPage() {
                   id="username"
                   type="text"
                   value={username}
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
                   onChange={(e) => {
                      usernameRequestId.current += 1;
                      setUsername(e.target.value.toLowerCase());
@@ -490,6 +494,7 @@ export default function RegisterPage() {
                   id="email"
                   type="email"
                   value={email}
+                  autoComplete="email"
                   onChange={(e) => {
                      emailRequestId.current += 1;
                      setEmail(e.target.value);
@@ -529,6 +534,7 @@ export default function RegisterPage() {
                   id="confirmEmail"
                   type="email"
                   value={confirmEmail}
+                  autoComplete="email"
                   onChange={(e) => setConfirmEmail(e.target.value)}
                   className={`${inputBase} ${
                     confirmEmail && email && !emailMatches
@@ -559,39 +565,67 @@ export default function RegisterPage() {
                 <label htmlFor="password" className="block text-sm font-medium text-slate-200 mb-1.5">
                   {t('register.password')} <span className="text-red-400">*</span>
                 </label>
-                <input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className={`${inputBase} border-white/10`}
-                  placeholder={t('register.passwordPlaceholder')}
-                  required
-                  minLength={6}
-                />
-                {password && password.length < 6 && (
-                  <p className="text-xs text-red-400 mt-1.5">{t('register.passwordTooShort')}</p>
-                )}
+                <div className="relative">
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className={`${inputBase} border-white/10 pr-20`}
+                    placeholder={t('register.passwordPlaceholder')}
+                    required
+                    minLength={6}
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((current) => !current)}
+                    aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                    aria-pressed={showPassword}
+                    className="absolute inset-y-1 right-2 rounded-lg px-3 text-xs font-semibold text-champion-gold hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-champion-gold"
+                  >
+                    {showPassword ? 'Ocultar' : 'Mostrar'}
+                  </button>
+                </div>
+                <ul className="mt-2 grid gap-1 sm:grid-cols-2" aria-label="Dicas para uma senha mais segura">
+                  {passwordChecks.map((check) => (
+                    <li key={check.label} className={`flex items-center gap-1.5 text-xs ${check.passed ? 'text-emerald-400' : 'text-slate-400'}`}>
+                      <span aria-hidden="true">{check.passed ? '✓' : '○'}</span> {check.label}
+                    </li>
+                  ))}
+                </ul>
               </div>
               <div>
                 <label htmlFor="confirmPassword" className="block text-sm font-medium text-slate-200 mb-1.5">
                   {t('register.confirmPassword')} <span className="text-red-400">*</span>
                 </label>
-                <input
-                  id="confirmPassword"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className={`${inputBase} ${
-                    confirmPassword && password && confirmPassword !== password
-                      ? inputInvalid
-                      : confirmPassword && password && confirmPassword === password
-                        ? inputValid
-                        : 'border-white/10'
-                  }`}
-                  placeholder={t('register.confirmPasswordPlaceholder')}
-                  required
-                />
+                <div className="relative">
+                  <input
+                    id="confirmPassword"
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className={`${inputBase} pr-20 ${
+                      confirmPassword && password && confirmPassword !== password
+                        ? inputInvalid
+                        : confirmPassword && password && confirmPassword === password
+                          ? inputValid
+                          : 'border-white/10'
+                    }`}
+                    placeholder={t('register.confirmPasswordPlaceholder')}
+                    required
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((current) => !current)}
+                    aria-label={showConfirmPassword ? 'Ocultar confirmação de senha' : 'Mostrar confirmação de senha'}
+                    aria-pressed={showConfirmPassword}
+                    className="absolute inset-y-1 right-2 rounded-lg px-3 text-xs font-semibold text-champion-gold hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-champion-gold"
+                  >
+                    {showConfirmPassword ? 'Ocultar' : 'Mostrar'}
+                  </button>
+                </div>
                 {confirmPassword && password && confirmPassword !== password && (
                   <p className="text-xs text-red-400 mt-1.5">{t('register.passwordsMismatch')}</p>
                 )}
@@ -605,6 +639,7 @@ export default function RegisterPage() {
               <motion.div
                 initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
+                role="alert"
                 className="rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 px-4 py-3 flex items-center gap-2 text-sm"
               >
                 <span>❌</span>
@@ -620,7 +655,7 @@ export default function RegisterPage() {
                 usernameValidation.isValid === false ||
                 emailValidation.isValid === false
               }
-              className="w-full py-3.5 px-6 rounded-xl font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 focus:ring-2 focus:ring-blue-400/50 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-champion-gold/40 bg-gradient-to-r from-amber-600 to-amber-500 px-6 py-3.5 font-bold text-slate-950 shadow-lg shadow-amber-900/20 transition-all hover:from-amber-500 hover:to-yellow-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champion-gold disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? (
                 <>
