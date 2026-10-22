@@ -622,7 +622,8 @@ export const useSocket = () => {
     queueMicrotask(() => requestActiveDuelRefresh());
   };
 
-  const sendChatMessage = (duelId: string, userId: string | number, message: string) => {
+  const sendChatMessage = (duelId: string | undefined, userId: string | number, message: string) => {
+    if (!duelId) return;
     const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : Number(userId);
     if (isNaN(userIdNum)) {
       console.error('ID de usuário inválido:', userId);
@@ -631,7 +632,8 @@ export const useSocket = () => {
     socketRef.current?.emit('duelChat', { duelId, userId: userIdNum, message });
   };
 
-  const performAction = (duelId: string, userId: string | number, actionType: string, actionData?: any) => {
+  const performAction = (duelId: string | undefined, userId: string | number, actionType: string, actionData?: any) => {
+    if (!duelId) { console.error('Ação ignorada: ID do duelo ausente'); return; }
     const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : Number(userId);
     if (isNaN(userIdNum)) {
       console.error('ID de usuário inválido:', userId);
