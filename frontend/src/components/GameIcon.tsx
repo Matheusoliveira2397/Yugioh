@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 
 /**
- * Ícones vetoriais do jogo: sem dependência de PNGs, com contraste e dimensões consistentes.
- * Use sempre o caminho da tela (não o rótulo traduzido) para escolher a metáfora visual.
+ * Ícones ilustrados autorais, inspirados na fantasia dos duelos.
+ * Para rotas sem arte específica, mantém um SVG acessível como fallback.
  */
 interface GameIconProps {
   route: string;
