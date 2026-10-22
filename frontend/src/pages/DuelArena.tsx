@@ -764,7 +764,7 @@ const DuelArena: React.FC = () => {
   const [opponentBanished, setOpponentBanished] = useState<any[]>([]);
   
   // Estado para descarte de cartas
-  const [selectedCardsToDiscard, setSelectedCardsToDiscard] = useState<string[]>([]);
+  const [, setSelectedCardsToDiscard] = useState<string[]>([]);
   const [isDiscarding, setIsDiscarding] = useState(false); // Evitar múltiplos cliques ao descartar
   
   // Estado para modal do cemitério
@@ -784,7 +784,7 @@ const DuelArena: React.FC = () => {
   const [cardEffectType, setCardEffectType] = useState<'forcefulSentry' | 'confiscation' | null>(null);
   
   // Estado para carta selecionada no modal do Confiscation
-  const [selectedConfiscationCard, setSelectedConfiscationCard] = useState<any | null>(null);
+  const [selectedConfiscationCard] = useState<any | null>(null);
   
   // Estado para GracefulCharity
   const [showGracefulCharityModal, setShowGracefulCharityModal] = useState(false);
@@ -798,9 +798,11 @@ const DuelArena: React.FC = () => {
     opponentGraveyard: any[];
   } | null>(null);
   // Usar identificadores únicos para MonsterReborn
-  const [selectedMonsterReborn, setSelectedMonsterReborn] = useState<{ 
-    graveyard: 'player' | 'opponent'; 
+  const [selectedMonsterReborn, setSelectedMonsterReborn] = useState<{
+    graveyard: 'player' | 'opponent';
     index: number;
+    instanceId?: string;
+    graveyardIndex?: number;
   } | null>(null);
   
   // Estado para Premature Burial (só cemitério do jogador)
@@ -1065,7 +1067,7 @@ const DuelArena: React.FC = () => {
   
   // Estado para rastrear se já fez invocação normal neste turno
   const [normalSummonUsed, setNormalSummonUsed] = useState(false);
-  const [positionChangedThisTurn, setPositionChangedThisTurn] = useState(false);
+  const [positionChangedThisTurn] = useState(false);
   const [myTurnCounter, setMyTurnCounter] = useState<number>(1); // Contador global de turnos do campo do jogador
   
   // Estado para modal de seleção de tributos
@@ -3952,8 +3954,7 @@ const DuelArena: React.FC = () => {
       const isChaosEmperorDragonPlace = cardIdPlace.includes('chaosemperordragon') || cardNamePlace.includes('chaos emperor dragon');
       const isBlackLusterSoldierPlace = cardIdPlace.includes('blacklustersoldier') || cardNamePlace.includes('black luster soldier');
       if (isChaosSorcererPlace || isChaosEmperorDragonPlace || isBlackLusterSoldierPlace) {
-        const namePlace = isChaosSorcererPlace ? 'Chaos Sorcerer' : isChaosEmperorDragonPlace ? 'Chaos Emperor Dragon' : 'Black Luster Soldier - Envoy of the Beginning';
-        performAction(duelId, user.id, 'START_CHAOS_SORCERER_SPECIAL_SUMMON', {
+                performAction(duelId, user.id, 'START_CHAOS_SORCERER_SPECIAL_SUMMON', {
           cardId: card.id || card.cardId || card.idCarta,
         });
         setSelectedCardForField(null);
@@ -6003,7 +6004,7 @@ const DuelArena: React.FC = () => {
                       }
                     }}
                     onDragEndCapture={() => {
-                      // Limpar qualquer feedback visual
+                      // O estado de arrastar é limpo pelo fim do gesto.
                     }}
                       onClick={(e) => {
                       e.stopPropagation();
