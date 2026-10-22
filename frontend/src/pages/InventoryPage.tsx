@@ -1,3 +1,4 @@
+import GameIcon from '../components/GameIcon';
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
@@ -218,12 +219,11 @@ export default function InventoryPage() {
         animate={{ opacity: 1, y: 0 }}
       >
         {/* Header */}
-        <div className="rounded-lg p-6 mb-8 border border-green-500/30">
-          <div>
-            <h1 className="text-4xl font-bold mb-2">🎒 {t('inventory.title')}</h1>
-            <p className="text-gray-300">{t('inventory.subtitle')}</p>
-          </div>
-        </div>
+        <header className="game-screen-hero mb-7">
+          <p className="game-screen-kicker">Equipamentos do duelista</p>
+          <h1 className="game-screen-heading"><span className="game-screen-icon"><GameIcon route="/inventory" size={27} /></span>{t('inventory.title')}</h1>
+          <p className="game-screen-subtitle">{t('inventory.subtitle')}</p>
+        </header>
 
         {/* Maleta: limites atuais e níveis comprados */}
         <motion.div
