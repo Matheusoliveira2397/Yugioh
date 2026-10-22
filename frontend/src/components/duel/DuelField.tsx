@@ -218,7 +218,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
   React.useEffect(() => {
     const handleMouseMove = (e: MouseEvent | DragEvent) => {
       if (draggingCardIndex !== null) {
-        setDragClientPos({ x: e.clientX, y: e.clientY });
+        setDragClientPos({ x: dragEvent.clientX, y: dragEvent.clientY });
       }
     };
 
@@ -867,13 +867,14 @@ const DuelField: React.FC<DuelFieldProps> = ({
                         if (canDrag) {
                           const el = e.currentTarget as HTMLElement;
                           const rect = el.getBoundingClientRect();
-                          setDragGrabOffset({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+                          const dragEvent = e as React.DragEvent<HTMLElement>;
+                          setDragGrabOffset({ x: dragEvent.clientX - rect.left, y: dragEvent.clientY - rect.top });
                           setDragGhostSize({ w: rect.width, h: rect.height });
                           setDragClientPos({ x: e.clientX, y: e.clientY });
                           setDraggingCardIndex(index);
                           setDraggingCard(monster);
-                          e.dataTransfer.setData('attackerZoneIndex', index.toString());
-                          e.dataTransfer.effectAllowed = 'move';
+                          dragEvent.dataTransfer.setData('attackerZoneIndex', index.toString());
+                          dragEvent.dataTransfer.effectAllowed = 'move';
                           
                           // Criar uma imagem invisível para o drag (para esconder a imagem padrão)
                           const dragImage = document.createElement('div');
@@ -881,7 +882,7 @@ const DuelField: React.FC<DuelFieldProps> = ({
                           dragImage.style.height = '1px';
                           dragImage.style.opacity = '0';
                           document.body.appendChild(dragImage);
-                          e.dataTransfer.setDragImage(dragImage, 0, 0);
+                          dragEvent.dataTransfer.setDragImage(dragImage, 0, 0);
                           setTimeout(() => {
                             if (document.body.contains(dragImage)) {
                               document.body.removeChild(dragImage);
