@@ -55,7 +55,7 @@ export default function RegisterPage() {
   const passwordChecks = [
     { label: '6 ou mais caracteres', passed: password.length >= 6 },
     { label: 'Letra maiúscula e minúscula', passed: /[a-z]/.test(password) && /[A-Z]/.test(password) },
-    { label: 'Número ou símbolo', passed: /[0-9\\W_]/.test(password) },
+    { label: 'Número ou símbolo', passed: /[0-9]/.test(password) || /[^A-Za-z0-9]/.test(password) },
   ];
   const completedFields = [nickname.trim(), username.trim(), email.trim(), confirmEmail.trim(), password, confirmPassword].filter(Boolean).length;
 
