@@ -33,6 +33,7 @@ interface ArenaSchedule {
   config?: {
     levelRanges?: LevelRange[];
     scoreMultiplier?: number;
+    description?: string;
     rewards?: {
       levelRangeRewards?: LevelRangeReward[];
     };
