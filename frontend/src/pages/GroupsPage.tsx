@@ -1,3 +1,4 @@
+import GameIcon from '../components/GameIcon';
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
@@ -226,20 +227,18 @@ export default function GroupsPage() {
   };
 
   return (
-    <div className="min-h-screen p-8 relative z-10">
+    <div className="min-h-screen px-3 py-4 sm:px-6 sm:py-7 relative z-10">
       {/* Header */}
       <div className="max-w-7xl mx-auto mb-8">
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between"
+          className="game-screen-hero flex flex-wrap items-center justify-between gap-4"
         >
           <div>
-            <h1 className="text-5xl font-bold text-white mb-2 flex items-center gap-3">
-              <span className="text-6xl">👥</span>
-              {t('groups.title')}
-            </h1>
-            <p className="text-slate-400 text-lg">
+            <p className="game-screen-kicker">Comunidade de duelistas</p>
+            <h1 className="game-screen-heading"><span className="game-screen-icon"><GameIcon route="/groups" size={27} /></span>{t('groups.title')}</h1>
+            <p className="game-screen-subtitle">
               {t('groups.subtitle')}
             </p>
           </div>
@@ -247,7 +246,7 @@ export default function GroupsPage() {
           {(!user?.group && !user?.clanTag) && (
             <button
               onClick={() => setShowCreateModal(true)}
-              className="px-8 py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold text-lg hover:scale-105 transition-transform shadow-lg shadow-purple-500/50"
+              className="ui-button-primary shrink-0"
             >
               ➕ {t('groups.createGroup')}
             </button>

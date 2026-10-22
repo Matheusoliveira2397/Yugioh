@@ -780,3 +780,198 @@
     .ui-action-tile:hover, .ui-button-primary:hover, .ui-button-secondary:hover { transform: none; }
   }
 }
+
+
+/* Design System v2 — Duelist Academy / fantasy-tech.
+   Shared visual language for authenticated screens; duel board intentionally excluded. */
+@layer components {
+  .game-shell .game-nav {
+    background: linear-gradient(180deg, rgba(8, 12, 27, .98), rgba(14, 21, 38, .94));
+    border-bottom: 1px solid rgba(245, 204, 97, .26);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .22);
+    backdrop-filter: blur(18px);
+  }
+  .game-shell .game-nav-tab {
+    isolation: isolate;
+    overflow: visible;
+    color: #e5eaf7;
+    outline-offset: 3px;
+    border-radius: .85rem;
+  }
+  .game-shell .game-nav-tab--compact {
+    gap: .27rem;
+    min-width: 4.35rem;
+    min-height: 3.7rem;
+    padding: .3rem .45rem;
+    font-size: .65rem;
+    line-height: 1.15;
+    letter-spacing: .01em;
+    border-width: 1px;
+  }
+  .game-shell .game-nav-tab--active {
+    transform: none;
+    color: #fff;
+    background: linear-gradient(160deg, rgba(226, 181, 71, .19), rgba(56, 99, 156, .18));
+    border-color: rgba(238, 197, 91, .65);
+    box-shadow: 0 0 0 1px rgba(226, 181, 71, .12), inset 0 1px 0 rgba(255, 255, 255, .08);
+  }
+  .game-shell .game-nav-tab--idle:hover {
+    transform: none;
+    background: rgba(226, 181, 71, .1);
+    border-color: rgba(226, 181, 71, .42);
+  }
+  .game-shell .game-nav-tab--compact > span:last-child {
+    max-width: 5.2rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .game-nav-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 2.1rem;
+    height: 2.1rem;
+    border-radius: .65rem;
+    color: #f2d48a;
+    background: linear-gradient(155deg, rgba(236, 198, 96, .14), rgba(64, 113, 184, .12));
+    border: 1px solid rgba(236, 198, 96, .28);
+    filter: drop-shadow(0 2px 5px rgba(0, 0, 0, .25));
+    transition: background .2s, color .2s, border-color .2s;
+  }
+  .game-nav-tab:hover .game-nav-icon,
+  .game-nav-tab--active .game-nav-icon {
+    color: #ffeba9;
+    background: linear-gradient(145deg, rgba(236, 198, 96, .25), rgba(61, 184, 197, .15));
+    border-color: rgba(236, 198, 96, .67);
+  }
+  .game-nav-icon--grid {
+    width: 2.6rem;
+    height: 2.6rem;
+  }
+  .game-shell .game-panel {
+    border-radius: 1rem;
+    background: linear-gradient(155deg, rgba(26, 38, 66, .94), rgba(9, 14, 29, .94));
+    border-color: rgba(233, 195, 93, .25);
+    box-shadow: 0 12px 35px rgba(0, 0, 0, .26), inset 0 1px 0 rgba(255, 255, 255, .055);
+  }
+  .game-shell .game-panel-header {
+    background: linear-gradient(95deg, rgba(228, 183, 74, .16), rgba(41, 87, 144, .1), transparent);
+    border-bottom-color: rgba(233, 195, 93, .16);
+    min-height: 2.75rem;
+  }
+  .game-shell .game-panel-title {
+    font-size: clamp(.85rem, 1.05vw, 1.05rem);
+    line-height: 1.4;
+    color: #f7f0dc;
+  }
+  .game-shell .game-page-title {
+    color: #fff7e5;
+    letter-spacing: .015em;
+    line-height: 1.2;
+  }
+  .game-shell .game-page-sub { color: #bfcae0; }
+  .game-shell .game-stat-chip {
+    background: rgba(25, 40, 66, .58);
+    border-color: rgba(211, 188, 132, .19);
+  }
+  .game-shell .game-cta-tile {
+    border-radius: 1rem;
+    background: linear-gradient(160deg, rgba(33, 50, 82, .95), rgba(12, 18, 34, .95));
+    border-color: rgba(242, 202, 103, .27);
+  }
+  .game-shell :where(.game-input, .game-select, input, textarea, select):not([type="checkbox"]):not([type="radio"]) {
+    accent-color: #e8c547;
+  }
+  .game-shell :where(.game-input, .game-select) {
+    border-color: rgba(203, 218, 245, .25);
+    background-color: rgba(10, 17, 33, .76);
+    color: #f8fafc;
+  }
+  .game-shell :where(button, a, input, textarea, select):focus-visible {
+    outline: 2px solid #f2cf70;
+    outline-offset: 3px;
+  }
+  .game-shell :where(button, input, select, textarea):disabled {
+    cursor: not-allowed;
+    opacity: .6;
+  }
+  .game-shell :where(.btn-champion, .btn-primary, .ui-button-primary) {
+    border-radius: .75rem;
+    min-height: 2.65rem;
+  }
+  .game-screen-hero {
+    position: relative;
+    overflow: hidden;
+    padding: clamp(1rem, 2.6vw, 2rem);
+    border-radius: 1.25rem;
+    border: 1px solid rgba(237, 194, 82, .37);
+    background:
+      radial-gradient(ellipse at 85% 20%, rgba(56, 127, 187, .22), transparent 52%),
+      radial-gradient(ellipse at 0% 100%, rgba(227, 176, 69, .15), transparent 48%),
+      linear-gradient(140deg, rgba(20, 33, 60, .97), rgba(8, 13, 27, .96));
+    box-shadow: 0 18px 38px rgba(0, 0, 0, .29);
+  }
+  .game-screen-hero::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; right: 10%;
+    width: 1px;
+    transform: skew(-28deg);
+    background: linear-gradient(180deg, transparent, rgba(237, 194, 82, .25), transparent);
+    pointer-events: none;
+  }
+  .game-screen-heading {
+    display: flex;
+    align-items: center;
+    gap: .8rem;
+    color: #fff;
+    font-family: "Cinzel", Georgia, serif;
+    font-size: clamp(1.45rem, 3vw, 2.3rem);
+    font-weight: 800;
+    line-height: 1.15;
+  }
+  .game-screen-kicker {
+    margin-bottom: .55rem;
+    color: #f5d47d;
+    font-size: .66rem;
+    font-weight: 800;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+  }
+  .game-screen-subtitle {
+    max-width: 45rem;
+    margin-top: .65rem;
+    color: #c4cee1;
+    font-size: clamp(.82rem, 1.15vw, .96rem);
+    line-height: 1.65;
+  }
+  .game-screen-icon {
+    display: inline-flex;
+    width: 3rem;
+    height: 3rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: .9rem;
+    color: #ffe6a1;
+    background: rgba(234, 190, 86, .14);
+    border: 1px solid rgba(234, 190, 86, .4);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06);
+    flex-shrink: 0;
+  }
+  .game-shell .ui-action-tile:focus-visible {
+    outline: 2px solid #f1d181;
+    outline-offset: 3px;
+  }
+}
+@media (max-width: 639px) {
+  .game-shell .game-nav-tab--compact { min-width: 3.95rem; padding: .25rem .3rem; font-size: .6rem; }
+  .game-shell .game-panel-header { min-height: 2.5rem; }
+  .game-screen-icon { width: 2.6rem; height: 2.6rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .game-shell .game-nav-tab,
+  .game-nav-icon,
+  .game-shell .game-cta-tile { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}

@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
 import api from '../api/axios';
 import CardImage from '../components/CardImage';
+import GameIcon from '../components/GameIcon';
 import CardArtViewer from '../components/CardArtViewer';
 import DeckCopyLimitBadge from '../components/DeckCopyLimitBadge';
 import LatestCardsMarquee, { type MarqueeCard } from '../components/LatestCardsMarquee';
@@ -1077,19 +1078,16 @@ export default function ShopPage() {
         >
           <p className="ui-eyebrow mb-2">Mercado de Duelistas</p>
           <h1 className="ui-hero-title mb-3 flex items-center gap-3">
-            <img src="/images/Icones/Shop.png" alt="" className="w-12 h-12 sm:w-14 sm:h-14 object-contain flex-shrink-0" aria-hidden />
+            <span className="game-screen-icon"><GameIcon route="/shop" size={27} /></span>
             {t('shop.title')}
           </h1>
           <div className="flex flex-wrap gap-2 mb-3">
-            <a href="/loot-boxes" className="ui-button-primary">
-              🎴 {t('shop.openLootBoxes')}
-            </a>
-            <a
-              href="/collection"
-              className="ui-button-secondary"
-            >
-              📚 Coleção
-            </a>
+            <Link to="/loot-boxes" className="ui-button-primary inline-flex items-center gap-2">
+              <GameIcon route="/loot-boxes" size={18} /> {t('shop.openLootBoxes')}
+            </Link>
+            <Link to="/collection" className="ui-button-secondary inline-flex items-center gap-2">
+              <GameIcon route="/collection" size={18} /> Coleção
+            </Link>
           </div>
           <p className="text-sm text-gray-300">{t('shop.subtitle')}</p>
           <div className="mt-3 flex flex-wrap gap-2">

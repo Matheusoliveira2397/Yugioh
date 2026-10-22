@@ -8,6 +8,7 @@ import ArenaCountdownBanner from './ArenaCountdownBanner';
 import ArenaFullBleedBackground from './ArenaFullBleedBackground';
 import { UserProfileCard } from './UserProfileCard';
 import LanguageSelector from './LanguageSelector';
+import GameIcon from './GameIcon';
 import { getSocialIcon } from './SocialMediaIcons';
 import axios from 'axios';
 
@@ -69,25 +70,6 @@ const TAB_NAV_ICONS: Record<string, string> = {
   '/credit': '/images/Icones/Credito.png',
   '/help': '/images/Icones/Ajuda.png',
 };
-
-function tabNavIconForRoute(route: string, fallback: string): string {
-  return TAB_NAV_ICONS[route] || fallback;
-}
-
-function tabNavImageClass(
-  variant: 'desktop' | 'mobileRow' | 'mobileGrid',
-  _route: string,
-  isActiveDesktop?: boolean
-): string {
-  const pulse = isActiveDesktop ? ' animate-pulse' : '';
-  if (variant === 'desktop') {
-    return `h-11 w-11 xl:h-12 xl:w-12 relative z-10 drop-shadow-lg object-contain${pulse}`;
-  }
-  if (variant === 'mobileRow') {
-    return `h-10 w-10 object-contain drop-shadow-lg`;
-  }
-  return `h-12 w-12 object-contain drop-shadow-lg`;
-}
 
 function useNavScroll(depsKey: string | number) {
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -292,13 +274,15 @@ export default function Layout({ children }: LayoutProps) {
       <ArenaCountdownBanner />
 
       <div className="relative z-10 flex flex-col flex-1 min-h-0 overflow-hidden">
-        <nav id="main-nav" className="relative game-nav flex-shrink-0">
+        <nav id="main-nav" aria-label="Navegação principal do jogo" className="relative game-nav flex-shrink-0">
           <div className="w-full px-2 sm:px-3 md:px-4 xl:px-5">
-            <div className="flex items-center h-12 lg:h-[3.25rem] gap-1 md:gap-1.5">
+            <div className="flex items-center h-[4.25rem] lg:h-[4.75rem] gap-1 md:gap-1.5">
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 className="lg:hidden flex-shrink-0 min-h-[44px] min-w-[44px] p-2 rounded-lg text-white hover:bg-champion-gold/10 transition-colors flex items-center justify-center"
                 aria-label={t('layout.openMenu')}
+                aria-expanded={mobileMenuOpen}
+                aria-controls="game-mobile-navigation"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   {mobileMenuOpen ? (
@@ -334,35 +318,18 @@ export default function Layout({ children }: LayoutProps) {
                       location.pathname === tab.route ||
                       (tab.route !== '/' && location.pathname.startsWith(tab.route)) ||
                       (isHelpRoute && location.pathname === '/feedback');
-                    const tabIcon = tabNavIconForRoute(tab.route, tab.icon);
 
                     return (
                       <Link
                         key={tab.key}
                         to={tab.route}
                         title={tabLabel(tab)}
+                        aria-current={isActive ? 'page' : undefined}
                         className={`game-nav-tab game-nav-tab--compact ${
                           isActive ? 'game-nav-tab--active' : 'game-nav-tab--idle'
                         }`}
                       >
-                        {tabIcon && tabIcon.startsWith('/images/') ? (
-                          <img
-                            src={tabIcon}
-                            alt={tabLabel(tab)}
-                            className={tabNavImageClass('desktop', tab.route, isActive)}
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <span
-                            className={`text-lg xl:text-xl relative z-10 drop-shadow-lg ${
-                              isActive ? 'text-champion-gold' : ''
-                            }`}
-                          >
-                            {tabIcon}
-                          </span>
-                        )}
+                        <span className="game-nav-icon"><GameIcon route={tab.route} size={22} /></span>
                         <span className="relative z-10 text-center leading-tight max-w-[3.75rem] xl:max-w-[4.5rem] truncate">
                           {tabLabel(tab)}
                         </span>
@@ -408,29 +375,18 @@ export default function Layout({ children }: LayoutProps) {
                       location.pathname === tab.route ||
                       (tab.route !== '/' && location.pathname.startsWith(tab.route)) ||
                       (isHelpRoute && location.pathname === '/feedback');
-                    const tabIcon = tabNavIconForRoute(tab.route, tab.icon);
 
                     return (
                       <Link
                         key={tab.key}
                         to={tab.route}
                         title={tabLabel(tab)}
-                        className={`game-nav-tab game-nav-tab--compact min-h-[44px] text-[10px] sm:text-[11px] ${
+                        aria-current={isActive ? 'page' : undefined}
+                        className={`game-nav-tab game-nav-tab--compact text-[10px] sm:text-[11px] ${
                           isActive ? 'game-nav-tab--active' : 'game-nav-tab--idle'
                         }`}
                       >
-                        {tabIcon && tabIcon.startsWith('/images/') ? (
-                          <img
-                            src={tabIcon}
-                            alt={tabLabel(tab)}
-                            className={tabNavImageClass('mobileRow', tab.route)}
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <span className="text-base sm:text-lg drop-shadow-lg">{tabIcon}</span>
-                        )}
+                        <span className="game-nav-icon"><GameIcon route={tab.route} size={22} /></span>
                         <span className="text-center leading-tight max-w-[3.75rem] truncate">
                           {tabLabel(tab)}
                         </span>
@@ -461,7 +417,7 @@ export default function Layout({ children }: LayoutProps) {
           </div>
 
           {mobileMenuOpen && (
-            <div className="lg:hidden border-t border-champion-gold/20 bg-arena-ink/90 backdrop-blur-md">
+            <div id="game-mobile-navigation" className="lg:hidden border-t border-champion-gold/20 bg-arena-ink/95 backdrop-blur-md">
               <div className="px-4 py-3 max-h-[60vh] overflow-y-auto">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {activeTabs.map((tab) => {
@@ -470,12 +426,12 @@ export default function Layout({ children }: LayoutProps) {
                       location.pathname === tab.route ||
                       (tab.route !== '/' && location.pathname.startsWith(tab.route)) ||
                       (isHelpRoute && location.pathname === '/feedback');
-                    const tabIcon = tabNavIconForRoute(tab.route, tab.icon);
 
                     return (
                       <Link
                         key={tab.key}
                         to={tab.route}
+                        aria-current={isActive ? 'page' : undefined}
                         onClick={() => setMobileMenuOpen(false)}
                         className={`flex flex-col items-center justify-center gap-1 min-h-[48px] p-3 rounded-lg text-xs font-semibold transition-all ${
                           isActive
@@ -483,18 +439,7 @@ export default function Layout({ children }: LayoutProps) {
                             : 'text-gray-300 hover:text-white hover:bg-champion-gold/10 border border-transparent'
                         }`}
                       >
-                        {tabIcon && tabIcon.startsWith('/images/') ? (
-                          <img
-                            src={tabIcon}
-                            alt={tabLabel(tab)}
-                            className={tabNavImageClass('mobileGrid', tab.route)}
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <span className="text-2xl drop-shadow-lg">{tabIcon}</span>
-                        )}
+                        <span className="game-nav-icon game-nav-icon--grid"><GameIcon route={tab.route} size={24} /></span>
                         <span className="text-center">{tabLabel(tab)}</span>
                       </Link>
                     );

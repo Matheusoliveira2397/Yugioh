@@ -1,3 +1,4 @@
+import GameIcon from '../components/GameIcon';
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
@@ -62,7 +63,7 @@ export default function DeckBuilderPage() {
           className="rounded-xl sm:rounded-2xl overflow-hidden mb-4 sm:mb-8"
         >
           {/* Imagem de Fundo com Overlay */}
-          <div className="relative h-32 sm:h-48 md:h-64 overflow-hidden">
+          <div className="relative h-44 sm:h-52 md:h-64 overflow-hidden border border-champion-gold/30 rounded-t-2xl">
             <img
               src="/images/decks/deck.png"
               alt="Yu-Gi-Oh Deck"
@@ -72,9 +73,11 @@ export default function DeckBuilderPage() {
               }}
             />
             
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#080d1d]/95 via-[#080d1d]/45 to-transparent" aria-hidden="true" />
             {/* Texto sobre a imagem */}
-            <div className="absolute bottom-3 sm:bottom-6 left-4 sm:left-8">
-              <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-1 sm:mb-2 drop-shadow-2xl">Organize seu deck</h1>
+            <div className="absolute bottom-4 sm:bottom-6 left-4 sm:left-8 right-4">
+              <p className="game-screen-kicker">Oficina do duelista</p>
+              <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-1 sm:mb-2 drop-shadow-2xl flex items-center gap-3"><span className="game-screen-icon"><GameIcon route="/deck-builder" size={27} /></span>Organize seu deck</h1>
               <p className="text-sm sm:text-base md:text-lg lg:text-xl text-gray-200 drop-shadow-lg">Crie e edite seus baralhos</p>
             </div>
           </div>

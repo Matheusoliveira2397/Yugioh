@@ -1,3 +1,4 @@
+import GameIcon from '../components/GameIcon';
 import { useState, FormEvent, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useI18n } from '../i18n/I18nContext';
@@ -435,6 +436,21 @@ export default function LoginPage() {
       {/* Conteúdo principal */}
       <main className="flex-1 relative z-10 pt-4 sm:pt-6 pb-8 px-4">
         <div className="max-w-6xl w-full mx-auto flex flex-col gap-6">
+          <section className="game-screen-hero" aria-labelledby="login-welcome-title">
+            <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="game-screen-kicker">Yu-Gi-Oh! RPG · Academia de Duelistas</p>
+                <h2 id="login-welcome-title" className="game-screen-heading">
+                  <span className="game-screen-icon"><GameIcon route="/random-duel" size={27} /></span>
+                  Entre na arena. Sua jornada começa aqui.
+                </h2>
+                <p className="game-screen-subtitle">Colecione cartas, desafie outros duelistas, participe de torneios e construa sua história.</p>
+              </div>
+              <Link to="/register" className="ui-button-primary inline-flex shrink-0 items-center justify-center gap-2 self-start md:self-auto">
+                <GameIcon route="/profile" size={19} /> Criar minha conta
+              </Link>
+            </div>
+          </section>
           {/* Grid: Rankings à esquerda | Stats + destaque à direita */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
             {/* Card único: Top Duelistas (Global + Season lado a lado) */}

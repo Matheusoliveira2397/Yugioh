@@ -1,3 +1,4 @@
+import GameIcon from '../components/GameIcon';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
@@ -463,14 +464,14 @@ export default function RankingPage() {
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-2 md:mb-3 text-center"
+          className="game-screen-hero mb-4 md:mb-5 text-center"
         >
-          <h1 className="text-xl sm:text-2xl md:text-4xl font-bold text-white mb-1 flex items-center justify-center gap-2 md:gap-3">
-            <span className="text-2xl sm:text-3xl md:text-5xl">📊</span>
+          <h1 className="game-screen-heading mb-2 justify-center">
+            <span className="game-screen-icon"><GameIcon route="/ranking" size={26} /></span>
             <span className="hidden sm:inline">{t('ranking.title')}</span>
             <span className="sm:hidden">{t('ranking.title')}</span>
           </h1>
-          <p className="text-slate-400 text-xs md:text-sm">
+          <p className="game-screen-subtitle mx-auto">
             {rankingType === 'duelista' && t('ranking.subtitle')}
             {rankingType === 'clan' && t('ranking.subtitle')}
             {SHOW_CLASS_RANKING_TAB && rankingType === 'classe' && 'Ranking por classes Obelisco, Rá e Slifer (pontos de torneio)'}

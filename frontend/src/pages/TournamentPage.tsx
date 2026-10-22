@@ -1,3 +1,4 @@
+import GameIcon from '../components/GameIcon';
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -428,7 +429,7 @@ export default function TournamentPage() {
   };
 
   return (
-    <div className="min-h-screen p-8 max-w-7xl mx-auto">
+    <div className="min-h-screen px-3 py-4 sm:px-6 sm:py-7 max-w-7xl mx-auto">
         {tournamentIdParam && (
           <div className="mb-4">
             <button
@@ -441,8 +442,11 @@ export default function TournamentPage() {
           </div>
         )}
 
-        <h1 className="text-4xl font-bold text-white mb-2">{t('tournament.title')}</h1>
-        <p className="text-gray-400 mb-8">{t('tournament.subtitle')}</p>
+        <header className="game-screen-hero mb-6">
+          <p className="game-screen-kicker">Arena competitiva</p>
+          <h1 className="game-screen-heading"><span className="game-screen-icon"><GameIcon route="/tournaments" size={27} /></span>{t('tournament.title')}</h1>
+          <p className="game-screen-subtitle">{t('tournament.subtitle')}</p>
+        </header>
 
         {loadingDetail && (
           <div className="text-white py-12 text-center">Carregando torneio...</div>

@@ -1,3 +1,4 @@
+import GameIcon from '../components/GameIcon';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -134,10 +135,11 @@ export default function LootBoxesPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-[clamp(0.75rem,2.5vw,1.5rem)] py-5 text-white">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+      <header className="game-screen-hero mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="game-page-title mb-1">Pacotes de Cartas</h1>
-          <p className="game-page-sub">
+          <p className="game-screen-kicker">Coleção e recompensas</p>
+          <h1 className="game-screen-heading"><span className="game-screen-icon"><GameIcon route="/loot-boxes" size={27} /></span>Pacotes de Cartas</h1>
+          <p className="game-screen-subtitle">
             Abra pacotes e revele cartas (ou créditos). Cada sorteio usa as chances de raridade do
             pacote.
           </p>
@@ -148,7 +150,7 @@ export default function LootBoxesPage() {
         >
           Ver coleção →
         </Link>
-      </div>
+      </header>
 
       {error && (
         <div role="alert" className="game-panel border-champion-crimson/40 bg-champion-crimson/10 p-3 mb-4 text-sm">

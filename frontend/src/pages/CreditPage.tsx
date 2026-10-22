@@ -1,3 +1,4 @@
+import GameIcon from '../components/GameIcon';
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
@@ -185,11 +186,10 @@ export default function CreditPage() {
         className="space-y-8"
       >
         {/* Header */}
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-white mb-4">
-            💳 {t('credit.title')}
-          </h1>
-          <p className="text-gray-400 text-lg">
+        <header className="game-screen-hero text-center">
+          <p className="game-screen-kicker">Moedas e recompensas</p>
+          <h1 className="game-screen-heading justify-center"><span className="game-screen-icon"><GameIcon route="/credit" size={27} /></span>{t('credit.title')}</h1>
+          <p className="game-screen-subtitle mx-auto">
             {t('credit.subtitle')}
           </p>
           <p className="text-amber-200/80 text-sm mt-2">{t('credit.clickPackage')}</p>
@@ -201,7 +201,7 @@ export default function CreditPage() {
               </p>
             </div>
           )}
-        </div>
+        </header>
 
         {showPaymentContact && (
           <motion.div
