@@ -5,6 +5,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import axios from 'axios';
 import { logger } from '../utils/logger';
 import LatestCardsMarquee from '../components/LatestCardsMarquee';
+import GameIcon from '../components/GameIcon';
 
 import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { formatScore } from '../utils/formatScore';
@@ -17,51 +18,45 @@ const HOME_QUICK_ACTIONS = [
     to: '/random-duel',
     label: 'Duelo',
     hint: 'Encontre um oponente',
-    icon: '/images/Icones/RandomDuel.png',
     accent: 'from-champion-gold/20 to-transparent',
   },
   {
     to: '/arena',
     label: 'Arena',
     hint: 'Desafios agendados',
-    icon: '/images/Icones/Arena.png',
     accent: 'from-champion-crimson/20 to-transparent',
   },
   {
     to: '/shop',
     label: 'Loja',
     hint: 'Cartas e cosméticos',
-    icon: '/images/Icones/Shop.png',
     accent: 'from-champion-cyan/20 to-transparent',
   },
   {
     to: '/ranking',
     label: 'Ranking',
     hint: 'Top duelistas',
-    icon: '/images/Icones/Ranking.png',
     accent: 'from-amber-500/15 to-transparent',
   },
   {
     to: '/tournaments',
     label: 'Torneios',
     hint: 'Competições oficiais',
-    icon: '/images/Icones/Torneio.png',
     accent: 'from-violet-500/15 to-transparent',
   },
   {
     to: '/groups',
     label: 'Clãs',
     hint: 'Jogue em equipe',
-    icon: '/images/Icones/Cla.png',
     accent: 'from-rose-500/15 to-transparent',
   },
 ] as const;
 
 const HOME_SECONDARY_ACTIONS = [
-  { to: '/collection', label: 'Coleção', iconSrc: '/images/Icones/Colecao.png' },
-  { to: '/loot-boxes', label: 'Pacotes', iconSrc: '/images/Icones/Drops.png' },
-  { to: '/deck-builder', label: 'Decks', iconSrc: '/images/Icones/Cartas.png' },
-  { to: '/credit', label: 'Créditos', iconSrc: '/images/Icones/Credito.png' },
+  { to: '/collection', label: 'Coleção' },
+  { to: '/loot-boxes', label: 'Pacotes' },
+  { to: '/deck-builder', label: 'Decks' },
+  { to: '/credit', label: 'Créditos' },
 ] as const;
 
 interface RankingPlayer {
@@ -467,7 +462,7 @@ export default function HomePage() {
           )}
         </div>
 
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-2.5">
+        <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
           {HOME_QUICK_ACTIONS.map((action, i) => (
             <motion.button
               key={action.to}
@@ -476,22 +471,19 @@ export default function HomePage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.04 }}
               onClick={() => navigate(action.to)}
-              className="game-cta-tile ui-action-tile group !p-2.5 sm:!p-3 flex flex-col items-center text-center justify-center min-h-[5.75rem] sm:min-h-[6.75rem] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champion-gold"
+              className="game-cta-tile ui-action-tile group !p-3 sm:!p-3.5 flex flex-col items-center text-center justify-center min-h-[8rem] sm:min-h-[8.5rem] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champion-gold"
             >
               <div
                 className={`absolute inset-0 bg-gradient-to-br ${action.accent} opacity-80 pointer-events-none`}
                 aria-hidden
               />
-              <img
-                src={action.icon}
-                alt=""
-                className="relative z-10 h-11 w-11 sm:h-12 sm:w-12 md:h-14 md:w-14 object-contain drop-shadow-lg transition-transform duration-300 group-hover:scale-110 group-hover:-translate-y-0.5"
-                draggable={false}
-              />
+              <span className="game-screen-icon relative z-10 mb-1 transition-transform duration-300 group-hover:scale-110 group-hover:-translate-y-0.5">
+                <GameIcon route={action.to} size={27} />
+              </span>
               <strong className="relative z-10 mt-1.5 block font-display text-xs sm:text-sm text-champion-gold group-hover:text-white transition-colors leading-tight">
                 {action.label}
               </strong>
-              <span className="relative z-10 mt-0.5 hidden sm:block text-[10px] text-white/50 leading-tight line-clamp-1 px-0.5">
+              <span className="relative z-10 mt-1 block text-[11px] text-slate-300 leading-tight line-clamp-2 px-0.5">
                 {action.hint}
               </span>
             </motion.button>
@@ -506,11 +498,9 @@ export default function HomePage() {
               onClick={() => navigate(action.to)}
               className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-xs sm:text-sm font-semibold text-white/85 hover:border-champion-gold/40 hover:bg-champion-gold/10 hover:text-white transition-colors"
             >
-              {'iconSrc' in action && action.iconSrc ? (
-                <img src={action.iconSrc} alt="" className="h-6 w-6 object-contain" draggable={false} />
-              ) : (
-                <span aria-hidden>•</span>
-              )}
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-champion-gold/25 bg-champion-gold/10 text-champion-gold">
+                <GameIcon route={action.to} size={18} />
+              </span>
               {action.label}
             </button>
           ))}
