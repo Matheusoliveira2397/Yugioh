@@ -1,5 +1,5 @@
-import { useState, FormEvent, useEffect, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import axios from 'axios';
 import ArenaFullBleedBackground from '../components/ArenaFullBleedBackground';
@@ -17,7 +17,6 @@ interface ValidationState {
 
 export default function RegisterPage() {
   const { t } = useI18n();
-  const navigate = useNavigate();
   const [nickname, setNickname] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -46,9 +45,6 @@ export default function RegisterPage() {
     checking: false,
   });
 
-  const nicknameTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const usernameTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const emailTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Validar nickname ao sair do campo
   const handleNicknameBlur = async () => {
