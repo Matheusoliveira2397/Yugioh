@@ -69,7 +69,7 @@ export default function ArenaPage() {
   const [nextArena, setNextArena] = useState<Arena | null>(null);
   const [levelRanges, setLevelRanges] = useState<Array<{ min: number; max: number; name: string }>>([]);
   const [lastArenaTop5, setLastArenaTop5] = useState<{ arena: { id: string; name: string; endTime: string }; rankings: Record<string, ArenaRanking[]> } | null>(null);
-  const [loadingLastTop5, setLoadingLastTop5] = useState(false);
+  const [, setLoadingLastTop5] = useState(false);
   const [equippedTalisman, setEquippedTalisman] = useState<{ name: string; bonusScorePct: number; bonusCashPct: number; bonusArenaPointsPct: number; charges?: number } | null>(null);
 
   /** Hero da arena ativa: tenta várias imagens e, por fim, qualquer extensão de `/images/background.*` */
@@ -333,7 +333,7 @@ export default function ArenaPage() {
       
       // Encontrar o usuário atual nos rankings
       if (user?.id && response.data) {
-        for (const [division, rankings] of Object.entries(response.data)) {
+        for (const [, rankings] of Object.entries(response.data)) {
           const userRanking = (rankings as ArenaRanking[]).find(r => r.userId === Number(user.id));
           if (userRanking) {
             setUserArenaPoints(userRanking.score || 0);
@@ -393,14 +393,6 @@ export default function ArenaPage() {
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-  };
-
-  const getDivisionIcon = (division: string): string => {
-    if (division.includes('Nível 2') || division.includes('Nível 3')) return '🥈';
-    if (division.includes('Nível 4') || division.includes('Nível 5')) return '🥇';
-    if (division.includes('Nível 6') || division.includes('Nível 10')) return '🥇';
-    if (division.includes('Nível 11')) return '🥇';
-    return '🥉';
   };
 
   // Dentro da arena: só as faixas de nível ativas (configuradas na arena); senão usa a lista global

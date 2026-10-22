@@ -424,10 +424,10 @@ export const ProfilePage: React.FC = () => {
   };
 
   const handleSaveBiography = async () => {
-    if (!token || !isOwnProfile) return;
+    if (!token || !isOwnProfile || !currentUser) return;
 
     try {
-      const userId = typeof currentUser?.id === 'string' ? parseInt(currentUser.id, 10) : Number(currentUser.id);
+      const userId = typeof currentUser.id === 'string' ? parseInt(currentUser.id, 10) : Number(currentUser.id);
       await axios.patch(
         `${API_URL}/users/${userId}/biography`,
         { biography },
@@ -1231,7 +1231,6 @@ export const ProfilePage: React.FC = () => {
                       }
                     } else {
                       const player1Id = typeof duel.player1?.id === 'string' ? parseInt(duel.player1.id, 10) : Number(duel.player1?.id);
-                      const player2Id = typeof duel.player2?.id === 'string' ? parseInt(duel.player2.id, 10) : Number(duel.player2?.id);
                       const isPlayer1 = player1Id === currentUserId;
                       opponent = isPlayer1 ? duel.player2 : duel.player1;
                       won = duel.winnerId === currentUserId;

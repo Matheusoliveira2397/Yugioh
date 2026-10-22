@@ -211,7 +211,7 @@ export default function PackOpeningOverlay({ packName, rewards, onClose }: Props
   }, [equippedSkinId, ownedSkins]);
 
   const items = useMemo((): PackItem[] => {
-    return rewards.flatMap((r, idx) => {
+    return rewards.flatMap<PackItem>((r, idx) => {
       if (isCard(r)) {
         const qty = Math.max(1, r.quantity || 1);
         const reward = {

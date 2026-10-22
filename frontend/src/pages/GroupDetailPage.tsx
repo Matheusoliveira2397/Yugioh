@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
@@ -180,7 +180,7 @@ export default function GroupDetailPage() {
     }
   };
 
-  const fetchRanking = async (type: 'weekly' | 'season' | 'total') => {
+  const fetchRanking = async (type: 'weekly' | 'season' | 'total' | 'members') => {
     try {
       const response = await axios.get(`${API_URL}/groups/${id}/ranking/${type}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -353,7 +353,7 @@ export default function GroupDetailPage() {
     }
   };
 
-  const handlePromoteMember = async (memberUserId: number) => {
+  const handlePromoteMember = async (memberUserId: string | number) => {
     if (!confirm('Tem certeza que deseja promover este membro a Oficial (Co-Líder)?')) {
       return;
     }
@@ -377,7 +377,7 @@ export default function GroupDetailPage() {
     }
   };
 
-  const handleDemoteMember = async (memberUserId: number) => {
+  const handleDemoteMember = async (memberUserId: string | number) => {
     if (!confirm('Tem certeza que deseja rebaixar este membro a Membro?')) {
       return;
     }
@@ -910,7 +910,6 @@ export default function GroupDetailPage() {
                 <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar pr-2">
                   {members.map((member, index) => {
                     const memberId = member.user?.id ? (typeof member.user.id === 'string' ? parseInt(member.user.id, 10) : Number(member.user.id)) : null;
-                    const isCurrentUser = memberId === userId;
                     const isMemberOfficer = member.role === 'Co-Leader' || member.role === 'CO_LEADER' || member.role === 'LEADER';
                     const isMemberLeader = memberId === leaderId;
                     

@@ -129,13 +129,14 @@ export default function HomePage() {
   const location = useLocation();
 
   // Estados
+  const [loading, setLoading] = useState(false);
   const [topPlayers, setTopPlayers] = useState<RankingPlayer[]>([]);
   const [topSeasonPlayers, setTopSeasonPlayers] = useState<RankingPlayer[]>([]);
   const [topClansGeneral, setTopClansGeneral] = useState<Clan[]>([]);
   const [topClansSeason, setTopClansSeason] = useState<Clan[]>([]);
   const [news, setNews] = useState<News[]>([]);
   const [shopCards, setShopCards] = useState<Card[]>([]);
-  const [viewedNewsIds, setViewedNewsIds] = useState<string[]>([]);
+  const [, setViewedNewsIds] = useState<string[]>([]);
   const [selectedNewsModal, setSelectedNewsModal] = useState<News | null>(null);
   const [newsIndex, setNewsIndex] = useState(0);
   const [newsPaused, setNewsPaused] = useState(false);
@@ -144,45 +145,6 @@ export default function HomePage() {
   const [timeUntilNextArena, setTimeUntilNextArena] = useState<number>(0);
   const [publicStats, setPublicStats] = useState<PublicStats | null>(null);
   
-  // Função para entrar em um clã
-  const handleJoinGroup = async (groupId: string) => {
-    try {
-      await axios.post(
-        `${API_URL}/groups/join/${groupId}`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      
-      // Buscar dados atualizados do usuário após entrar no grupo
-      try {
-        const userResponse = await axios.get(
-          `${API_URL}/users/me`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        
-        if (userResponse.data) {
-          const updatedUser = { ...user, ...userResponse.data };
-          useAuthStore.setState({
-            user: updatedUser,
-          });
-        }
-      } catch (err) {
-        console.error('❌ Erro ao buscar dados do usuário:', err);
-      }
-      
-      alert('Você entrou no clã!');
-      // Recarregar dados para atualizar a lista
-      fetchData();
-    } catch (error: any) {
-      alert(error.response?.data?.message || 'Erro ao entrar no clã');
-    }
-  };
-  const [loading, setLoading] = useState(true);
-
   // Função para buscar notícias vistas e atualizar o estado
   const fetchViewedNews = useCallback(async () => {
     if (!token || !user) return;
@@ -476,7 +438,7 @@ export default function HomePage() {
               {'iconSrc' in action && action.iconSrc ? (
                 <img src={action.iconSrc} alt="" className="h-6 w-6 object-contain" draggable={false} />
               ) : (
-                <span aria-hidden>{'icon' in action ? action.icon : null}</span>
+                <span aria-hidden>•</span>
               )}
               {action.label}
             </button>

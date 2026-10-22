@@ -721,8 +721,8 @@ export default function RankingPage() {
                   >
                     {imagePath && (
                       <img
-                        src={imagePath}
-                        alt={displayName}
+                        src={typeof imagePath === 'string' ? imagePath : undefined}
+                        alt={String(displayName)}
                         className="object-contain"
                         style={{
                           width: 'clamp(5.25rem, 16vw, 8.5rem)',
@@ -737,7 +737,7 @@ export default function RankingPage() {
                         }}
                       />
                     )}
-                    <span className="text-white font-semibold text-[9px] sm:text-[10px] md:text-xs whitespace-nowrap mt-0.5">{displayName}</span>
+                    <span className="text-white font-semibold text-[9px] sm:text-[10px] md:text-xs whitespace-nowrap mt-0.5">{String(displayName)}</span>
                   </button>
                 );
               })}

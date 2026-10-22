@@ -6,6 +6,7 @@ import { useCosmeticsStore } from './cosmeticsStore';
 interface User {
   id: number | string; // Aceita number (novo) ou string (antigo para compatibilidade)
   nickname: string;
+  biography?: string | null;
   username: string;
   email: string;
   winsGeral: number;

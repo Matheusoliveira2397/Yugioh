@@ -5,7 +5,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useSocketStore } from '../stores/socketStore';
 import { getSocialIcon } from '../components/SocialMediaIcons';
 import axios from 'axios';
-import { getImageUrl, getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
+import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { requestActiveDuelRefresh } from '../utils/activeDuelRefresh';
 import { useI18n } from '../i18n/I18nContext';
 
@@ -43,7 +43,7 @@ export default function ChatPage() {
   const { t } = useI18n();
   const { user } = useAuthStore();
   const navigate = useNavigate();
-  const { connect, emit, on, isConnected, getSocket } = useSocketStore();
+  const { connect, isConnected, getSocket } = useSocketStore();
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageInput, setMessageInput] = useState('');
   // Aba selecionada: 'global' | 'clan' | userId (chat privado = uma aba por conversa)

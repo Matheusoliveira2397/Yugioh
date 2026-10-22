@@ -45,6 +45,7 @@ const DEFAULT_PRIZE_DETAILS = (): Record<number, { credit: number; cash: number;
 
 interface Card {
   id: string;
+  isActive?: boolean;
   idCarta: string;
   name: string;
   type: string;
@@ -93,7 +94,6 @@ export default function AdminTournamentsPanel() {
   });
   const [selectedTournamentTypeId, setSelectedTournamentTypeId] = useState<string | null>(null);
   const [typeBanlistSearch, setTypeBanlistSearch] = useState('');
-  const [typePrizeCardSearch, setTypePrizeCardSearch] = useState<Record<number, string>>({ 1: '', 2: '', 3: '', 4: '' });
 
   const [formData, setFormData] = useState({
     name: '',

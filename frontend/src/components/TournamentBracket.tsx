@@ -1,5 +1,4 @@
 import { motion } from 'framer-motion';
-import { useState } from 'react';
 
 interface Match {
   id: string;
@@ -51,10 +50,7 @@ interface TournamentBracketProps {
 
 import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-
 export default function TournamentBracket({ bracket }: TournamentBracketProps) {
-  const [hoveredMatch, setHoveredMatch] = useState<string | null>(null);
 
   // Organizar matches por rodada
   const organizeMatches = () => {
@@ -70,18 +66,6 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
   const organizedRounds = organizeMatches();
   const totalRounds = bracket.totalRounds;
 
-  // Calcular posições para layout dividido (esquerda/direita)
-  const getMatchPosition = (round: number, matchIndex: number, totalMatchesInRound: number) => {
-    const isLeftSide = round <= Math.ceil(totalRounds / 2);
-    const spacing = 120; // Espaçamento vertical entre matches
-    const baseOffset = 0;
-    
-    return {
-      top: baseOffset + (matchIndex * spacing),
-      side: isLeftSide ? 'left' : 'right'
-    };
-  };
-
   // Calcular scores do duelo (se disponível)
   const getMatchScores = (match: Match) => {
     // Por enquanto, retornar null se não houver scores explícitos
@@ -93,7 +77,7 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
   };
 
   // Renderizar match box
-  const renderMatchBox = (match: Match, round: number, matchIndex: number, side: 'left' | 'right') => {
+  const renderMatchBox = (match: Match, _round: number, matchIndex: number, _side: 'left' | 'right') => {
     const isWinner1 = match.winnerId === match.player1Id;
     const isWinner2 = match.winnerId === match.player2Id;
     const isFinished = match.status === 'finished';
@@ -106,8 +90,6 @@ export default function TournamentBracket({ bracket }: TournamentBracketProps) {
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         whileHover={{ scale: 1.02 }}
-        onHoverStart={() => setHoveredMatch(match.id)}
-        onHoverEnd={() => setHoveredMatch(null)}
         className={`relative z-10 w-[260px] bg-black/60 rounded-lg border-2 ${
           isFinished && (isWinner1 || isWinner2)
             ? 'border-[#00ff88] shadow-[0_0_20px_rgba(0,255,136,0.5)]'

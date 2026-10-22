@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import axios from 'axios';
 import { useAuthStore } from '../stores/authStore';
 import { useSocket } from '../hooks/useSocket';
 import DuelChat from '../components/duel/DuelChat';
@@ -13,7 +12,7 @@ import {
   DUEL_FIELD_DESKTOP_CARD_VISUAL_MULT,
 } from '../constants/duelLayout';
 import CardImage from '../components/CardImage';
-import { getCardImage, getAllCardImagePaths, CARD_IMAGE_GRID_PROPS } from '../utils/cardImage';
+import { getAllCardImagePaths, CARD_IMAGE_GRID_PROPS } from '../utils/cardImage';
 import { getCardDescription } from '../utils/cardDescription';
 import {
   getProfileImageUrl,
@@ -351,6 +350,11 @@ interface DuelData {
   id: string;
   player1: any;
   player2: any;
+  player1Id?: number | null;
+  player2Id?: number | null;
+  turnCounter?: number;
+  duelTime?: number;
+  createdAt?: string | Date;
   player1LifePoints: number;
   player2LifePoints: number;
   currentTurn: number;
@@ -363,11 +367,15 @@ interface DuelData {
     deck: any[];
     hand: any[];
     graveyard: any[];
+    monsters?: any[];
+    electromagneticTurtleUsedThisDuel?: boolean;
   };
   player2Field?: {
     deck: any[];
     hand: any[];
     graveyard: any[];
+    monsters?: any[];
+    electromagneticTurtleUsedThisDuel?: boolean;
   };
 }
 
@@ -387,8 +395,8 @@ function loadPersistedArenaLayout(): {
 
 const DuelArena: React.FC = () => {
   const { duelId } = useParams();
-  const { user, token } = useAuthStore();
-  const { duelFound, chatMessages, duelLogs, currentTurn, duelUpdate, sendChatMessage, joinDuelRoom, endTurn, performAction, getSocket, isConnected } = useSocket();
+  const { user } = useAuthStore();
+  const { duelFound, chatMessages, duelLogs, currentTurn, duelUpdate, sendChatMessage, joinDuelRoom, performAction, getSocket, isConnected } = useSocket();
   const joinDuelRoomRef = useRef(joinDuelRoom);
   joinDuelRoomRef.current = joinDuelRoom;
   
@@ -413,8 +421,8 @@ const DuelArena: React.FC = () => {
   const [opponentLifePoints, setOpponentLifePoints] = useState(8000);
   
   // Estados para animação de dano
-  const [myDamage, setMyDamage] = useState<number | null>(null);
-  const [opponentDamage, setOpponentDamage] = useState<number | null>(null);
+  const [, setMyDamage] = useState<number | null>(null);
+  const [, setOpponentDamage] = useState<number | null>(null);
   const previousMyLifePoints = useRef(8000);
   const previousOpponentLifePoints = useRef(8000);
   
@@ -436,7 +444,6 @@ const DuelArena: React.FC = () => {
   } | null>(null);
   
   // Refs para rastrear cartas antes do ataque
-  const previousMyMonsters = useRef<any[]>(Array(5).fill(null));
   const previousOpponentMonstersRef = useRef<any[]>(Array(5).fill(null));
   
   // Ref para o container do campo de duelo (para centralizar a animação)
@@ -705,7 +712,7 @@ const DuelArena: React.FC = () => {
   // Refs para valores que precisamos no interval sem causar re-renders
   const isMyTurnRef = useRef(false);
   const duelIdRef = useRef<string | undefined>(duelId);
-  const userIdRef = useRef<number | undefined>(user?.id);
+  const userIdRef = useRef<string | number | undefined>(user?.id);
   const turnStartedAtRef = useRef<Date | null>(null);
   const turnTimeLimitRef = useRef<number>(90);
   const duelDataRef = useRef<DuelData | null>(null);
@@ -757,8 +764,7 @@ const DuelArena: React.FC = () => {
   const [opponentBanished, setOpponentBanished] = useState<any[]>([]);
   
   // Estado para descarte de cartas
-  const [selectedCardsToDiscard, setSelectedCardsToDiscard] = useState<string[]>([]);
-  const [isDiscarding, setIsDiscarding] = useState(false); // Evitar múltiplos cliques ao descartar
+  const [, setSelectedCardsToDiscard] = useState<string[]>([]);
   
   // Estado para modal do cemitério
   const [showGraveyardModal, setShowGraveyardModal] = useState(false);
@@ -777,7 +783,7 @@ const DuelArena: React.FC = () => {
   const [cardEffectType, setCardEffectType] = useState<'forcefulSentry' | 'confiscation' | null>(null);
   
   // Estado para carta selecionada no modal do Confiscation
-  const [selectedConfiscationCard, setSelectedConfiscationCard] = useState<any | null>(null);
+  const [selectedConfiscationCard] = useState<any | null>(null);
   
   // Estado para GracefulCharity
   const [showGracefulCharityModal, setShowGracefulCharityModal] = useState(false);
@@ -791,9 +797,11 @@ const DuelArena: React.FC = () => {
     opponentGraveyard: any[];
   } | null>(null);
   // Usar identificadores únicos para MonsterReborn
-  const [selectedMonsterReborn, setSelectedMonsterReborn] = useState<{ 
-    graveyard: 'player' | 'opponent'; 
+  const [selectedMonsterReborn, setSelectedMonsterReborn] = useState<{
+    graveyard: 'player' | 'opponent';
     index: number;
+    instanceId?: string;
+    graveyardIndex?: number;
   } | null>(null);
   
   // Estado para Premature Burial (só cemitério do jogador)
@@ -1029,7 +1037,7 @@ const DuelArena: React.FC = () => {
   } | null>(null);
   
   // Estado para controlar qual carta está selecionada para colocar no campo
-  const [selectedCardForField, setSelectedCardForField] = useState<any | null>(null);
+  const [, setSelectedCardForField] = useState<any | null>(null);
   
   // Estado para controlar seleção de slot de spell/trap
   const [selectingSpellTrapSlot, setSelectingSpellTrapSlot] = useState<{ card: any; position: 'set' | 'face-up' } | null>(null);
@@ -1058,7 +1066,7 @@ const DuelArena: React.FC = () => {
   
   // Estado para rastrear se já fez invocação normal neste turno
   const [normalSummonUsed, setNormalSummonUsed] = useState(false);
-  const [positionChangedThisTurn, setPositionChangedThisTurn] = useState(false);
+  const [positionChangedThisTurn] = useState(false);
   const [myTurnCounter, setMyTurnCounter] = useState<number>(1); // Contador global de turnos do campo do jogador
   
   // Estado para modal de seleção de tributos
@@ -1732,6 +1740,8 @@ const DuelArena: React.FC = () => {
     
     // Se não há socket ou não está conectado, aguardar a conexão
     // O useSocket já cria o socket automaticamente, mas pode levar alguns milissegundos
+    // Each duel subscription belongs to this effect, not to every consumer of the socket.
+    const subscribedHandlers: Array<() => void> = [];
     const setupSocket = () => {
       // Obter socket novamente (pode ter sido criado enquanto aguardávamos)
       socket = getSocket();
@@ -1739,13 +1749,16 @@ const DuelArena: React.FC = () => {
       if (!socket || !socket.connected) {
         return false;
       }
+      const subscribedSocket = socket;
 
       // Registrar listeners
       socket.on('duelUpdate', handleDuelUpdate);
+      subscribedHandlers.push(() => subscribedSocket.off('duelUpdate', handleDuelUpdate));
       socket.on('duelError', handleDuelError);
+      subscribedHandlers.push(() => subscribedSocket.off('duelError', handleDuelError));
       
       // Animação de batalha só quando o servidor confirma sucesso (evita animar se Mirror Force etc. negar)
-      socket.on('attackSucceeded', (data: {
+      const attackSucceededListener = (data: {
         duelId: string | number;
         attackerUserId: string | number;
         attackerZoneIndex: number;
@@ -1788,7 +1801,9 @@ const DuelArena: React.FC = () => {
         }
 
         setTimeout(() => setAttackAnimation(null), 1200);
-      });
+      };
+      socket.on('attackSucceeded', attackSucceededListener);
+      subscribedHandlers.push(() => subscribedSocket.off('attackSucceeded', attackSucceededListener));
       
       // Listener para quando o duelo é encerrado
       const duelEndedListener = (data: any) => {
@@ -1832,20 +1847,23 @@ const DuelArena: React.FC = () => {
         requestActiveDuelRefresh();
       };
       socket.on('duelEnded', duelEndedListener);
+      subscribedHandlers.push(() => subscribedSocket.off('duelEnded', duelEndedListener));
       
       // Listener para quando o tempo do oponente expira (recebido do backend)
-      const timeExpiredListener = (data: any) => {
+      const timeExpiredListener = () => {
         if (!isMyTurn) {
           setTimeExpired(true);
         }
       };
       socket.on('timeExpired', timeExpiredListener);
+      subscribedHandlers.push(() => subscribedSocket.off('timeExpired', timeExpiredListener));
       
       // Listener para quando precisa descartar cartas (não usado mais, mas mantido para compatibilidade)
-      const needsDiscardListener = (data: any) => {
+      const needsDiscardListener = () => {
         // Não fazer nada - o descarte agora é feito diretamente clicando nas cartas
       };
       socket.on('needsDiscard', needsDiscardListener);
+      subscribedHandlers.push(() => subscribedSocket.off('needsDiscard', needsDiscardListener));
       
       // Listener para The Forceful Sentry
       const forcefulSentryListener = (data: { opponentHand: any[]; duelId: string | number }) => {
@@ -1891,7 +1909,9 @@ const DuelArena: React.FC = () => {
       };
       
       socket.on('forcefulSentryShowHand', forcefulSentryListener);
+      subscribedHandlers.push(() => subscribedSocket.off('forcefulSentryShowHand', forcefulSentryListener));
       socket.on('confiscationShowHand', confiscationListener);
+      subscribedHandlers.push(() => subscribedSocket.off('confiscationShowHand', confiscationListener));
 
       // Listener para GracefulCharity
       const gracefulCharityListener = (data: { playerHand: any[]; duelId: string | number }) => {
@@ -1919,6 +1939,7 @@ const DuelArena: React.FC = () => {
         console.log('✨ [GracefulCharity Listener] ==========================================');
       };
       socket.on('gracefulCharityShowHand', gracefulCharityListener);
+      subscribedHandlers.push(() => subscribedSocket.off('gracefulCharityShowHand', gracefulCharityListener));
       console.log('✅ [DuelArena] Listener gracefulCharityShowHand registrado');
 
       // Listener para MonsterReborn
@@ -1940,6 +1961,7 @@ const DuelArena: React.FC = () => {
         setSelectedMonsterReborn(null);
       };
       socket.on('monsterRebornShowGraveyards', monsterRebornListener);
+      subscribedHandlers.push(() => subscribedSocket.off('monsterRebornShowGraveyards', monsterRebornListener));
       console.log('✅ [DuelArena] Listener monsterRebornShowGraveyards registrado');
       
       // Listener para Premature Burial (escolher monstro do próprio cemitério)
@@ -1950,6 +1972,7 @@ const DuelArena: React.FC = () => {
         setSelectedPrematureBurialIndex(null);
       };
       socket.on('prematureBurialShowGraveyard', prematureBurialListener);
+      subscribedHandlers.push(() => subscribedSocket.off('prematureBurialShowGraveyard', prematureBurialListener));
       console.log('✅ [DuelArena] Listener prematureBurialShowGraveyard registrado');
       
       // Listener para Autonomous Action Unit (escolher monstro do cemitério do oponente)
@@ -1960,6 +1983,7 @@ const DuelArena: React.FC = () => {
         setSelectedAutonomousActionUnitIndex(null);
       };
       socket.on('autonomousActionUnitShowOpponentGraveyard', autonomousActionUnitListener);
+      subscribedHandlers.push(() => subscribedSocket.off('autonomousActionUnitShowOpponentGraveyard', autonomousActionUnitListener));
       console.log('✅ [DuelArena] Listener autonomousActionUnitShowOpponentGraveyard registrado');
       
       // Listener para Monster Reincarnation - descartar carta da mão
@@ -1979,6 +2003,7 @@ const DuelArena: React.FC = () => {
         setSelectedMonsterReincarnationCard(null);
       };
       socket.on('monsterReincarnationShowHand', monsterReincarnationDiscardListener);
+      subscribedHandlers.push(() => subscribedSocket.off('monsterReincarnationShowHand', monsterReincarnationDiscardListener));
       console.log('✅ [DuelArena] Listener monsterReincarnationShowHand registrado');
       
       // Listener para Monster Reincarnation - escolher monstro do cemitério
@@ -1998,6 +2023,7 @@ const DuelArena: React.FC = () => {
         setSelectedMonsterReincarnationMonster(null);
       };
       socket.on('monsterReincarnationShowGraveyard', monsterReincarnationGraveyardListener);
+      subscribedHandlers.push(() => subscribedSocket.off('monsterReincarnationShowGraveyard', monsterReincarnationGraveyardListener));
       console.log('✅ [DuelArena] Listener monsterReincarnationShowGraveyard registrado');
       
       // Listener para ChangeOfHeart
@@ -2015,6 +2041,7 @@ const DuelArena: React.FC = () => {
         setSelectedChangeOfHeartMonster(null);
       };
       socket.on('changeOfHeartShowOpponentMonsters', changeOfHeartListener);
+      subscribedHandlers.push(() => subscribedSocket.off('changeOfHeartShowOpponentMonsters', changeOfHeartListener));
       console.log('✅ [DuelArena] Listener changeOfHeartShowOpponentMonsters registrado');
       
       // Listener para BrainControl
@@ -2032,6 +2059,7 @@ const DuelArena: React.FC = () => {
         setSelectedBrainControlMonster(null);
       };
       socket.on('brainControlShowOpponentMonsters', brainControlListener);
+      subscribedHandlers.push(() => subscribedSocket.off('brainControlShowOpponentMonsters', brainControlListener));
       console.log('✅ [DuelArena] Listener brainControlShowOpponentMonsters registrado');
       
       // Listener para SoulTaker
@@ -2044,6 +2072,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('soulTakerShowOpponentMonsters', soulTakerListener);
+      subscribedHandlers.push(() => subscribedSocket.off('soulTakerShowOpponentMonsters', soulTakerListener));
       console.log('✅ [DuelArena] Listener soulTakerShowOpponentMonsters registrado');
 
       const playerTargetSpellListener = (data: any) => {
@@ -2054,6 +2083,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('playerTargetSpellShow', playerTargetSpellListener);
+      subscribedHandlers.push(() => subscribedSocket.off('playerTargetSpellShow', playerTargetSpellListener));
       console.log('✅ [DuelArena] Listener playerTargetSpellShow registrado');
 
       // Listener para Lightning Storm (escolher 1 efeito: destruir monstros em ataque OU magias/armadilhas do oponente)
@@ -2063,6 +2093,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('lightningStormShowOptions', lightningStormListener);
+      subscribedHandlers.push(() => subscribedSocket.off('lightningStormShowOptions', lightningStormListener));
       console.log('✅ [DuelArena] Listener lightningStormShowOptions registrado');
 
       // Listener para Exiled Force
@@ -2078,6 +2109,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('exiledForceShowTargets', exiledForceListener);
+      subscribedHandlers.push(() => subscribedSocket.off('exiledForceShowTargets', exiledForceListener));
       console.log('✅ [DuelArena] Listener exiledForceShowTargets registrado');
 
       // Listener para UnitedWeStand
@@ -2096,6 +2128,7 @@ const DuelArena: React.FC = () => {
       };
 
       socket.on('unitedWeStandShowMonsters', unitedWeStandListener);
+      subscribedHandlers.push(() => subscribedSocket.off('unitedWeStandShowMonsters', unitedWeStandListener));
       console.log('✅ [DuelArena] Listener unitedWeStandShowMonsters registrado');
 
       // Listener para MagePower
@@ -2114,6 +2147,7 @@ const DuelArena: React.FC = () => {
       };
 
       socket.on('magePowerShowMonsters', magePowerListener);
+      subscribedHandlers.push(() => subscribedSocket.off('magePowerShowMonsters', magePowerListener));
       console.log('✅ [DuelArena] Listener magePowerShowMonsters registrado');
       
       // Listener para Reinforcement Of The Army
@@ -2131,6 +2165,7 @@ const DuelArena: React.FC = () => {
         setSelectedReinforcementOfTheArmyMonster(null);
       };
       socket.on('reinforcementOfTheArmyShowDeck', reinforcementOfTheArmyListener);
+      subscribedHandlers.push(() => subscribedSocket.off('reinforcementOfTheArmyShowDeck', reinforcementOfTheArmyListener));
       console.log('✅ [DuelArena] Listener reinforcementOfTheArmyShowDeck registrado');
 
       // Listener para Last Will
@@ -2148,6 +2183,7 @@ const DuelArena: React.FC = () => {
         setSelectedLastWillMonster(null);
       };
       socket.on('lastWillShowDeck', lastWillListener);
+      subscribedHandlers.push(() => subscribedSocket.off('lastWillShowDeck', lastWillListener));
       console.log('✅ [DuelArena] Listener lastWillShowDeck registrado');
 
       // Listener para Chaos Sorcerer Summon
@@ -2171,6 +2207,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('chaosSorcererSummonShowMonsters', chaosSorcererSummonListener);
+      subscribedHandlers.push(() => subscribedSocket.off('chaosSorcererSummonShowMonsters', chaosSorcererSummonListener));
       console.log('✅ [DuelArena] Listener chaosSorcererSummonShowMonsters registrado');
 
       // Listener para Chaos Sorcerer Effect
@@ -2189,6 +2226,7 @@ const DuelArena: React.FC = () => {
         setSelectedChaosSorcererEffectMonster(null);
       };
       socket.on('chaosSorcererEffectShowTargets', chaosSorcererEffectListener);
+      subscribedHandlers.push(() => subscribedSocket.off('chaosSorcererEffectShowTargets', chaosSorcererEffectListener));
       console.log('✅ [DuelArena] Listener chaosSorcererEffectShowTargets registrado');
 
       // Listener para Black Luster Soldier - Envoy of the Beginning
@@ -2203,6 +2241,7 @@ const DuelArena: React.FC = () => {
         setShowBlsEffectModal(true);
       };
       socket.on('blsEffectShowTargets', blsEffectListener);
+      subscribedHandlers.push(() => subscribedSocket.off('blsEffectShowTargets', blsEffectListener));
       console.log('✅ [DuelArena] Listener blsEffectShowTargets registrado');
 
       // Listener para Dark Armed Dragon Summon
@@ -2236,6 +2275,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('darkArmedDragonSummonShowZones', darkArmedDragonSummonListener);
+      subscribedHandlers.push(() => subscribedSocket.off('darkArmedDragonSummonShowZones', darkArmedDragonSummonListener));
       console.log('✅ [DuelArena] Listener darkArmedDragonSummonShowZones registrado');
 
       // Listener para Dark Armed Dragon Effect
@@ -2256,6 +2296,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('darkArmedDragonEffectShowModal', darkArmedDragonEffectListener);
+      subscribedHandlers.push(() => subscribedSocket.off('darkArmedDragonEffectShowModal', darkArmedDragonEffectListener));
       console.log('✅ [DuelArena] Listener darkArmedDragonEffectShowModal registrado');
 
       // Listener para Red-Eyes Darkness Metal Dragon Summon
@@ -2276,6 +2317,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('redEyesDarknessMetalDragonSummonShowDragons', redEyesDarknessMetalDragonSummonListener);
+      subscribedHandlers.push(() => subscribedSocket.off('redEyesDarknessMetalDragonSummonShowDragons', redEyesDarknessMetalDragonSummonListener));
       console.log('✅ [DuelArena] Listener redEyesDarknessMetalDragonSummonShowDragons registrado');
 
       // Listener para Red-Eyes Darkness Metal Dragon Effect
@@ -2299,6 +2341,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('redEyesDarknessMetalDragonEffectShowDragons', redEyesDarknessMetalDragonEffectListener);
+      subscribedHandlers.push(() => subscribedSocket.off('redEyesDarknessMetalDragonEffectShowDragons', redEyesDarknessMetalDragonEffectListener));
       console.log('✅ [DuelArena] Listener redEyesDarknessMetalDragonEffectShowDragons registrado');
 
       // Listener para Cyber-Stein Effect
@@ -2319,6 +2362,7 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('cyberSteinEffectShowExtraDeck', cyberSteinEffectListener);
+      subscribedHandlers.push(() => subscribedSocket.off('cyberSteinEffectShowExtraDeck', cyberSteinEffectListener));
       console.log('✅ [DuelArena] Listener cyberSteinEffectShowExtraDeck registrado');
 
       // Listener para Mystical Space Typhoon
@@ -2404,6 +2448,7 @@ const DuelArena: React.FC = () => {
         });
       };
       socket.on('mysticalSpaceTyphoonShowTargets', mysticalSpaceTyphoonListener);
+      subscribedHandlers.push(() => subscribedSocket.off('mysticalSpaceTyphoonShowTargets', mysticalSpaceTyphoonListener));
       console.log('✅ [DuelArena] Listener mysticalSpaceTyphoonShowTargets registrado');
 
       // Listener para Snowman Eater
@@ -2418,6 +2463,7 @@ const DuelArena: React.FC = () => {
         // Os dados necessários já estão disponíveis no estado do componente
       };
       socket.on('snowmanEaterShowTargets', snowmanEaterListener);
+      subscribedHandlers.push(() => subscribedSocket.off('snowmanEaterShowTargets', snowmanEaterListener));
       console.log('✅ [DuelArena] Listener snowmanEaterShowTargets registrado');
 
       // Listener para fechar modal quando turno é roubado ou muda
@@ -2483,8 +2529,8 @@ const DuelArena: React.FC = () => {
           console.log('🔒 [closePendingChoiceModal] ✅ Condições atendidas - fechando modais - motivo:', data.reason);
           
           // Se o motivo for 'choice_completed', fechar modais de Confiscation/ForcefulSentry/GracefulCharity
+          const cardEffectTypeFromData = (data as any).cardEffectType;
           if (data.reason === 'choice_completed') {
-            const cardEffectTypeFromData = (data as any).cardEffectType;
             if (cardEffectTypeFromData === 'confiscation' || cardEffectType === 'confiscation') {
               console.log('🔒 [closePendingChoiceModal] Fechando modal Confiscation (choice_completed)');
               setShowOpponentHandRevealed(false);
@@ -2675,12 +2721,16 @@ const DuelArena: React.FC = () => {
         }
       };
       socket.on('closePendingChoiceModal', closePendingChoiceModalListener);
+      subscribedHandlers.push(() => subscribedSocket.off('closePendingChoiceModal', closePendingChoiceModalListener));
       console.log('✅ [DuelArena] Listener closePendingChoiceModal registrado');
       
       // Perda de conexão: overlay; em `connect` / `reconnect`, reentrar na sala e aguardar duelUpdate.
       socket.on('disconnect', disconnectListener);
+      subscribedHandlers.push(() => subscribedSocket.off('disconnect', disconnectListener));
       socket.on('connect', resyncJoinAfterReconnect);
+      subscribedHandlers.push(() => subscribedSocket.off('connect', resyncJoinAfterReconnect));
       socket.on('reconnect', resyncJoinAfterReconnect);
+      subscribedHandlers.push(() => subscribedSocket.off('reconnect', resyncJoinAfterReconnect));
       
       // Verificar se o listener foi registrado corretamente
       if (typeof socket.hasListeners === 'function') {
@@ -2791,51 +2841,12 @@ const DuelArena: React.FC = () => {
       if (retryInterval) {
         clearInterval(retryInterval);
       }
+      // Unsubscribe exactly the handlers registered for this duel, including card effects.
+      // Calling socket.off(event) without a handler would remove other subscribers too.
+      for (const unsubscribe of subscribedHandlers) unsubscribe();
+      subscribedHandlers.length = 0;
       const currentSocket = getSocket();
-      if (currentSocket) {
-        currentSocket.off('duelUpdate', handleDuelUpdate);
-        currentSocket.off('duelError', handleDuelError);
-        currentSocket.off('duelEnded');
-        currentSocket.off('timeExpired');
-        currentSocket.off('needsDiscard');
-        currentSocket.off('forcefulSentryShowHand', forcefulSentryListener);
-        currentSocket.off('confiscationShowHand', confiscationListener);
-        currentSocket.off('gracefulCharityShowHand', gracefulCharityListener);
-        currentSocket.off('closePendingChoiceModal', closePendingChoiceModalListener);
-        currentSocket.off('chaosSorcererSummonShowMonsters', chaosSorcererSummonListener);
-        currentSocket.off('chaosSorcererEffectShowTargets', chaosSorcererEffectListener);
-        currentSocket.off('blsEffectShowTargets', blsEffectListener);
-        currentSocket.off('darkArmedDragonSummonShowZones', darkArmedDragonSummonListener);
-        currentSocket.off('darkArmedDragonEffectShowModal', darkArmedDragonEffectListener);
-        currentSocket.off('redEyesDarknessMetalDragonSummonShowDragons', redEyesDarknessMetalDragonSummonListener);
-        currentSocket.off('redEyesDarknessMetalDragonEffectShowDragons', redEyesDarknessMetalDragonEffectListener);
-        currentSocket.off('cyberSteinEffectShowExtraDeck', cyberSteinEffectListener);
-        currentSocket.off('mysticalSpaceTyphoonShowTargets', mysticalSpaceTyphoonListener);
-        currentSocket.off('snowmanEaterShowTargets', snowmanEaterListener);
-        currentSocket.off('soulTakerShowOpponentMonsters', soulTakerListener);
-        currentSocket.off('playerTargetSpellShow', playerTargetSpellListener);
-        currentSocket.off('lightningStormShowOptions', lightningStormListener);
-        currentSocket.off('exiledForceShowTargets', exiledForceListener);
-        currentSocket.off('monsterRebornShowGraveyards', monsterRebornListener);
-        currentSocket.off('prematureBurialShowGraveyard', prematureBurialListener);
-        currentSocket.off('autonomousActionUnitShowOpponentGraveyard', autonomousActionUnitListener);
-        currentSocket.off('monsterReincarnationShowHand', monsterReincarnationDiscardListener);
-        currentSocket.off('monsterReincarnationShowGraveyard', monsterReincarnationGraveyardListener);
-        currentSocket.off('changeOfHeartShowOpponentMonsters', changeOfHeartListener);
-        currentSocket.off('brainControlShowOpponentMonsters', brainControlListener);
-        currentSocket.off('unitedWeStandShowMonsters', unitedWeStandListener);
-        currentSocket.off('magePowerShowMonsters', magePowerListener);
-        currentSocket.off('reinforcementOfTheArmyShowDeck', reinforcementOfTheArmyListener);
-        currentSocket.off('lastWillShowDeck', lastWillListener);
-        currentSocket.off('attackSucceeded');
-        currentSocket.off('disconnect', disconnectListener);
-        currentSocket.off('connect', resyncJoinAfterReconnect);
-        currentSocket.off('reconnect', resyncJoinAfterReconnect);
-        // Remover listener de conexão se ainda estiver ativo
-        if (connectListener) {
-          currentSocket.off('connect', connectListener);
-        }
-      }
+      if (currentSocket && connectListener) currentSocket.off('connect', connectListener);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [duelId, user?.id]);
@@ -3032,9 +3043,7 @@ const DuelArena: React.FC = () => {
 
   // Escutar atualizações do duelo (quando comprar carta, etc)
   // Usar useRef para evitar loops de renderização
-  const lastDuelUpdateIdRef = useRef<string | null>(null);
   const processedUpdatesRef = useRef<Set<string>>(new Set());
-  const processedLogsRef = useRef<Set<string>>(new Set());
   
   // Removido: detecção automática de ataques via logs - animação só aparece quando o jogador ataca diretamente
   
@@ -3067,7 +3076,7 @@ const DuelArena: React.FC = () => {
     // Limpar updates antigos (manter apenas os últimos 100)
     if (processedUpdatesRef.current.size > 100) {
       const firstKey = processedUpdatesRef.current.values().next().value;
-      processedUpdatesRef.current.delete(firstKey);
+      if (firstKey !== undefined) processedUpdatesRef.current.delete(firstKey);
     }
     
     // Atualizar life points
@@ -3568,35 +3577,6 @@ const DuelArena: React.FC = () => {
 
   // Função para finalizar turno
   // Função para descartar uma carta individualmente (na fase END quando tem mais de 6 cartas)
-  const handleDiscardCard = (card: any) => {
-    if (isSpectator) return;
-    // Verificações de segurança
-    if (!duelId || !user?.id || normalizeDuelPhase(currentPhase) !== 'END' || myHand.length <= 6) return;
-    if (isDiscarding) return; // Evitar múltiplos cliques
-    
-    const cardId = card.id || card.cardId || card.idCarta;
-    if (!cardId) return;
-
-    const cardIdStr = cardId.toString();
-    
-    // Marcar como descartando para evitar múltiplos cliques
-    setIsDiscarding(true);
-    
-    // Descartar carta imediatamente para o cemitério
-    const socket = getSocket();
-    if (socket && socket.connected) {
-      socket.emit('discardCard', { 
-        duelId, 
-        userId: user.id,
-        cardId: cardIdStr
-      });
-    }
-    
-    // Resetar após um pequeno delay para permitir nova ação
-    setTimeout(() => {
-      setIsDiscarding(false);
-    }, 500);
-  };
 
   // Função para finalizar turno (só funciona na fase END)
   // Agora chama nextPhase que descarta automaticamente e avança o turno
@@ -3839,7 +3819,7 @@ const DuelArena: React.FC = () => {
   // Função para colocar carta no campo
   const handlePlaceCardOnField = async (
     card: any,
-    position: 'attack' | 'defense' | 'set',
+    position: 'attack' | 'defense' | 'set' | 'face-up',
     zoneIndex: number,
     cardType?: string,
     isDragged: boolean = false,
@@ -3975,8 +3955,7 @@ const DuelArena: React.FC = () => {
       const isChaosEmperorDragonPlace = cardIdPlace.includes('chaosemperordragon') || cardNamePlace.includes('chaos emperor dragon');
       const isBlackLusterSoldierPlace = cardIdPlace.includes('blacklustersoldier') || cardNamePlace.includes('black luster soldier');
       if (isChaosSorcererPlace || isChaosEmperorDragonPlace || isBlackLusterSoldierPlace) {
-        const namePlace = isChaosSorcererPlace ? 'Chaos Sorcerer' : isChaosEmperorDragonPlace ? 'Chaos Emperor Dragon' : 'Black Luster Soldier - Envoy of the Beginning';
-        performAction(duelId, user.id, 'START_CHAOS_SORCERER_SPECIAL_SUMMON', {
+                performAction(duelId, user.id, 'START_CHAOS_SORCERER_SPECIAL_SUMMON', {
           cardId: card.id || card.cardId || card.idCarta,
         });
         setSelectedCardForField(null);
@@ -4133,7 +4112,6 @@ const DuelArena: React.FC = () => {
   // Numeric IDs (legacy); UUID/auth string ids: usar comparação estrita em string.
   const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
   const player1Id = typeof duelData.player1?.id === 'string' ? parseInt(duelData.player1.id, 10) : Number(duelData.player1?.id);
-  const player2Id = typeof duelData.player2?.id === 'string' ? parseInt(duelData.player2.id, 10) : Number(duelData.player2?.id);
   const isPlayer1 = isSpectator
     ? true
     : duelIdsEqual(user.id, duelData.player1?.id) ||
@@ -4184,8 +4162,6 @@ const DuelArena: React.FC = () => {
   const bottomFieldExtraDeck = isSpectator ? opponentExtraDeck : myExtraDeck;
   const bottomFieldDeckCount = isSpectator ? opponentDeck.length : myDeck.length;
   const bottomFieldHandCount = isSpectator ? opponentHand.length : myHand.length;
-  const topHandCountSpectator = isSpectator ? myHand.length : opponentHand.length;
-  const bottomHandCountSpectator = isSpectator ? opponentHand.length : myHand.length;
 
   // Bônus Banner of Courage (+200 ATK) durante a Fase de Batalha do dono da carta — para exibir no ATK e no cálculo de dano
   const turnNum = duelData?.currentTurn ?? currentTurn ?? 1;
@@ -5288,7 +5264,7 @@ const DuelArena: React.FC = () => {
               }}
               isMyTurn={effectiveIsMyTurn}
               currentPhase={currentPhase}
-              currentTurn={currentTurn}
+              currentTurn={currentTurn ?? undefined}
               turnCounter={duelData?.turnCounter ?? myTurnCounter ?? 1}
               positionChangedThisTurn={positionChangedThisTurn}
               onSpellTrapSlotClick={(zoneIndex) => {
@@ -5946,29 +5922,7 @@ const DuelArena: React.FC = () => {
                     container.scrollLeft += dy;
                   }}
                 >
-                {(() => {
-                  // Log todas as cartas na mão para debug do Dark Armed Dragon
-                  const darkArmedDragonInHand = myHand.find((c: any) => {
-                    if (!c) return false;
-                    const name = (c?.name || c?.cardName || '').toLowerCase().trim();
-                    const idCarta = (c?.idCarta || '').toLowerCase().trim();
-                    // Verificação exata - deve ser exatamente "Dark Armed Dragon"
-                    const isDarkArmedDragon = name === 'dark armed dragon' || name === 'dark-armed dragon' ||
-                           idCarta === 'darkarmeddragon' || idCarta === 'dark-armeddragon' || idCarta === 'darkarmed-dragon' ||
-                           idCarta === 'darkarmeddragon';
-                    if (isDarkArmedDragon) {
-                      console.log('🔍 [Dark Armed Dragon] Dark Armed Dragon encontrado na mão:', {
-                        name: c.name || c.cardName,
-                        idCarta: c.idCarta,
-                        id: c.id,
-                        cardId: c.cardId,
-                        fullCard: c
-                      });
-                    }
-                    return isDarkArmedDragon;
-                  });
-                  return null;
-                })()}
+
                 {myHand.map((card: any, index: number) => {
                   const uniqueKey = card.instanceId
                     ? `my-hand-${card.instanceId}`
@@ -6004,7 +5958,7 @@ const DuelArena: React.FC = () => {
                     }
                     title={card.name || `Carta ${index + 1}`}
                     draggable={canDrag}
-                    onDragStart={(e) => {
+                    onDragStartCapture={(e) => {
                       if (canDrag) {
                         e.dataTransfer.effectAllowed = 'move';
                         e.dataTransfer.setData(
@@ -6025,8 +5979,8 @@ const DuelArena: React.FC = () => {
                         setTimeout(() => document.body.removeChild(dragImage), 0);
                       }
                     }}
-                    onDragEnd={(e) => {
-                      // Limpar qualquer feedback visual
+                    onDragEndCapture={() => {
+                      // O estado de arrastar é limpo pelo fim do gesto.
                     }}
                       onClick={(e) => {
                       e.stopPropagation();
@@ -7316,7 +7270,7 @@ const DuelArena: React.FC = () => {
                   const canActivateTurtle = isElectromagneticTurtle && 
                                             !isMyTurn && 
                                             currentPhase === 'BATTLE' && 
-                                            !myField?.electromagneticTurtleUsedThisDuel;
+                                            !((isPlayer1 ? duelData?.player1Field : duelData?.player2Field)?.electromagneticTurtleUsedThisDuel);
                   
                   return (
                     <motion.div
@@ -7843,7 +7797,7 @@ const DuelArena: React.FC = () => {
         {showMonsterRebornModal && monsterRebornData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
           >
@@ -8072,7 +8026,7 @@ const DuelArena: React.FC = () => {
         {showPrematureBurialModal && prematureBurialGraveyard.length > 0 && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {}}
+            onClick={() => {}}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -8185,7 +8139,7 @@ const DuelArena: React.FC = () => {
         {showAutonomousActionUnitModal && autonomousActionUnitGraveyard.length > 0 && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {}}
+            onClick={() => {}}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -8360,7 +8314,7 @@ const DuelArena: React.FC = () => {
           return (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher os monstros
             }}
           >
@@ -8630,7 +8584,7 @@ const DuelArena: React.FC = () => {
         {showMonsterReincarnationDiscardModal && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher uma carta
             }}
           >
@@ -9368,7 +9322,7 @@ const DuelArena: React.FC = () => {
         {showMonsterReincarnationGraveyardModal && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
           >
@@ -9579,8 +9533,7 @@ const DuelArena: React.FC = () => {
                         }
                         const isFaceDown = monster.position === 'set';
                         const isDefense = monster.position === 'defense';
-                        const isAttack = monster.position === 'attack';
-                        
+                                                
                         // Para monstros em defesa ou face down, precisamos rotacionar 90 graus
                         // Carta padrão: 120px x 175px (largura x altura)
                         // Após rotação: 175px x 120px (largura x altura)
@@ -9807,8 +9760,7 @@ const DuelArena: React.FC = () => {
                                          selectedChaosSorcererEffectMonster?.player === player;
                         const isFaceDown = monster.position === 'set';
                         const isDefense = monster.position === 'defense';
-                        const isAttack = monster.position === 'attack';
-                        const needsRotation = isDefense || isFaceDown;
+                                                const needsRotation = isDefense || isFaceDown;
                         const cardWidth = '120px';
                         const cardHeight = '175px';
                         const containerSize = needsRotation ? '175px' : '120px';
@@ -9859,7 +9811,7 @@ const DuelArena: React.FC = () => {
                                 <div
                                   className="w-full h-full"
                                   style={{
-                                    backgroundImage: `url(${player === 'opponent' ? opponentSkinImageUrl : playerSkinImageUrl})`,
+                                    backgroundImage: `url(${player === 'opponent' ? opponentSkinImageUrl : mySkinImageUrl})`,
                                     backgroundSize: 'cover',
                                     backgroundPosition: 'center',
                                     backgroundRepeat: 'no-repeat',
@@ -9903,8 +9855,7 @@ const DuelArena: React.FC = () => {
                                                    selectedChaosSorcererEffectMonster?.player === player;
                                   const isFaceDown = monster.position === 'set';
                                   const isDefense = monster.position === 'defense';
-                                  const isAttack = monster.position === 'attack';
-                                  const needsRotation = isDefense || isFaceDown;
+                                                                    const needsRotation = isDefense || isFaceDown;
                                   const cardWidth = '120px';
                                   const cardHeight = '175px';
                                   const containerSize = needsRotation ? '175px' : '120px';
@@ -9955,7 +9906,7 @@ const DuelArena: React.FC = () => {
                                           <div
                                             className="w-full h-full"
                                             style={{
-                                              backgroundImage: `url(${player === 'opponent' ? opponentSkinImageUrl : playerSkinImageUrl})`,
+                                              backgroundImage: `url(${player === 'opponent' ? opponentSkinImageUrl : mySkinImageUrl})`,
                                               backgroundSize: 'cover',
                                               backgroundPosition: 'center',
                                               backgroundRepeat: 'no-repeat',
@@ -10141,7 +10092,7 @@ const DuelArena: React.FC = () => {
         {showMysticalSpaceTyphoonModal && mysticalSpaceTyphoonData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher uma carta
             }}
           >
@@ -10690,7 +10641,7 @@ const DuelArena: React.FC = () => {
         {showUnitedWeStandModal && unitedWeStandData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
           >
@@ -10738,8 +10689,7 @@ const DuelArena: React.FC = () => {
                         const realZoneIndex = monster.zoneIndex !== undefined ? monster.zoneIndex : index;
                         const isSelected = selectedUnitedWeStandMonster === realZoneIndex;
                         const isDefense = monster.position === 'defense';
-                        const isAttack = monster.position === 'attack';
-                        
+                                                
                         // Para monstros em defesa, precisamos rotacionar 90 graus
                         const needsRotation = isDefense;
                         const containerSize = needsRotation ? '175px' : '120px';
@@ -10975,7 +10925,7 @@ const DuelArena: React.FC = () => {
         {showMagePowerModal && magePowerData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
           >
@@ -11023,8 +10973,7 @@ const DuelArena: React.FC = () => {
                         const realZoneIndex = monster.zoneIndex !== undefined ? monster.zoneIndex : index;
                         const isSelected = selectedMagePowerMonster === realZoneIndex;
                         const isDefense = monster.position === 'defense';
-                        const isAttack = monster.position === 'attack';
-                        
+                                                
                         // Para monstros em defesa, precisamos rotacionar 90 graus
                         const needsRotation = isDefense;
                         const containerSize = needsRotation ? '175px' : '120px';
@@ -11235,8 +11184,7 @@ const DuelArena: React.FC = () => {
                           });
                         }
                         const isDefense = monster.position === 'defense';
-                        const isAttack = monster.position === 'attack';
-                        
+                                                
                         // Para monstros em defesa, precisamos rotacionar 90 graus
                         const needsRotation = isDefense;
                         const containerSize = needsRotation ? '175px' : '120px';
@@ -11470,7 +11418,7 @@ const DuelArena: React.FC = () => {
               backdropFilter: 'blur(12px)',
               WebkitBackdropFilter: 'blur(12px)',
             } as React.CSSProperties}
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
           >
@@ -11519,8 +11467,7 @@ const DuelArena: React.FC = () => {
                         const realZoneIndex = monster.zoneIndex !== undefined ? monster.zoneIndex : index;
                         const isSelected = selectedSoulTakerMonster === realZoneIndex;
                         const isDefense = monster.position === 'defense';
-                        const isAttack = monster.position === 'attack';
-                        
+                                                
                         // Para monstros em defesa, precisamos rotacionar 90 graus
                         const needsRotation = isDefense;
                         const containerSize = needsRotation ? '175px' : '120px';
@@ -11972,7 +11919,7 @@ const DuelArena: React.FC = () => {
         {showExiledForceModal && exiledForceData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
           >
@@ -12298,9 +12245,7 @@ const DuelArena: React.FC = () => {
                       <div className="grid grid-cols-5 gap-2">
                         {myMonsters.map((monster: any, index: number) => {
                           if (!monster || monster === null) return null;
-                          const isSelected = selectedCardToDestroy?.player === 'player' && 
-                                           selectedCardToDestroy?.type === 'monster' && 
-                                           selectedCardToDestroy?.zoneIndex === index;
+                          const isSelected = false; // This selection list is displayed only while selectedCardToDestroy is null.
                           return (
                             <motion.div
                               key={`player-monster-${index}`}
@@ -12338,9 +12283,7 @@ const DuelArena: React.FC = () => {
                       <div className="grid grid-cols-5 gap-2">
                         {mySpellTraps.map((spellTrap: any, index: number) => {
                           if (!spellTrap || spellTrap === null) return null;
-                          const isSelected = selectedCardToDestroy?.player === 'player' && 
-                                           selectedCardToDestroy?.type === 'spellTrap' && 
-                                           selectedCardToDestroy?.zoneIndex === index;
+                          const isSelected = false; // Selection step: no target is selected yet.
                           return (
                             <motion.div
                               key={`player-spelltrap-${index}`}
@@ -12378,9 +12321,7 @@ const DuelArena: React.FC = () => {
                       <div className="grid grid-cols-5 gap-2">
                         {opponentMonsters.map((monster: any, index: number) => {
                           if (!monster || monster === null) return null;
-                          const isSelected = selectedCardToDestroy?.player === 'opponent' && 
-                                           selectedCardToDestroy?.type === 'monster' && 
-                                           selectedCardToDestroy?.zoneIndex === index;
+                          const isSelected = false; // Selection step: no target is selected yet.
                           const isFaceDown = monster.position === 'set';
                           return (
                             <motion.div
@@ -12428,9 +12369,7 @@ const DuelArena: React.FC = () => {
                       <div className="grid grid-cols-5 gap-2">
                         {opponentSpellTraps.map((spellTrap: any, index: number) => {
                           if (!spellTrap || spellTrap === null) return null;
-                          const isSelected = selectedCardToDestroy?.player === 'opponent' && 
-                                           selectedCardToDestroy?.type === 'spellTrap' && 
-                                           selectedCardToDestroy?.zoneIndex === index;
+                          const isSelected = false; // Selection step: no target is selected yet.
                           const isFaceDown = spellTrap.position === 'set';
                           return (
                             <motion.div
@@ -12741,7 +12680,7 @@ const DuelArena: React.FC = () => {
         {showRedEyesDarknessMetalDragonModal && redEyesDarknessMetalDragonData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher o dragão
             }}
           >
@@ -12878,7 +12817,7 @@ const DuelArena: React.FC = () => {
         {showRedEyesDarknessMetalDragonEffectModal && redEyesDarknessMetalDragonEffectData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher o dragão
             }}
           >
@@ -13076,7 +13015,7 @@ const DuelArena: React.FC = () => {
         {showCyberSteinModal && cyberSteinData && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 duel-modal-scrim"
-            onClick={(e) => {
+            onClick={() => {
               // Não fechar ao clicar fora - precisa escolher um monstro
             }}
           >

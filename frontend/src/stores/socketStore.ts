@@ -10,7 +10,7 @@ interface SocketState {
   disconnect: () => void;
   emit: (event: string, data: any) => void;
   on: (event: string, callback: (...args: any[]) => void) => void;
-  off: (event: string) => void;
+  off: (event: string, callback?: (...args: any[]) => void) => void;
   getSocket: () => Socket | null;
 }
 

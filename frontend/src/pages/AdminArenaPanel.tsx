@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate, Navigate, Link } from 'react-router-dom';
+import { Navigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import api from '../api/axios';
 
@@ -54,6 +54,8 @@ interface ChallengeArena {
   config?: {
     levelRanges?: LevelRange[];
     rewards?: ArenaRewards;
+    dailyStartTime?: string;
+    durationMinutes?: number;
   };
   createdAt: string;
   updatedAt: string;
@@ -61,7 +63,6 @@ interface ChallengeArena {
 
 export default function AdminArenaPanel() {
   const { user } = useAuthStore();
-  const navigate = useNavigate();
   const [arenas, setArenas] = useState<ChallengeArena[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -730,8 +731,7 @@ export default function AdminArenaPanel() {
             const endTime = new Date(arena.endTime);
             const isActive = !isTemplate && startTime <= now && endTime > now;
             const isPast = !isTemplate && endTime < now;
-            const isFuture = !isTemplate && startTime > now;
-
+          
             return (
               <motion.div
                 key={arena.id}

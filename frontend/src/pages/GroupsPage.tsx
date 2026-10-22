@@ -40,6 +40,7 @@ interface RankedGroup {
   totalScore?: number;
   memberCount: number;
   leader: {
+    id?: string | number;
     nickname: string;
     profileImage: string;
   };
@@ -47,12 +48,12 @@ interface RankedGroup {
 
 export default function GroupsPage() {
   const { t } = useI18n();
-  const [groups, setGroups] = useState<Group[]>([]);
+  const [, setGroups] = useState<Group[]>([]);
   const [seasonRanking, setSeasonRanking] = useState<RankedGroup[]>([]);
   const [generalRanking, setGeneralRanking] = useState<RankedGroup[]>([]);
   const [activeTab, setActiveTab] = useState<'season' | 'general'>('season');
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [loadingRankings, setLoadingRankings] = useState(true);
   const [filterPublic, setFilterPublic] = useState<boolean | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
@@ -421,7 +422,7 @@ export default function GroupsPage() {
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            window.location.href = `/profile/${group.leader.id}`;
+                            if (group.leader.id != null) window.location.href = `/profile/${group.leader.id}`;
                           }}
                           className="hover:text-purple-400 transition-colors cursor-pointer"
                         >

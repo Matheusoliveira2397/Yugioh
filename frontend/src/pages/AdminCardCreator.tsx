@@ -34,6 +34,7 @@ interface CardForm {
   priceCash?: number;
   isForSale: boolean;
   isActive: boolean;
+  isLimited?: boolean;
 
   // Avançado
   archetype?: string;
@@ -164,6 +165,7 @@ export default function AdminCardCreator() {
           type: 'Monster',
           rarity: 'Common',
           isForSale: true,
+          isActive: true,
           maxCopiesInDeck: 3,
         });
         setEffectForm({

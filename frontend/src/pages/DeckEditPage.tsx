@@ -73,7 +73,6 @@ export default function DeckEditPage() {
   } | null>(null);
   const [showCoverPicker, setShowCoverPicker] = useState(false);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const deckNameTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const savingRef = useRef(false);
   
   // Refs para armazenar os valores mais recentes do estado
@@ -182,7 +181,7 @@ export default function DeckEditPage() {
           })
           .filter((cardId): cardId is string => cardId !== null && cardId !== undefined && cardId.trim() !== '');
 
-        const payload: Record<string, unknown> = {
+        const payload: { name: string; cardIds: string[]; extraDeckCardIds?: string[]; coverCardId?: string; originalDeckName?: string } = {
           name: currentDeckName.trim() || 'Meu Deck',
           cardIds,
           extraDeckCardIds: extraDeckCardIds.length > 0 ? extraDeckCardIds : undefined,
@@ -558,18 +557,6 @@ export default function DeckEditPage() {
     return extraDeck.filter(slot => slot && slot.cardId === cardId).length;
   };
 
-  const getAvailableCount = (userCard: UserCard) => {
-    // IMPORTANTE: Disponibilidade é por SKIN (cardId), não por nome
-    // Cada skin é independente na maleta, mas o limite de deck é por nome
-    const cardsInMainDeck = deck.filter(slot => slot && slot.cardId === userCard.cardId).length;
-    const cardsInExtra = extraDeck.filter(slot => slot && slot.cardId === userCard.cardId).length;
-    const totalInDecks = cardsInMainDeck + cardsInExtra; // Quantidade desta SKIN específica no deck
-    
-    // Buscar quantidade total desta SKIN específica (de allUserCards)
-    const totalOwned = allUserCards.find(uc => uc.cardId === userCard.cardId)?.quantity || userCard.quantity;
-    return totalOwned - totalInDecks; // Disponibilidade desta SKIN específica
-  };
-
   const addToDeck = (userCard: UserCard) => {
     // Verificar se a carta existe
     if (!userCard.card) {
@@ -646,7 +633,7 @@ export default function DeckEditPage() {
       // O mínimo de 40 no deck principal só é exigido ao equipar o deck (DeckBuilderPage + backend).
 
       // Remover a carta e reorganizar o array para não deixar espaços vazios
-      const cardsWithoutNull = prev.filter((slot, index) => index !== idx);
+      const cardsWithoutNull = prev.filter((_, index) => index !== idx);
       // Preencher o array até 60 slots com null no final
       const newDeck = [...cardsWithoutNull, ...Array(60 - cardsWithoutNull.length).fill(null)];
       
@@ -752,7 +739,7 @@ export default function DeckEditPage() {
       const cardToRemove = prev[idx];
       
       // Remover a carta e reorganizar o array para não deixar espaços vazios
-      const cardsWithoutNull = prev.filter((slot, index) => index !== idx);
+      const cardsWithoutNull = prev.filter((_, index) => index !== idx);
       // Preencher o array até 15 slots com null no final
       const newExtraDeck = [...cardsWithoutNull, ...Array(15 - cardsWithoutNull.length).fill(null)];
       
