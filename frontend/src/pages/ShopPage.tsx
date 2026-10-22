@@ -12,6 +12,7 @@ import { CARD_IMAGE_GRID_PROPS } from '../utils/cardImage';
 import { useCosmeticsStore } from '../stores/cosmeticsStore';
 import { getCardDescription } from '../utils/cardDescription';
 import { useI18n } from '../i18n/I18nContext';
+import './ShopPage.css';
 
 interface Card {
   id: string;
@@ -1068,127 +1069,104 @@ export default function ShopPage() {
   }, [promotionCards]);
 
   return (
-    <div className="min-h-screen text-white py-6">
-      <div className="max-w-7xl mx-auto px-4">
-        {/* Header */}
-        <motion.div 
-          initial={{ opacity: 0, y: -20 }}
+    <div className="duelist-market min-h-screen text-white py-4 sm:py-6">
+      <div className="max-w-[1500px] mx-auto px-2.5 sm:px-4 lg:px-5">
+        {/* Identidade da loja — RPG de cartas, sem o antigo tema azul. */}
+        <motion.header
+          initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="ui-hero mb-6 p-5 sm:p-6"
+          className="market-hero"
         >
-          <p className="ui-eyebrow mb-2">Mercado de Duelistas</p>
-          <h1 className="ui-hero-title mb-3 flex items-center gap-3">
-            <span className="game-screen-icon"><GameIcon route="/shop" size={27} /></span>
-            {t('shop.title')}
-          </h1>
-          <div className="flex flex-wrap gap-2 mb-3">
-            <Link to="/loot-boxes" className="ui-button-primary inline-flex items-center gap-2">
-              <GameIcon route="/loot-boxes" size={18} /> {t('shop.openLootBoxes')}
-            </Link>
-            <Link to="/collection" className="ui-button-secondary inline-flex items-center gap-2">
-              <GameIcon route="/collection" size={18} /> Coleção
-            </Link>
+          <div className="market-hero-copy">
+            <p className="market-eyebrow">✦ Mercado dos Duelistas · Arena de Relíquias</p>
+            <div className="market-hero-heading">
+              <div className="market-hero-emblem"><GameIcon route="/shop" size={40} /></div>
+              <div>
+                <h1>{t('shop.title')}</h1>
+                <p>{t('shop.subtitle')}</p>
+              </div>
+            </div>
+            <div className="market-hero-links">
+              <Link to="/loot-boxes" className="market-link market-link--primary">
+                <GameIcon route="/loot-boxes" size={21} />
+                <span>{t('shop.openLootBoxes')}</span>
+              </Link>
+              <Link to="/collection" className="market-link">
+                <GameIcon route="/collection" size={21} />
+                <span>{t('collection.title')}</span>
+              </Link>
+              <Link to="/credit" className="market-link">
+                <GameIcon route="/credit" size={21} />
+                <span>{t('shop.buyCredits')}</span>
+              </Link>
+            </div>
           </div>
-          <p className="text-sm text-gray-300">{t('shop.subtitle')}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Link
-              to="/credit"
-              className="inline-flex items-center gap-2 rounded-xl border-2 border-amber-500/50 bg-amber-500/15 px-4 py-2 text-sm font-bold text-amber-200 hover:bg-amber-500/25 hover:border-amber-400 transition-colors"
-            >
-              💎 {t('shop.buyCredits')}
-            </Link>
+          <div className="market-hero-aside" aria-label="Saldo do duelista">
+            <div className="market-hero-crest" aria-hidden="true"><GameIcon route="/shop" size={39} /></div>
+            <p className="market-eyebrow">Sua carteira</p>
+            <div className="market-balance-list">
+              <div className="market-balance">
+                <GameIcon route="/credit" size={24} />
+                <span>Créditos</span>
+                <strong>{Number(user?.credits ?? 0).toLocaleString('pt-BR')}</strong>
+              </div>
+              <div className="market-balance">
+                <span className="market-balance-gem" aria-hidden="true">◆</span>
+                <span>Cash</span>
+                <strong>{Math.floor(Number(user?.cash ?? 0)).toLocaleString('pt-BR')}</strong>
+              </div>
+            </div>
+            <p className="market-aside-caption">Escolha suas cartas, equipe seu duelo e conquiste a arena.</p>
           </div>
-        </motion.div>
+        </motion.header>
 
-        {/* Tabs Comprar / Vender */}
-        <div className="flex gap-2 mb-4">
-          <button
+        {/* Compra / Venda: ações persistem mesmo ao trocar de categoria. */}
+        <div className="market-mode-switch" role="group" aria-label="Operação da loja">
+          <button type="button" aria-pressed={mode === 'buy'}
             onClick={() => { setMode('buy'); setCurrentPage(1); }}
-            className={`px-6 py-3 text-sm font-bold transition-all rounded-xl border-2 ${
-              mode === 'buy'
-                ? 'bg-gradient-to-r from-blue-600/80 to-blue-700/80 text-white border-blue-500/50 shadow-lg shadow-blue-500/30'
-                : 'text-gray-300 hover:bg-white/10 border-white/20'
-            }`}
-          >
-            🛒 {t('shop.buy')}
+            className={`market-mode ${mode === 'buy' ? 'is-active' : ''}`}>
+            <GameIcon route="/shop" size={21} /> {t('shop.buy')}
           </button>
-          <button
-            onClick={() => { setMode('sell'); setCurrentPage(1); }}
-            className={`px-6 py-3 text-sm font-bold transition-all rounded-xl border-2 ${
-              mode === 'sell'
-                ? 'bg-gradient-to-r from-green-600/80 to-green-700/80 text-white border-green-500/50 shadow-lg shadow-green-500/30'
-                : 'text-gray-300 hover:bg-white/10 border-white/20'
-            }`}
-          >
-            💰 {t('shop.sell')}
+          <button type="button" aria-pressed={mode === 'sell'}
+            onClick={() => { setMode('sell'); setCategory('cards'); setCurrentPage(1); }}
+            className={`market-mode ${mode === 'sell' ? 'is-active' : ''}`}>
+            <GameIcon route="/credit" size={21} /> {t('shop.sell')}
           </button>
+          <span className="market-mode-hint">Negocie seus itens com segurança</span>
         </div>
 
-        {/* Abas: Destaques | Cartas | Itens | Playmats | Sleeves | Talismãs */}
-        <div className="mb-6">
-          <div className="flex flex-wrap gap-2 rounded-xl p-2">
+        {/* Categorias ilustradas usando o atlas de imagens do próprio jogo. */}
+        <nav className="market-categories" aria-label="Categorias da loja">
+          {([
+            { id: null, name: t('shop.featured'), route: '/shop', hint: 'Vitrine' },
+            { id: 'cards', name: t('shop.cards'), route: '/collection', hint: 'Duelo' },
+            { id: 'items', name: t('shop.items'), route: '/inventory', hint: 'Maletas' },
+            { id: 'playmats', name: t('shop.playmats'), route: '/arena', hint: 'Campo' },
+            { id: 'sleeves', name: t('shop.sleeves'), route: '/deck-builder', hint: 'Protetores' },
+            { id: 'talismans', name: t('shop.talismans'), route: '/missions', hint: 'Artefatos' },
+          ] as const).map((item) => (
             <button
-              onClick={() => { setCategory(null); setCurrentPage(1); }}
-              className={`px-4 py-2.5 text-sm font-bold transition-all rounded-lg ${
-                category === null
-                  ? 'bg-gradient-to-r from-yellow-500/90 to-orange-500/90 text-white shadow-lg'
-                  : 'text-gray-300 hover:bg-white/10'
-              }`}
+              key={item.id ?? 'featured'}
+              type="button"
+              aria-pressed={category === item.id}
+              onClick={() => { setCategory(item.id); setCurrentPage(1); }}
+              className={`market-category ${category === item.id ? 'is-active' : ''}`}
             >
-              ⭐ {t('shop.featured')}
+              <span className="market-category-icon"><GameIcon route={item.route} size={25} /></span>
+              <span className="market-category-copy"><strong>{item.name}</strong><small>{item.hint}</small></span>
             </button>
-            <button
-              onClick={() => { setCategory('cards'); setCurrentPage(1); }}
-              className={`px-4 py-2.5 text-sm font-bold transition-all rounded-lg ${
-                category === 'cards'
-                  ? 'bg-gradient-to-r from-purple-600/80 to-pink-600/80 text-white shadow-lg'
-                  : 'text-gray-300 hover:bg-white/10'
-              }`}
-            >
-              🎴 {t('shop.cards')}
-            </button>
-            <button
-              onClick={() => { setCategory('items'); setCurrentPage(1); }}
-              className={`px-4 py-2.5 text-sm font-bold transition-all rounded-lg ${
-                category === 'items'
-                  ? 'bg-gradient-to-r from-amber-600/80 to-yellow-600/80 text-white shadow-lg'
-                  : 'text-gray-300 hover:bg-white/10'
-              }`}
-            >
-              📦 {t('shop.items')}
-            </button>
-            <button
-              onClick={() => { setCategory('playmats'); setCurrentPage(1); }}
-              className={`px-4 py-2.5 text-sm font-bold transition-all rounded-lg ${
-                category === 'playmats'
-                  ? 'bg-gradient-to-r from-blue-600/80 to-cyan-600/80 text-white shadow-lg'
-                  : 'text-gray-300 hover:bg-white/10'
-              }`}
-            >
-              🎨 {t('shop.playmats')}
-            </button>
-            <button
-              onClick={() => { setCategory('sleeves'); setCurrentPage(1); }}
-              className={`px-4 py-2.5 text-sm font-bold transition-all rounded-lg ${
-                category === 'sleeves'
-                  ? 'bg-gradient-to-r from-green-600/80 to-emerald-600/80 text-white shadow-lg'
-                  : 'text-gray-300 hover:bg-white/10'
-              }`}
-            >
-              🎭 {t('shop.sleeves')}
-            </button>
-            <button
-              onClick={() => { setCategory('talismans'); setCurrentPage(1); }}
-              className={`px-4 py-2.5 text-sm font-bold transition-all rounded-lg ${
-                category === 'talismans'
-                  ? 'bg-gradient-to-r from-amber-600/80 to-yellow-600/80 text-white shadow-lg'
-                  : 'text-gray-300 hover:bg-white/10'
-              }`}
-            >
-              ✨ {t('shop.talismans')}
-            </button>
+          ))}
+        </nav>
+
+        {category !== null && (
+          <div className="market-section-intro">
+            <div>
+              <p className="market-eyebrow">{mode === 'buy' ? 'Explore o catálogo' : 'Sua coleção à venda'}</p>
+              <h2>{category === 'cards' ? t('shop.cards') : category === 'items' ? t('shop.items') : category === 'playmats' ? t('shop.playmats') : category === 'sleeves' ? t('shop.sleeves') : t('shop.talismans')}</h2>
+            </div>
+            <span className="market-results-badge">{currentItems.length.toLocaleString('pt-BR')} itens</span>
           </div>
-        </div>
+        )}
 
         {category === null ? (
           /* ---------- Aba Destaques: itens em destaque primeiro, depois cartas em promoção ---------- */
@@ -1196,7 +1174,7 @@ export default function ShopPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3 }}
-            className="space-y-10"
+            className="market-featured-content space-y-8"
           >
             {/* Itens em destaque */}
             <div>
@@ -1206,7 +1184,7 @@ export default function ShopPage() {
                 </h2>
                 <div className="flex-1 h-px bg-gradient-to-r from-yellow-400/50 to-transparent" />
               </div>
-              <div className="rounded-2xl p-4 bg-white/5 border border-white/10 space-y-6">
+              <div className="market-featured-panel rounded-2xl p-4 sm:p-5 space-y-6">
                 {featuredCardsMarquee.length > 0 && (
                   <div>
                     <p className="text-sm text-gray-400 mb-2">🎴 {t('shop.latestCards')}</p>
@@ -1354,23 +1332,28 @@ export default function ShopPage() {
           <>
         {/* Barra de pesquisa (cartas – Comprar e Vender) */}
         {category === 'cards' && (
-          <div className="mb-6">
-            <input
-              type="text"
-              placeholder="🔍 Pesquisar..."
+          <div className="market-search mb-5">
+            <label htmlFor="market-card-search">Encontre sua carta</label>
+            <div className="market-search-field">
+              <span aria-hidden="true" className="market-search-glyph">⌕</span>
+              <input
+              id="market-card-search"
+              type="search"
+              placeholder="Nome da carta..."
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/30 transition-all"
-            />
+              className="market-search-input"
+              />
+            </div>
           </div>
         )}
 
         {/* Filtros (cartas – Comprar e Vender; contagens por modo) */}
         {category === 'cards' && (
-          <div className="rounded-xl p-4 mb-6 relative z-30">
+          <div className="market-filter-bar rounded-xl p-3 sm:p-4 mb-5 relative z-30">
             <div className="flex flex-wrap gap-4">
               {/* Ordenar por */}
               <div className="relative z-[100]" onClick={(e) => e.stopPropagation()}>
@@ -1755,10 +1738,10 @@ export default function ShopPage() {
                 <p className="text-gray-200 text-lg">{t('shop.noItems')}</p>
               </div>
             ) : (
-              <div className="bg-transparent p-4 mb-6">
+              <div className="market-catalog p-1 sm:p-3 mb-6">
                 <div className={category === 'playmats' || category === 'talismans' || category === 'items'
-                  ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center"
-                  : "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3"
+                  ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5"
+                  : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-4"
                 }>
                   {paginatedItems.map((item, index) => {
                     if (category === 'cards') {
@@ -1770,7 +1753,7 @@ export default function ShopPage() {
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: index * 0.05 }}
                           whileHover={{ scale: 1.05, zIndex: 10 }}
-                          className="ui-market-card flex flex-col p-2.5"
+                          className="ui-market-card market-product-card flex flex-col p-2.5 sm:p-3"
                         >
                           <div 
                             className="ui-card-frame w-full mb-2 cursor-pointer"
@@ -1808,7 +1791,7 @@ export default function ShopPage() {
                           </div>
                           <div className="space-y-2 flex-1">
                             <h3 
-                              className="text-xs font-bold text-white line-clamp-2 min-h-[2rem] cursor-pointer hover:text-purple-300 transition-colors" 
+                              className="text-xs font-bold text-white line-clamp-2 min-h-[2rem] cursor-pointer hover:text-amber-200 transition-colors" 
                               title={card.name}
                               onClick={() => setSelectedCard(card)}
                             >
@@ -2217,7 +2200,7 @@ export default function ShopPage() {
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: index * 0.05 }}
                             whileHover={{ scale: 1.05, zIndex: 10 }}
-                            className="ui-market-card flex flex-col p-2.5"
+                            className="ui-market-card market-product-card flex flex-col p-2.5 sm:p-3"
                           >
                             <div className="ui-card-frame w-full mb-2">
                               <CardImage
