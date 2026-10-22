@@ -1,4 +1,4 @@
-import { useState, FormEvent } from 'react';
+import { useRef, useState, FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import axios from 'axios';
@@ -23,6 +23,11 @@ export default function RegisterPage() {
   const [confirmEmail, setConfirmEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const nicknameRequestId = useRef(0);
+  const usernameRequestId = useRef(0);
+  const emailRequestId = useRef(0);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -46,6 +51,14 @@ export default function RegisterPage() {
   });
 
 
+  const emailMatches = email.trim().toLowerCase() === confirmEmail.trim().toLowerCase();
+  const passwordChecks = [
+    { label: '6 ou mais caracteres', passed: password.length >= 6 },
+    { label: 'Letra maiúscula e minúscula', passed: /[a-z]/.test(password) && /[A-Z]/.test(password) },
+    { label: 'Número ou símbolo', passed: /[0-9\\W_]/.test(password) },
+  ];
+  const completedFields = [nickname.trim(), username.trim(), email.trim(), confirmEmail.trim(), password, confirmPassword].filter(Boolean).length;
+
   // Validar nickname ao sair do campo
   const handleNicknameBlur = async () => {
     if (!nickname.trim()) {
@@ -53,17 +66,21 @@ export default function RegisterPage() {
       return;
     }
 
+    const requestId = ++nicknameRequestId.current;
+    const checkedValue = nickname.trim();
     setNicknameValidation({ isValid: null, message: t('register.checking'), checking: true });
     try {
       const response = await axios.get(`${API_URL}/auth/check-nickname`, {
-        params: { nickname: nickname.trim() },
+        params: { nickname: checkedValue },
       });
+      if (requestId !== nicknameRequestId.current) return;
       setNicknameValidation({
         isValid: response.data.available,
         message: response.data.message,
         checking: false,
       });
     } catch (error: any) {
+      if (requestId !== nicknameRequestId.current) return;
       setNicknameValidation({
         isValid: false,
         message: error.response?.data?.message || 'Erro ao verificar nickname',
@@ -88,17 +105,21 @@ export default function RegisterPage() {
       return;
     }
 
+    const requestId = ++usernameRequestId.current;
+    const checkedValue = username.trim().toLowerCase();
     setUsernameValidation({ isValid: null, message: t('register.checking'), checking: true });
     try {
       const response = await axios.get(`${API_URL}/auth/check-username`, {
-        params: { username: username.trim().toLowerCase() },
+        params: { username: checkedValue },
       });
+      if (requestId !== usernameRequestId.current) return;
       setUsernameValidation({
         isValid: response.data.available,
         message: response.data.message,
         checking: false,
       });
     } catch (error: any) {
+      if (requestId !== usernameRequestId.current) return;
       setUsernameValidation({
         isValid: false,
         message: error.response?.data?.message || 'Erro ao verificar username',
@@ -123,17 +144,21 @@ export default function RegisterPage() {
       return;
     }
 
+    const requestId = ++emailRequestId.current;
+    const checkedValue = email.trim().toLowerCase();
     setEmailValidation({ isValid: null, message: t('register.checking'), checking: true });
     try {
       const response = await axios.get(`${API_URL}/auth/check-email`, {
-        params: { email: email.trim().toLowerCase() },
+        params: { email: checkedValue },
       });
+      if (requestId !== emailRequestId.current) return;
       setEmailValidation({
         isValid: response.data.available,
         message: response.data.message,
         checking: false,
       });
     } catch (error: any) {
+      if (requestId !== emailRequestId.current) return;
       setEmailValidation({
         isValid: false,
         message: error.response?.data?.message || 'Erro ao verificar email',
@@ -177,7 +202,7 @@ export default function RegisterPage() {
       return;
     }
 
-    if (email !== confirmEmail) {
+    if (!emailMatches) {
       setError('Os emails não coincidem');
       return;
     }
@@ -339,7 +364,11 @@ export default function RegisterPage() {
                   id="nickname"
                   type="text"
                   value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
+                  onChange={(e) => {
+                     nicknameRequestId.current += 1;
+                     setNickname(e.target.value);
+                     setNicknameValidation({ isValid: null, message: '', checking: false });
+                   }}
                   onBlur={handleNicknameBlur}
                   className={`${inputBase} ${
                     nicknameValidation.isValid === true
@@ -375,7 +404,11 @@ export default function RegisterPage() {
                   id="username"
                   type="text"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                  onChange={(e) => {
+                     usernameRequestId.current += 1;
+                     setUsername(e.target.value.toLowerCase());
+                     setUsernameValidation({ isValid: null, message: '', checking: false });
+                   }}
                   onBlur={handleUsernameBlur}
                   className={`${inputBase} ${
                     usernameValidation.isValid === true
@@ -420,7 +453,11 @@ export default function RegisterPage() {
                   id="email"
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                     emailRequestId.current += 1;
+                     setEmail(e.target.value);
+                     setEmailValidation({ isValid: null, message: '', checking: false });
+                   }}
                   onBlur={handleEmailBlur}
                   className={`${inputBase} ${
                     emailValidation.isValid === true
@@ -457,19 +494,19 @@ export default function RegisterPage() {
                   value={confirmEmail}
                   onChange={(e) => setConfirmEmail(e.target.value)}
                   className={`${inputBase} ${
-                    confirmEmail && email && confirmEmail !== email
+                    confirmEmail && email && !emailMatches
                       ? inputInvalid
-                      : confirmEmail && email && confirmEmail === email
+                      : confirmEmail && email && emailMatches
                         ? inputValid
                         : 'border-white/10'
                   }`}
                   placeholder={t('register.confirmEmailPlaceholder')}
                   required
                 />
-                {confirmEmail && email && confirmEmail !== email && (
+                {confirmEmail && email && !emailMatches && (
                   <p className="text-xs text-red-400 mt-1.5">{t('register.emailsMismatch')}</p>
                 )}
-                {confirmEmail && email && confirmEmail === email && (
+                {confirmEmail && email && emailMatches && (
                   <p className="text-xs text-emerald-400 mt-1.5">{t('register.emailsMatch')}</p>
                 )}
               </div>
