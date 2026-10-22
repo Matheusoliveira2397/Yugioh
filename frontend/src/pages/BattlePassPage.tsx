@@ -1,3 +1,4 @@
+import GameIcon from '../components/GameIcon';
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { api } from '../api/axios';
@@ -281,7 +282,7 @@ export default function BattlePassPage() {
           <p className="text-amber-300/80 text-sm tracking-[0.2em] uppercase mb-2">
             {t('battlePass.title')}
           </p>
-          <h1 className="text-3xl md:text-4xl font-bold mb-2">
+          <h1 className="game-screen-heading mb-3"><span className="game-screen-icon"><GameIcon route="/battle-pass" size={26} /></span>
             {loading ? t('common.loading') : season?.name || t('battlePass.noSeason')}
           </h1>
           {season?.description && (
