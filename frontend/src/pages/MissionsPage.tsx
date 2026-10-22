@@ -1,3 +1,4 @@
+import GameIcon from '../components/GameIcon';
 import { useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../api/axios';
@@ -163,10 +164,11 @@ export default function MissionsPage() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-r from-amber-900 via-orange-900 to-yellow-900 rounded-lg p-8 mb-6 shadow-2xl border border-amber-700/40"
+        className="game-screen-hero mb-6"
       >
-        <h1 className="text-4xl font-bold mb-2">🎯 {t('missions.title')}</h1>
-        <p className="text-gray-300 text-lg">{t('missions.subtitle')}</p>
+        <p className="game-screen-kicker">Desafios e conquistas</p>
+        <h1 className="game-screen-heading"><span className="game-screen-icon"><GameIcon route="/missions" size={26} /></span>{t('missions.title')}</h1>
+        <p className="game-screen-subtitle">{t('missions.subtitle')}</p>
       </motion.div>
 
       {error && (
