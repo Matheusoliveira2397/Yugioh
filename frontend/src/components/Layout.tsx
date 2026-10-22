@@ -76,7 +76,7 @@ function tabNavIconForRoute(route: string, fallback: string): string {
 
 function tabNavImageClass(
   variant: 'desktop' | 'mobileRow' | 'mobileGrid',
-  route: string,
+  _route: string,
   isActiveDesktop?: boolean
 ): string {
   const pulse = isActiveDesktop ? ' animate-pulse' : '';
