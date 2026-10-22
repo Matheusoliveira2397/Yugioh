@@ -135,7 +135,7 @@ export default function HomePage() {
   const [topClansSeason, setTopClansSeason] = useState<Clan[]>([]);
   const [news, setNews] = useState<News[]>([]);
   const [shopCards, setShopCards] = useState<Card[]>([]);
-  const [viewedNewsIds, setViewedNewsIds] = useState<string[]>([]);
+  const [, setViewedNewsIds] = useState<string[]>([]);
   const [selectedNewsModal, setSelectedNewsModal] = useState<News | null>(null);
   const [newsIndex, setNewsIndex] = useState(0);
   const [newsPaused, setNewsPaused] = useState(false);
@@ -476,7 +476,7 @@ export default function HomePage() {
               {'iconSrc' in action && action.iconSrc ? (
                 <img src={action.iconSrc} alt="" className="h-6 w-6 object-contain" draggable={false} />
               ) : (
-                <span aria-hidden>{'icon' in action ? action.icon : null}</span>
+                <span aria-hidden>•</span>
               )}
               {action.label}
             </button>
