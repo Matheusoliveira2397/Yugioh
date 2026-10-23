@@ -1,0 +1,17 @@
+/* Tournament — glass panels revealing the arena background */
+.tourney-modal-scrim{background:rgba(5,4,7,.65);backdrop-filter:blur(7px)}
+.tourney-modal-panel{background:rgba(14,9,13,.91);border:1px solid rgba(232,188,95,.55);box-shadow:0 22px 75px rgba(0,0,0,.55)}
+.tourney-modal-header{background:rgba(17,10,14,.8)}
+.tourney-modal-body{overscroll-behavior:contain}
+.tourney-control{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:.45rem .8rem;border-radius:.7rem;border:1px solid rgba(239,194,107,.4);background:rgba(50,27,24,.26);color:#f5dfb3;font-size:.82rem;font-weight:700;white-space:nowrap;transition:border-color .18s,background .18s}
+.tourney-control:hover:not(:disabled){background:rgba(132,73,43,.27);border-color:#f5cd7e}
+.tourney-control:disabled{opacity:.45;cursor:not-allowed}
+.tourney-control-active{background:rgba(160,97,41,.36);border-color:#f3c677;color:#fff1c9}
+.tourney-control:focus-visible{outline:2px solid #ffe09b;outline-offset:2px}
+.tourney-match-card{background:rgba(23,12,14,.28);box-shadow:none}
+.tourney-match-card:hover{border-color:rgba(243,202,126,.68)}
+.tourney-round-tabs{scrollbar-width:thin;scrollbar-color:#a57940 transparent}
+.tourney-bracket-full{max-height:65vh;scrollbar-width:thin;scrollbar-color:#b68b4b transparent;border:1px solid rgba(242,185,99,.22);border-radius:.8rem}
+.tourney-bracket-full>div{min-width:900px}
+@media(max-width:640px){.tourney-modal-panel{max-height:96dvh}.tourney-modal-body{padding:.75rem}.tourney-control{font-size:.75rem;min-height:42px}}
+@media(prefers-reduced-motion:reduce){.tourney-control{transition:none}}
