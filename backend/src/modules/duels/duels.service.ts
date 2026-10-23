@@ -22,6 +22,7 @@ import { AnimeDecksService } from '../anime-decks/anime-decks.service';
 import { BattlePassService } from '../battle-pass/battle-pass.service';
 import { MissionsService } from '../missions/missions.service';
 import { logger } from '../../common/utils/logger.util';
+import { decideForcedWinner } from './duel-schedule-tiebreak';
 import { CardEffectsService } from './services/card-effects.service';
 import { DuelUtilsService } from './services/duel-utils.service';
 import { CardEffectHandlersService } from './services/card-effect-handlers.service';
@@ -48,6 +49,8 @@ import * as ElementalHeroBladedge from './services/card-effects/effects/Monsters
 export class DuelsService implements OnModuleInit {
   private activeDuels: Map<string, Duel> = new Map()
   private creatingDuels: Map<string, Promise<Duel | null>> = new Map();
+  /** Reserva de jogadores durante a criação, impedindo dois pares concorrentes no mesmo processo. */
+  private creatingDuelPlayers = new Set<number>();
   private cardImageLogCache: Set<string> | null = null;
   /** Debounce de JSONB pesado (campo/mão/GY) — memória é fonte da verdade durante o duelo. */
   private pendingDuelPersists = new Map<
@@ -17781,6 +17784,45 @@ export class DuelsService implements OnModuleInit {
     return this.activeDuelsCountCache;
   }
 
+  /**
+   * Conflitos de agenda são resolvidos antes de iniciar um novo duelo.
+   * Duelo comum nunca substitui um ativo. Somente partida READY do torneio
+   * cujo horário venceu pode interromper outra partida.
+   */
+  private async enforceExclusiveDuel(player1Id: number, player2Id: number, origin: DuelOrigin): Promise<void> {
+    const conflicts = await this.duelsRepository.createQueryBuilder('d')
+      .where('d.status IN (:...statuses)', { statuses: [DuelStatus.WAITING, DuelStatus.IN_PROGRESS] })
+      .andWhere('(d.player1Id IN (:...players) OR d.player2Id IN (:...players))',
+        { players: [player1Id, player2Id] })
+      .orderBy('d.createdAt', 'ASC')
+      .getMany();
+    if (!conflicts.length) return;
+
+    if (origin !== DuelOrigin.TOURNAMENT ||
+        !(await this.tournamentsService.isScheduledMatchDue(player1Id, player2Id))) {
+      throw new Error('Um dos duelistas já possui duelo ativo. Aguarde o término para iniciar outro.');
+    }
+
+    for (const conflict of conflicts) {
+      // Finalizar pela posição atual, sem conceder vantagem arbitrária ao torneio.
+      const duel = await this.findDuelByIdFromDatabase(conflict.id) || conflict;
+      if (duel.status === DuelStatus.FINISHED || duel.status === DuelStatus.CANCELLED) continue;
+      const side = decideForcedWinner({
+        player1LifePoints: duel.player1LifePoints,
+        player2LifePoints: duel.player2LifePoints,
+        player1Field: duel.player1Field,
+        player2Field: duel.player2Field,
+      });
+      const winnerId = side === 1 ? duel.player1Id : duel.player2Id;
+      await this.finishDuel(
+        duel.id,
+        side === 1 ? DuelResult.PLAYER1_WIN : DuelResult.PLAYER2_WIN,
+        winnerId,
+      );
+      logger.info(`🏆 [exclusive-duel] ${duel.id} encerrado por início de torneio; vencedor ${winnerId}`);
+    }
+  }
+
   async createDuel(
     player1Id: number,
     player2Id: number,
@@ -17834,7 +17876,12 @@ export class DuelsService implements OnModuleInit {
       return await existingCreation;
     }
     
-    logger.info(`🎮 [createDuel] Criando nova promise de criação...`);
+    if (this.creatingDuelPlayers.has(player1Id) || this.creatingDuelPlayers.has(player2Id)) {
+      throw new Error('Um dos duelistas já está iniciando outro duelo.');
+    }
+    this.creatingDuelPlayers.add(player1Id);
+    this.creatingDuelPlayers.add(player2Id);
+        logger.info(`🎮 [createDuel] Criando nova promise de criação...`);
     const creationPromise = (async (): Promise<Duel | null> => {
       try {
         logger.info(`🎮 [createDuel] Promise iniciada, chamando createDuelInternal...`);
@@ -17876,9 +17923,13 @@ export class DuelsService implements OnModuleInit {
     })();
     
     this.creatingDuels.set(duelKey, creationPromise);
-    const result = await creationPromise;
-    this.creatingDuels.delete(duelKey);
-    return result;
+    try {
+      return await creationPromise;
+    } finally {
+      this.creatingDuels.delete(duelKey);
+      this.creatingDuelPlayers.delete(player1Id);
+      this.creatingDuelPlayers.delete(player2Id);
+    }
   }
   
   async verifyDuelInDatabase(duelId: string | number): Promise<boolean> {
@@ -17918,6 +17969,7 @@ export class DuelsService implements OnModuleInit {
     logger.info(`🚀 [createDuelInternal] INICIANDO criação de duelo`);
     logger.info(`🚀 [createDuelInternal] Player1Id: ${player1Id}, Player2Id: ${player2Id}, Origin: ${origin}`);
     try {
+      await this.enforceExclusiveDuel(player1Id, player2Id, origin);
       const activeDuels = this.getActiveDuelsCount();
       const queryTimeout = activeDuels > 0 ? 2000 : 5000;
       logger.info(`🚀 [createDuelInternal] ActiveDuels: ${activeDuels}, QueryTimeout: ${queryTimeout}ms`);
