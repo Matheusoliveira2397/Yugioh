@@ -1,10 +1,11 @@
 import GameIcon from '../components/GameIcon';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../api/axios';
 import { useAuthStore } from '../stores/authStore';
 import TournamentBracket from '../components/TournamentBracket';
+import './TournamentPage.css';
 import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { formatScore } from '../utils/formatScore';
 import { useI18n } from '../i18n/I18nContext';
@@ -110,6 +111,10 @@ export default function TournamentPage() {
   const [bracket, setBracket] = useState<Bracket | null>(null);
   const [loadingBracket, setLoadingBracket] = useState(false);
   const [showBracket, setShowBracket] = useState(false);
+  const [bracketRound, setBracketRound] = useState(1);
+  const [bracketFullView, setBracketFullView] = useState(false);
+  const [bracketError, setBracketError] = useState(false);
+  const bracketCloseRef = useRef<HTMLButtonElement>(null);
   const [registeringTournamentId, setRegisteringTournamentId] = useState<string | null>(null);
 
   const [ranking, setRanking] = useState<{ rank: number; userId: number; nickname: string; profileImage: string | null; clanTag: string | null; tournamentPoints: number; className: string; classOrder: number }[]>([]);
@@ -153,12 +158,14 @@ export default function TournamentPage() {
 
   const loadBracket = async (tournamentId: string) => {
     setLoadingBracket(true);
+    setBracketError(false);
     try {
       const response = await api.get(`/tournaments/${tournamentId}/bracket`);
       setBracket(response.data);
     } catch (error) {
       console.error('Erro ao carregar chave:', error);
       setBracket(null);
+      setBracketError(true);
     } finally {
       setLoadingBracket(false);
     }
@@ -190,6 +197,23 @@ export default function TournamentPage() {
       if (!opts?.silent) setLoadingDetail(false);
     }
   };
+
+  const openBracket = (id: string) => {
+    setBracketRound(1);
+    setBracketFullView(false);
+    setShowBracket(true);
+    void loadBracket(id);
+  };
+  useEffect(() => {
+    if (!showBracket) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    bracketCloseRef.current?.focus();
+    const onEscape = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowBracket(false); };
+    document.addEventListener('keydown', onEscape);
+    return () => { document.removeEventListener('keydown', onEscape); document.body.style.overflow = overflow; previous?.focus(); };
+  }, [showBracket]);
 
   // Ao estar em /tournaments/:id, carregar o torneio e dados (top3, bracket)
   useEffect(() => {
@@ -346,7 +370,7 @@ export default function TournamentPage() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         whileHover={{ scale: 1.02 }}
-        className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-5 border border-white/10 hover:border-purple-500/50 transition-all cursor-pointer"
+        className="tourney-list-card rounded-xl p-5 border border-amber-400/30 transition-all cursor-pointer"
         onClick={() => handleViewDetails(tournament)}
       >
         <div className="flex justify-between items-start mb-3">
@@ -378,7 +402,7 @@ export default function TournamentPage() {
             e.stopPropagation();
             handleViewDetails(tournament);
           }}
-          className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg text-sm transition-colors"
+          className="tourney-control w-full px-4 py-2 text-white font-semibold rounded-lg text-sm transition-colors"
         >
           Ver detalhes
         </button>
@@ -429,7 +453,7 @@ export default function TournamentPage() {
   };
 
   return (
-    <div className="min-h-screen px-3 py-4 sm:px-6 sm:py-7 max-w-7xl mx-auto">
+    <div className="tourney-page min-h-screen px-3 py-4 sm:px-6 sm:py-7 max-w-7xl mx-auto">
         {tournamentIdParam && (
           <div className="mb-4">
             <button
@@ -465,10 +489,10 @@ export default function TournamentPage() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-xl overflow-hidden mb-8 border border-amber-500/30 bg-gray-900/60 backdrop-blur-sm shadow-2xl"
+            className="tourney-detail-panel rounded-xl overflow-hidden mb-8 border border-amber-500/30"
           >
             {/* Header com Nível Mínimo, Vagas e Fase atual */}
-            <div className="flex flex-wrap justify-between items-center gap-4 p-4 sm:p-6 border-b border-amber-500/20 bg-gray-800/40 backdrop-blur-sm">
+            <div className="flex flex-wrap justify-between items-center gap-4 p-4 sm:p-6 border-b border-amber-500/20">
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-4 mb-2">
                   <span className="flex items-center gap-1.5 text-amber-300/90 text-sm">
@@ -529,7 +553,7 @@ export default function TournamentPage() {
                 <h3 className="text-lg font-bold text-amber-400 mb-3 flex items-center gap-2">
                   <span className="text-2xl">🏆</span> Cronograma
                 </h3>
-                <div className="overflow-x-auto rounded-lg border border-amber-500/20 bg-gray-800/40 backdrop-blur-sm">
+                <div className="overflow-x-auto rounded-lg border border-amber-500/20 bg-transparent">
                   <table className="w-full text-left">
                     <thead>
                       <tr className="border-b border-amber-500/30">
@@ -555,8 +579,7 @@ export default function TournamentPage() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  if (!bracket) loadBracket(selectedTournament.id);
-                                  setShowBracket(true);
+                                  openBracket(selectedTournament.id);
                                 }}
                                 className="text-amber-400 hover:text-amber-300 p-1 rounded"
                                 title="Ver chave do torneio"
@@ -575,19 +598,19 @@ export default function TournamentPage() {
 
               {/* Info rápida */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
-                <div className="rounded-lg p-3 border border-amber-500/20 bg-gray-800/40 backdrop-blur-sm">
+                <div className="rounded-lg p-3 border border-amber-500/20 bg-transparent">
                   <p className="text-amber-400/80 text-xs">Formato</p>
                   <p className="text-white font-semibold">{getFormatLabel(selectedTournament.format)}</p>
                 </div>
-                <div className="rounded-lg p-3 border border-amber-500/20 bg-gray-800/40 backdrop-blur-sm">
+                <div className="rounded-lg p-3 border border-amber-500/20 bg-transparent">
                   <p className="text-amber-400/80 text-xs">Participantes</p>
                   <p className="text-white font-semibold">{selectedTournament.currentParticipants}/{selectedTournament.maxParticipants}</p>
                 </div>
-                <div className="rounded-lg p-3 border border-amber-500/20 bg-gray-800/40 backdrop-blur-sm">
+                <div className="rounded-lg p-3 border border-amber-500/20 bg-transparent">
                   <p className="text-amber-400/80 text-xs">Taxa</p>
                   <p className="text-white font-semibold">{selectedTournament.entryFee} {selectedTournament.entryFeeType === 'cash' ? 'cash' : 'créditos'}</p>
                 </div>
-                <div className="rounded-lg p-3 border border-amber-500/20 bg-gray-800/40 backdrop-blur-sm">
+                <div className="rounded-lg p-3 border border-amber-500/20 bg-transparent">
                   <p className="text-amber-400/80 text-xs">Status</p>
                   <span className={`inline-block px-2 py-0.5 rounded text-xs text-white ${getStatusColor(selectedTournament.status)}`}>
                     {getStatusLabel(selectedTournament.status)}
@@ -621,8 +644,7 @@ export default function TournamentPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (!bracket) loadBracket(selectedTournament.id);
-                      setShowBracket(true);
+                      openBracket(selectedTournament.id);
                     }}
                     className="px-4 py-2 bg-amber-500/30 border border-amber-500/50 hover:bg-amber-500/50 text-amber-200 rounded-lg transition-all flex items-center gap-2 text-sm font-semibold"
                   >
@@ -635,7 +657,7 @@ export default function TournamentPage() {
             {/* Modal da chave — todos os confrontos */}
             {showBracket && selectedTournament && (
               <div
-                className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-sm"
+                className="tourney-modal-scrim fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-5"
                 onClick={() => setShowBracket(false)}
                 role="dialog"
                 aria-modal="true"
@@ -644,10 +666,10 @@ export default function TournamentPage() {
                 <motion.div
                   initial={{ opacity: 0, scale: 0.96, y: 12 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                  className="relative w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-xl border border-amber-500/40 bg-[#0c1220] shadow-2xl"
+                  className="tourney-modal-panel relative w-full max-w-6xl max-h-[94dvh] overflow-hidden rounded-xl border border-amber-500/40 shadow-2xl flex flex-col"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-amber-500/25 bg-[#0c1220]/95 px-4 py-3 backdrop-blur">
+                  <div className="tourney-modal-header sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-amber-500/25 px-4 py-3 backdrop-blur">
                     <div>
                       <h3 className="text-lg font-bold text-amber-300">{selectedTournament.name}</h3>
                       <p className="text-xs text-gray-400">
@@ -657,19 +679,44 @@ export default function TournamentPage() {
                     <button
                       type="button"
                       onClick={() => setShowBracket(false)}
-                      className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-white/80 hover:bg-white/10"
+                      ref={bracketCloseRef}
+                      className="tourney-control rounded-lg border border-amber-400/30 px-3 py-2 text-sm text-white/90"
                     >
                       Fechar
                     </button>
                   </div>
 
-                  <div className="overflow-y-auto max-h-[calc(92vh-4rem)] p-4 sm:p-5">
+                  <div className="tourney-modal-body overflow-y-auto flex-1 min-h-0 p-3 sm:p-5">
                     {loadingBracket ? (
-                      <div className="text-white text-center py-12">Carregando chave...</div>
+                      <div role="status" className="text-white text-center py-12">Carregando confrontos...</div>
+                     ) : bracketError ? (
+                      <div role="alert" className="text-center py-12">
+                        <p className="mb-3 text-white">Não foi possível carregar a chave.</p>
+                        <button className="tourney-control" type="button" onClick={() => loadBracket(selectedTournament.id)}>Tentar novamente</button>
+                      </div>
                     ) : bracket && bracket.totalRounds > 0 ? (
-                      <div className="space-y-6">
-                        {/* Lista de todos os confrontos por rodada */}
-                        {Array.from({ length: bracket.totalRounds }, (_, i) => i + 1).map((round) => {
+                      <div className="space-y-5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex gap-2">
+                            <button type="button" aria-pressed={!bracketFullView} className={`tourney-control ${!bracketFullView ? 'tourney-control-active' : ''}`} onClick={() => setBracketFullView(false)}>Por rodada</button>
+                            <button type="button" aria-pressed={bracketFullView} className={`tourney-control ${bracketFullView ? 'tourney-control-active' : ''}`} onClick={() => setBracketFullView(true)}>Chave completa</button>
+                          </div>
+                          <button type="button" className="tourney-control" disabled={loadingBracket} onClick={() => loadBracket(selectedTournament.id)}>{loadingBracket ? 'Atualizando...' : '↻ Atualizar'}</button>
+                        </div>
+                        {!bracketFullView && (
+                          <nav className="tourney-round-tabs flex gap-2 overflow-x-auto pb-2" aria-label="Rodadas">
+                            {Array.from({ length: bracket.totalRounds }, (_, index) => index + 1).map((round) => (
+                              <button key={round} type="button" aria-pressed={bracketRound === round}
+                                className={`tourney-control shrink-0 ${bracketRound === round ? 'tourney-control-active' : ''}`}
+                                onClick={() => setBracketRound(round)}>
+                                {round === bracket.totalRounds ? 'Final' : round === bracket.totalRounds - 1 ? 'Semifinal' : round === bracket.totalRounds - 2 ? 'Quartas' : `Rodada ${round}`}
+                              </button>
+                            ))}
+                          </nav>
+                        )}
+                        {!bracketFullView && (
+                          <div>
+                        {[bracketRound].map((round) => {
                           const matches = bracket.rounds[round] || [];
                           const roundName =
                             round === bracket.totalRounds
@@ -685,12 +732,13 @@ export default function TournamentPage() {
                                 {roundName}
                               </h4>
                               <div className="grid gap-2 sm:grid-cols-2">
+                                {matches.length === 0 && <p className="col-span-full py-10 text-center text-white/70">Esta rodada ainda não possui confrontos definidos.</p>}
                                 {matches.map((match) => {
                                   const isThird = (match as Match & { isThirdPlaceMatch?: boolean }).isThirdPlaceMatch;
                                   return (
                                     <div
                                       key={match.id}
-                                      className="rounded-lg border border-white/10 bg-black/35 px-3 py-3"
+                                      className="tourney-match-card rounded-lg border border-amber-400/25 px-3 py-3"
                                     >
                                       {isThird && (
                                         <p className="text-[10px] font-semibold uppercase text-amber-400 mb-1.5">
@@ -709,7 +757,7 @@ export default function TournamentPage() {
                                           />
                                           <span
                                             className={`truncate font-medium ${
-                                              match.winnerId === match.player1Id
+                                              match.winnerId != null && match.player1Id != null && match.winnerId === match.player1Id
                                                 ? 'text-emerald-400'
                                                 : 'text-white'
                                             }`}
@@ -721,7 +769,7 @@ export default function TournamentPage() {
                                         <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
                                           <span
                                             className={`truncate font-medium text-right ${
-                                              match.winnerId === match.player2Id
+                                              match.winnerId != null && match.player2Id != null && match.winnerId === match.player2Id
                                                 ? 'text-emerald-400'
                                                 : 'text-white'
                                             }`}
@@ -762,11 +810,13 @@ export default function TournamentPage() {
                             </div>
                           );
                         })}
-
-                        <div className="border-t border-white/10 pt-4">
-                          <p className="text-xs text-white/50 mb-3">Visão em chave</p>
-                          <TournamentBracket bracket={bracket} />
-                        </div>
+                          </div>
+                        )}
+                        {bracketFullView && (
+                          <div className="tourney-bracket-full overflow-auto" tabIndex={0} aria-label="Visão completa da chave">
+                            <TournamentBracket bracket={bracket} />
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <p className="text-gray-400 text-center py-12">Chave ainda não foi gerada.</p>
