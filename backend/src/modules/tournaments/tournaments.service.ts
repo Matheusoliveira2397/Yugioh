@@ -1516,16 +1516,29 @@ const matchesToStart = await this.matchRepository.find({
     // Carregar participantes + todas as partidas com usuários no mesmo SELECT
     // multiplica joins e pode falhar/ficar extremamente lento após gerar a chave.
     // Chave e pódio possuem endpoints próprios.
-    const tournament = await this.tournamentRepository.findOne({
-      where: { id },
-      relations: ['winner'],
-    });
+    // Consultar torneio sem JOINs: bancos legados podem ter relacionamentos
+    // com tipos divergentes (integer = uuid), provocando erro 500 no PostgreSQL.
+    const tournament = await this.tournamentRepository
+      .createQueryBuilder('tournament')
+      .where('tournament.id = :id', { id })
+      .getOne();
 
     if (!tournament) {
       throw new NotFoundException('Torneio não encontrado');
     }
 
-    return tournament;
+    // O campeão é opcional. Buscar separadamente impede que um JOIN inválido
+    // bloqueie a visualização do torneio inteiro.
+    let winner: User | null = null;
+    if (tournament.winnerId != null) {
+      try {
+        winner = await this.tournamentRepository.manager.getRepository(User)
+          .findOne({ where: { id: tournament.winnerId } });
+      } catch (error: any) {
+        this.logger.warn(`Não foi possível obter campeão do torneio ${id}: ${error?.message || error}`);
+      }
+    }
+    return { ...tournament, winner };
   }
 
   /**
