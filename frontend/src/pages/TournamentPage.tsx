@@ -370,7 +370,7 @@ export default function TournamentPage() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         whileHover={{ scale: 1.02 }}
-        className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-5 border border-white/10 hover:border-purple-500/50 transition-all cursor-pointer"
+        className="tourney-list-card rounded-xl p-5 border border-amber-400/30 transition-all cursor-pointer"
         onClick={() => handleViewDetails(tournament)}
       >
         <div className="flex justify-between items-start mb-3">
@@ -402,7 +402,7 @@ export default function TournamentPage() {
             e.stopPropagation();
             handleViewDetails(tournament);
           }}
-          className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg text-sm transition-colors"
+          className="tourney-control w-full px-4 py-2 text-white font-semibold rounded-lg text-sm transition-colors"
         >
           Ver detalhes
         </button>
@@ -453,7 +453,7 @@ export default function TournamentPage() {
   };
 
   return (
-    <div className="min-h-screen px-3 py-4 sm:px-6 sm:py-7 max-w-7xl mx-auto">
+    <div className="tourney-page min-h-screen px-3 py-4 sm:px-6 sm:py-7 max-w-7xl mx-auto">
         {tournamentIdParam && (
           <div className="mb-4">
             <button
@@ -489,10 +489,10 @@ export default function TournamentPage() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-xl overflow-hidden mb-8 border border-amber-500/30 bg-gray-900/60 backdrop-blur-sm shadow-2xl"
+            className="tourney-detail-panel rounded-xl overflow-hidden mb-8 border border-amber-500/30"
           >
             {/* Header com Nível Mínimo, Vagas e Fase atual */}
-            <div className="flex flex-wrap justify-between items-center gap-4 p-4 sm:p-6 border-b border-amber-500/20 bg-gray-800/40 backdrop-blur-sm">
+            <div className="flex flex-wrap justify-between items-center gap-4 p-4 sm:p-6 border-b border-amber-500/20">
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-4 mb-2">
                   <span className="flex items-center gap-1.5 text-amber-300/90 text-sm">
@@ -553,7 +553,7 @@ export default function TournamentPage() {
                 <h3 className="text-lg font-bold text-amber-400 mb-3 flex items-center gap-2">
                   <span className="text-2xl">🏆</span> Cronograma
                 </h3>
-                <div className="overflow-x-auto rounded-lg border border-amber-500/20 bg-gray-800/40 backdrop-blur-sm">
+                <div className="overflow-x-auto rounded-lg border border-amber-500/20 bg-transparent">
                   <table className="w-full text-left">
                     <thead>
                       <tr className="border-b border-amber-500/30">
@@ -598,19 +598,19 @@ export default function TournamentPage() {
 
               {/* Info rápida */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
-                <div className="rounded-lg p-3 border border-amber-500/20 bg-gray-800/40 backdrop-blur-sm">
+                <div className="rounded-lg p-3 border border-amber-500/20 bg-transparent">
                   <p className="text-amber-400/80 text-xs">Formato</p>
                   <p className="text-white font-semibold">{getFormatLabel(selectedTournament.format)}</p>
                 </div>
-                <div className="rounded-lg p-3 border border-amber-500/20 bg-gray-800/40 backdrop-blur-sm">
+                <div className="rounded-lg p-3 border border-amber-500/20 bg-transparent">
                   <p className="text-amber-400/80 text-xs">Participantes</p>
                   <p className="text-white font-semibold">{selectedTournament.currentParticipants}/{selectedTournament.maxParticipants}</p>
                 </div>
-                <div className="rounded-lg p-3 border border-amber-500/20 bg-gray-800/40 backdrop-blur-sm">
+                <div className="rounded-lg p-3 border border-amber-500/20 bg-transparent">
                   <p className="text-amber-400/80 text-xs">Taxa</p>
                   <p className="text-white font-semibold">{selectedTournament.entryFee} {selectedTournament.entryFeeType === 'cash' ? 'cash' : 'créditos'}</p>
                 </div>
-                <div className="rounded-lg p-3 border border-amber-500/20 bg-gray-800/40 backdrop-blur-sm">
+                <div className="rounded-lg p-3 border border-amber-500/20 bg-transparent">
                   <p className="text-amber-400/80 text-xs">Status</p>
                   <span className={`inline-block px-2 py-0.5 rounded text-xs text-white ${getStatusColor(selectedTournament.status)}`}>
                     {getStatusLabel(selectedTournament.status)}
