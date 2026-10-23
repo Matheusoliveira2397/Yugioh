@@ -16687,14 +16687,28 @@ export class DuelsService implements OnModuleInit {
       duel = duelFromDb;
     }
     
+    // Persistir o campo pendente antes de reivindicar a finalização.
+    // A alteração atômica no banco impede que duas requisições contabilizem
+    // vitórias, derrotas, recompensas e histórico para o mesmo duelo.
+    await this.flushPendingDuelPersist(duelIdStr);
+    const finishedAt = new Date();
+    const claimed = await this.duelsRepository.createQueryBuilder()
+      .update(Duel)
+      .set({ status: DuelStatus.FINISHED, result, winnerId, finishedAt })
+      .where('id = :duelId', { duelId: duelIdStr })
+      .andWhere('status IN (:...activeStatuses)', {
+        activeStatuses: [DuelStatus.WAITING, DuelStatus.IN_PROGRESS],
+      })
+      .execute();
+    if (!claimed.affected) {
+      logger.warn(`[finishDuel] Duelo ${duelIdStr} já encerrado; ignorando nova finalização.`);
+      return;
+    }
     duel.status = DuelStatus.FINISHED;
     duel.result = result;
     duel.winnerId = winnerId;
-    duel.finishedAt = new Date();
+    duel.finishedAt = finishedAt;
 
-    // Garante que o último estado de campo (debounce) vá para o banco antes do fim
-    await this.flushPendingDuelPersist(duelIdStr);
-    
     await this.updateDuelInDatabase(duelId, {
       status: DuelStatus.FINISHED,
       result: result,
@@ -17885,15 +17899,10 @@ export class DuelsService implements OnModuleInit {
     const creationPromise = (async (): Promise<Duel | null> => {
       try {
         logger.info(`🎮 [createDuel] Promise iniciada, chamando createDuelInternal...`);
-        const duel = await Promise.race([
-          this.createDuelInternal(player1Id, player2Id, origin, options),
-          new Promise<null>((_, reject) => 
-            setTimeout(() => {
-              logger.error(`⏱️ [createDuel] TIMEOUT ao criar duelo após 30 segundos!`);
-              reject(new Error('Timeout ao criar duelo'));
-            }, 30000)
-          )
-        ]).catch((error) => {
+        // Não liberar a reserva enquanto a criação continua em execução.
+        // Um Promise.race com timeout abandonava a reserva, mas a operação
+        // interna ainda podia salvar um duelo depois.
+        const duel = await this.createDuelInternal(player1Id, player2Id, origin, options).catch((error) => {
           logger.error(`❌ [createDuel] Erro:`, error);
           // Propagar o erro para o cliente receber a mensagem real (ex.: deck vazio, timeout)
           const err = error instanceof Error ? error : new Error(String(error));
@@ -18570,8 +18579,7 @@ export class DuelsService implements OnModuleInit {
         }
       }
       
-      const duelKey = `${Math.min(player1Id, player2Id)}_${Math.max(player1Id, player2Id)}`;
-      this.creatingDuels.delete(duelKey);
+      // Só o createDuel externo libera a reserva de jogadores e do par.
       logger.info(`✅ [createDuelInternal] Duelo criado e adicionado ao cache em memória`);
       logger.info(`✅ [createDuelInternal] ==========================================`);
         
@@ -18582,9 +18590,7 @@ export class DuelsService implements OnModuleInit {
       logger.error(`❌ [createDuelInternal] Mensagem:`, error instanceof Error ? error.message : String(error));
       logger.error(`❌ [createDuelInternal] Stack:`, error instanceof Error ? error.stack : 'N/A');
       
-      // Remover do Map de criação em andamento em caso de erro
-      const duelKey = `${Math.min(player1Id, player2Id)}_${Math.max(player1Id, player2Id)}`;
-      this.creatingDuels.delete(duelKey);
+      // A reserva é liberada pelo finally de createDuel, inclusive em falhas.
       // Relançar para o cliente receber a mensagem real (ex.: deck vazio, deck não encontrado)
       throw error instanceof Error ? error : new Error(String(error));
     }
