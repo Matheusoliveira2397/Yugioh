@@ -271,6 +271,57 @@ describe('Bot AI — batalha e avaliação', () => {
     expect(ordered[0].action.actionData.attackerZoneIndex).toBe(1);
   });
 
+  it('não revela DEF de monstro virado para baixo ao pontuar ataques', () => {
+    const attack: BotActionCandidate = {
+      id: 'hidden', actionType: 'ATTACK',
+      actionData: { attackerZoneIndex: 0, targetZoneIndex: 0 },
+      label: 'ataque a set', category: 'attack',
+    };
+    const own = [{ m: { atk: 1900, position: 'attack' }, i: 0 }];
+    const weak = [{ m: { def: 100, position: 'set' }, i: 0 }];
+    const strong = [{ m: { def: 3300, position: 'set' }, i: 0 }];
+    const a = evaluateAttack(attack, own, weak, 8000, 8000, 0.6);
+    const b = evaluateAttack(attack, own, strong, 8000, 8000, 0.6);
+    expect(a.score).toBe(b.score);
+    expect(a.destroys).toBe(false);
+    expect(a.lethalLine).toBe(false);
+    expect(a.damage).toBe(0);
+  });
+
+  it('evita ataque que causa dano letal ao próprio bot contra defesa', () => {
+    const a: BotActionCandidate = {
+      id: 'def', actionType: 'ATTACK',
+      actionData: { attackerZoneIndex: 0, targetZoneIndex: 0 },
+      label: 'atacar defesa', category: 'attack',
+    };
+    const result = evaluateAttack(
+      a,
+      [{ m: { atk: 1200, position: 'attack' }, i: 0 }],
+      [{ m: { atk: 100, def: 2800, position: 'defense' }, i: 0 }],
+      1500, 700, 0.7,
+    );
+    expect(result.score).toBeLessThan(-100);
+    expect(result.damage).toBe(0);
+    expect(result.lethalLine).toBe(false);
+  });
+
+  it('distingue alvo protegido e não declara eliminação de monstro indestrutível', () => {
+    const action: BotActionCandidate = {
+      id: 'protect', actionType: 'ATTACK',
+      actionData: { attackerZoneIndex: 0, targetZoneIndex: 0 },
+      label: 'atacar alvo', category: 'attack',
+    };
+    const result = evaluateAttack(
+      action,
+      [{ m: { atk: 2500, position: 'attack' }, i: 0 }],
+      [{ m: { atk: 1200, position: 'attack', cannotBeDestroyedByBattle: true }, i: 0 }],
+      8000, 1000, 0.7,
+    );
+    expect(result.destroys).toBe(false);
+    expect(result.lethalLine).toBe(false);
+    expect(result.damage).toBe(1300);
+  });
+
   it('evaluateBoard penaliza ameaça de board oponente', () => {
     const safe = makeTestDuel({ oppMonsters: [] });
     const threatened = makeTestDuel({
