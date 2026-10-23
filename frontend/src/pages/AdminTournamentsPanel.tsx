@@ -76,6 +76,7 @@ export default function AdminTournamentsPanel() {
   const [banlistSearch, setBanlistSearch] = useState('');
   const [prizeCardSearch, setPrizeCardSearch] = useState<Record<number, string>>({ 1: '', 2: '', 3: '', 4: '' });
   const [uploadingTrophyPlace, setUploadingTrophyPlace] = useState<number | null>(null);
+  const [fillingTournamentId, setFillingTournamentId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<'tournaments' | 'types'>('tournaments');
   const [tournamentTypes, setTournamentTypes] = useState<TournamentType[]>([]);
@@ -425,6 +426,30 @@ export default function AdminTournamentsPanel() {
     } catch (error) {
       console.error('Erro ao excluir torneio:', error);
       setMessage({ type: 'error', text: 'Erro ao excluir torneio' });
+    }
+  };
+
+  const handleFillBots = async (tournament: Tournament) => {
+    const vacant = Math.max(0, tournament.maxParticipants - tournament.currentParticipants);
+    if (!vacant || tournament.status !== 'registration_open') return;
+    if (!confirm(`Preencher até ${vacant} vaga(s) de "${tournament.name}" com bots habilitados? Bots não pagam taxa de inscrição.`)) return;
+    setFillingTournamentId(tournament.id);
+    setMessage(null);
+    try {
+      const response = await api.post<{ added: number; remaining: number; filled: boolean }>(
+        `/tournaments/${tournament.id}/fill-bots`,
+      );
+      const { added, remaining, filled } = response.data;
+      setMessage({
+        type: 'success',
+        text: `${added} bot(s) inscrito(s). ${filled ? 'Torneio completo: inscrições encerradas e chave gerada.' : `Restam ${remaining} vaga(s); crie ou habilite mais bots para completar.`}`,
+      });
+      await loadTournaments();
+    } catch (error: any) {
+      const message = error?.response?.data?.message;
+      setMessage({ type: 'error', text: Array.isArray(message) ? message.join(' ') : message || 'Não foi possível preencher as vagas com bots.' });
+    } finally {
+      setFillingTournamentId(null);
     }
   };
 
@@ -1023,6 +1048,18 @@ export default function AdminTournamentsPanel() {
                 )}
               </div>
 
+              {tournament.status === 'registration_open' && tournament.currentParticipants < tournament.maxParticipants && (
+                <button
+                  type="button"
+                  disabled={fillingTournamentId === tournament.id}
+                  onClick={() => handleFillBots(tournament)}
+                  className="w-full mb-3 rounded-lg border border-amber-400/60 bg-amber-900/20 px-3 py-2.5 text-sm font-semibold text-amber-100 hover:bg-amber-800/30 disabled:opacity-50 transition-colors"
+                >
+                  {fillingTournamentId === tournament.id
+                    ? 'Preenchendo com bots...'
+                    : `Preencher ${tournament.maxParticipants - tournament.currentParticipants} vaga(s) com bots`}
+                </button>
+              )}
               <div className="flex gap-2">
                 <button
                   onClick={() => handleEdit(tournament)}
