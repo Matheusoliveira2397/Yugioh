@@ -1,6 +1,6 @@
 import { BotDifficulty } from './entities/managed-bot.entity';
 import { BotActionCandidate, BotLesson } from './bot-action.types';
-import { classifyCardEffect, situationalEffectValue } from './bot-effect-taxonomy';
+import { classifyCardEffect, evaluatePublicMonsterThreat, situationalEffectValue } from './bot-effect-taxonomy';
 import { detectCombos, comboBonusForAction, isKeyComboResource } from './bot-combo';
 import { getDeckProfile, styleAdjust } from './bot-deck-profile';
 import { evaluateBoard, estimableBattleDamage } from './bot-evaluator';
@@ -211,6 +211,24 @@ function effectActionScore(action: BotActionCandidate, ctx: StrategyCtx): number
     oppAtkSum: ctx.oppAtkSum,
     bestGyAtk: bestGy,
   });
+  // Considerar os efeitos públicos dos monstros inimigos ao decidir quando
+  // remover ameaças ou buscar proteção. Cartas setadas são tratadas como desconhecidas.
+  const visibleThreat = ctx.oppMonsters.reduce(
+    (sum, entry) => sum + evaluatePublicMonsterThreat(entry.m), 0,
+  );
+  const removesMonster = profile.roles.some((r) =>
+    ['target_destroy_monster', 'banish_remove', 'steal', 'board_wipe_monster'].includes(r),
+  );
+  if (removesMonster && ctx.oppMonsters.length > 0) {
+    v += Math.min(85, visibleThreat * 0.35);
+  }
+  if (profile.roles.includes('protection') && visibleThreat >= 130) {
+    v += Math.min(40, visibleThreat * 0.15);
+  }
+  if (profile.roles.includes('target_destroy_spell') || profile.roles.includes('board_wipe_spell')) {
+    // Backrow setada é potencialmente perigosa, mas sem acesso ao seu conteúdo.
+    v += Math.min(24, ctx.oppSpells.length * 8);
+  }
   // START_* sem cardName claramente classificado: boost explícito por actionType
   const startBoost = monsterEffectStartBonus(action.actionType, ctx);
   if (startBoost !== 0) v = Math.max(v, startBoost);
