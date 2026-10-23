@@ -12,6 +12,7 @@ import { AchievementsService } from '../users/achievements.service';
 import { ShopService } from '../shop/shop.service';
 import { AchievementType } from '../users/entities/achievement.entity';
 import { User } from '../users/entities/user.entity';
+import { ManagedBot } from '../bots/entities/managed-bot.entity';
 import { MissionsService } from '../missions/missions.service';
 import { MissionObjectiveType } from '../missions/mission-objective.types';
 
@@ -364,6 +365,81 @@ const matchesToStart = await this.matchRepository.find({
     if (value === TournamentFormat.SWISS || value === 'swiss') return TournamentFormat.SWISS;
     if (value === TournamentFormat.DOUBLE_ELIMINATION || value === 'double_elimination') return TournamentFormat.DOUBLE_ELIMINATION;
     return TournamentFormat.SINGLE_ELIMINATION;
+  }
+
+  /**
+   * Administração: ocupa vagas livres usando contas de bots existentes.
+   * Operação transacional, serializada por bloqueio de linha no torneio.
+   * Bots não pagam taxa (contas internas), mas devem ter deck e nível elegível.
+   */
+  async fillWithBots(tournamentId: string) {
+    const result = await this.tournamentRepository.manager.transaction(async (manager) => {
+      const tournamentRepo = manager.getRepository(Tournament);
+      const participantRepo = manager.getRepository(TournamentParticipant);
+      const botRepo = manager.getRepository(ManagedBot);
+      const userRepo = manager.getRepository(User);
+
+      const tournament = await tournamentRepo.createQueryBuilder('t')
+        .setLock('pessimistic_write')
+        .where('t.id = :id', { id: tournamentId })
+        .getOne();
+      if (!tournament) throw new NotFoundException('Torneio não encontrado');
+      if (tournament.status !== TournamentStatus.REGISTRATION_OPEN) {
+        throw new BadRequestException('Somente torneios com inscrições abertas podem receber bots');
+      }
+      const existing = await participantRepo.find({ where: { tournament: { id: tournamentId } } });
+      const occupied = existing.length;
+      const vacant = Math.max(0, tournament.maxParticipants - occupied);
+      if (vacant === 0) throw new BadRequestException('O torneio já está completo');
+
+      const existingIds = new Set(existing.map((p) => p.userId));
+      const bots = await botRepo.find({ where: { enabled: true }, order: { createdAt: 'ASC' } });
+      const candidates: Array<{ bot: ManagedBot; user: User }> = [];
+      for (const bot of bots) {
+        if (existingIds.has(bot.userId)) continue;
+        const user = await userRepo.findOne({ where: { id: bot.userId } });
+        if (!user || user.isBanned || !bot.botDeckId) continue;
+        if ((user.level ?? 1) < (tournament.minLevel ?? 1)) continue;
+        if (tournament.maxLevel != null && (user.level ?? 1) > tournament.maxLevel) continue;
+        candidates.push({ bot, user });
+        if (candidates.length >= vacant) break;
+      }
+      if (!candidates.length) {
+        throw new BadRequestException('Nenhum bot habilitado e elegível está disponível. Crie ou habilite bots no painel de bots.');
+      }
+
+      for (const { user } of candidates) {
+        await participantRepo.save(participantRepo.create({
+          tournament,
+          userId: user.id,
+          status: ParticipantStatus.REGISTERED,
+          wins: 0,
+          losses: 0,
+          draws: 0,
+        }));
+      }
+      tournament.currentParticipants = occupied + candidates.length;
+      const filled = tournament.currentParticipants >= tournament.maxParticipants;
+      if (filled) tournament.status = TournamentStatus.REGISTRATION_CLOSED;
+      await tournamentRepo.save(tournament);
+      return {
+        tournamentId,
+        added: candidates.length,
+        remaining: tournament.maxParticipants - tournament.currentParticipants,
+        total: tournament.currentParticipants,
+        maxParticipants: tournament.maxParticipants,
+        filled,
+      };
+    });
+    if (result.filled) {
+      try {
+        await this.ensureBracketGenerated(tournamentId);
+      } catch (error: any) {
+        this.logger.error(`Falha ao gerar chave do torneio ${tournamentId}: ${error?.message || error}`);
+        throw new BadRequestException('As vagas foram preenchidas, mas houve erro ao gerar a chave. Use Gerar chave no painel administrativo.');
+      }
+    }
+    return result;
   }
 
   /**

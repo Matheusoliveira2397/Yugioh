@@ -65,6 +65,13 @@ export class TournamentsController {
     return this.tournamentsService.register(id, userId);
   }
 
+  /** Preencher vagas restantes com bots administrados. */
+  @Post(':id/fill-bots')
+  @UseGuards(AdminGuard)
+  fillBots(@Param('id') id: string) {
+    return this.tournamentsService.fillWithBots(id);
+  }
+
   /**
    * Gerar chave do torneio manualmente (admin)
    */
