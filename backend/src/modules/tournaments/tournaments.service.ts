@@ -300,6 +300,9 @@ const matchesToStart = await this.matchRepository.find({
   private async tryStartMatchDuel(match: TournamentMatch): Promise<boolean> {
     if (!match.player1Id || !match.player2Id || match.duelId) return false;
     if (match.status !== MatchStatus.READY) return false;
+    // A próxima fase só começa no horário agendado, mesmo se a rodada
+    // anterior terminou antecipadamente.
+    if (new Date(match.scheduledAt).getTime() > Date.now()) return false;
 
     if (match.player1Id === match.player2Id) {
       match.winnerId = match.player1Id;
