@@ -73,44 +73,57 @@ export function evaluateAttack(
     target.indestructible === true ||
     /spirit.?reaper|marshmallon|god/i.test(String(target.name || target.cardName || ''));
 
-  const oppAtk = atkOf(target);
-  const oppDef = defOf(target);
-  const strength = defMode ? (faceDown ? Math.max(oppDef, 1000) : oppDef) : oppAtk;
-  const wins = atk > strength && !protectedDestroy;
-  const damage = defMode || faceDown ? 0 : Math.max(0, atk - oppAtk);
-  const selfDamage = !defMode && !faceDown && atk < oppAtk ? oppAtk - atk : 0;
-  const suicide = selfDamage > 0;
+  // Monstros virados para baixo escondem ATK/DEF e identidade: não usar
+  // estatísticas privadas da engine para antecipar seu resultado.
+  const oppAtk = faceDown ? 0 : atkOf(target);
+  const oppDef = faceDown ? 0 : defOf(target);
+  const strength = defMode ? oppDef : oppAtk;
+  const wins = !faceDown && atk > strength && !protectedDestroy;
+  const damage = defMode ? 0 : Math.max(0, atk - oppAtk);
+  const selfDamage = !faceDown && defMode
+    ? Math.max(0, oppDef - atk)
+    : !faceDown ? Math.max(0, oppAtk - atk) : 0;
+  const suicide = !faceDown && !defMode && selfDamage > 0;
 
   let score = 0;
   let reason = action.label;
 
-  if (wins) {
+  if (faceDown) {
+    // Risco calculado só com informação pública. Monstro fraco não deve
+    // atacar cegamente quando há alternativa mais segura.
+    score = Math.max(-70, Math.min(75, (atk - 1600) / 30 + 25 * risk));
+    if (myLp <= 1500 && atk < 1800) score -= 30;
+    reason = 'investigar monstro oculto (DEF desconhecida)';
+  } else if (wins) {
     score = 155 + strength / 22 + damage / 18;
     reason = `destrói (dano ${damage})`;
-    // Abre direto no restante
+    // Abre direto no restante apenas quando realmente destrói o bloqueador.
     const otherAtk = myMonsters
       .filter((x) => x.i !== data.attackerZoneIndex)
-      .reduce((s, x) => s + (String(x.m.position || '').includes('attack') ? atkOf(x.m) : 0), 0);
+      .reduce((s, x) => s + (String(x.m.position || '').includes('attack') && !x.m.attackedThisTurn ? atkOf(x.m) : 0), 0);
     if (oppMonsters.length === 1 && otherAtk + damage >= oppLp) {
       score += 80;
       reason += ' → abre lethal';
     }
-  } else if (faceDown) {
-    score = 20 * risk;
-    reason = 'arriscando set';
-  } else if (suicide) {
-    if (myLp - selfDamage <= 0) score = -200;
-    else if (myLp < 1500) score = -10 + risk * 25;
+  } else if (suicide || selfDamage > 0) {
+    if (myLp <= selfDamage) score = -350;
+    else if (myLp < 1500) score = -115 + risk * 20;
     else score = -95 + risk * 25;
-    reason = `suicídio (-${selfDamage})`;
-  } else if (atk === oppAtk) {
+    reason = `perde LP sem eliminar alvo (-${selfDamage})`;
+  } else if (!defMode && atk === oppAtk && !protectedDestroy) {
     score = myLp > oppLp ? -15 : 40;
-    reason = 'trade igual';
+    reason = 'troca de monstros';
+  } else if (protectedDestroy) {
+    score = damage > 0 ? 40 + damage / 24 : -35;
+    reason = 'alvo protegido contra destruição';
   } else {
-    score = 5;
+    score = -25;
+    reason = 'ataque sem vantagem';
   }
 
-  const lethalLine = wins && damage >= oppLp;
+  // Atingir um monstro em defesa não gera dano de batalha ao oponente
+  // sem um efeito explícito de perfuração: jamais marcar ataque letal aqui.
+  const lethalLine = !defMode && wins && damage >= oppLp;
   if (lethalLine) score += 120;
 
   return { action, score, reason, damage, destroys: wins, lethalLine };
