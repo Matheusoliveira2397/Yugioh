@@ -23,6 +23,7 @@ import { BattlePassService } from '../battle-pass/battle-pass.service';
 import { MissionsService } from '../missions/missions.service';
 import { logger } from '../../common/utils/logger.util';
 import { decideForcedWinner } from './duel-schedule-tiebreak';
+import { withDuelPlayerLocks } from './duel-creation-lock';
 import { CardEffectsService } from './services/card-effects.service';
 import { DuelUtilsService } from './services/duel-utils.service';
 import { CardEffectHandlersService } from './services/card-effect-handlers.service';
@@ -17902,7 +17903,11 @@ export class DuelsService implements OnModuleInit {
         // Não liberar a reserva enquanto a criação continua em execução.
         // Um Promise.race com timeout abandonava a reserva, mas a operação
         // interna ainda podia salvar um duelo depois.
-        const duel = await this.createDuelInternal(player1Id, player2Id, origin, options).catch((error) => {
+        const duel = await withDuelPlayerLocks(
+          this.duelsRepository,
+          [player1Id, player2Id],
+          () => this.createDuelInternal(player1Id, player2Id, origin, options),
+        ).catch((error) => {
           logger.error(`❌ [createDuel] Erro:`, error);
           // Propagar o erro para o cliente receber a mensagem real (ex.: deck vazio, timeout)
           const err = error instanceof Error ? error : new Error(String(error));
