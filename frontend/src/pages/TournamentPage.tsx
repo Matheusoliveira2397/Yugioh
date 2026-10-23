@@ -715,7 +715,7 @@ export default function TournamentPage() {
                           </nav>
                         )}
                         {!bracketFullView && (
-                        {/* Lista de todos os confrontos por rodada */}
+                          <div>
                         {[bracketRound].map((round) => {
                           const matches = bracket.rounds[round] || [];
                           const roundName =
@@ -809,11 +809,13 @@ export default function TournamentPage() {
                             </div>
                           );
                         })}
-
-                        <div className="border-t border-white/10 pt-4">
-                          <p className="text-xs text-white/50 mb-3">Visão em chave</p>
-                          <TournamentBracket bracket={bracket} />
-                        </div>
+                          </div>
+                        )}
+                        {bracketFullView && (
+                          <div className="tourney-bracket-full overflow-auto" tabIndex={0} aria-label="Visão completa da chave">
+                            <TournamentBracket bracket={bracket} />
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <p className="text-gray-400 text-center py-12">Chave ainda não foi gerada.</p>
