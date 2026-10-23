@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:check": "tsc && vite build",
+    "build:check": "npm run check:icons && tsc && vite build",
+    "check:icons": "node scripts/check-icons.mjs",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },
