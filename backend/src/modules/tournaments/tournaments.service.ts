@@ -1512,18 +1512,13 @@ const matchesToStart = await this.matchRepository.find({
    * Buscar torneio por ID
    */
   async findOne(id: string) {
+    // A tela de detalhes usa apenas os dados do torneio e do campeão.
+    // Carregar participantes + todas as partidas com usuários no mesmo SELECT
+    // multiplica joins e pode falhar/ficar extremamente lento após gerar a chave.
+    // Chave e pódio possuem endpoints próprios.
     const tournament = await this.tournamentRepository.findOne({
       where: { id },
-      relations: [
-        'creator',
-        'winner',
-        'participants',
-        'participants.user',
-        'matches',
-        'matches.player1',
-        'matches.player2',
-        'matches.winner',
-      ],
+      relations: ['winner'],
     });
 
     if (!tournament) {
