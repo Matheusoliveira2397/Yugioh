@@ -278,6 +278,24 @@ const matchesToStart = await this.matchRepository.find({
     }
   }
 
+  /**
+   * Autoriza interromper outros duelos somente quando uma partida real da
+   * chave, com estes dois duelistas, já alcançou seu horário oficial.
+   */
+  async isScheduledMatchDue(player1Id: number, player2Id: number): Promise<boolean> {
+    const matches = await this.matchRepository.find({
+      where: {
+        status: MatchStatus.READY,
+        scheduledAt: LessThanOrEqual(new Date()),
+      },
+    });
+    return matches.some((match) =>
+      !match.duelId &&
+      ((match.player1Id === player1Id && match.player2Id === player2Id) ||
+        (match.player1Id === player2Id && match.player2Id === player1Id)),
+    );
+  }
+
   /** Inicia duelo de uma partida READY (ou marca W.O. se mesmo jogador nos dois lados). */
   private async tryStartMatchDuel(match: TournamentMatch): Promise<boolean> {
     if (!match.player1Id || !match.player2Id || match.duelId) return false;
