@@ -116,39 +116,49 @@ function iconArtwork(route: string): ReactNode {
   return <><path d="m12 2 2.6 6.7L21 11l-6.4 2.3L12 20l-2.6-6.7L3 11l6.4-2.3L12 2Z"/></>;
 }
 
-export default function GameIcon({ route, size = 22, className = '' }: GameIconProps) {
+/**
+ * O prop size representa o QUADRADO FINAL do ícone, independentemente de ser
+ * sprite ou fallback SVG. Nunca aumenta a arte fora do container do layout.
+ * O atlas 4×4 deve ser exibido sem radius/overflow que recortem a célula.
+ */
+export default function GameIcon({ route, size = 28, className = '' }: GameIconProps) {
   const slot = illustratedIconForRoute(route);
+  const iconSize = Number.isFinite(size) ? Math.max(12, Math.round(size)) : 28;
+
   if (slot !== undefined) {
     const column = slot % 4;
     const row = Math.floor(slot / 4);
-    const artSize = Math.min(44, size + 8);
     return (
       <span
         className={`game-icon-illustrated ${className}`}
-        style={{
-          width: artSize,
-          height: artSize,
-          backgroundImage: "url('/images/ui/yugioh-fantasy-icons.webp')",
-          backgroundSize: '400% 400%',
-          backgroundPosition: `${column * (100 / 3)}% ${row * (100 / 3)}%`,
-          backgroundRepeat: 'no-repeat',
-        }}
+        style={{ width: iconSize, height: iconSize, maxWidth: '100%', maxHeight: '100%' }}
         aria-hidden="true"
-      />
+      >
+        <span
+          className="game-icon-illustrated__art"
+          style={{
+            backgroundImage: "url('/images/ui/yugioh-fantasy-icons.webp')",
+            backgroundSize: '400% 400%',
+            backgroundPosition: `${column * (100 / 3)}% ${row * (100 / 3)}%`,
+            backgroundRepeat: 'no-repeat',
+          }}
+        />
+      </span>
     );
   }
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 24 24"
-      width={size}
-      height={size}
+      width={iconSize}
+      height={iconSize}
+      style={{ maxWidth: '100%', maxHeight: '100%' }}
       fill="none"
       stroke="currentColor"
       strokeWidth="1.85"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={`game-icon-vector ${className}`}
       aria-hidden="true"
       focusable="false"
     >
