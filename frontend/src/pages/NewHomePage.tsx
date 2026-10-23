@@ -387,7 +387,7 @@ export default function HomePage() {
                 { to: '/missions', title: 'Concluir missões', description: 'Avance e ganhe recompensas' },
               ].map((item) => (
                 <Link key={item.to} to={item.to} className="home-preparation-link group flex min-h-14 items-center gap-3 rounded-lg p-2.5">
-                  <span className="home-preparation-icon"><GameIcon route={item.to} size={23} /></span>
+                  <span className="home-preparation-icon"><GameIcon route={item.to} size={30} /></span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold text-white">{item.title}</span>
                     <span className="block text-xs text-[#e2d3c8]">{item.description}</span>
@@ -443,7 +443,7 @@ export default function HomePage() {
               className="home-action-tile game-cta-tile ui-action-tile group !p-3 sm:!p-3.5 flex flex-col items-center text-center justify-center min-h-[8rem] sm:min-h-[8.5rem] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champion-gold"
             >
               <span className="game-screen-icon relative z-10 mb-1 transition-transform duration-300 group-hover:scale-110 group-hover:-translate-y-0.5">
-                <GameIcon route={action.to} size={27} />
+                <GameIcon route={action.to} size={36} />
               </span>
               <strong className="relative z-10 mt-1.5 block font-display text-xs sm:text-sm text-champion-gold group-hover:text-white transition-colors leading-tight">
                 {action.label}
@@ -464,7 +464,7 @@ export default function HomePage() {
               className="home-secondary-action inline-flex items-center gap-2 rounded-lg border border-champion-gold/30 px-3 py-2 text-xs sm:text-sm font-semibold text-white/90 transition-colors"
             >
               <span className="inline-flex h-7 w-7 items-center justify-center text-champion-gold">
-                <GameIcon route={action.to} size={18} />
+                <GameIcon route={action.to} size={22} />
               </span>
               {action.label}
             </button>

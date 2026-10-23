@@ -667,3 +667,68 @@
     padding: .4rem;
   }
 }
+
+
+/* Category illustrations share one unclipped viewport; artwork stays readable
+   against the original game wallpaper without adding colored panels. */
+.duelist-market .market-category {
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+  min-height: 5.5rem;
+  padding: .7rem .85rem;
+  border-radius: .95rem;
+}
+.duelist-market .market-category-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 3.3rem;
+  width: 3.3rem;
+  height: 3.3rem;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+}
+.duelist-market .market-category-copy strong {
+  color: #fff4db;
+  font-size: .82rem;
+  line-height: 1.25;
+}
+.duelist-market .market-category-copy small {
+  color: #e6c99c;
+  font-size: .7rem;
+  line-height: 1.25;
+}
+.duelist-market .market-featured-shelf-icon {
+  width: 3.1rem;
+  height: 3.1rem;
+  overflow: visible;
+}
+.duelist-market .market-hero-emblem,
+.duelist-market .market-hero-crest {
+  display: grid;
+  place-items: center;
+  overflow: visible;
+}
+.duelist-market .market-featured-image-fallback {
+  overflow: visible;
+  flex: 0 0 auto;
+}
+.duelist-market .market-category:focus-visible {
+  outline: 2px solid #ffde9a;
+  outline-offset: 3px;
+}
+@media (max-width: 639px) {
+  .duelist-market .market-category {
+    gap: .5rem;
+    min-height: 5rem;
+    padding: .55rem .55rem;
+  }
+  .duelist-market .market-category-icon {
+    flex-basis: 2.8rem;
+    width: 2.8rem;
+    height: 2.8rem;
+  }
+  .duelist-market .market-category-copy strong { font-size: .77rem; }
+  .duelist-market .market-category-copy small { font-size: .64rem; }
+}

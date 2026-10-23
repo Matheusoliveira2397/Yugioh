@@ -994,19 +994,43 @@
 }
 
 @layer components {
-  .game-icon-illustrated {
-    display: inline-block;
+  /* A caixa tem EXATAMENTE a dimensão solicitada pelo GameIcon.
+     O atlas inteiro ocupa uma célula, sem zoom, border-radius ou overflow
+     que cortem a ilustração. A margem visual é aplicada internamente. */
+  .game-icon-illustrated,
+  .game-icon-vector {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     vertical-align: middle;
     flex: 0 0 auto;
-    overflow: hidden;
-    border-radius: .3rem;
-    filter: brightness(1.16) contrast(1.08) drop-shadow(0 2px 4px rgba(0, 0, 0, .5));
-    transition: transform 180ms ease, filter 180ms ease;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background-color: transparent;
+    line-height: 0;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 5px rgba(0, 0, 0, .60));
+    transition: filter 180ms ease;
   }
-  .game-nav-tab:hover .game-icon-illustrated,
-  .game-cta-tile:hover .game-icon-illustrated {
-    filter: brightness(1.32) contrast(1.07) drop-shadow(0 0 6px rgba(243, 195, 83, .38));
-    transform: scale(1.05);
+  .game-icon-illustrated__art {
+    display: block;
+    width: 100%;
+    height: 100%;
+    flex: 0 0 auto;
+    aspect-ratio: 1 / 1;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    transform: scale(.91);
+    transform-origin: center center;
+    background-color: transparent;
+    background-repeat: no-repeat;
+  }
+  :is(.game-nav-tab, .game-cta-tile, .home-main-action, .market-category):hover
+    :is(.game-icon-illustrated, .game-icon-vector) {
+    filter: drop-shadow(0 0 7px rgba(251, 214, 141, .6));
   }
   .game-shell .game-nav {
     background: linear-gradient(180deg, rgba(22, 12, 13, .98), rgba(12, 8, 9, .96));
@@ -1101,4 +1125,90 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .game-icon-illustrated { transition: none; }
+}
+
+
+/* Icon-led navigation: uniform art viewport, labels readable without clipping.
+   Keeps the game's wallpaper and uses subtle gold outlines, not solid panels. */
+@layer components {
+  .game-shell .game-nav-tab--compact {
+    min-width: 5.1rem;
+    min-height: 4.85rem;
+    padding: .4rem .55rem .5rem;
+    gap: .24rem;
+    border-radius: .85rem;
+    align-content: center;
+    justify-content: center;
+    transition: border-color .18s ease, background .18s ease;
+  }
+  .game-shell .game-nav-tab--compact > span:last-child {
+    max-width: 5rem;
+    min-height: 1.65rem;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-align: center;
+    color: #f8eadb;
+    font-size: .68rem;
+    font-weight: 700;
+    text-shadow: 0 2px 6px rgba(0,0,0,.85);
+  }
+  .game-shell .game-nav-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    min-width: 2.75rem;
+    flex: 0 0 2.75rem;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    filter: none;
+    overflow: visible;
+  }
+  .game-shell .game-nav-icon--grid {
+    width: 3rem;
+    height: 3rem;
+    min-width: 3rem;
+    flex-basis: 3rem;
+  }
+  .game-shell .game-nav-tab--active {
+    border-color: rgba(249, 213, 144, .72);
+    box-shadow: inset 0 -2px 0 rgba(238, 184, 91, .75);
+  }
+  .game-shell .game-screen-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 3.5rem;
+    height: 3.5rem;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: visible;
+    flex: 0 0 auto;
+  }
+  .game-shell .game-cta-tile .game-screen-icon {
+    margin-inline: auto;
+  }
+}
+@media (max-width: 639px) {
+  .game-shell .game-nav-tab--compact {
+    min-width: 4.75rem;
+    min-height: 4.5rem;
+    padding: .35rem .35rem .45rem;
+  }
+  .game-shell .game-nav-icon { width: 2.6rem; height: 2.6rem; min-width: 2.6rem; flex-basis: 2.6rem; }
+  .game-shell .game-nav-tab--compact > span:last-child { max-width: 4.3rem; font-size: .63rem; }
+  .game-shell .game-screen-icon { width: 3.2rem; height: 3.2rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .game-icon-illustrated, .game-icon-vector { transition: none; }
 }

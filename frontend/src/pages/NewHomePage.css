@@ -229,3 +229,92 @@
   .duelist-home .home-preparation-link { transition: none; }
   .duelist-home .home-main-action:hover { transform: none; }
 }
+
+
+/* Consistent illustrations + quiet, background-first layout. */
+.duelist-home .home-action-tile {
+  position: relative;
+  min-height: 9.25rem;
+  padding: 1rem .7rem !important;
+  gap: .15rem;
+  border-radius: 1rem;
+  isolation: isolate;
+}
+.duelist-home .home-action-tile .game-screen-icon {
+  width: 3.8rem;
+  height: 3.8rem;
+  min-height: 3.8rem;
+  margin: 0 auto .15rem;
+  transform: none;
+  overflow: visible;
+}
+.duelist-home .home-action-tile:hover .game-screen-icon {
+  transform: translateY(-2px);
+}
+.duelist-home .home-action-tile strong {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.4em;
+  margin-top: .3rem;
+  font-size: .84rem;
+  line-height: 1.2;
+}
+.duelist-home .home-action-tile > span:last-child {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-height: 2.4em;
+  line-height: 1.2;
+  font-size: .71rem;
+}
+.duelist-home .home-preparation-link {
+  min-height: 4rem;
+  gap: .75rem;
+  padding: .65rem .7rem;
+}
+.duelist-home .home-preparation-icon {
+  width: 3rem;
+  height: 3rem;
+  min-width: 3rem;
+  overflow: visible;
+}
+.duelist-home .home-secondary-action {
+  min-height: 2.85rem;
+  padding: .55rem .85rem;
+  gap: .6rem;
+  border-radius: .75rem;
+  align-items: center;
+}
+.duelist-home .home-secondary-action > span:first-child {
+  flex: 0 0 1.85rem;
+  width: 1.85rem;
+  height: 1.85rem;
+  overflow: visible;
+}
+.duelist-home .home-main-action {
+  min-height: 3rem;
+  gap: .55rem;
+  padding: .6rem 1.1rem;
+  line-height: 1.25;
+  text-align: center;
+}
+.duelist-home .home-action-tile:focus-visible,
+.duelist-home .home-preparation-link:focus-visible,
+.duelist-home .home-secondary-action:focus-visible {
+  outline: 2px solid #ffdb99;
+  outline-offset: 3px;
+}
+@media (max-width: 639px) {
+  .duelist-home .home-action-tile {
+    min-height: 9.1rem;
+    padding: .8rem .45rem !important;
+  }
+  .duelist-home .home-action-tile .game-screen-icon { width: 3.6rem; height: 3.6rem; min-height: 3.6rem; }
+  .duelist-home .home-action-tile strong { font-size: .78rem; }
+  .duelist-home .home-action-tile > span:last-child { font-size: .67rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .duelist-home .home-action-tile:hover .game-screen-icon { transform: none; }
+}

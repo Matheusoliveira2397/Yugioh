@@ -1154,7 +1154,7 @@ export default function ShopPage() {
               onClick={() => { setCategory(item.id); setCurrentPage(1); }}
               className={`market-category ${category === item.id ? 'is-active' : ''}`}
             >
-              <span className="market-category-icon"><GameIcon route={item.route} size={25} /></span>
+              <span className="market-category-icon"><GameIcon route={item.route} size={32} /></span>
               <span className="market-category-copy"><strong>{item.name}</strong><small>{item.hint}</small></span>
             </button>
           ))}
