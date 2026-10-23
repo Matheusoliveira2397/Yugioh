@@ -1,10 +1,11 @@
 import GameIcon from '../components/GameIcon';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../api/axios';
 import { useAuthStore } from '../stores/authStore';
 import TournamentBracket from '../components/TournamentBracket';
+import './TournamentPage.css';
 import { getProfileImageUrl, DEFAULT_PROFILE_IMAGE_PATH } from '../utils/imageUrl';
 import { formatScore } from '../utils/formatScore';
 import { useI18n } from '../i18n/I18nContext';
@@ -110,6 +111,10 @@ export default function TournamentPage() {
   const [bracket, setBracket] = useState<Bracket | null>(null);
   const [loadingBracket, setLoadingBracket] = useState(false);
   const [showBracket, setShowBracket] = useState(false);
+  const [bracketRound, setBracketRound] = useState(1);
+  const [bracketFullView, setBracketFullView] = useState(false);
+  const [bracketError, setBracketError] = useState(false);
+  const bracketCloseRef = useRef<HTMLButtonElement>(null);
   const [registeringTournamentId, setRegisteringTournamentId] = useState<string | null>(null);
 
   const [ranking, setRanking] = useState<{ rank: number; userId: number; nickname: string; profileImage: string | null; clanTag: string | null; tournamentPoints: number; className: string; classOrder: number }[]>([]);
@@ -153,12 +158,14 @@ export default function TournamentPage() {
 
   const loadBracket = async (tournamentId: string) => {
     setLoadingBracket(true);
+    setBracketError(false);
     try {
       const response = await api.get(`/tournaments/${tournamentId}/bracket`);
       setBracket(response.data);
     } catch (error) {
       console.error('Erro ao carregar chave:', error);
       setBracket(null);
+      setBracketError(true);
     } finally {
       setLoadingBracket(false);
     }
@@ -190,6 +197,23 @@ export default function TournamentPage() {
       if (!opts?.silent) setLoadingDetail(false);
     }
   };
+
+  const openBracket = (id: string) => {
+    setBracketRound(1);
+    setBracketFullView(false);
+    setShowBracket(true);
+    void loadBracket(id);
+  };
+  useEffect(() => {
+    if (!showBracket) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    bracketCloseRef.current?.focus();
+    const onEscape = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowBracket(false); };
+    document.addEventListener('keydown', onEscape);
+    return () => { document.removeEventListener('keydown', onEscape); document.body.style.overflow = overflow; previous?.focus(); };
+  }, [showBracket]);
 
   // Ao estar em /tournaments/:id, carregar o torneio e dados (top3, bracket)
   useEffect(() => {
@@ -555,8 +579,7 @@ export default function TournamentPage() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  if (!bracket) loadBracket(selectedTournament.id);
-                                  setShowBracket(true);
+                                  openBracket(selectedTournament.id);
                                 }}
                                 className="text-amber-400 hover:text-amber-300 p-1 rounded"
                                 title="Ver chave do torneio"
@@ -621,8 +644,7 @@ export default function TournamentPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (!bracket) loadBracket(selectedTournament.id);
-                      setShowBracket(true);
+                      openBracket(selectedTournament.id);
                     }}
                     className="px-4 py-2 bg-amber-500/30 border border-amber-500/50 hover:bg-amber-500/50 text-amber-200 rounded-lg transition-all flex items-center gap-2 text-sm font-semibold"
                   >
@@ -635,7 +657,7 @@ export default function TournamentPage() {
             {/* Modal da chave — todos os confrontos */}
             {showBracket && selectedTournament && (
               <div
-                className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-sm"
+                className="tourney-modal-scrim fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-5"
                 onClick={() => setShowBracket(false)}
                 role="dialog"
                 aria-modal="true"
@@ -644,10 +666,10 @@ export default function TournamentPage() {
                 <motion.div
                   initial={{ opacity: 0, scale: 0.96, y: 12 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                  className="relative w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-xl border border-amber-500/40 bg-[#0c1220] shadow-2xl"
+                  className="tourney-modal-panel relative w-full max-w-6xl max-h-[94dvh] overflow-hidden rounded-xl border border-amber-500/40 shadow-2xl flex flex-col"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-amber-500/25 bg-[#0c1220]/95 px-4 py-3 backdrop-blur">
+                  <div className="tourney-modal-header sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-amber-500/25 px-4 py-3 backdrop-blur">
                     <div>
                       <h3 className="text-lg font-bold text-amber-300">{selectedTournament.name}</h3>
                       <p className="text-xs text-gray-400">
@@ -657,19 +679,44 @@ export default function TournamentPage() {
                     <button
                       type="button"
                       onClick={() => setShowBracket(false)}
-                      className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-white/80 hover:bg-white/10"
+                      ref={bracketCloseRef}
+                      className="tourney-control rounded-lg border border-amber-400/30 px-3 py-2 text-sm text-white/90"
                     >
                       Fechar
                     </button>
                   </div>
 
-                  <div className="overflow-y-auto max-h-[calc(92vh-4rem)] p-4 sm:p-5">
+                  <div className="tourney-modal-body overflow-y-auto flex-1 min-h-0 p-3 sm:p-5">
                     {loadingBracket ? (
-                      <div className="text-white text-center py-12">Carregando chave...</div>
+                      <div role="status" className="text-white text-center py-12">Carregando confrontos...</div>
+                     ) : bracketError ? (
+                      <div role="alert" className="text-center py-12">
+                        <p className="mb-3 text-white">Não foi possível carregar a chave.</p>
+                        <button className="tourney-control" type="button" onClick={() => loadBracket(selectedTournament.id)}>Tentar novamente</button>
+                      </div>
                     ) : bracket && bracket.totalRounds > 0 ? (
-                      <div className="space-y-6">
+                      <div className="space-y-5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex gap-2">
+                            <button type="button" aria-pressed={!bracketFullView} className={`tourney-control ${!bracketFullView ? 'tourney-control-active' : ''}`} onClick={() => setBracketFullView(false)}>Por rodada</button>
+                            <button type="button" aria-pressed={bracketFullView} className={`tourney-control ${bracketFullView ? 'tourney-control-active' : ''}`} onClick={() => setBracketFullView(true)}>Chave completa</button>
+                          </div>
+                          <button type="button" className="tourney-control" disabled={loadingBracket} onClick={() => loadBracket(selectedTournament.id)}>{loadingBracket ? 'Atualizando...' : '↻ Atualizar'}</button>
+                        </div>
+                        {!bracketFullView && (
+                          <nav className="tourney-round-tabs flex gap-2 overflow-x-auto pb-2" aria-label="Rodadas">
+                            {Array.from({ length: bracket.totalRounds }, (_, index) => index + 1).map((round) => (
+                              <button key={round} type="button" aria-pressed={bracketRound === round}
+                                className={`tourney-control shrink-0 ${bracketRound === round ? 'tourney-control-active' : ''}`}
+                                onClick={() => setBracketRound(round)}>
+                                {round === bracket.totalRounds ? 'Final' : round === bracket.totalRounds - 1 ? 'Semifinal' : round === bracket.totalRounds - 2 ? 'Quartas' : `Rodada ${round}`}
+                              </button>
+                            ))}
+                          </nav>
+                        )}
+                        {!bracketFullView && (
                         {/* Lista de todos os confrontos por rodada */}
-                        {Array.from({ length: bracket.totalRounds }, (_, i) => i + 1).map((round) => {
+                        {[bracketRound].map((round) => {
                           const matches = bracket.rounds[round] || [];
                           const roundName =
                             round === bracket.totalRounds
@@ -690,7 +737,7 @@ export default function TournamentPage() {
                                   return (
                                     <div
                                       key={match.id}
-                                      className="rounded-lg border border-white/10 bg-black/35 px-3 py-3"
+                                      className="tourney-match-card rounded-lg border border-amber-400/25 px-3 py-3"
                                     >
                                       {isThird && (
                                         <p className="text-[10px] font-semibold uppercase text-amber-400 mb-1.5">
