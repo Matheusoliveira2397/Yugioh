@@ -106,6 +106,7 @@ export default function TournamentPage() {
   const [loading, setLoading] = useState(true);
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [detailError, setDetailError] = useState<'not_found' | 'load_failed' | null>(null);
   const [top3, setTop3] = useState<Top3Player[]>([]);
   const [loadingTop3, setLoadingTop3] = useState(false);
   const [bracket, setBracket] = useState<Bracket | null>(null);
@@ -172,11 +173,15 @@ export default function TournamentPage() {
   };
 
   const refreshTournamentDetail = async (id: string, opts?: { silent?: boolean }) => {
-    if (!opts?.silent) setLoadingDetail(true);
+    if (!opts?.silent) {
+      setLoadingDetail(true);
+      setDetailError(null);
+    }
     try {
-      const res = await api.get<Tournament>(`/tournaments/${id}`);
+      const res = await api.get<Tournament>(`/tournaments/${encodeURIComponent(id)}`);
       const t = res.data;
       setSelectedTournament(t);
+      setDetailError(null);
       if (t.status === 'finished') {
         await loadTop3(t.id);
       } else {
@@ -190,8 +195,12 @@ export default function TournamentPage() {
         await loadBracket(t.id);
       }
       return t;
-    } catch {
-      if (!opts?.silent) setSelectedTournament(null);
+    } catch (error: any) {
+      console.error('Erro ao carregar detalhes do torneio:', error);
+      if (!opts?.silent) {
+        setSelectedTournament(null);
+        setDetailError(error?.response?.status === 404 ? 'not_found' : 'load_failed');
+      }
       return null;
     } finally {
       if (!opts?.silent) setLoadingDetail(false);
@@ -219,6 +228,7 @@ export default function TournamentPage() {
   useEffect(() => {
     if (!tournamentIdParam) {
       setSelectedTournament(null);
+      setDetailError(null);
       setBracket(null);
       setTop3([]);
       return;
@@ -478,10 +488,19 @@ export default function TournamentPage() {
 
         {tournamentIdParam && !loadingDetail && !selectedTournament && (
           <div className="text-center py-12">
-            <p className="text-gray-400 text-lg mb-4">{t('tournament.notFound')}</p>
-            <button type="button" onClick={() => navigate('/tournaments')} className="text-amber-400 hover:text-amber-300 underline">
-              Ver todos os torneios
-            </button>
+            <p className="text-gray-200 text-lg mb-4">
+              {detailError === 'not_found' ? t('tournament.notFound') : detailError === 'load_failed' ? 'Não foi possível carregar o torneio. Verifique a conexão e tente novamente.' : 'Carregando detalhes...'}
+            </p>
+            <div className="flex flex-wrap justify-center gap-4">
+              {detailError === 'load_failed' && (
+                <button type="button" onClick={() => void refreshTournamentDetail(tournamentIdParam)} className="text-amber-300 hover:text-amber-200 underline">
+                  Tentar novamente
+                </button>
+              )}
+              <button type="button" onClick={() => navigate('/tournaments')} className="text-amber-400 hover:text-amber-300 underline">
+                Ver todos os torneios
+              </button>
+            </div>
           </div>
         )}
 
