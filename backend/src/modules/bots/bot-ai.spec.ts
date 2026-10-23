@@ -15,7 +15,7 @@ import {
 import { detectCombos } from './bot-combo';
 import { evaluateAttack, orderAttackActions } from './bot-battle';
 import { evaluateBoard } from './bot-evaluator';
-import { conditionsMet, situationalEffectValue } from './bot-effect-taxonomy';
+import { conditionsMet, evaluatePublicMonsterThreat, situationalEffectValue } from './bot-effect-taxonomy';
 import { BotActionCandidate } from './bot-action.types';
 
 describe('Bot AI — taxonomia de efeitos', () => {
@@ -78,6 +78,23 @@ describe('Bot AI — taxonomia de efeitos', () => {
       bestGyAtk: 0,
     });
     expect(low).toBeGreaterThan(high);
+  });
+});
+
+describe('Bot AI — leitura de efeitos do adversário', () => {
+  it('identifica ameaça pública de remoção mesmo com pouco ATK', () => {
+    const normal = makeTestCard({ name: 'Monstro comum', type: 'Monster', atk: 1400, position: 'attack', description: '' });
+    const removal = makeTestCard({ name: 'Remover', type: 'Monster', atk: 1400, position: 'attack',
+      description: 'Destroy 1 target monster your opponent controls.' });
+    expect(evaluatePublicMonsterThreat(removal)).toBeGreaterThan(evaluatePublicMonsterThreat(normal));
+  });
+
+  it('não lê nome, efeito ou DEF de monstros adversários setados', () => {
+    const hiddenA = makeTestCard({ name: 'Monstro A', type: 'Monster', atk: 0, def: 300, position: 'set',
+      description: 'Draw 2 cards.' });
+    const hiddenB = makeTestCard({ name: 'Monstro B', type: 'Monster', atk: 3500, def: 3500, position: 'set',
+      description: 'Destroy all monsters your opponent controls.' });
+    expect(evaluatePublicMonsterThreat(hiddenA)).toEqual(evaluatePublicMonsterThreat(hiddenB));
   });
 });
 

@@ -283,6 +283,28 @@ export function conditionsMet(
   return true;
 }
 
+/**
+ * Classifica somente informações públicas do campo adversário.
+ * Cartas setadas não expõem identidade nem texto para a IA.
+ */
+export function evaluatePublicMonsterThreat(card: any): number {
+  if (!card) return 0;
+  const position = String(card.position || '').toLowerCase();
+  if (position === 'set' || position.includes('face-down') || position.includes('facedown')) {
+    return 100; // possível flip, sem consultar atributos escondidos
+  }
+  const profile = classifyCardEffect(card);
+  const atk = Math.max(0, Number(card.atk ?? card.attack ?? 0) || 0);
+  const def = Math.max(0, Number(card.def ?? card.defense ?? 0) || 0);
+  let threat = Math.max(0, atk - 1400) / 20;
+  if (position.includes('defen')) threat = Math.max(0, def - 1800) / 35;
+  if (profile.roles.some((r) => ['target_destroy_monster', 'banish_remove', 'steal', 'board_wipe_monster'].includes(r))) threat += 90;
+  if (profile.roles.some((r) => ['special_summon', 'revive', 'search', 'draw'].includes(r))) threat += 60;
+  if (profile.roles.includes('protection')) threat += 35;
+  if (card.cannotBeDestroyedByBattle === true || card.indestructible === true) threat += 45;
+  return Math.min(300, threat);
+}
+
 /** Valor situacional do efeito (0–~150). */
 export function situationalEffectValue(
   profile: EffectProfile,
