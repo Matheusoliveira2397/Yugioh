@@ -17799,10 +17799,27 @@ export class DuelsService implements OnModuleInit {
     return this.activeDuelsCountCache;
   }
 
+  /** True se algum dos jogadores já tem duelo de torneio WAITING/IN_PROGRESS. */
+  async hasActiveTournamentDuelForPlayers(playerIds: number[]): Promise<boolean> {
+    const ids = [...new Set(playerIds)].filter((id) => Number.isFinite(id) && id > 0);
+    if (!ids.length) return false;
+    const count = await this.duelsRepository
+      .createQueryBuilder('d')
+      .where('d.status IN (:...statuses)', {
+        statuses: [DuelStatus.WAITING, DuelStatus.IN_PROGRESS],
+      })
+      .andWhere('d.origin = :origin', { origin: DuelOrigin.TOURNAMENT })
+      .andWhere('(d.player1Id IN (:...ids) OR d.player2Id IN (:...ids))', { ids })
+      .getCount();
+    return count > 0;
+  }
+
   /**
    * Conflitos de agenda são resolvidos antes de iniciar um novo duelo.
-   * Duelo comum nunca substitui um ativo. Somente partida READY do torneio
-   * cujo horário venceu pode interromper outra partida.
+   * Duelo comum nunca substitui um ativo.
+   * Partida de torneio com horário vencido pode encerrar duelos NÃO-torneio
+   * (random/arena/etc). Nunca encerra outro duelo de torneio — isso gerava
+   * cascata infinita de createDuel → force-finish → avanço de chave.
    */
   private async enforceExclusiveDuel(player1Id: number, player2Id: number, origin: DuelOrigin): Promise<void> {
     const conflicts = await this.duelsRepository.createQueryBuilder('d')
@@ -17813,15 +17830,24 @@ export class DuelsService implements OnModuleInit {
       .getMany();
     if (!conflicts.length) return;
 
+    const tournamentConflicts = conflicts.filter((c) => c.origin === DuelOrigin.TOURNAMENT);
+    const otherConflicts = conflicts.filter((c) => c.origin !== DuelOrigin.TOURNAMENT);
+
+    // Sempre bloquear se já existe duelo de torneio ativo (evita cascata)
+    if (tournamentConflicts.length > 0) {
+      throw new Error('Um dos duelistas já está em duelo de torneio. Aguarde o término.');
+    }
+
     if (origin !== DuelOrigin.TOURNAMENT ||
         !(await this.tournamentsService.isScheduledMatchDue(player1Id, player2Id))) {
       throw new Error('Um dos duelistas já possui duelo ativo. Aguarde o término para iniciar outro.');
     }
 
-    for (const conflict of conflicts) {
-      // Finalizar pela posição atual, sem conceder vantagem arbitrária ao torneio.
+    for (const conflict of otherConflicts) {
+      // Só encerra random/arena/etc. — nunca torneio.
       const duel = await this.findDuelByIdFromDatabase(conflict.id) || conflict;
       if (duel.status === DuelStatus.FINISHED || duel.status === DuelStatus.CANCELLED) continue;
+      if (duel.origin === DuelOrigin.TOURNAMENT) continue;
       const side = decideForcedWinner({
         player1LifePoints: duel.player1LifePoints,
         player2LifePoints: duel.player2LifePoints,
@@ -17834,7 +17860,7 @@ export class DuelsService implements OnModuleInit {
         side === 1 ? DuelResult.PLAYER1_WIN : DuelResult.PLAYER2_WIN,
         winnerId,
       );
-      logger.info(`🏆 [exclusive-duel] ${duel.id} encerrado por início de torneio; vencedor ${winnerId}`);
+      logger.info(`🏆 [exclusive-duel] ${duel.id} (não-torneio) encerrado por início de torneio; vencedor ${winnerId}`);
     }
   }
 

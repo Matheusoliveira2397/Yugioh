@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, LessThanOrEqual, MoreThan, Between } from 'typeorm';
+import { Repository, LessThan, LessThanOrEqual, MoreThan, Between, IsNull } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Tournament, TournamentStatus, TournamentFormat } from './entities/tournament.entity';
 import { TournamentParticipant, ParticipantStatus } from './entities/tournament-participant.entity';
@@ -136,124 +136,35 @@ export class TournamentsService {
   }
 
   /**
-   * Inicia partidas automaticamente no horário agendado
-   * Abre TODOS os duelos da fase atual que estão prontos
+   * Inicia partidas da rodada atual no horário agendado.
+   * Não inicia rodadas futuras (isso causava cascata de duelos).
    */
   private async autoStartMatches(now: Date) {
-    // Buscar torneios em andamento
     const tournamentsInProgress = await this.tournamentRepository.find({
       where: { status: TournamentStatus.IN_PROGRESS },
     });
 
     for (const tournament of tournamentsInProgress) {
-      // Buscar todas as partidas da rodada atual que estão prontas para começar
-const matchesToStart = await this.matchRepository.find({
-      where: {
-        tournamentId: tournament.id,
-        round: tournament.currentRound,
-        status: MatchStatus.READY,
-        scheduledAt: LessThanOrEqual(now),
-      },
-        relations: ['player1', 'player2', 'tournament'],
+      const matchesToStart = await this.matchRepository.find({
+        where: {
+          tournamentId: tournament.id,
+          round: tournament.currentRound,
+          status: MatchStatus.READY,
+          scheduledAt: LessThanOrEqual(now),
+        },
+        relations: ['player1', 'player2'],
       });
 
-      this.logger.log(`🔍 [autoStartMatches] Torneio ${tournament.name} - Rodada ${tournament.currentRound}: ${matchesToStart.length} partidas prontas para iniciar`);
+      this.logger.log(
+        `🔍 [autoStartMatches] Torneio ${tournament.name} - Rodada ${tournament.currentRound}: ${matchesToStart.length} partida(s) READY`,
+      );
 
-      // Iniciar TODAS as partidas da fase atual
       for (const match of matchesToStart) {
         try {
-          if (!match.player1Id || !match.player2Id) {
-            this.logger.warn(`Partida ${match.id} não tem ambos jogadores`);
-            continue;
-          }
-
-          if (match.player1Id === match.player2Id) {
-            this.logger.warn(`Partida ${match.id} tem o mesmo jogador nos dois lados (${match.player1Id}). Marcando como W.O. e não criando duelo.`);
-            match.winnerId = match.player1Id;
-            match.status = MatchStatus.WALKOVER;
-            match.finishedAt = new Date();
-            await this.matchRepository.save(match);
-            continue;
-          }
-
-          // Verificar se já tem duelo criado
-          if (match.duelId) {
-            this.logger.log(`Partida ${match.id} já tem duelo ${match.duelId}, pulando...`);
-            continue;
-          }
-
-          // Criar duelo
-          const duel = await this.duelsService.createDuel(
-            match.player1Id,
-            match.player2Id,
-            DuelOrigin.TOURNAMENT,
-          );
-
-          if (!duel || !duel.id) {
-            this.logger.error(`Erro ao criar duelo para partida ${match.id}`);
-            continue;
-          }
-
-          match.duelId = duel.id!;
-          match.status = MatchStatus.IN_PROGRESS;
-          match.startedAt = new Date();
-          await this.matchRepository.save(match);
-
-          this.logger.log(`⚔️ Duelo iniciado automaticamente: ${match.player1?.username || match.player1Id} vs ${match.player2?.username || match.player2Id} (Partida ${match.matchNumber} - Rodada ${match.round})`);
+          await this.tryStartMatchDuel(match);
         } catch (error) {
           this.logger.error(`Erro ao iniciar partida ${match.id}:`, error);
         }
-      }
-    }
-
-    // Também processar partidas de torneios que não estão em IN_PROGRESS mas têm partidas READY
-    const otherMatchesToStart = await this.matchRepository.find({
-      where: {
-        status: MatchStatus.READY,
-        scheduledAt: LessThanOrEqual(now),
-      },
-      relations: ['player1', 'player2', 'tournament'],
-    });
-
-    // Filtrar apenas as que não foram processadas acima
-    const otherMatches = otherMatchesToStart.filter(m => {
-      const tournament = tournamentsInProgress.find(t => t.id === m.tournamentId);
-      return !tournament || tournament.currentRound !== m.round;
-    });
-
-    for (const match of otherMatches) {
-      try {
-        if (!match.player1Id || !match.player2Id || match.duelId) {
-          continue;
-        }
-
-        if (match.player1Id === match.player2Id) {
-          this.logger.warn(`Partida ${match.id} tem o mesmo jogador nos dois lados (${match.player1Id}). Marcando como W.O.`);
-          match.winnerId = match.player1Id;
-          match.status = MatchStatus.WALKOVER;
-          match.finishedAt = new Date();
-          await this.matchRepository.save(match);
-          continue;
-        }
-
-        const duel = await this.duelsService.createDuel(
-          match.player1Id,
-          match.player2Id,
-          DuelOrigin.TOURNAMENT,
-        );
-
-        if (!duel || !duel.id) {
-          continue;
-        }
-
-        match.duelId = duel.id!;
-        match.status = MatchStatus.IN_PROGRESS;
-        match.startedAt = new Date();
-        await this.matchRepository.save(match);
-
-        this.logger.log(`⚔️ Duelo iniciado automaticamente (outros): ${match.player1?.username || match.player1Id} vs ${match.player2?.username || match.player2Id}`);
-      } catch (error) {
-        this.logger.error(`Erro ao iniciar partida ${match.id}:`, error);
       }
     }
   }
@@ -283,25 +194,35 @@ const matchesToStart = await this.matchRepository.find({
    * chave, com estes dois duelistas, já alcançou seu horário oficial.
    */
   async isScheduledMatchDue(player1Id: number, player2Id: number): Promise<boolean> {
+    // Inclui IN_PROGRESS sem duelId (partida já reivindicada pelo claim atômico)
     const matches = await this.matchRepository.find({
-      where: {
-        status: MatchStatus.READY,
-        scheduledAt: LessThanOrEqual(new Date()),
-      },
+      where: [
+        {
+          status: MatchStatus.READY,
+          scheduledAt: LessThanOrEqual(new Date()),
+        },
+        {
+          status: MatchStatus.IN_PROGRESS,
+          scheduledAt: LessThanOrEqual(new Date()),
+          duelId: IsNull(),
+        },
+      ],
     });
-    return matches.some((match) =>
-      !match.duelId &&
-      ((match.player1Id === player1Id && match.player2Id === player2Id) ||
-        (match.player1Id === player2Id && match.player2Id === player1Id)),
+    return matches.some(
+      (match) =>
+        !match.duelId &&
+        ((match.player1Id === player1Id && match.player2Id === player2Id) ||
+          (match.player1Id === player2Id && match.player2Id === player1Id)),
     );
   }
 
-  /** Inicia duelo de uma partida READY (ou marca W.O. se mesmo jogador nos dois lados). */
+  /**
+   * Reserva a partida (READY → IN_PROGRESS) antes de createDuel para o cron
+   * não recriar duelo no minuto seguinte / em corrida com outro worker.
+   */
   private async tryStartMatchDuel(match: TournamentMatch): Promise<boolean> {
     if (!match.player1Id || !match.player2Id || match.duelId) return false;
     if (match.status !== MatchStatus.READY) return false;
-    // A próxima fase só começa no horário agendado, mesmo se a rodada
-    // anterior terminou antecipadamente.
     if (new Date(match.scheduledAt).getTime() > Date.now()) return false;
 
     if (match.player1Id === match.player2Id) {
@@ -315,26 +236,83 @@ const matchesToStart = await this.matchRepository.find({
       return true;
     }
 
+    // Claim atômico: só um processo inicia esta partida
+    const claim = await this.matchRepository.update(
+      {
+        id: match.id,
+        status: MatchStatus.READY,
+        duelId: IsNull(),
+      },
+      {
+        status: MatchStatus.IN_PROGRESS,
+        startedAt: new Date(),
+      },
+    );
+    if (!claim.affected) {
+      this.logger.debug(
+        `Partida ${match.id} já foi reivindicada por outro processo — pulando`,
+      );
+      return false;
+    }
+
     try {
+      // Se algum jogador já está em duelo de torneio, devolve a partida para READY
+      const busy = await this.playerHasActiveTournamentDuel(
+        match.player1Id,
+        match.player2Id,
+      );
+      if (busy) {
+        await this.matchRepository.update(
+          { id: match.id, status: MatchStatus.IN_PROGRESS, duelId: IsNull() },
+          { status: MatchStatus.READY, startedAt: null as any },
+        );
+        this.logger.warn(
+          `⏳ Partida ${match.matchNumber}: jogador ainda em outro duelo de torneio — reagendando`,
+        );
+        return false;
+      }
+
       const duel = await this.duelsService.createDuel(
         match.player1Id,
         match.player2Id,
         DuelOrigin.TOURNAMENT,
       );
       if (duel?.id) {
+        await this.matchRepository.update(
+          { id: match.id },
+          { duelId: duel.id },
+        );
         match.duelId = duel.id;
         match.status = MatchStatus.IN_PROGRESS;
-        match.startedAt = new Date();
-        await this.matchRepository.save(match);
         this.logger.log(
           `⚔️ Duelo iniciado: partida ${match.matchNumber} (${match.player1Id} vs ${match.player2Id}) → ${duel.id}`,
         );
         return true;
       }
+
+      await this.matchRepository.update(
+        { id: match.id, status: MatchStatus.IN_PROGRESS, duelId: IsNull() },
+        { status: MatchStatus.READY, startedAt: null as any },
+      );
     } catch (error) {
+      await this.matchRepository.update(
+        { id: match.id, status: MatchStatus.IN_PROGRESS, duelId: IsNull() },
+        { status: MatchStatus.READY, startedAt: null as any },
+      );
       this.logger.error(`Erro ao iniciar duelo da partida ${match.id}:`, error);
     }
     return false;
+  }
+
+  /** True se P1 ou P2 já tem duelo de torneio WAITING/IN_PROGRESS. */
+  private async playerHasActiveTournamentDuel(
+    player1Id: number,
+    player2Id: number,
+  ): Promise<boolean> {
+    return this.duelsService.hasActiveTournamentDuelForPlayers([
+      player1Id,
+      player2Id,
+    ]);
   }
 
   // ========== MÉTODOS PRINCIPAIS ========== //
