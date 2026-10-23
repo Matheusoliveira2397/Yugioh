@@ -329,7 +329,7 @@ export default function Layout({ children }: LayoutProps) {
                           isActive ? 'game-nav-tab--active' : 'game-nav-tab--idle'
                         }`}
                       >
-                        <span className="game-nav-icon"><GameIcon route={tab.route} size={counter===1?32:30} /></span>
+                        <span className="game-nav-icon"><GameIcon route={tab.route} size={32} /></span>
                         <span className="relative z-10 text-center leading-tight max-w-[3.75rem] xl:max-w-[4.5rem] truncate">
                           {tabLabel(tab)}
                         </span>
@@ -386,7 +386,7 @@ export default function Layout({ children }: LayoutProps) {
                           isActive ? 'game-nav-tab--active' : 'game-nav-tab--idle'
                         }`}
                       >
-                        <span className="game-nav-icon"><GameIcon route={tab.route} size={counter===1?32:30} /></span>
+                        <span className="game-nav-icon"><GameIcon route={tab.route} size={30} /></span>
                         <span className="text-center leading-tight max-w-[3.75rem] truncate">
                           {tabLabel(tab)}
                         </span>
