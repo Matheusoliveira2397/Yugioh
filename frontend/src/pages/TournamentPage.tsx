@@ -732,6 +732,7 @@ export default function TournamentPage() {
                                 {roundName}
                               </h4>
                               <div className="grid gap-2 sm:grid-cols-2">
+                                {matches.length === 0 && <p className="col-span-full py-10 text-center text-white/70">Esta rodada ainda não possui confrontos definidos.</p>}
                                 {matches.map((match) => {
                                   const isThird = (match as Match & { isThirdPlaceMatch?: boolean }).isThirdPlaceMatch;
                                   return (
@@ -756,7 +757,7 @@ export default function TournamentPage() {
                                           />
                                           <span
                                             className={`truncate font-medium ${
-                                              match.winnerId === match.player1Id
+                                              match.winnerId != null && match.player1Id != null && match.winnerId === match.player1Id
                                                 ? 'text-emerald-400'
                                                 : 'text-white'
                                             }`}
@@ -768,7 +769,7 @@ export default function TournamentPage() {
                                         <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
                                           <span
                                             className={`truncate font-medium text-right ${
-                                              match.winnerId === match.player2Id
+                                              match.winnerId != null && match.player2Id != null && match.winnerId === match.player2Id
                                                 ? 'text-emerald-400'
                                                 : 'text-white'
                                             }`}
