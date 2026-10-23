@@ -15,3 +15,12 @@
 .tourney-bracket-full>div{min-width:900px}
 @media(max-width:640px){.tourney-modal-panel{max-height:96dvh}.tourney-modal-body{padding:.75rem}.tourney-control{font-size:.75rem;min-height:42px}}
 @media(prefers-reduced-motion:reduce){.tourney-control{transition:none}}
+
+.tourney-page {color:#fff3dc;background:transparent}
+.tourney-page .tourney-list-card,.tourney-page .tourney-detail-panel{background:rgba(18,10,13,.12);border-color:rgba(234,184,97,.4);box-shadow:none;backdrop-filter:none}
+.tourney-page .tourney-list-card:hover{border-color:#f4d28d;background:rgba(42,21,19,.16)}
+.tourney-page .tourney-detail-panel [class*="bg-gray-"]{background:transparent}
+.tourney-page .tourney-detail-panel [class*="bg-amber-500/20"]{background:rgba(163,104,38,.18)}
+.tourney-page .tourney-detail-panel [class*="bg-amber-500/30"]{background:rgba(163,104,38,.19)}
+.tourney-page .tourney-detail-panel .tourney-control{background:rgba(110,60,31,.22)}
+.tourney-page :where(button,a):focus-visible{outline:2px solid #ffe2a0;outline-offset:3px}
