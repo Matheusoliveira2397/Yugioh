@@ -1204,12 +1204,14 @@ export class DuelsService implements OnModuleInit {
         pendingChoice: (duel as any).pendingChoice,
       };
 
-      await this.updateDuelInDatabase(duelIdStr, updatesToSave);
+      await this.updateDuelInDatabase(duelIdStr, updatesToSave, { immediate: true });
 
       logger.debug(`✅ [syncDuelState] Estado do duelo ${duelIdStr} sincronizado (cache + banco)`);
     } catch (error) {
       logger.error(`❌ [syncDuelState] Erro ao sincronizar estado do duelo ${duelIdStr}:`, error);
-      // Não lançar erro - apenas logar para não quebrar o fluxo
+      // Do not expose an uncommitted duel as successfully saved.
+      this.activeDuels.delete(duelIdStr);
+      throw error;
     }
   }
 
@@ -1217,6 +1219,7 @@ export class DuelsService implements OnModuleInit {
   private shouldPersistDuelImmediately(updates: Partial<Duel>): boolean {
     const u = updates as any;
     return (
+      Object.prototype.hasOwnProperty.call(u, 'pendingChoice') ||
       u.status != null ||
       u.result != null ||
       u.winnerId !== undefined ||
@@ -1287,8 +1290,8 @@ export class DuelsService implements OnModuleInit {
   ): Promise<void> {
     try {
       const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
-      const includePlayer1Field = Object.prototype.hasOwnProperty.call(updates as object, 'player1Field');
-      const includePlayer2Field = Object.prototype.hasOwnProperty.call(updates as object, 'player2Field');
+      let includePlayer1Field = Object.prototype.hasOwnProperty.call(updates as object, 'player1Field');
+      let includePlayer2Field = Object.prototype.hasOwnProperty.call(updates as object, 'player2Field');
       const hasHeavyFields = includePlayer1Field || includePlayer2Field;
       const immediate =
         options?.immediate === true ||
@@ -1321,6 +1324,8 @@ export class DuelsService implements OnModuleInit {
               mem?.player2Field ?? pending.updates.player2Field ?? (updates as any).player2Field;
           }
           updates = mergedPending;
+          includePlayer1Field = Object.prototype.hasOwnProperty.call(updates, 'player1Field');
+          includePlayer2Field = Object.prototype.hasOwnProperty.call(updates, 'player2Field');
         }
       }
 
@@ -1331,8 +1336,7 @@ export class DuelsService implements OnModuleInit {
       if (!existingDuel) {
         existingDuel = await this.duelsRepository.findOne({ where: { id: duelIdStr } });
         if (!existingDuel) {
-          logger.error(`❌ [updateDuelInDatabase] Duelo ${duelIdStr} não encontrado no banco`);
-          return;
+          throw new Error(`Duelo ${duelIdStr} não encontrado no banco`);
         }
       }
 
@@ -1390,25 +1394,6 @@ export class DuelsService implements OnModuleInit {
         mergedUpdates.player2Field = (existingDuel as any).player2Field || {};
       }
 
-      // CRÍTICO: Atualizar em memória com os dados atualizados
-      // Isso garante que o cache tenha os dados mais recentes
-      const duel = this.activeDuels.get(duelIdStr);
-      if (duel) {
-        // Atualizar campos não-JSONB
-        Object.keys(mergedUpdates).forEach(key => {
-          if (key !== 'player1Field' && key !== 'player2Field' && key !== 'player1' && key !== 'player2') {
-            (duel as any)[key] = mergedUpdates[key];
-          }
-        });
-        // Atualizar campos JSONB diretamente (já estão corretos)
-        if (mergedUpdates.player1Field !== undefined) {
-          (duel as any).player1Field = mergedUpdates.player1Field;
-        }
-        if (mergedUpdates.player2Field !== undefined) {
-          (duel as any).player2Field = mergedUpdates.player2Field;
-        }
-      }
-
       const cleanUpdates: any = { ...mergedUpdates };
 
       // Só persiste JSONB de campo quando o caller envia explicitamente — evita regravar ~2× deck+GY a cada UPDATE pequeno (egress / WAL)
@@ -1440,8 +1425,27 @@ export class DuelsService implements OnModuleInit {
       // OTIMIZAÇÃO: Um único UPDATE em vez de SELECT + SAVE (reduz latência e carga no DB)
       const result = await this.duelsRepository.update({ id: duelIdStr }, cleanUpdates);
       if (result.affected === 0) {
-        logger.error(`❌ [updateDuelInDatabase] Duelo ${duelIdStr} não encontrado para atualizar`);
+        throw new Error(`Duelo ${duelIdStr} não encontrado para atualizar`);
       } else {
+      // CRÍTICO: Atualizar em memória com os dados atualizados
+      // Isso garante que o cache tenha os dados mais recentes
+      const duel = this.activeDuels.get(duelIdStr);
+      if (duel) {
+        // Atualizar campos não-JSONB
+        Object.keys(mergedUpdates).forEach(key => {
+          if (key !== 'player1Field' && key !== 'player2Field' && key !== 'player1' && key !== 'player2') {
+            (duel as any)[key] = mergedUpdates[key];
+          }
+        });
+        // Atualizar campos JSONB diretamente (já estão corretos)
+        if (mergedUpdates.player1Field !== undefined) {
+          (duel as any).player1Field = mergedUpdates.player1Field;
+        }
+        if (mergedUpdates.player2Field !== undefined) {
+          (duel as any).player2Field = mergedUpdates.player2Field;
+        }
+      }
+
         const mem = this.activeDuels.get(duelIdStr);
         if (mem && cleanUpdates.updatedAt) {
           (mem as any).updatedAt = cleanUpdates.updatedAt;
@@ -1449,6 +1453,7 @@ export class DuelsService implements OnModuleInit {
       }
     } catch (error) {
       logger.error(`❌ [updateDuelInDatabase] Erro ao atualizar duelo ${duelId}:`, error);
+      this.activeDuels.delete(String(duelId));
       throw error;
     }
   }
