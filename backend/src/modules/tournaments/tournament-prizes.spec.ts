@@ -5,6 +5,25 @@ import { User } from '../users/entities/user.entity';
 import { UserCard } from '../shop/entities/user-card.entity';
 import { Achievement } from '../users/entities/achievement.entity';
 
+describe('Edição administrativa não apaga a trilha de premiação', () => {
+  it('preserva lugares pagos e o marcador de conciliação ao editar prêmios', async () => {
+    const tournament: any = {
+      id: 't-2', name: 'Campeonato', format: 'single_elimination',
+      status: TournamentStatus.FINISHED, startAt: new Date('2026-10-24T12:00:00Z'),
+      roundIntervalMinutes: 60, maxParticipants: 4,
+      prizeDetails: { 1: { credit: 100 }, _awardedPlaces: [1], _automaticAwardsVersion: 2 },
+    };
+    const save = jest.fn(async () => tournament);
+    const service = Object.create(TournamentsService.prototype) as any;
+    service.tournamentRepository = { findOne: async () => tournament, save };
+    await service.update('t-2', { prizeDetails: { 1: { credit: 200 } } } as any);
+    expect(tournament.prizeDetails[1].credit).toBe(200);
+    expect(tournament.prizeDetails._awardedPlaces).toEqual([1]);
+    expect(tournament.prizeDetails._automaticAwardsVersion).toBe(2);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('Premiações de torneio — entrega idempotente', () => {
   it('entrega créditos, cash, estrelas, cartas, troféu e ranking apenas uma vez', async () => {
     const tournament: any = {
