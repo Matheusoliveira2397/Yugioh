@@ -4,7 +4,10 @@ import { exactCardMatch } from '../utils/card-key.util';
 /**
  * Contexto necessário para processar um efeito de carta
  */
+export type EffectEvent = 'activate' | 'flip' | 'summon' | 'damage' | 'destroy' | 'choice';
+
 export interface CardEffectContext {
+  event?: EffectEvent;
   duelId: string | number;
   duel: Duel;
   isPlayer1: boolean;
