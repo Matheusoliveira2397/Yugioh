@@ -60,6 +60,7 @@ export class TournamentsService {
         { name: 'fechar inscrições', run: () => this.autoCloseRegistrations(now) },
         { name: 'iniciar torneios', run: () => this.autoStartTournaments(now) },
         { name: 'recuperar resultados', run: () => this.reconcileFinishedDuelMatches() },
+        { name: 'restaurar chaves', run: () => this.reconcileBracketProgress() },
         { name: 'avançar fases', run: () => this.autoAdvancePhases() },
         { name: 'iniciar partidas', run: () => this.autoStartMatches(now) },
         { name: 'conciliar prêmios', run: () => this.reconcilePendingAwards() },
@@ -226,6 +227,75 @@ export class TournamentsService {
         await this.updateTournamentMatchFromDuel(duel.id, winnerId, result);
       } catch (error) {
         this.logger.error(`Falha ao recuperar resultado da partida ${match.id}`, error);
+      }
+    }
+  }
+
+  /**
+   * Recria os slots de classificação faltantes a partir das partidas concluídas.
+   * Recupera quedas entre marcar a partida FINISHED e inserir o vencedor na
+   * próxima chave. Nunca sobrescreve participantes nem duelos já iniciados.
+   */
+  private async reconcileBracketProgress(): Promise<void> {
+    const tournaments = await this.tournamentRepository.find({
+      where: { status: TournamentStatus.IN_PROGRESS },
+    });
+    for (const tournament of tournaments) {
+      if (tournament.format === TournamentFormat.ROUND_ROBIN) continue;
+      try {
+        const matches = await this.matchRepository.find({ where: { tournamentId: tournament.id } });
+        const nextById = new Map(matches.map((match) => [match.id, match]));
+        const feeds = new Map<string, TournamentMatch[]>();
+        const consolation = new Map<string, TournamentMatch[]>();
+        for (const match of matches) {
+          if (match.nextMatchId) {
+            const list = feeds.get(match.nextMatchId) ?? [];
+            list.push(match);
+            feeds.set(match.nextMatchId, list);
+          }
+          if (match.nextConsolationMatchId) {
+            const list = consolation.get(match.nextConsolationMatchId) ?? [];
+            list.push(match);
+            consolation.set(match.nextConsolationMatchId, list);
+          }
+        }
+        const terminal = (match: TournamentMatch) =>
+          [MatchStatus.FINISHED, MatchStatus.WALKOVER].includes(match.status);
+
+        for (const [targetId, sources] of [...feeds, ...consolation]) {
+          const target = nextById.get(targetId);
+          if (!target || target.duelId ||
+              ![MatchStatus.SCHEDULED, MatchStatus.READY].includes(target.status)) continue;
+          const isConsolation = consolation.has(targetId);
+          const contributing = isConsolation ? (consolation.get(targetId) ?? []) : sources;
+          contributing.sort((a, b) => a.matchNumber - b.matchNumber);
+          let changed = false;
+          for (const [index, source] of contributing.entries()) {
+            if (!terminal(source) || !source.winnerId) continue;
+            const classifiedId = isConsolation
+              ? source.player1Id === source.winnerId ? source.player2Id : source.player1Id
+              : source.winnerId;
+            if (!classifiedId) continue;
+            const slot = index === 0 ? 'player1Id' : 'player2Id';
+            if (!target[slot]) {
+              target[slot] = classifiedId;
+              changed = true;
+            } else if (target[slot] !== classifiedId) {
+              this.logger.error(`Conflito de classificado no confronto ${target.id}: esperado ${classifiedId}, encontrado ${target[slot]}`);
+            }
+          }
+          if (target.player1Id && target.player2Id &&
+              target.status === MatchStatus.SCHEDULED) {
+            target.status = MatchStatus.READY;
+            changed = true;
+          }
+          if (changed) {
+            await this.matchRepository.save(target);
+            this.logger.log(`Chave do torneio ${tournament.name} recuperada: partida ${target.matchNumber} rodada ${target.round}`);
+          }
+        }
+      } catch (error) {
+        this.logger.error(`Erro ao restaurar classificação do torneio ${tournament.id}`, error);
       }
     }
   }
@@ -1343,11 +1413,31 @@ export class TournamentsService {
     ).length;
     if (total === 0 || finished < total) return;
 
+    // Reconstruir o ranking a partir das partidas persistidas: contadores dos
+    // participantes podem estar desatualizados após queda no callback do duelo.
+    const totals = new Map(participants.map((p) => [p.userId, { wins: 0, losses: 0 }]));
+    for (const match of allMatches) {
+      if (![MatchStatus.FINISHED, MatchStatus.WALKOVER].includes(match.status) ||
+          !match.winnerId) continue;
+      const winner = totals.get(match.winnerId);
+      if (winner) winner.wins++;
+      const loserId = match.player1Id === match.winnerId ? match.player2Id : match.player1Id;
+      if (loserId) {
+        const loser = totals.get(loserId);
+        if (loser) loser.losses++;
+      }
+    }
+    for (const participant of participants) {
+      const score = totals.get(participant.userId)!;
+      await this.participantRepository.update(
+        { id: participant.id }, { wins: score.wins, losses: score.losses },
+      );
+    }
     const sorted = [...participants].sort((a, b) => {
-      const winsA = a.wins ?? 0;
-      const winsB = b.wins ?? 0;
-      if (winsB !== winsA) return winsB - winsA;
-      return (a.losses ?? 0) - (b.losses ?? 0);
+      const scoreA = totals.get(a.userId)!;
+      const scoreB = totals.get(b.userId)!;
+      if (scoreB.wins !== scoreA.wins) return scoreB.wins - scoreA.wins;
+      return scoreA.losses - scoreB.losses;
     });
 
     const places = [1, 2, 3, 4] as const;
