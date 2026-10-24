@@ -1,5 +1,6 @@
 import { SimpleCardEffectFunction, CardEffectContext, CardEffectResult } from '../../interfaces/card-effect.interface';
 import { logger } from '../../../../../../common/utils/logger.util';
+import { changeLifePoints, sendSpellTrapToGraveyard } from '../../primitives/effect-operations';
 
 /** Embaralha uma cópia do baralho (Fisher–Yates). */
 function shuffleDeckArray(deck: any[]): any[] {
@@ -43,13 +44,9 @@ export const createPotOfGreedEffect = (duelsService: any): SimpleCardEffectFunct
       await duelsService.drawCard(duelId, userId);
     }
     
-    // Mover para o cemitério
+    // Resolução usa primitiva central, sem duplicar manipulação de zonas.
     const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     
     // CRÍTICO: Usar syncDuelState para garantir sincronização entre cache e banco
     await (duelsService as any).syncDuelState(duelId, duel, {
@@ -80,9 +77,9 @@ export const createUpstartGoblinEffect = (duelsService: any): SimpleCardEffectFu
     
     // Aumentar LP do oponente em 1000
     if (isPlayer1) {
-      duel.player2LifePoints = (duel.player2LifePoints || 0) + 1000;
+      duel.player2LifePoints = changeLifePoints(duel.player2LifePoints, 1000);
     } else {
-      duel.player1LifePoints = (duel.player1LifePoints || 0) + 1000;
+      duel.player1LifePoints = changeLifePoints(duel.player1LifePoints, 1000);
     }
     
     // Mover para o cemitério
