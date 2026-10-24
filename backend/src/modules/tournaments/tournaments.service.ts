@@ -1452,118 +1452,110 @@ export class TournamentsService {
     4: 10,
   };
 
-  private async awardTournamentPoints(tournamentId: string, onlyPlaces?: number[]) {
-    const full = await this.tournamentRepository.findOne({
-      where: { id: tournamentId },
-      relations: ['participants'],
-    });
-    if (!full?.participants?.length) return;
-    for (const p of full.participants) {
-      const place = p.finalPosition;
-      if (place == null) continue;
-      if (onlyPlaces && !onlyPlaces.includes(place)) continue;
-      const points = TournamentsService.POINTS_BY_PLACE[place];
-      if (points == null || points === 0) continue;
-      try {
-        const user = await this.usersService.findById(p.userId);
-        const current = (user as any).tournamentPoints ?? 0;
-        await this.usersService.update(p.userId, { tournamentPoints: current + points });
-        this.logger.log(`📊 Pontos de torneio: +${points} (${place}º) -> userId ${p.userId} (total: ${current + points})`);
-      } catch (err) {
-        this.logger.error(`Erro ao atribuir pontos de torneio para userId ${p.userId}:`, err);
-      }
-    }
-  }
-
   /**
-   * Distribui prêmios. onlyPlaces limita a lugares específicos (ex.: 3º/4º tardios).
-   * Idempotente via prizeDetails._awardedPlaces.
+   * Distribui prêmios e pontos de ranking na MESMA transação PostgreSQL.
+   *
+   * O lock no torneio e o marcador _awardedPlaces gravado junto com créditos,
+   * cash, estrelas, cartas e troféus impedem duplicação em reinicializações,
+   * retries e múltiplos workers. Erros fazem rollback da posição inteira.
+   * Marcadores de torneios antigos são respeitados para não pagar duas vezes.
    */
-  private async distributePrizes(tournament: Tournament, onlyPlaces?: number[]) {
-    const fullTournament = await this.tournamentRepository.findOne({
-      where: { id: tournament.id },
-      relations: ['participants', 'participants.user'],
-    });
-    if (!fullTournament) return;
-
-    const details = { ...(fullTournament.prizeDetails ?? {}) } as Record<string, any>;
-    const awardedPlaces: number[] = Array.isArray(details._awardedPlaces)
-      ? [...details._awardedPlaces]
-      : [];
+  private async distributePrizes(tournament: Tournament, onlyPlaces?: number[]): Promise<void> {
     const places = ([1, 2, 3, 4] as const).filter(
       (place) => !onlyPlaces || onlyPlaces.includes(place),
     );
-
     for (const place of places) {
-      if (awardedPlaces.includes(place)) {
-        this.logger.log(`ℹ️ Prêmio ${place}º já entregue no torneio ${fullTournament.name}, pulando`);
-        continue;
-      }
+      try {
+        await this.tournamentRepository.manager.transaction(async (manager) => {
+          const tournamentRepo = manager.getRepository(Tournament);
+          const participantRepo = manager.getRepository(TournamentParticipant);
+          const userRepo = manager.getRepository(User);
+          const userCardRepo = manager.getRepository(UserCard);
+          const achievementRepo = manager.getRepository(Achievement);
 
-      const participants = fullTournament.participants?.filter((p) => p.finalPosition === place) ?? [];
-      if (participants.length === 0) continue;
+          const locked = await tournamentRepo.createQueryBuilder('t')
+            .setLock('pessimistic_write')
+            .where('t.id = :id', { id: tournament.id })
+            .getOne();
+          if (!locked || locked.status !== TournamentStatus.FINISHED) return;
+          const details = { ...(locked.prizeDetails ?? {}) } as Record<string, any>;
+          const awardedPlaces: number[] = Array.isArray(details._awardedPlaces)
+            ? [...details._awardedPlaces] : [];
+          if (awardedPlaces.includes(place)) return;
 
-      const prize = details[place];
-      const creditLegacy = place === 1 ? fullTournament.prizeFirst : place === 2 ? fullTournament.prizeSecond : place === 3 ? fullTournament.prizeThird : 0;
-      const credit = prize?.credit ?? (place <= 3 ? creditLegacy : 0);
-      const cash = prize?.cash ?? 0;
-      const cardIds = prize?.cardIds ?? [];
-      const trophyTitle = prize?.trophyTitle;
-      const trophyIcon = prize?.trophyIcon;
-      const stars = Math.max(0, prize?.stars ?? 0);
+          const participants = await participantRepo.createQueryBuilder('p')
+            .where('p.tournamentId = :tournamentId', { tournamentId: tournament.id })
+            .andWhere('p.finalPosition = :place', { place })
+            .getMany();
+          if (!participants.length) return;
 
-      let awardedAny = false;
-      for (const p of participants) {
-        const userId = p.userId;
-        try {
-          if (stars > 0) {
-            const user = await this.usersService.findById(userId);
-            const currentStars = (user as any).stars ?? 0;
-            await this.usersService.update(userId, { stars: currentStars + stars });
-            this.logger.log(`⭐ Prêmio ${place}º: ${stars} estrela(s) -> userId ${userId}`);
-          }
-          if (credit > 0) {
-            const user = await this.usersService.findById(userId);
-            await this.usersService.update(userId, { credits: (user.credits || 0) + credit });
-            this.logger.log(`💰 Prêmio ${place}º: ${credit} créditos -> userId ${userId}`);
-          }
-          if (cash > 0) {
-            const user = await this.usersService.findById(userId);
-            await this.usersService.update(userId, { cash: (user.cash || 0) + cash });
-            this.logger.log(`💵 Prêmio ${place}º: ${cash} cash -> userId ${userId}`);
-          }
-          for (const cardId of cardIds) {
-            await this.shopService.addCardToUserInventory(userId, cardId, 'REWARD', 1);
-            this.logger.log(`🃏 Prêmio ${place}º: carta ${cardId} -> userId ${userId}`);
-          }
-          if (trophyTitle) {
-            await this.achievementsService.createForUser(userId, {
-              type: AchievementType.TOURNAMENT_WINNER,
-              title: trophyTitle,
-              description: `${fullTournament.name} - ${place}º lugar`,
-              icon: trophyIcon ?? undefined,
-              metadata: {
-                tournamentId: fullTournament.id,
-                place,
-                tournamentName: fullTournament.name,
-              },
-            });
-            this.logger.log(`🏆 Troféu ${place}º: ${trophyTitle} -> userId ${userId}`);
-          }
-          awardedAny = true;
-        } catch (err) {
-          this.logger.error(`Erro ao distribuir prêmio ${place}º para userId ${userId}:`, err);
-        }
-      }
+          const prize = details[place] ?? {};
+          const legacyCredits = place === 1 ? locked.prizeFirst
+            : place === 2 ? locked.prizeSecond
+              : place === 3 ? locked.prizeThird : 0;
+          const credits = Math.max(0, Number(prize.credit ?? legacyCredits) || 0);
+          const cash = Math.max(0, Number(prize.cash) || 0);
+          const stars = Math.max(0, Number(prize.stars) || 0);
+          const cardIds: string[] = Array.isArray(prize.cardIds) ? prize.cardIds : [];
+          const points = TournamentsService.POINTS_BY_PLACE[place] ?? 0;
 
-      if (awardedAny || participants.length > 0) {
-        awardedPlaces.push(place);
+          for (const participant of participants) {
+            const userId = participant.userId;
+            // Atualização atômica das moedas/pontos e serialização das entregas
+            // ao mesmo jogador nesta transação.
+            const user = await userRepo.createQueryBuilder('u')
+              .setLock('pessimistic_write')
+              .where('u.id = :id', { id: userId })
+              .getOne();
+            if (!user) throw new Error(`Usuário ${userId} não encontrado para premiação`);
+            if (credits > 0) await userRepo.increment({ id: userId }, 'credits', credits);
+            if (cash > 0) await userRepo.increment({ id: userId }, 'cash', cash);
+            if (stars > 0) await userRepo.increment({ id: userId }, 'stars', stars);
+            if (points > 0) await userRepo.increment({ id: userId }, 'tournamentPoints', points);
+
+            // Prêmio de torneio não pode ser perdido caso a maleta esteja cheia:
+            // recompensas são inseridas diretamente como REWARD.
+            for (const cardId of cardIds) {
+              if (typeof cardId !== 'string' || !cardId.trim()) {
+                throw new Error(`ID inválido de carta em prêmio ${place}º`);
+              }
+              const owned = await userCardRepo.findOne({ where: { userId, cardId } });
+              if (owned) {
+                await userCardRepo.increment({ id: owned.id }, 'quantity', 1);
+              } else {
+                await userCardRepo.save(userCardRepo.create({
+                  userId, cardId, quantity: 1, acquiredBy: 'REWARD',
+                }));
+              }
+            }
+
+            if (typeof prize.trophyTitle === 'string' && prize.trophyTitle.trim()) {
+              await achievementRepo.save(achievementRepo.create({
+                userId,
+                type: AchievementType.TOURNAMENT_WINNER,
+                title: prize.trophyTitle,
+                description: `${locked.name} - ${place}º lugar`,
+                icon: prize.trophyIcon ?? undefined,
+                metadata: {
+                  tournamentId: locked.id,
+                  place,
+                  tournamentName: locked.name,
+                },
+              }));
+            }
+          }
+
+          details._awardedPlaces = [...awardedPlaces, place];
+          locked.prizeDetails = details;
+          await tournamentRepo.save(locked);
+          this.logger.log(`🏆 Premiação e ranking ${place}º confirmados no torneio ${locked.name}`);
+        });
+      } catch (error) {
+        // Não gravar marcador depois de falha: o cron poderá retentar
+        // sem duplicar moedas/cartas/pontos, pois a transação fez rollback.
+        this.logger.error(`Falha ao premiar ${place}º do torneio ${tournament.id}; será reprocessado`, error);
       }
     }
-
-    details._awardedPlaces = awardedPlaces;
-    fullTournament.prizeDetails = details;
-    await this.tournamentRepository.save(fullTournament);
   }
 
   /**
