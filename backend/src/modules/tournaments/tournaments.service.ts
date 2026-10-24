@@ -1,17 +1,21 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, LessThanOrEqual, MoreThan, Between, IsNull } from 'typeorm';
+import { Repository, LessThan, LessThanOrEqual, MoreThan, Between, IsNull, In, Not } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Tournament, TournamentStatus, TournamentFormat } from './entities/tournament.entity';
 import { TournamentParticipant, ParticipantStatus } from './entities/tournament-participant.entity';
 import { TournamentMatch, MatchStatus } from './entities/tournament-match.entity';
 import { DuelsService } from '../duels/duels.service';
-import { DuelOrigin, DuelResult } from '../duels/entities/duel.entity';
+import { Duel, DuelOrigin, DuelResult, DuelStatus } from '../duels/entities/duel.entity';
+import { decideForcedWinner } from '../duels/duel-schedule-tiebreak';
 import { UsersService } from '../users/users.service';
 import { AchievementsService } from '../users/achievements.service';
 import { ShopService } from '../shop/shop.service';
 import { AchievementType } from '../users/entities/achievement.entity';
 import { User } from '../users/entities/user.entity';
+import { UserCard } from '../shop/entities/user-card.entity';
+import { roundRobinAction } from './tournament-completion-policy';
+import { Achievement } from '../users/entities/achievement.entity';
 import { ManagedBot } from '../bots/entities/managed-bot.entity';
 import { DEFAULT_ROUND_INTERVAL_MINUTES, roundScheduledAt, validateRoundIntervalMinutes } from './tournament-round-schedule';
 import { MissionsService } from '../missions/missions.service';
@@ -41,24 +45,36 @@ export class TournamentsService {
   /**
    * Executa a cada minuto para verificar torneios que precisam de ações automáticas
    */
+  private tournamentAutomationRunning = false;
+
   @Cron(CronExpression.EVERY_MINUTE)
   async handleTournamentAutomation() {
-    const now = new Date();
-
-    // 1. Abrir inscrições automaticamente
-    await this.autoOpenRegistrations(now);
-
-    // 2. Fechar inscrições automaticamente
-    await this.autoCloseRegistrations(now);
-
-    // 3. Iniciar torneios (fazer sorteio)
-    await this.autoStartTournaments(now);
-
-    // 4. Iniciar partidas automaticamente
-    await this.autoStartMatches(now);
-
-    // 5. Verificar partidas que terminaram para avançar fase
-    await this.autoAdvancePhases();
+    if (this.tournamentAutomationRunning) return;
+    this.tournamentAutomationRunning = true;
+    try {
+      const now = new Date();
+      // Isolar as etapas evita que erro em inscrições ou partida impeça
+      // finalização ou pagamento de campeonatos já concluídos.
+      const tasks: Array<{ name: string; run: () => Promise<void> }> = [
+        { name: 'abrir inscrições', run: () => this.autoOpenRegistrations(now) },
+        { name: 'fechar inscrições', run: () => this.autoCloseRegistrations(now) },
+        { name: 'iniciar torneios', run: () => this.autoStartTournaments(now) },
+        { name: 'recuperar resultados', run: () => this.reconcileFinishedDuelMatches() },
+        { name: 'restaurar chaves', run: () => this.reconcileBracketProgress() },
+        { name: 'avançar fases', run: () => this.autoAdvancePhases() },
+        { name: 'iniciar partidas', run: () => this.autoStartMatches(now) },
+        { name: 'conciliar prêmios', run: () => this.reconcilePendingAwards() },
+      ];
+      for (const task of tasks) {
+        try {
+          await task.run();
+        } catch (error) {
+          this.logger.error(`Automação de torneio — falha ao ${task.name}`, error);
+        }
+      }
+    } finally {
+      this.tournamentAutomationRunning = false;
+    }
   }
 
   /**
@@ -166,6 +182,139 @@ export class TournamentsService {
         } catch (error) {
           this.logger.error(`Erro ao iniciar partida ${match.id}:`, error);
         }
+      }
+    }
+  }
+
+  /**
+   * Recupera partida cujo duelo já foi finalizado, mas o processo caiu antes
+   * de atualizar o resultado da chave. É seguro repetir graças ao claim de status.
+   */
+  private async reconcileFinishedDuelMatches(): Promise<void> {
+    const pending = await this.matchRepository.find({
+      where: {
+        status: In([MatchStatus.IN_PROGRESS, MatchStatus.READY, MatchStatus.SCHEDULED]),
+        duelId: Not(IsNull()),
+      },
+      select: ['id', 'duelId'],
+    });
+    const duelRepo = this.tournamentRepository.manager.getRepository(Duel);
+    for (const match of pending) {
+      if (!match.duelId) continue;
+      try {
+        const duel = await duelRepo.findOne({
+          where: { id: match.duelId },
+          select: [
+            'id', 'status', 'winnerId', 'result',
+            'player1Id', 'player2Id', 'player1LifePoints', 'player2LifePoints',
+            'player1Field', 'player2Field',
+          ],
+        });
+        if (duel?.status !== DuelStatus.FINISHED || !duel.result) continue;
+        let winnerId = duel.winnerId;
+        let result = duel.result;
+        // Duelos de torneio podem empatar no motor principal. Resolver a
+        // classificação seguindo a mesma política dos desempates agendados.
+        if (!winnerId && result === DuelResult.DRAW) {
+          const side = decideForcedWinner({
+            player1LifePoints: duel.player1LifePoints,
+            player2LifePoints: duel.player2LifePoints,
+            player1Field: duel.player1Field,
+            player2Field: duel.player2Field,
+          });
+          winnerId = side === 1 ? duel.player1Id : duel.player2Id;
+          result = side === 1 ? DuelResult.PLAYER1_WIN : DuelResult.PLAYER2_WIN;
+          this.logger.warn(`Empate do duelo ${duel.id} resolvido para classificação do torneio: jogador ${winnerId}`);
+        }
+        if (!winnerId) continue;
+        await this.updateTournamentMatchFromDuel(duel.id, winnerId, result);
+      } catch (error) {
+        this.logger.error(`Falha ao recuperar resultado da partida ${match.id}`, error);
+      }
+    }
+  }
+
+  /**
+   * Recria os slots de classificação faltantes a partir das partidas concluídas.
+   * Recupera quedas entre marcar a partida FINISHED e inserir o vencedor na
+   * próxima chave. Nunca sobrescreve participantes nem duelos já iniciados.
+   */
+  private async reconcileBracketProgress(): Promise<void> {
+    const tournaments = await this.tournamentRepository.find({
+      where: { status: TournamentStatus.IN_PROGRESS },
+    });
+    for (const tournament of tournaments) {
+      if (tournament.format === TournamentFormat.ROUND_ROBIN) continue;
+      try {
+        const matches = await this.matchRepository.find({ where: { tournamentId: tournament.id } });
+        const nextById = new Map(matches.map((match) => [match.id, match]));
+        const feeds = new Map<string, TournamentMatch[]>();
+        const consolation = new Map<string, TournamentMatch[]>();
+        for (const match of matches) {
+          if (match.nextMatchId) {
+            const list = feeds.get(match.nextMatchId) ?? [];
+            list.push(match);
+            feeds.set(match.nextMatchId, list);
+          }
+          if (match.nextConsolationMatchId) {
+            const list = consolation.get(match.nextConsolationMatchId) ?? [];
+            list.push(match);
+            consolation.set(match.nextConsolationMatchId, list);
+          }
+        }
+        const terminal = (match: TournamentMatch) =>
+          [MatchStatus.FINISHED, MatchStatus.WALKOVER].includes(match.status);
+
+        for (const [targetId, sources] of [...feeds, ...consolation]) {
+          const target = nextById.get(targetId);
+          if (!target || target.duelId ||
+              ![MatchStatus.SCHEDULED, MatchStatus.READY].includes(target.status)) continue;
+          const isConsolation = consolation.has(targetId);
+          const contributing = isConsolation ? (consolation.get(targetId) ?? []) : sources;
+          contributing.sort((a, b) => a.matchNumber - b.matchNumber);
+          let changed = false;
+          for (const [index, source] of contributing.entries()) {
+            if (!terminal(source) || !source.winnerId) continue;
+            const classifiedId = isConsolation
+              ? source.player1Id === source.winnerId ? source.player2Id : source.player1Id
+              : source.winnerId;
+            if (!classifiedId) continue;
+            const slot = index === 0 ? 'player1Id' : 'player2Id';
+            if (!target[slot]) {
+              target[slot] = classifiedId;
+              changed = true;
+            } else if (target[slot] !== classifiedId) {
+              this.logger.error(`Conflito de classificado no confronto ${target.id}: esperado ${classifiedId}, encontrado ${target[slot]}`);
+            }
+          }
+          if (target.player1Id && target.player2Id &&
+              target.status === MatchStatus.SCHEDULED) {
+            target.status = MatchStatus.READY;
+            changed = true;
+          }
+          if (changed) {
+            await this.matchRepository.save(target);
+            this.logger.log(`Chave do torneio ${tournament.name} recuperada: partida ${target.matchNumber} rodada ${target.round}`);
+          }
+        }
+      } catch (error) {
+        this.logger.error(`Erro ao restaurar classificação do torneio ${tournament.id}`, error);
+      }
+    }
+  }
+
+  /** Somente torneios marcados pela nova rotina podem receber tentativas automáticas. */
+  private async reconcilePendingAwards(): Promise<void> {
+    const finished = await this.tournamentRepository.find({
+      where: { status: TournamentStatus.FINISHED },
+    });
+    for (const tournament of finished) {
+      const details = tournament.prizeDetails as Record<string, any> | null;
+      if (details?._automaticAwardsVersion !== 2) continue;
+      try {
+        await this.distributePrizes(tournament);
+      } catch (error) {
+        this.logger.error(`Falha ao conciliar prêmios do torneio ${tournament.id}`, error);
       }
     }
   }
@@ -897,10 +1046,16 @@ export class TournamentsService {
     const isRoundRobin = tournament?.format === TournamentFormat.ROUND_ROBIN;
     const winnerIdNum = Number(winnerId);
 
+    const claimed = await this.matchRepository.update(
+      { id: match.id, status: In([MatchStatus.IN_PROGRESS, MatchStatus.READY, MatchStatus.SCHEDULED]) },
+      { winnerId: winnerIdNum, status: MatchStatus.FINISHED, finishedAt: new Date() },
+    );
+    if (!claimed.affected) {
+      this.logger.debug(`Partida ${match.id} já processada por outra instância`);
+      return;
+    }
     match.winnerId = winnerIdNum;
     match.status = MatchStatus.FINISHED;
-    match.finishedAt = new Date();
-    await this.matchRepository.save(match);
 
     const loserId = match.player1Id === winnerIdNum ? match.player2Id : match.player1Id;
 
@@ -1059,7 +1214,6 @@ export class TournamentsService {
       const tNow = await this.tournamentRepository.findOne({ where: { id: match.tournamentId } });
       if (tNow?.status === TournamentStatus.FINISHED) {
         await this.distributePrizes(tNow, [3, 4]);
-        await this.awardTournamentPoints(match.tournamentId, [3, 4]);
       }
     }
 
@@ -1102,6 +1256,17 @@ export class TournamentsService {
     }
 
     if (tournament.status === TournamentStatus.FINISHED) {
+      return;
+    }
+
+    // Pontos corridos não usa nextMatchId; toda rodada depende dos próprios jogos.
+    if (tournament.format === TournamentFormat.ROUND_ROBIN) {
+      const action = roundRobinAction(tournament.matches, tournament.currentRound);
+      if (action === 'finish') {
+        await this.checkRoundRobinTournamentFinished(tournament.id);
+      } else if (action === 'advance') {
+        await this.advanceToNextRound(tournament.id);
+      }
       return;
     }
 
@@ -1247,15 +1412,35 @@ export class TournamentsService {
     if (!tournament || tournament.status === TournamentStatus.FINISHED) return;
     const total = allMatches.length;
     const finished = allMatches.filter(
-      (m) => m.status === MatchStatus.FINISHED || m.status === MatchStatus.WALKOVER,
+      (m) => [MatchStatus.FINISHED, MatchStatus.WALKOVER, MatchStatus.CANCELLED].includes(m.status),
     ).length;
     if (total === 0 || finished < total) return;
 
+    // Reconstruir o ranking a partir das partidas persistidas: contadores dos
+    // participantes podem estar desatualizados após queda no callback do duelo.
+    const totals = new Map(participants.map((p) => [p.userId, { wins: 0, losses: 0 }]));
+    for (const match of allMatches) {
+      if (![MatchStatus.FINISHED, MatchStatus.WALKOVER].includes(match.status) ||
+          !match.winnerId) continue;
+      const winner = totals.get(match.winnerId);
+      if (winner) winner.wins++;
+      const loserId = match.player1Id === match.winnerId ? match.player2Id : match.player1Id;
+      if (loserId) {
+        const loser = totals.get(loserId);
+        if (loser) loser.losses++;
+      }
+    }
+    for (const participant of participants) {
+      const score = totals.get(participant.userId)!;
+      await this.participantRepository.update(
+        { id: participant.id }, { wins: score.wins, losses: score.losses },
+      );
+    }
     const sorted = [...participants].sort((a, b) => {
-      const winsA = a.wins ?? 0;
-      const winsB = b.wins ?? 0;
-      if (winsB !== winsA) return winsB - winsA;
-      return (a.losses ?? 0) - (b.losses ?? 0);
+      const scoreA = totals.get(a.userId)!;
+      const scoreB = totals.get(b.userId)!;
+      if (scoreB.wins !== scoreA.wins) return scoreB.wins - scoreA.wins;
+      return scoreA.losses - scoreB.losses;
     });
 
     const places = [1, 2, 3, 4] as const;
@@ -1269,10 +1454,13 @@ export class TournamentsService {
     tournament.winnerId = sorted[0]?.userId ?? null;
     tournament.status = TournamentStatus.FINISHED;
     tournament.finishedAt = new Date();
+    tournament.prizeDetails = {
+      ...(tournament.prizeDetails ?? {}),
+      _automaticAwardsVersion: 2,
+    } as Tournament['prizeDetails'];
     await this.tournamentRepository.save(tournament);
 
     await this.distributePrizes(tournament);
-    await this.awardTournamentPoints(tournamentId);
     this.logger.log(`🏆 Torneio pontos corridos ${tournament.name} finalizado! Campeão: ${tournament.winnerId}`);
   }
 
@@ -1315,6 +1503,10 @@ export class TournamentsService {
     tournament.winnerId = finalMatch.winnerId;
     tournament.status = TournamentStatus.FINISHED;
     tournament.finishedAt = new Date();
+    tournament.prizeDetails = {
+      ...(tournament.prizeDetails ?? {}),
+      _automaticAwardsVersion: 2,
+    } as Tournament['prizeDetails'];
 
     const loserId =
       finalMatch.player1Id === finalMatch.winnerId
@@ -1358,7 +1550,6 @@ export class TournamentsService {
     await this.tournamentRepository.save(tournament);
 
     await this.distributePrizes(tournament);
-    await this.awardTournamentPoints(tournamentId);
 
     this.logger.log(
       `🏆 Torneio ${tournament.name} finalizado! Campeão userId=${tournament.winnerId}`,
@@ -1373,118 +1564,110 @@ export class TournamentsService {
     4: 10,
   };
 
-  private async awardTournamentPoints(tournamentId: string, onlyPlaces?: number[]) {
-    const full = await this.tournamentRepository.findOne({
-      where: { id: tournamentId },
-      relations: ['participants'],
-    });
-    if (!full?.participants?.length) return;
-    for (const p of full.participants) {
-      const place = p.finalPosition;
-      if (place == null) continue;
-      if (onlyPlaces && !onlyPlaces.includes(place)) continue;
-      const points = TournamentsService.POINTS_BY_PLACE[place];
-      if (points == null || points === 0) continue;
-      try {
-        const user = await this.usersService.findById(p.userId);
-        const current = (user as any).tournamentPoints ?? 0;
-        await this.usersService.update(p.userId, { tournamentPoints: current + points });
-        this.logger.log(`📊 Pontos de torneio: +${points} (${place}º) -> userId ${p.userId} (total: ${current + points})`);
-      } catch (err) {
-        this.logger.error(`Erro ao atribuir pontos de torneio para userId ${p.userId}:`, err);
-      }
-    }
-  }
-
   /**
-   * Distribui prêmios. onlyPlaces limita a lugares específicos (ex.: 3º/4º tardios).
-   * Idempotente via prizeDetails._awardedPlaces.
+   * Distribui prêmios e pontos de ranking na MESMA transação PostgreSQL.
+   *
+   * O lock no torneio e o marcador _awardedPlaces gravado junto com créditos,
+   * cash, estrelas, cartas e troféus impedem duplicação em reinicializações,
+   * retries e múltiplos workers. Erros fazem rollback da posição inteira.
+   * Marcadores de torneios antigos são respeitados para não pagar duas vezes.
    */
-  private async distributePrizes(tournament: Tournament, onlyPlaces?: number[]) {
-    const fullTournament = await this.tournamentRepository.findOne({
-      where: { id: tournament.id },
-      relations: ['participants', 'participants.user'],
-    });
-    if (!fullTournament) return;
-
-    const details = { ...(fullTournament.prizeDetails ?? {}) } as Record<string, any>;
-    const awardedPlaces: number[] = Array.isArray(details._awardedPlaces)
-      ? [...details._awardedPlaces]
-      : [];
+  private async distributePrizes(tournament: Tournament, onlyPlaces?: number[]): Promise<void> {
     const places = ([1, 2, 3, 4] as const).filter(
       (place) => !onlyPlaces || onlyPlaces.includes(place),
     );
-
     for (const place of places) {
-      if (awardedPlaces.includes(place)) {
-        this.logger.log(`ℹ️ Prêmio ${place}º já entregue no torneio ${fullTournament.name}, pulando`);
-        continue;
-      }
+      try {
+        await this.tournamentRepository.manager.transaction(async (manager) => {
+          const tournamentRepo = manager.getRepository(Tournament);
+          const participantRepo = manager.getRepository(TournamentParticipant);
+          const userRepo = manager.getRepository(User);
+          const userCardRepo = manager.getRepository(UserCard);
+          const achievementRepo = manager.getRepository(Achievement);
 
-      const participants = fullTournament.participants?.filter((p) => p.finalPosition === place) ?? [];
-      if (participants.length === 0) continue;
+          const locked = await tournamentRepo.createQueryBuilder('t')
+            .setLock('pessimistic_write')
+            .where('t.id = :id', { id: tournament.id })
+            .getOne();
+          if (!locked || locked.status !== TournamentStatus.FINISHED) return;
+          const details = { ...(locked.prizeDetails ?? {}) } as Record<string, any>;
+          const awardedPlaces: number[] = Array.isArray(details._awardedPlaces)
+            ? [...details._awardedPlaces] : [];
+          if (awardedPlaces.includes(place)) return;
 
-      const prize = details[place];
-      const creditLegacy = place === 1 ? fullTournament.prizeFirst : place === 2 ? fullTournament.prizeSecond : place === 3 ? fullTournament.prizeThird : 0;
-      const credit = prize?.credit ?? (place <= 3 ? creditLegacy : 0);
-      const cash = prize?.cash ?? 0;
-      const cardIds = prize?.cardIds ?? [];
-      const trophyTitle = prize?.trophyTitle;
-      const trophyIcon = prize?.trophyIcon;
-      const stars = Math.max(0, prize?.stars ?? 0);
+          const participants = await participantRepo.createQueryBuilder('p')
+            .where('p.tournamentId = :tournamentId', { tournamentId: tournament.id })
+            .andWhere('p.finalPosition = :place', { place })
+            .getMany();
+          if (!participants.length) return;
 
-      let awardedAny = false;
-      for (const p of participants) {
-        const userId = p.userId;
-        try {
-          if (stars > 0) {
-            const user = await this.usersService.findById(userId);
-            const currentStars = (user as any).stars ?? 0;
-            await this.usersService.update(userId, { stars: currentStars + stars });
-            this.logger.log(`⭐ Prêmio ${place}º: ${stars} estrela(s) -> userId ${userId}`);
-          }
-          if (credit > 0) {
-            const user = await this.usersService.findById(userId);
-            await this.usersService.update(userId, { credits: (user.credits || 0) + credit });
-            this.logger.log(`💰 Prêmio ${place}º: ${credit} créditos -> userId ${userId}`);
-          }
-          if (cash > 0) {
-            const user = await this.usersService.findById(userId);
-            await this.usersService.update(userId, { cash: (user.cash || 0) + cash });
-            this.logger.log(`💵 Prêmio ${place}º: ${cash} cash -> userId ${userId}`);
-          }
-          for (const cardId of cardIds) {
-            await this.shopService.addCardToUserInventory(userId, cardId, 'REWARD', 1);
-            this.logger.log(`🃏 Prêmio ${place}º: carta ${cardId} -> userId ${userId}`);
-          }
-          if (trophyTitle) {
-            await this.achievementsService.createForUser(userId, {
-              type: AchievementType.TOURNAMENT_WINNER,
-              title: trophyTitle,
-              description: `${fullTournament.name} - ${place}º lugar`,
-              icon: trophyIcon ?? undefined,
-              metadata: {
-                tournamentId: fullTournament.id,
-                place,
-                tournamentName: fullTournament.name,
-              },
-            });
-            this.logger.log(`🏆 Troféu ${place}º: ${trophyTitle} -> userId ${userId}`);
-          }
-          awardedAny = true;
-        } catch (err) {
-          this.logger.error(`Erro ao distribuir prêmio ${place}º para userId ${userId}:`, err);
-        }
-      }
+          const prize = details[place] ?? {};
+          const legacyCredits = place === 1 ? locked.prizeFirst
+            : place === 2 ? locked.prizeSecond
+              : place === 3 ? locked.prizeThird : 0;
+          const credits = Math.max(0, Number(prize.credit ?? legacyCredits) || 0);
+          const cash = Math.max(0, Number(prize.cash) || 0);
+          const stars = Math.max(0, Number(prize.stars) || 0);
+          const cardIds: string[] = Array.isArray(prize.cardIds) ? prize.cardIds : [];
+          const points = TournamentsService.POINTS_BY_PLACE[place] ?? 0;
 
-      if (awardedAny || participants.length > 0) {
-        awardedPlaces.push(place);
+          for (const participant of participants) {
+            const userId = participant.userId;
+            // Atualização atômica das moedas/pontos e serialização das entregas
+            // ao mesmo jogador nesta transação.
+            const user = await userRepo.createQueryBuilder('u')
+              .setLock('pessimistic_write')
+              .where('u.id = :id', { id: userId })
+              .getOne();
+            if (!user) throw new Error(`Usuário ${userId} não encontrado para premiação`);
+            if (credits > 0) await userRepo.increment({ id: userId }, 'credits', credits);
+            if (cash > 0) await userRepo.increment({ id: userId }, 'cash', cash);
+            if (stars > 0) await userRepo.increment({ id: userId }, 'stars', stars);
+            if (points > 0) await userRepo.increment({ id: userId }, 'tournamentPoints', points);
+
+            // Prêmio de torneio não pode ser perdido caso a maleta esteja cheia:
+            // recompensas são inseridas diretamente como REWARD.
+            for (const cardId of cardIds) {
+              if (typeof cardId !== 'string' || !cardId.trim()) {
+                throw new Error(`ID inválido de carta em prêmio ${place}º`);
+              }
+              const owned = await userCardRepo.findOne({ where: { userId, cardId } });
+              if (owned) {
+                await userCardRepo.increment({ id: owned.id }, 'quantity', 1);
+              } else {
+                await userCardRepo.save(userCardRepo.create({
+                  userId, cardId, quantity: 1, acquiredBy: 'REWARD',
+                }));
+              }
+            }
+
+            if (typeof prize.trophyTitle === 'string' && prize.trophyTitle.trim()) {
+              await achievementRepo.save(achievementRepo.create({
+                userId,
+                type: AchievementType.TOURNAMENT_WINNER,
+                title: prize.trophyTitle,
+                description: `${locked.name} - ${place}º lugar`,
+                icon: prize.trophyIcon ?? undefined,
+                metadata: {
+                  tournamentId: locked.id,
+                  place,
+                  tournamentName: locked.name,
+                },
+              }));
+            }
+          }
+
+          details._awardedPlaces = [...awardedPlaces, place];
+          locked.prizeDetails = details;
+          await tournamentRepo.save(locked);
+          this.logger.log(`🏆 Premiação e ranking ${place}º confirmados no torneio ${locked.name}`);
+        });
+      } catch (error) {
+        // Não gravar marcador depois de falha: o cron poderá retentar
+        // sem duplicar moedas/cartas/pontos, pois a transação fez rollback.
+        this.logger.error(`Falha ao premiar ${place}º do torneio ${tournament.id}; será reprocessado`, error);
       }
     }
-
-    details._awardedPlaces = awardedPlaces;
-    fullTournament.prizeDetails = details;
-    await this.tournamentRepository.save(fullTournament);
   }
 
   /**
@@ -1586,6 +1769,19 @@ export class TournamentsService {
       newStartAt.getTime() !== new Date(tournament.startAt).getTime();
 
     const { id: _id, createdAt, createdBy, ...safeData } = tournamentData as Partial<Tournament> & { id?: string; createdAt?: Date; createdBy?: number };
+
+    // Os indicadores de premiação são controlados exclusivamente pelo servidor.
+    // O formulário do admin edita os prêmios mas não reenvia essas propriedades:
+    // preservar os marcadores evita reentregas e perda da conciliação automática.
+    if (safeData.prizeDetails !== undefined) {
+      const previous = (tournament.prizeDetails ?? {}) as Record<string, any>;
+      const incoming = { ...(safeData.prizeDetails ?? {}) } as Record<string, any>;
+      delete incoming._awardedPlaces;
+      delete incoming._automaticAwardsVersion;
+      if (Array.isArray(previous._awardedPlaces)) incoming._awardedPlaces = previous._awardedPlaces;
+      if (previous._automaticAwardsVersion === 2) incoming._automaticAwardsVersion = 2;
+      safeData.prizeDetails = (Object.keys(incoming).length ? incoming : null) as Tournament['prizeDetails'];
+    }
 
     if (!scheduleChanged) {
       Object.assign(tournament, { ...safeData, format, roundIntervalMinutes: newInterval });
