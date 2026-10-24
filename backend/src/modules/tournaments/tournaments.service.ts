@@ -7,6 +7,7 @@ import { TournamentParticipant, ParticipantStatus } from './entities/tournament-
 import { TournamentMatch, MatchStatus } from './entities/tournament-match.entity';
 import { DuelsService } from '../duels/duels.service';
 import { Duel, DuelOrigin, DuelResult, DuelStatus } from '../duels/entities/duel.entity';
+import { decideForcedWinner } from '../duels/duel-schedule-tiebreak';
 import { UsersService } from '../users/users.service';
 import { AchievementsService } from '../users/achievements.service';
 import { ShopService } from '../shop/shop.service';
@@ -199,10 +200,30 @@ export class TournamentsService {
       try {
         const duel = await duelRepo.findOne({
           where: { id: match.duelId },
-          select: ['id', 'status', 'winnerId', 'result'],
+          select: [
+            'id', 'status', 'winnerId', 'result',
+            'player1Id', 'player2Id', 'player1LifePoints', 'player2LifePoints',
+            'player1Field', 'player2Field',
+          ],
         });
-        if (duel?.status !== DuelStatus.FINISHED || !duel.winnerId || !duel.result) continue;
-        await this.updateTournamentMatchFromDuel(duel.id, duel.winnerId, duel.result);
+        if (duel?.status !== DuelStatus.FINISHED || !duel.result) continue;
+        let winnerId = duel.winnerId;
+        let result = duel.result;
+        // Duelos de torneio podem empatar no motor principal. Resolver a
+        // classificação seguindo a mesma política dos desempates agendados.
+        if (!winnerId && result === DuelResult.DRAW) {
+          const side = decideForcedWinner({
+            player1LifePoints: duel.player1LifePoints,
+            player2LifePoints: duel.player2LifePoints,
+            player1Field: duel.player1Field,
+            player2Field: duel.player2Field,
+          });
+          winnerId = side === 1 ? duel.player1Id : duel.player2Id;
+          result = side === 1 ? DuelResult.PLAYER1_WIN : DuelResult.PLAYER2_WIN;
+          this.logger.warn(`Empate do duelo ${duel.id} resolvido para classificação do torneio: jogador ${winnerId}`);
+        }
+        if (!winnerId) continue;
+        await this.updateTournamentMatchFromDuel(duel.id, winnerId, result);
       } catch (error) {
         this.logger.error(`Falha ao recuperar resultado da partida ${match.id}`, error);
       }
