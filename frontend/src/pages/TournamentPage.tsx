@@ -23,6 +23,7 @@ interface Tournament {
   registrationOpenAt: string;
   registrationCloseAt: string;
   startAt: string;
+  roundIntervalMinutes?: number;
   finishedAt?: string;
   prizeFirst: number;
   prizeSecond: number;
@@ -403,6 +404,7 @@ export default function TournamentPage() {
         </div>
         <div className="space-y-1.5 text-gray-400 text-sm mb-4">
           <p>📅 Início: {new Date(tournament.startAt).toLocaleString('pt-BR')}</p>
+          <p>⏱️ Rodadas a cada {tournament.roundIntervalMinutes ?? 60} min</p>
           <p>👥 {tournament.currentParticipants}/{tournament.maxParticipants} participantes</p>
           <p>🏆 1º: {tournament.prizeFirst} créditos</p>
           {tournament.entryFee > 0 && <p>💰 Taxa: {tournament.entryFee} {tournament.entryFeeType === 'cash' ? 'cash' : 'créditos'}</p>}
@@ -647,6 +649,9 @@ export default function TournamentPage() {
                     <h3 className="text-lg font-bold text-amber-400 flex items-center gap-2">
                       <span>🏆</span> Chave do Torneio
                     </h3>
+                    <p className="mt-1 text-xs text-amber-200/80">
+                      ⏱️ Intervalo entre fases: {selectedTournament.roundIntervalMinutes ?? 60} minuto(s)
+                    </p>
                     {selectedTournament.status === 'registration_closed' && (
                       <p className="text-gray-400 text-sm mt-1">
                         Vagas preenchidas — a chave já está disponível. Início em{' '}
