@@ -1770,6 +1770,19 @@ export class TournamentsService {
 
     const { id: _id, createdAt, createdBy, ...safeData } = tournamentData as Partial<Tournament> & { id?: string; createdAt?: Date; createdBy?: number };
 
+    // Os indicadores de premiação são controlados exclusivamente pelo servidor.
+    // O formulário do admin edita os prêmios mas não reenvia essas propriedades:
+    // preservar os marcadores evita reentregas e perda da conciliação automática.
+    if (safeData.prizeDetails !== undefined) {
+      const previous = (tournament.prizeDetails ?? {}) as Record<string, any>;
+      const incoming = { ...(safeData.prizeDetails ?? {}) } as Record<string, any>;
+      delete incoming._awardedPlaces;
+      delete incoming._automaticAwardsVersion;
+      if (Array.isArray(previous._awardedPlaces)) incoming._awardedPlaces = previous._awardedPlaces;
+      if (previous._automaticAwardsVersion === 2) incoming._automaticAwardsVersion = 2;
+      safeData.prizeDetails = (Object.keys(incoming).length ? incoming : null) as Tournament['prizeDetails'];
+    }
+
     if (!scheduleChanged) {
       Object.assign(tournament, { ...safeData, format, roundIntervalMinutes: newInterval });
       return this.tournamentRepository.save(tournament);
