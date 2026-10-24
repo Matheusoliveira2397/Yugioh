@@ -9845,7 +9845,7 @@ export class DuelsService implements OnModuleInit {
     
     // Processar efeito da spell equip (calcula bonus de ATK, etc)
     // O processCardEffect será chamado com o monstro já selecionado
-    await this.processCardEffect(duelIdStr, duel, isPlayer1, spellCard, spellTrapZoneIndex, monsterZoneIndex);
+    await this.cardEffectsService.processCardEffect(duelIdStr, duel, isPlayer1, spellCard, spellTrapZoneIndex, monsterZoneIndex);
     
     // Recalcular TODOS os monstros com equipamentos após adicionar um novo equipamento (ATK e DEF)
     playerField.monsters.forEach((m: any, idx: number) => {
@@ -9989,7 +9989,7 @@ export class DuelsService implements OnModuleInit {
     
     // Processar efeito da spell equip (calcula bonus de ATK, etc)
     // O processCardEffect será chamado com o monstro já selecionado
-    await this.processCardEffect(duelIdStr, duel, isPlayer1, spellCard, spellTrapZoneIndex, monsterZoneIndex);
+    await this.cardEffectsService.processCardEffect(duelIdStr, duel, isPlayer1, spellCard, spellTrapZoneIndex, monsterZoneIndex);
     
     // Recalcular TODOS os monstros com equipamentos após adicionar um novo equipamento (ATK e DEF)
     playerField.monsters.forEach((m: any, idx: number) => {
