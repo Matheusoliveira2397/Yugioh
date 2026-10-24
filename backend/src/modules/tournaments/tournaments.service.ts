@@ -13,6 +13,7 @@ import { ShopService } from '../shop/shop.service';
 import { AchievementType } from '../users/entities/achievement.entity';
 import { User } from '../users/entities/user.entity';
 import { UserCard } from '../shop/entities/user-card.entity';
+import { roundRobinAction } from './tournament-completion-policy';
 import { Achievement } from '../users/entities/achievement.entity';
 import { ManagedBot } from '../bots/entities/managed-bot.entity';
 import { DEFAULT_ROUND_INTERVAL_MINUTES, roundScheduledAt, validateRoundIntervalMinutes } from './tournament-round-schedule';
@@ -1164,20 +1165,12 @@ export class TournamentsService {
       return;
     }
 
-    // Round-robin não usa nextMatchId. Cada rodada termina quando seus duelos
-    // terminam, e o torneio só termina após TODAS as partidas de TODAS as fases.
+    // Pontos corridos não usa nextMatchId; toda rodada depende dos próprios jogos.
     if (tournament.format === TournamentFormat.ROUND_ROBIN) {
-      const allMatches = tournament.matches;
-      if (!allMatches.length) return;
-      const done = (m: TournamentMatch) =>
-        [MatchStatus.FINISHED, MatchStatus.WALKOVER, MatchStatus.CANCELLED].includes(m.status);
-      if (allMatches.every(done)) {
+      const action = roundRobinAction(tournament.matches, tournament.currentRound);
+      if (action === 'finish') {
         await this.checkRoundRobinTournamentFinished(tournament.id);
-        return;
-      }
-      const maxRound = Math.max(...allMatches.map((m) => m.round));
-      const roundMatches = allMatches.filter((m) => m.round === tournament.currentRound);
-      if (roundMatches.length && roundMatches.every(done) && tournament.currentRound < maxRound) {
+      } else if (action === 'advance') {
         await this.advanceToNextRound(tournament.id);
       }
       return;
