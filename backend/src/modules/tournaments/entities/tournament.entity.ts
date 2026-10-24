@@ -68,6 +68,10 @@ export class Tournament {
   @Column({ type: 'timestamp' })
   startAt: Date; // Quando o torneio inicia (sorteio automático)
 
+  /** Intervalo em minutos entre o início de rodadas consecutivas (padrão: 60). */
+  @Column({ type: 'int', default: 60 })
+  roundIntervalMinutes: number;
+
   @Column({ type: 'timestamp', nullable: true })
   finishedAt: Date;
 
