@@ -1,6 +1,5 @@
 import { SimpleCardEffectFunction, CardEffectContext, CardEffectResult } from '../../interfaces/card-effect.interface';
 import { logger } from '../../../../../../common/utils/logger.util';
-import { sendSpellTrapToGraveyard } from '../../primitives/effect-operations';
 import { changeLifePoints, sendSpellTrapToGraveyard } from '../../primitives/effect-operations';
 
 /** Embaralha uma cópia do baralho (Fisher–Yates). */
