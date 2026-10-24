@@ -43,30 +43,35 @@ export class TournamentsService {
   /**
    * Executa a cada minuto para verificar torneios que precisam de ações automáticas
    */
+  private tournamentAutomationRunning = false;
+
   @Cron(CronExpression.EVERY_MINUTE)
   async handleTournamentAutomation() {
-    const now = new Date();
-
-    // 1. Abrir inscrições automaticamente
-    await this.autoOpenRegistrations(now);
-
-    // 2. Fechar inscrições automaticamente
-    await this.autoCloseRegistrations(now);
-
-    // 3. Iniciar torneios (fazer sorteio)
-    await this.autoStartTournaments(now);
-
-    // 4. Iniciar partidas automaticamente
-    await this.autoStartMatches(now);
-
-    // 5. Recuperar conclusões gravadas no duelo mas não propagadas à chave.
-    await this.reconcileFinishedDuelMatches();
-
-    // 6. Verificar partidas que terminaram para avançar fase
-    await this.autoAdvancePhases();
-
-    // 7. Tentar novamente prêmios incompletos de torneios finalizados neste fluxo.
-    await this.reconcilePendingAwards();
+    if (this.tournamentAutomationRunning) return;
+    this.tournamentAutomationRunning = true;
+    try {
+      const now = new Date();
+      // Isolar as etapas evita que erro em inscrições ou partida impeça
+      // finalização ou pagamento de campeonatos já concluídos.
+      const tasks: Array<{ name: string; run: () => Promise<void> }> = [
+        { name: 'abrir inscrições', run: () => this.autoOpenRegistrations(now) },
+        { name: 'fechar inscrições', run: () => this.autoCloseRegistrations(now) },
+        { name: 'iniciar torneios', run: () => this.autoStartTournaments(now) },
+        { name: 'recuperar resultados', run: () => this.reconcileFinishedDuelMatches() },
+        { name: 'avançar fases', run: () => this.autoAdvancePhases() },
+        { name: 'iniciar partidas', run: () => this.autoStartMatches(now) },
+        { name: 'conciliar prêmios', run: () => this.reconcilePendingAwards() },
+      ];
+      for (const task of tasks) {
+        try {
+          await task.run();
+        } catch (error) {
+          this.logger.error(`Automação de torneio — falha ao ${task.name}`, error);
+        }
+      }
+    } finally {
+      this.tournamentAutomationRunning = false;
+    }
   }
 
   /**
@@ -1320,7 +1325,7 @@ export class TournamentsService {
     if (!tournament || tournament.status === TournamentStatus.FINISHED) return;
     const total = allMatches.length;
     const finished = allMatches.filter(
-      (m) => m.status === MatchStatus.FINISHED || m.status === MatchStatus.WALKOVER,
+      (m) => [MatchStatus.FINISHED, MatchStatus.WALKOVER, MatchStatus.CANCELLED].includes(m.status),
     ).length;
     if (total === 0 || finished < total) return;
 
