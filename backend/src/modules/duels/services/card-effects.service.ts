@@ -73,8 +73,10 @@ export class CardEffectsService {
       }
     }
 
-    // Só fallback se a carta NÃO tem efeito no registry
-    logger.info(`ℹ️ [CardEffectsService] Sem registro — fallback legado: ${cardLabel}`);
+    // Uma entrada no registry NUNCA executa o fallback em caso de erro.
+    // O fallback permanece somente para cartas ainda não migradas, preservando
+    // cartas existentes até todas terem implementação e testes equivalentes.
+    logger.warn(`⚠️ [CardEffectsService] Carta ainda não migrada para registry: ${cardLabel}`);
     return this.duelsService.processCardEffect(
       duelId,
       duel,
