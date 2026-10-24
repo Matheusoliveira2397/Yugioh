@@ -1,5 +1,6 @@
 import { SimpleCardEffectFunction, CardEffectContext, CardEffectResult } from '../../interfaces/card-effect.interface';
 import { logger } from '../../../../../../common/utils/logger.util';
+import { sendSpellTrapToGraveyard } from '../../primitives/effect-operations';
 import { changeLifePoints, sendSpellTrapToGraveyard } from '../../primitives/effect-operations';
 
 /** Embaralha uma cópia do baralho (Fisher–Yates). */
@@ -84,11 +85,7 @@ export const createUpstartGoblinEffect = (duelsService: any): SimpleCardEffectFu
     
     // Mover para o cemitério
     const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     
     // CRÍTICO: Usar syncDuelState para garantir sincronização entre cache e banco
     await (duelsService as any).syncDuelState(duelId, duel, {
@@ -133,11 +130,7 @@ export const createHinotamaEffect = (duelsService: any): SimpleCardEffectFunctio
     
     // Mover para o cemitério
     const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     
     // CRÍTICO: Usar syncDuelState para garantir sincronização entre cache e banco
     await (duelsService as any).syncDuelState(duelId, duel, {
@@ -803,11 +796,7 @@ export const createJarOfGreedEffect = (duelsService: any): SimpleCardEffectFunct
     logger.info(`✨ [JarOfGreed] Comprando 1 carta`);
     await duelsService.drawCard(duelId, userId);
     const playerField = isPlayer1 ? (duel as any).player1Field : (duel as any).player2Field;
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
@@ -921,11 +910,7 @@ export const createFissureEffect = (duelsService: any): SimpleCardEffectFunction
     } else {
       logger.info(`ℹ️ [Fissure] Nenhum monstro com face para cima no oponente`);
     }
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
@@ -963,11 +948,7 @@ export const createSmashingGroundEffect = (duelsService: any): SimpleCardEffectF
       if (!opponentField.monsterDestroyedThisTurn) opponentField.monsterDestroyedThisTurn = true;
       await (duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
     }
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
@@ -1005,11 +986,7 @@ export const createHammerShotEffect = (duelsService: any): SimpleCardEffectFunct
       if (!opponentField.monsterDestroyedThisTurn) opponentField.monsterDestroyedThisTurn = true;
       await (duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
     }
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
@@ -1053,11 +1030,7 @@ export const createShieldCrushEffect = (duelsService: any): SimpleCardEffectFunc
       await (duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
     }
 
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
@@ -1284,11 +1257,7 @@ export const createLightningVortexEffect = (duelsService: any): SimpleCardEffect
       }
     }
     if (n > 0) await (duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
@@ -1320,11 +1289,7 @@ export const createTradeInEffect = (duelsService: any): SimpleCardEffectFunction
       await duelsService.drawCard(duelId, userId);
       await duelsService.drawCard(duelId, userId);
     }
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
@@ -1358,11 +1323,7 @@ export const createDarkEruptionEffect = (duelsService: any): SimpleCardEffectFun
       if (!playerField.hand) playerField.hand = [];
       playerField.hand.push(card);
     }
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
@@ -1415,11 +1376,7 @@ export const createStampingDestructionEffect = (duelsService: any): SimpleCardEf
         );
       }
     }
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
@@ -1474,11 +1431,7 @@ export const createTributeToTheDoomedEffect = (duelsService: any): SimpleCardEff
       if (!opponentField.monsterDestroyedThisTurn) opponentField.monsterDestroyedThisTurn = true;
       await (duelsService as any).recalculateUnitedWeStandForBothPlayers(duelId, duel);
     }
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
@@ -1506,11 +1459,7 @@ export const createAncientRulesEffect = (duelsService: any): SimpleCardEffectFun
       const card = playerField.hand.splice(hi, 1)[0];
       await placeSpecialSummonedFromCard(duelsService, String(duelId), duel, isPlayer1, playerField, card, emptyZ, 'attack');
     }
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
@@ -1544,11 +1493,7 @@ export const createSilversCryEffect = (duelsService: any): SimpleCardEffectFunct
       const card = playerField.graveyard.splice(gi, 1)[0];
       await placeSpecialSummonedFromCard(duelsService, String(duelId), duel, isPlayer1, playerField, card, emptyZ, 'attack');
     }
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
@@ -1569,11 +1514,7 @@ export const createDoubleSummonEffect = (duelsService: any): SimpleCardEffectFun
     const prev = typeof playerField.bonusNormalSummonsRemaining === 'number' ? playerField.bonusNormalSummonsRemaining : 0;
     playerField.bonusNormalSummonsRemaining = prev + 1;
     logger.info(`✨ [DoubleSummon] bonusNormalSummonsRemaining=${playerField.bonusNormalSummonsRemaining}`);
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
       player2Field: (duel as any).player2Field,
@@ -1668,11 +1609,7 @@ export const createCardOfSanctityEffect = (duelsService: any): SimpleCardEffectF
     }
     
     // Move Card of Sanctity to graveyard
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
@@ -1855,11 +1792,7 @@ export const createBurstStreamOfDestructionEffect = (duelsService: any): SimpleC
     logger.info(`✨ [BurstStream] Destruiu ${destroyed} monstro(s), ${bewdZones.length} BEWD(s) não podem atacar`);
     
     // Move to GY
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
@@ -2011,11 +1944,7 @@ export const createSilentDoomEffect = (duelsService: any): SimpleCardEffectFunct
     }
     
     // Move to GY
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
@@ -2056,11 +1985,7 @@ export const createLimiterRemovalEffect = (duelsService: any): SimpleCardEffectF
     logger.info(`✨ [LimiterRemoval] ${machineCount} Machine(s) terão ATK dobrado até End Phase`);
     
     // Move to GY
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
@@ -2166,11 +2091,7 @@ export const createTheFluteOfSummoningDragonEffect = (duelsService: any): Simple
     logger.info(`✨ [FluteOfSummoningDragon] Invocou ${toSummon} Dragon(s)`);
     
     // Move to GY
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
@@ -2238,11 +2159,7 @@ export const createFiendsSanctuaryEffect = (duelsService: any): SimpleCardEffect
     
     logger.info(`✨ [FiendsSanctuary] Invocou Metal Fiend Token`);
     
-    if (playerField?.spellTrap?.[zoneIndex]) {
-      if (!playerField.graveyard) playerField.graveyard = [];
-      playerField.graveyard.push(playerField.spellTrap[zoneIndex]);
-      playerField.spellTrap[zoneIndex] = null;
-    }
+    sendSpellTrapToGraveyard(playerField, zoneIndex);
     
     await (duelsService as any).syncDuelState(duelId, duel, {
       player1Field: (duel as any).player1Field,
