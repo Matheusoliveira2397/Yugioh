@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, LessThanOrEqual, MoreThan, Between, IsNull, In } from 'typeorm';
+import { Repository, LessThan, LessThanOrEqual, MoreThan, Between, IsNull, In, Not } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Tournament, TournamentStatus, TournamentFormat } from './entities/tournament.entity';
 import { TournamentParticipant, ParticipantStatus } from './entities/tournament-participant.entity';
@@ -192,7 +192,10 @@ export class TournamentsService {
    */
   private async reconcileFinishedDuelMatches(): Promise<void> {
     const pending = await this.matchRepository.find({
-      where: { status: MatchStatus.IN_PROGRESS },
+      where: {
+        status: In([MatchStatus.IN_PROGRESS, MatchStatus.READY, MatchStatus.SCHEDULED]),
+        duelId: Not(IsNull()),
+      },
       select: ['id', 'duelId'],
     });
     const duelRepo = this.tournamentRepository.manager.getRepository(Duel);
@@ -1044,7 +1047,7 @@ export class TournamentsService {
     const winnerIdNum = Number(winnerId);
 
     const claimed = await this.matchRepository.update(
-      { id: match.id, status: In([MatchStatus.IN_PROGRESS, MatchStatus.READY]) },
+      { id: match.id, status: In([MatchStatus.IN_PROGRESS, MatchStatus.READY, MatchStatus.SCHEDULED]) },
       { winnerId: winnerIdNum, status: MatchStatus.FINISHED, finishedAt: new Date() },
     );
     if (!claimed.affected) {
