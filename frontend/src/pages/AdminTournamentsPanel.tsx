@@ -24,6 +24,7 @@ interface Tournament {
   registrationOpenAt: string;
   registrationCloseAt: string;
   startAt: string;
+  roundIntervalMinutes?: number;
   prizeFirst: number;
   prizeSecond: number;
   prizeThird: number;
@@ -106,6 +107,7 @@ export default function AdminTournamentsPanel() {
     registrationOpenAt: '',
     registrationCloseAt: '',
     startAt: '',
+    roundIntervalMinutes: 60,
     prizeFirst: 0,
     prizeSecond: 0,
     prizeThird: 0,
@@ -287,6 +289,13 @@ export default function AdminTournamentsPanel() {
       return;
     }
 
+    if (!Number.isInteger(formData.roundIntervalMinutes) ||
+        formData.roundIntervalMinutes < 1 || formData.roundIntervalMinutes > 10080) {
+      setMessage({ type: 'error', text: 'Informe um intervalo entre rodadas de 1 a 10.080 minutos (até 7 dias).' });
+      setLoading(false);
+      return;
+    }
+
     const isRoundRobin = formData.format === 'round_robin';
     if (isRoundRobin) {
       if (formData.maxParticipants < 2 || formData.maxParticipants > 128) {
@@ -367,6 +376,7 @@ export default function AdminTournamentsPanel() {
       registrationOpenAt: '',
       registrationCloseAt: '',
       startAt: '',
+      roundIntervalMinutes: 60,
       prizeFirst: 0,
       prizeSecond: 0,
       prizeThird: 0,
@@ -400,6 +410,7 @@ export default function AdminTournamentsPanel() {
       registrationOpenAt: toDatetimeLocal(tournament.registrationOpenAt),
       registrationCloseAt: toDatetimeLocal(tournament.registrationCloseAt),
       startAt: toDatetimeLocal(tournament.startAt),
+      roundIntervalMinutes: tournament.roundIntervalMinutes ?? 60,
       prizeFirst: tournament.prizeFirst,
       prizeSecond: tournament.prizeSecond,
       prizeThird: tournament.prizeThird,
@@ -787,6 +798,63 @@ export default function AdminTournamentsPanel() {
                     />
                   </div>
                 </div>
+                <div className="mt-4 rounded-xl border border-amber-400/40 bg-transparent p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <label htmlFor="tournament-round-interval" className="block text-white font-semibold mb-1">
+                        Intervalo entre as fases (minutos) *
+                      </label>
+                      <p className="text-xs text-amber-100/75 max-w-xl">
+                        Define o tempo entre o início de uma rodada e o início da próxima.
+                        As partidas de cada fase seguem o horário programado; a fase não começa antes desse horário.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      {[15, 30, 60, 120].map((minutes) => (
+                        <button
+                          key={minutes}
+                          type="button"
+                          onClick={() => setFormData({ ...formData, roundIntervalMinutes: minutes })}
+                          className={`min-h-9 rounded-lg border px-3 font-semibold transition-colors ${formData.roundIntervalMinutes === minutes
+                            ? 'border-amber-300 bg-amber-800/30 text-amber-100'
+                            : 'border-amber-400/30 bg-transparent text-white/80 hover:border-amber-300'}`}
+                        >
+                          {minutes} min
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <input
+                      id="tournament-round-interval"
+                      type="number"
+                      min={1}
+                      max={10080}
+                      step={1}
+                      required
+                      value={formData.roundIntervalMinutes}
+                      onChange={(e) => setFormData({ ...formData, roundIntervalMinutes: Number(e.target.value) })}
+                      className="w-36 rounded-lg border border-amber-400/40 bg-slate-900/40 px-3 py-2 text-white focus:outline-none focus:border-amber-300"
+                      aria-describedby="tournament-round-interval-help"
+                    />
+                    <p id="tournament-round-interval-help" className="text-sm text-amber-100/85">
+                      {formData.roundIntervalMinutes >= 60
+                        ? `A cada ${(formData.roundIntervalMinutes / 60).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} hora(s)`
+                        : `A cada ${formData.roundIntervalMinutes} minuto(s)`}
+                    </p>
+                  </div>
+                  {formData.startAt && Number.isInteger(formData.roundIntervalMinutes) &&
+                    formData.roundIntervalMinutes >= 1 && formData.roundIntervalMinutes <= 10080 &&
+                    !Number.isNaN(new Date(formData.startAt).getTime()) && (
+                    <p className="mt-3 text-xs text-white/80">
+                      1ª rodada: <strong className="text-amber-200">{new Date(formData.startAt).toLocaleString('pt-BR')}</strong>
+                      {' · '}
+                      2ª rodada: <strong className="text-amber-200">
+                        {new Date(new Date(formData.startAt).getTime() + formData.roundIntervalMinutes * 60000).toLocaleString('pt-BR')}
+                      </strong>
+                    </p>
+                  )}
+                </div>
                 {/* Resumo ao vivo */}
                 {formData.registrationOpenAt && formData.registrationCloseAt && formData.startAt && (
                   <div className="mt-4 p-3 rounded-lg bg-slate-900/80 border border-slate-600 text-sm">
@@ -1042,6 +1110,7 @@ export default function AdminTournamentsPanel() {
               <div className="space-y-2 text-gray-300 mb-4 text-sm">
                 <p>👥 {tournament.currentParticipants}/{tournament.maxParticipants} participantes</p>
                 <p>📅 Início: {new Date(tournament.startAt).toLocaleString('pt-BR')}</p>
+                <p>⏱️ Intervalo entre fases: {tournament.roundIntervalMinutes ?? 60} min</p>
                 <p>💰 Taxa: {tournament.entryFee} {tournament.entryFeeType === 'cash' ? 'cash' : 'créditos'}</p>
                 {tournament.banlist && tournament.banlist.length > 0 && (
                   <p>🚫 {tournament.banlist.length} cartas banidas</p>
