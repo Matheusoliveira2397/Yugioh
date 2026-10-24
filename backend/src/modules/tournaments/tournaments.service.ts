@@ -13,6 +13,7 @@ import { ShopService } from '../shop/shop.service';
 import { AchievementType } from '../users/entities/achievement.entity';
 import { User } from '../users/entities/user.entity';
 import { ManagedBot } from '../bots/entities/managed-bot.entity';
+import { DEFAULT_ROUND_INTERVAL_MINUTES, roundScheduledAt, validateRoundIntervalMinutes } from './tournament-round-schedule';
 import { MissionsService } from '../missions/missions.service';
 import { MissionObjectiveType } from '../missions/mission-objective.types';
 
@@ -348,6 +349,9 @@ export class TournamentsService {
       ...tournamentData,
       format,
       maxParticipants: max,
+      roundIntervalMinutes: tournamentData.roundIntervalMinutes === undefined
+        ? DEFAULT_ROUND_INTERVAL_MINUTES
+        : validateRoundIntervalMinutes(tournamentData.roundIntervalMinutes),
       minLevel: tournamentData.minLevel ?? 1,
       maxLevel: tournamentData.maxLevel ?? null,
       entryFeeType: (tournamentData as any).entryFeeType === 'cash' ? 'cash' : 'credit',
@@ -796,7 +800,7 @@ export class TournamentsService {
           player1Id: participants[pi].userId,
           player2Id: participants[pj].userId,
           status: MatchStatus.READY,
-          scheduledAt: new Date(startTime.getTime() + r * 60 * 60 * 1000),
+          scheduledAt: roundScheduledAt(startTime, r + 1, tournament.roundIntervalMinutes),
         });
       });
     }
@@ -824,7 +828,7 @@ export class TournamentsService {
           round,
           matchNumber: i + 1,
           status: MatchStatus.SCHEDULED,
-          scheduledAt: new Date(tournament.startAt.getTime() + (round - 1) * 60 * 60 * 1000),
+          scheduledAt: roundScheduledAt(tournament.startAt, round, tournament.roundIntervalMinutes),
           isThirdPlaceMatch: false,
         });
         nextRoundMatches.push(match);
@@ -839,7 +843,7 @@ export class TournamentsService {
           round: totalRounds,
           matchNumber: savedMatches.length + 1,
           status: MatchStatus.SCHEDULED,
-          scheduledAt: new Date(tournament.startAt.getTime() + (round - 1) * 60 * 60 * 1000),
+          scheduledAt: roundScheduledAt(tournament.startAt, round, tournament.roundIntervalMinutes),
           isThirdPlaceMatch: true,
         });
         const [savedThird] = await this.matchRepository.save([thirdPlaceMatch]);
@@ -1568,13 +1572,67 @@ export class TournamentsService {
       }
     }
 
+    const newInterval = tournamentData.roundIntervalMinutes === undefined
+      ? (tournament.roundIntervalMinutes ?? DEFAULT_ROUND_INTERVAL_MINUTES)
+      : validateRoundIntervalMinutes(tournamentData.roundIntervalMinutes);
+    const newStartAt = tournamentData.startAt === undefined
+      ? new Date(tournament.startAt)
+      : new Date(tournamentData.startAt);
+    if (!Number.isFinite(newStartAt.getTime())) {
+      throw new BadRequestException('Horário inicial do torneio inválido.');
+    }
+    const scheduleChanged =
+      newInterval !== (tournament.roundIntervalMinutes ?? DEFAULT_ROUND_INTERVAL_MINUTES) ||
+      newStartAt.getTime() !== new Date(tournament.startAt).getTime();
+
     const { id: _id, createdAt, createdBy, ...safeData } = tournamentData as Partial<Tournament> & { id?: string; createdAt?: Date; createdBy?: number };
-    const data = {
-      ...safeData,
-      format: format ?? tournament.format,
-    };
-    Object.assign(tournament, data);
-    return await this.tournamentRepository.save(tournament);
+
+    if (!scheduleChanged) {
+      Object.assign(tournament, { ...safeData, format, roundIntervalMinutes: newInterval });
+      return this.tournamentRepository.save(tournament);
+    }
+
+    // A edição do cronograma deve atualizar a chave que já foi gerada.
+    // Bloqueamos a edição após início dos duelos para não alterar prazos reais.
+    return this.tournamentRepository.manager.transaction(async (manager) => {
+      const tournaments = manager.getRepository(Tournament);
+      const matches = manager.getRepository(TournamentMatch);
+      const locked = await tournaments.createQueryBuilder('t')
+        .setLock('pessimistic_write')
+        .where('t.id = :id', { id: tournamentId })
+        .getOne();
+      if (!locked) throw new NotFoundException('Torneio não encontrado');
+
+      const bracket = await matches.find({ where: { tournamentId }, select: ['id', 'round', 'status', 'duelId'] });
+      if (bracket.length && (
+        [TournamentStatus.IN_PROGRESS, TournamentStatus.FINISHED, TournamentStatus.CANCELLED].includes(locked.status) ||
+        bracket.some((match) =>
+          match.status === MatchStatus.IN_PROGRESS ||
+          match.status === MatchStatus.FINISHED ||
+          !!match.duelId
+        )
+      )) {
+        throw new BadRequestException(
+          'Não é possível mudar o intervalo ou início após o começo dos duelos do torneio.',
+        );
+      }
+
+      Object.assign(locked, {
+        ...safeData,
+        format,
+        startAt: newStartAt,
+        roundIntervalMinutes: newInterval,
+      });
+      const saved = await tournaments.save(locked);
+      const rounds = [...new Set(bracket.map((m) => m.round))];
+      for (const round of rounds) {
+        await matches.update(
+          { tournamentId, round },
+          { scheduledAt: roundScheduledAt(newStartAt, round, newInterval) },
+        );
+      }
+      return saved;
+    });
   }
 
   /**

@@ -10,6 +10,11 @@ export class TournamentsDbMigrationService implements OnModuleInit {
   async onModuleInit() {
     await new Promise((resolve) => setTimeout(resolve, 800));
     try {
+      await this.ensureRoundIntervalMinutesColumn();
+    } catch (error) {
+      this.logger.error('Erro ao migrar intervalo entre rodadas em tournaments:', error);
+    }
+    try {
       await this.ensureMinLevelColumn();
     } catch (error) {
       this.logger.error('Erro ao executar migração minLevel em tournaments:', error);
@@ -53,6 +58,19 @@ export class TournamentsDbMigrationService implements OnModuleInit {
       await this.ensureTournamentClassesTable();
     } catch (error) {
       this.logger.error('Erro ao executar migração tournament_classes:', error);
+    }
+  }
+
+  /** Compatibilidade com bancos já existentes, preservando o padrão histórico de 1h. */
+  private async ensureRoundIntervalMinutesColumn() {
+    const runner = this.dataSource.createQueryRunner();
+    try {
+      await runner.connect();
+      await runner.query(
+        'ALTER TABLE "tournaments" ADD COLUMN IF NOT EXISTS "roundIntervalMinutes" INTEGER NOT NULL DEFAULT 60',
+      );
+    } finally {
+      await runner.release();
     }
   }
 
