@@ -1,17 +1,19 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, LessThanOrEqual, MoreThan, Between, IsNull } from 'typeorm';
+import { Repository, LessThan, LessThanOrEqual, MoreThan, Between, IsNull, In } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Tournament, TournamentStatus, TournamentFormat } from './entities/tournament.entity';
 import { TournamentParticipant, ParticipantStatus } from './entities/tournament-participant.entity';
 import { TournamentMatch, MatchStatus } from './entities/tournament-match.entity';
 import { DuelsService } from '../duels/duels.service';
-import { DuelOrigin, DuelResult } from '../duels/entities/duel.entity';
+import { Duel, DuelOrigin, DuelResult, DuelStatus } from '../duels/entities/duel.entity';
 import { UsersService } from '../users/users.service';
 import { AchievementsService } from '../users/achievements.service';
 import { ShopService } from '../shop/shop.service';
 import { AchievementType } from '../users/entities/achievement.entity';
 import { User } from '../users/entities/user.entity';
+import { UserCard } from '../shop/entities/user-card.entity';
+import { Achievement } from '../users/entities/achievement.entity';
 import { ManagedBot } from '../bots/entities/managed-bot.entity';
 import { DEFAULT_ROUND_INTERVAL_MINUTES, roundScheduledAt, validateRoundIntervalMinutes } from './tournament-round-schedule';
 import { MissionsService } from '../missions/missions.service';
@@ -57,8 +59,14 @@ export class TournamentsService {
     // 4. Iniciar partidas automaticamente
     await this.autoStartMatches(now);
 
-    // 5. Verificar partidas que terminaram para avançar fase
+    // 5. Recuperar conclusões gravadas no duelo mas não propagadas à chave.
+    await this.reconcileFinishedDuelMatches();
+
+    // 6. Verificar partidas que terminaram para avançar fase
     await this.autoAdvancePhases();
+
+    // 7. Tentar novamente prêmios incompletos de torneios finalizados neste fluxo.
+    await this.reconcilePendingAwards();
   }
 
   /**
@@ -166,6 +174,47 @@ export class TournamentsService {
         } catch (error) {
           this.logger.error(`Erro ao iniciar partida ${match.id}:`, error);
         }
+      }
+    }
+  }
+
+  /**
+   * Recupera partida cujo duelo já foi finalizado, mas o processo caiu antes
+   * de atualizar o resultado da chave. É seguro repetir graças ao claim de status.
+   */
+  private async reconcileFinishedDuelMatches(): Promise<void> {
+    const pending = await this.matchRepository.find({
+      where: { status: MatchStatus.IN_PROGRESS },
+      select: ['id', 'duelId'],
+    });
+    const duelRepo = this.tournamentRepository.manager.getRepository(Duel);
+    for (const match of pending) {
+      if (!match.duelId) continue;
+      try {
+        const duel = await duelRepo.findOne({
+          where: { id: match.duelId },
+          select: ['id', 'status', 'winnerId', 'result'],
+        });
+        if (duel?.status !== DuelStatus.FINISHED || !duel.winnerId || !duel.result) continue;
+        await this.updateTournamentMatchFromDuel(duel.id, duel.winnerId, duel.result);
+      } catch (error) {
+        this.logger.error(`Falha ao recuperar resultado da partida ${match.id}`, error);
+      }
+    }
+  }
+
+  /** Somente torneios marcados pela nova rotina podem receber tentativas automáticas. */
+  private async reconcilePendingAwards(): Promise<void> {
+    const finished = await this.tournamentRepository.find({
+      where: { status: TournamentStatus.FINISHED },
+    });
+    for (const tournament of finished) {
+      const details = tournament.prizeDetails as Record<string, any> | null;
+      if (details?._automaticAwardsVersion !== 2) continue;
+      try {
+        await this.distributePrizes(tournament);
+      } catch (error) {
+        this.logger.error(`Falha ao conciliar prêmios do torneio ${tournament.id}`, error);
       }
     }
   }
@@ -897,10 +946,16 @@ export class TournamentsService {
     const isRoundRobin = tournament?.format === TournamentFormat.ROUND_ROBIN;
     const winnerIdNum = Number(winnerId);
 
+    const claimed = await this.matchRepository.update(
+      { id: match.id, status: In([MatchStatus.IN_PROGRESS, MatchStatus.READY]) },
+      { winnerId: winnerIdNum, status: MatchStatus.FINISHED, finishedAt: new Date() },
+    );
+    if (!claimed.affected) {
+      this.logger.debug(`Partida ${match.id} já processada por outra instância`);
+      return;
+    }
     match.winnerId = winnerIdNum;
     match.status = MatchStatus.FINISHED;
-    match.finishedAt = new Date();
-    await this.matchRepository.save(match);
 
     const loserId = match.player1Id === winnerIdNum ? match.player2Id : match.player1Id;
 
@@ -1059,7 +1114,6 @@ export class TournamentsService {
       const tNow = await this.tournamentRepository.findOne({ where: { id: match.tournamentId } });
       if (tNow?.status === TournamentStatus.FINISHED) {
         await this.distributePrizes(tNow, [3, 4]);
-        await this.awardTournamentPoints(match.tournamentId, [3, 4]);
       }
     }
 
@@ -1102,6 +1156,25 @@ export class TournamentsService {
     }
 
     if (tournament.status === TournamentStatus.FINISHED) {
+      return;
+    }
+
+    // Round-robin não usa nextMatchId. Cada rodada termina quando seus duelos
+    // terminam, e o torneio só termina após TODAS as partidas de TODAS as fases.
+    if (tournament.format === TournamentFormat.ROUND_ROBIN) {
+      const allMatches = tournament.matches;
+      if (!allMatches.length) return;
+      const done = (m: TournamentMatch) =>
+        [MatchStatus.FINISHED, MatchStatus.WALKOVER, MatchStatus.CANCELLED].includes(m.status);
+      if (allMatches.every(done)) {
+        await this.checkRoundRobinTournamentFinished(tournament.id);
+        return;
+      }
+      const maxRound = Math.max(...allMatches.map((m) => m.round));
+      const roundMatches = allMatches.filter((m) => m.round === tournament.currentRound);
+      if (roundMatches.length && roundMatches.every(done) && tournament.currentRound < maxRound) {
+        await this.advanceToNextRound(tournament.id);
+      }
       return;
     }
 
@@ -1269,10 +1342,13 @@ export class TournamentsService {
     tournament.winnerId = sorted[0]?.userId ?? null;
     tournament.status = TournamentStatus.FINISHED;
     tournament.finishedAt = new Date();
+    tournament.prizeDetails = {
+      ...(tournament.prizeDetails ?? {}),
+      _automaticAwardsVersion: 2,
+    } as Tournament['prizeDetails'];
     await this.tournamentRepository.save(tournament);
 
     await this.distributePrizes(tournament);
-    await this.awardTournamentPoints(tournamentId);
     this.logger.log(`🏆 Torneio pontos corridos ${tournament.name} finalizado! Campeão: ${tournament.winnerId}`);
   }
 
@@ -1315,6 +1391,10 @@ export class TournamentsService {
     tournament.winnerId = finalMatch.winnerId;
     tournament.status = TournamentStatus.FINISHED;
     tournament.finishedAt = new Date();
+    tournament.prizeDetails = {
+      ...(tournament.prizeDetails ?? {}),
+      _automaticAwardsVersion: 2,
+    } as Tournament['prizeDetails'];
 
     const loserId =
       finalMatch.player1Id === finalMatch.winnerId
@@ -1358,7 +1438,6 @@ export class TournamentsService {
     await this.tournamentRepository.save(tournament);
 
     await this.distributePrizes(tournament);
-    await this.awardTournamentPoints(tournamentId);
 
     this.logger.log(
       `🏆 Torneio ${tournament.name} finalizado! Campeão userId=${tournament.winnerId}`,
