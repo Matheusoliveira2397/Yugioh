@@ -1,5 +1,5 @@
 import { Injectable, Type, Inject, forwardRef } from '@nestjs/common';
-import { ICardEffect, SimpleCardEffectFunction, SimpleCardEffectWrapper } from '../interfaces/card-effect.interface';
+import { ICardEffect, SimpleCardEffectFunction, SimpleCardEffectWrapper, EffectEvent } from '../interfaces/card-effect.interface';
 import { logger } from '../../../../../common/utils/logger.util';
 import { DuelsService } from '../../../duels.service';
 import { DuelUtilsService } from '../../duel-utils.service';
@@ -18,6 +18,7 @@ export class CardEffectRegistryService {
   /** chave normalizada → instância do efeito */
   private readonly effectsByKey = new Map<string, ICardEffect>();
   /** chave canônica (primeiro nome) → lista de aliases registrados */
+  private readonly eventRegistries = new Map<EffectEvent, CardEffectRegistryService>();
   private readonly canonicalKeys = new Set<string>();
 
   constructor(
@@ -76,6 +77,10 @@ export class CardEffectRegistryService {
         logger.error(`❌ [CardEffectRegistry] ${msg}`);
         throw new Error(msg);
       }
+    }
+    // Commit only after every alias has passed collision validation.
+    for (const key of keys) {
+      if (!key) continue;
       this.effectsByKey.set(key, instance);
       this.logInfo(`✅ Efeito registrado: ${key} -> ${label}`);
     }
@@ -89,20 +94,32 @@ export class CardEffectRegistryService {
    * Busca efeito por match EXATO de nome ou id.
    */
   findEffect(card: any): ICardEffect | null {
-    const name = normalizeCardKey(card?.name || card?.cardName || '');
-    const id = normalizeCardKey(card?.idCarta || card?.id || card?.cardId || '');
-
-    if (name) {
-      const byName = this.effectsByKey.get(name) || this.effectsByKey.get(compactCardKey(name));
-      if (byName) return byName;
-    }
-
-    if (id) {
-      const byId = this.effectsByKey.get(id) || this.effectsByKey.get(compactCardKey(id));
-      if (byId) return byId;
+    for (const candidate of [card?.name, card?.cardName, card?.idCarta, card?.id, card?.cardId]) {
+      if (candidate == null) continue;
+      const key = normalizeCardKey(candidate);
+      const effect = this.effectsByKey.get(key) || this.effectsByKey.get(compactCardKey(key));
+      if (effect) return effect;
     }
 
     return null;
+  }
+
+  /** Each timing has its own namespace: a FLIP effect cannot be activated as a spell. */
+  registerEvent(event: EffectEvent, names: string[], fn: SimpleCardEffectFunction, ids?: string[]): void {
+    if (event === 'activate') {
+      this.registerSimple(names, fn, ids);
+      return;
+    }
+    let registry = this.eventRegistries.get(event);
+    if (!registry) {
+      registry = new CardEffectRegistryService(this.duelsService, this.duelUtils);
+      this.eventRegistries.set(event, registry);
+    }
+    registry.registerSimple(names, fn, ids);
+  }
+
+  findEventEffect(event: EffectEvent, card: any): ICardEffect | null {
+    return event === 'activate' ? this.findEffect(card) : this.eventRegistries.get(event)?.findEffect(card) ?? null;
   }
 
   getRegisteredCards(): string[] {

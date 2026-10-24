@@ -1,3 +1,8 @@
+import { EffectExecutor } from './execution/effect-executor';
+import { createDekoichiFlipEffect } from './effects/Monsters/dekoichi-flip';
+import { createSnowmanEaterFlipEffect } from './effects/Monsters/snowman-eater-flip';
+import { createFiberJarFlipEffect } from './effects/Monsters/fiber-jar-flip';
+import { createMorphingJarFlipEffect } from './effects/Monsters/morphing-jar-flip';
 import { Module, OnModuleInit, forwardRef, Inject } from '@nestjs/common';
 import { CardEffectRegistryService } from './registry/card-effect-registry.service';
 import { DuelsModule } from '../../duels.module';
@@ -91,6 +96,7 @@ import {
   imports: [forwardRef(() => DuelsModule)], // Importar DuelsModule para ter acesso ao DuelsService
   providers: [
     CardEffectRegistryService,
+    EffectExecutor,
     // Serviços de segurança e monitoramento
     EffectIntegrityService,
     EffectSealService,
@@ -120,6 +126,7 @@ import {
   ],
   exports: [
     CardEffectRegistryService,
+    EffectExecutor,
     EffectIntegrityService,
     EffectSealService,
     EffectBackupService,
@@ -163,6 +170,11 @@ export class CardEffectsModule implements OnModuleInit {
     } catch (error) {
       console.error('⚠️ [CardEffectsModule] Erro ao criar backup inicial:', error);
     }
+    this.registry.registerEvent('flip', ["Dekoichi the Battlechanted Locomotive", "DekoichiTheBattlechantedLocomotive", "Dekoichi"], createDekoichiFlipEffect(this.duelsService));
+    this.registry.registerEvent('flip', ["Snowman Eater", "SnowmanEater"], createSnowmanEaterFlipEffect(this.duelsService));
+    this.registry.registerEvent('flip', ["Fiber Jar", "FiberJar"], createFiberJarFlipEffect(this.duelsService));
+    this.registry.registerEvent('flip', ["Morphing Jar", "MorphingJar"], createMorphingJarFlipEffect(this.duelsService));
+
     // Registrar efeitos complexos (classes)
     this.registry.register(DropOffEffect, this.dropOffEffect);
     this.registry.register(MysticalSpaceTyphoonEffect, this.mysticalSpaceTyphoonEffect);
