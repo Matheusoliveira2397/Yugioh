@@ -17,7 +17,7 @@ Backend build and 166 Jest tests pass. Added regression cases exercise productio
 
 ## Still required for the original full redesign
 
-- Connect the chain resolver to a persisted response-window protocol in the gateway/frontend, including opponent priority, timing, reconnect and continued resolution after choices. Existing automatic trap checks retain their previous gameplay order; they have not become interactive multiplayer chains.
+- Extend the persisted gateway/frontend chain protocol beyond its initial card adapters. See `INTERACTIVE_CHAINS.md` for the exact supported activations/responses, reconnect behavior and remaining transactional limitations. Existing automatic trap checks retain their previous gameplay order.
 - Card implementations still use DuelsService for persistence and shared game operations. A transactional state repository and complete composition through shared primitives remain to be implemented.
 - Some continuous/passive rules and field-leaving hooks remain in duel/battle utilities. The 80-action catalog covers the extracted async actions, not every possible Yu-Gi-Oh card or rule.
 - Extend gameplay characterization to every supported card, interactions, immunity and costs before describing the full redesign as complete.

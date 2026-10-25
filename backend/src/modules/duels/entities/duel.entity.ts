@@ -1,3 +1,4 @@
+import type { InteractiveChain } from '../services/card-effects/execution/interactive-chain';
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, UpdateDateColumn, JoinColumn, Index } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 
@@ -113,6 +114,9 @@ export class Duel {
 
   @Column({ name: 'finished_at', type: 'timestamp', nullable: true })
   finishedAt: Date;
+
+  @Column({ name: 'chain_state', type: 'jsonb', nullable: true })
+  chainState: InteractiveChain | null;
 
   @Column({ name: 'pending_choice', type: 'jsonb', nullable: true })
   pendingChoice: {

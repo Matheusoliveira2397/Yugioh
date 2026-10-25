@@ -1,3 +1,4 @@
+import InteractiveChainPanel from '../components/duel/InteractiveChainPanel';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -4175,6 +4176,7 @@ const DuelArena: React.FC = () => {
       className="ui-duel-view h-[100dvh] min-h-[100svh] w-full relative flex flex-col overflow-x-hidden overflow-y-auto lg:overflow-hidden min-h-0 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]"
     >
 
+      <InteractiveChainPanel socket={getSocket()} duelId={String(duelId)} userId={user?.id} />
       <ArenaFullBleedBackground basePathWithoutExt="/images/background" zIndexClass="-z-10" />
 
       {/* Banner modo espectador */}

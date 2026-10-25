@@ -1,3 +1,4 @@
+import { chainResponses } from './services/card-effects/execution/interactive-chain';
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -14,7 +15,7 @@ import { Inject, forwardRef } from '@nestjs/common';
 import { MatchmakingService } from './matchmaking.service';
 import { DuelsService } from './duels.service';
 import { DuelQueueService } from './duel-queue.service';
-import { TurnPhase, DuelOrigin, DuelStatus } from './entities/duel.entity';
+import { Duel, TurnPhase, DuelOrigin, DuelStatus } from './entities/duel.entity';
 import { UsersService } from '../users/users.service';
 import { normalizeProfileImageForClient } from '../users/profile-image.util';
 import { CardEffectsService } from './services/card-effects.service';
@@ -1054,6 +1055,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       }
 
       client.emit('duelUpdate', duelData);
+      await this.emitChainState(duel, client);
 
       // Carregar logs do duelo do banco e enviar para o cliente filtrados por jogador (cada um vê só seus logs completos; ações privadas do oponente vêm genéricas)
       try {
@@ -2234,6 +2236,52 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     }
   }
 
+  @SubscribeMessage('chainSnapshot')
+  async handleChainSnapshot(@MessageBody() data: { duelId: string }, @ConnectedSocket() client: Socket) {
+    if (!client.data.userId || !client.rooms.has(`duel_${data.duelId}`)) return;
+    const duel = await this.duelsService.findDuelByIdFromDatabase(String(data.duelId), false);
+    if (duel) await this.emitChainState(duel, client);
+  }
+
+  private readonly chainTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  private scheduleChainPass(duel: Duel) {
+    const id = String(duel.id);
+    const previous = this.chainTimers.get(id);
+    if (previous) clearTimeout(previous);
+    this.chainTimers.delete(id);
+    const chain = duel.chainState;
+    if (!chain || chain.status !== 'responding') return;
+    const expectedId = chain.id, revision = chain.revision;
+    const timer = setTimeout(() => {
+      this.chainTimers.delete(id);
+      void this.executeWithDuelLock(id, async () => {
+        const current = await this.duelsService.findDuelByIdFromDatabase(id, false);
+        if (current?.status !== DuelStatus.IN_PROGRESS || current.chainState?.id !== expectedId ||
+            current.chainState.revision !== revision || current.chainState.status !== 'responding') return;
+        await this.duelsService.interactiveChains.act(current, current.chainState.priority, { id: expectedId, revision });
+        const latest = await this.duelsService.findDuelByIdFromDatabase(id, false);
+        if (latest) {
+          this.server.to(`duel_${id}`).emit('duelUpdate', latest);
+          await this.emitChainState(latest);
+        }
+      }).catch(error => console.error('Falha no timeout da chain', error));
+    }, Math.max(0, chain.deadline - Date.now()));
+    timer.unref?.();
+    this.chainTimers.set(id, timer);
+  }
+
+  private async emitChainState(duel: Duel, onlyClient?: Socket) {
+    this.scheduleChainPass(duel);
+    const sockets = onlyClient ? [onlyClient] : await this.server.in(`duel_${duel.id}`).fetchSockets();
+    for (const socket of sockets) {
+      const actor = Number(socket.data.userId);
+      socket.emit('chainUpdate', { duelId: String(duel.id), chain: duel.chainState || null,
+        responses: duel.chainState?.status === 'responding' && duel.chainState.priority === actor
+          ? chainResponses(duel, actor, this.duelsService) : [] });
+    }
+  }
+
   @SubscribeMessage('duelAction')
   async handleDuelAction(
     @MessageBody() data: { duelId: number | string; userId?: number; actionType: string; actionData?: any },
@@ -2252,6 +2300,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     }
 
     await this.executeWithDuelLock(duelId, async () => {
+      let hadInteractiveChain = false;
       try {
 
       if (!userId || !actionType) {
@@ -2262,6 +2311,23 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       // Verificar se há escolha pendente e bloquear outras ações (exceto a própria escolha)
       // IMPORTANTE: Buscar do banco ignorando cache para ter dados atualizados
       const duel = await this.duelsService.findDuelByIdFromDatabase(duelId, true);
+      hadInteractiveChain = !!duel?.chainState;
+      if (duel?.chainState) {
+        if (actionType === 'CHAIN_PASS' || actionType === 'CHAIN_RESPOND') {
+          await this.duelsService.interactiveChains.act(duel, Number(userId), {
+            id: actionData.id, revision: actionData.revision,
+            ...(actionType === 'CHAIN_RESPOND' ? { zoneIndex: Number.isInteger(actionData.zoneIndex) ? actionData.zoneIndex : -1 } : {}),
+          });
+          return;
+        }
+        if (duel.chainState.status !== 'choice' || !duel.pendingChoice ||
+            Number(duel.pendingChoice.userId) !== Number(userId) ||
+            actionType !== `${duel.pendingChoice.type}_CHOICE`) {
+          throw new Error('Aguarde a resolução da chain');
+        }
+      } else if (actionType === 'CHAIN_PASS' || actionType === 'CHAIN_RESPOND') {
+        throw new Error('Não há chain aguardando resposta');
+      }
       if (duel && (duel as any).pendingChoice) {
         const pendingChoice = (duel as any).pendingChoice;
 
@@ -3958,6 +4024,8 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         // Change Of Heart e Brain Control também precisam entrar neste bloco para verificar se precisam de modal
         let result;
         let updatedDuel;
+
+        if (actionType === 'ACTIVATE_SPELL_TRAP' && await this.duelsService.tryStartInteractiveChain(duelId, Number(userId), cardId, zoneIndex)) return;
 
         if (!isSpecialCard && actionType === 'ACTIVATE_SPELL_TRAP' && finalPosition === 'face-up') {
           // Para outras cartas, verificar se precisa de modal ANTES de colocar no campo
@@ -9196,7 +9264,7 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         // Processar escolha do GracefulCharity
         const { instanceIdsToDiscard } = actionData;
 
-        if (!instanceIdsToDiscard || !Array.isArray(instanceIdsToDiscard) || instanceIdsToDiscard.length !== 2) {
+        if (!instanceIdsToDiscard || !Array.isArray(instanceIdsToDiscard) || instanceIdsToDiscard.length !== 2 || new Set(instanceIdsToDiscard).size !== 2) {
           client.emit('duelError', { message: 'Você deve descartar exatamente 2 cartas' });
           return;
         }
@@ -9473,6 +9541,16 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         console.error('❌ [handleDuelAction] Action data:', JSON.stringify(actionData, null, 2));
         const errorMessage = error instanceof Error ? error.message : 'Erro ao processar ação do duelo';
         client.emit('duelError', { message: errorMessage });
+      } finally {
+        const current = await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+        if (current?.chainState?.status === 'choice' && !current.pendingChoice) {
+          await this.duelsService.interactiveChains.resume(current);
+        }
+        const latest = await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+        if (latest && (hadInteractiveChain || latest.chainState)) {
+          await this.emitChainState(latest);
+          if (hadInteractiveChain || actionType === 'CHAIN_PASS' || actionType === 'CHAIN_RESPOND' || latest.chainState) this.server.to(`duel_${duelId}`).emit('duelUpdate', latest);
+        }
       }
     });
   }
@@ -9482,7 +9560,21 @@ export class DuelsGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
    */
   /** Usado pelo BotRunner e por timeouts de turno para resolver modais pendentes. */
   async autoResolvePendingChoice(duelId: string, userId: number, pendingChoice: any): Promise<void> {
-    return this.handleAutoChoice(duelId, userId, pendingChoice);
+    await this.executeWithDuelLock(duelId, async () => {
+      const current = await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+      if (!current?.pendingChoice || Number(current.pendingChoice.userId) !== Number(userId) ||
+          current.pendingChoice.type !== pendingChoice.type) return;
+      await this.handleAutoChoice(duelId, userId, current.pendingChoice);
+      const updated = await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+      if (updated?.chainState?.status === 'choice' && !updated.pendingChoice) {
+        await this.duelsService.interactiveChains.resume(updated);
+      }
+      const latest = await this.duelsService.findDuelByIdFromDatabase(duelId, false);
+      if (latest) {
+        await this.emitChainState(latest);
+        this.server.to(`duel_${duelId}`).emit('duelUpdate', latest);
+      }
+    });
   }
 
   private async handleAutoChoice(duelId: string, userId: number, pendingChoice: any): Promise<void> {
