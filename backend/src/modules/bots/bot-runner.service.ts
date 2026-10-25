@@ -352,6 +352,14 @@ export class BotRunnerService implements OnModuleInit, OnModuleDestroy {
       (await this.duelService.findDuelByIdFromDatabase(duelId, false)) ||
       snapshot;
 
+    if (duel.chainState?.status === 'responding') {
+      if (duel.chainState.priority === Number(bot.userId)) {
+        await this.gateway.handleDuelAction({ duelId, actionType: 'CHAIN_PASS',
+          actionData: { id: duel.chainState.id, revision: duel.chainState.revision } }, client);
+      }
+      return;
+    }
+
     // Pending do bot: pode ocorrer no turno do oponente
     if ((duel as any).pendingChoice && Number((duel as any).pendingChoice.userId) === Number(bot.userId)) {
       const pc = (duel as any).pendingChoice;

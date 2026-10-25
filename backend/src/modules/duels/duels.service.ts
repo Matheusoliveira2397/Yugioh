@@ -1,3 +1,4 @@
+import { InteractiveChainController, chainResponses, canStartInteractiveChain } from './services/card-effects/execution/interactive-chain';
 import { Injectable, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, In } from 'typeorm';
@@ -93,11 +94,50 @@ export class DuelsService implements OnModuleInit {
     private missionsService: MissionsService,
   ) {}
 
+  readonly interactiveChains = new InteractiveChainController(this);
+
+  async resolveInteractiveLink(duel: Duel, link: { userId: number; card: any; zoneIndex: number }) {
+    await this.cardEffectsService.processCardEffect(String(duel.id), duel,
+      Number(duel.player1Id) === link.userId, link.card, link.zoneIndex);
+    if (String(link.card.type || link.card.cardType).toLowerCase().includes('spell')) {
+      SkilledDm.addSpellCountersOnSpellResolve(Number(duel.player1Id) === link.userId ? duel.player1Field : duel.player2Field);
+    }
+    await this.recalculateMagePowerAtk(String(duel.id), duel, true);
+    await this.recalculateMagePowerAtk(String(duel.id), duel, false);
+    if (String(link.card.name || link.card.cardName || link.card.idCarta).toLowerCase().replace(/[^a-z0-9]/g, '') === 'gracefulcharity') {
+      const field = Number(duel.player1Id) === link.userId ? duel.player1Field : duel.player2Field;
+      if (field.hand.length >= 2) {
+        duel.pendingChoice = { type: 'GRACEFUL_CHARITY', userId: link.userId,
+          turnWhenStarted: duel.currentTurn, phaseWhenStarted: duel.currentPhase,
+          data: { playerHand: field.hand } };
+      }
+    }
+    await this.syncDuelState(String(duel.id), duel);
+  }
+
+  async tryStartInteractiveChain(duelId: string, userId: number, cardId: any, zoneIndex: number): Promise<boolean> {
+    const duel = await this.findDuelByIdFromDatabase(duelId, false);
+    if (!duel || ![Number(duel.player1Id), Number(duel.player2Id)].includes(Number(userId))) return false;
+    const field = Number(duel.player1Id) === Number(userId) ? duel.player1Field : duel.player2Field;
+    const matches = (c: any) => c && [c.idCarta, c.id, c.cardId, c.instanceId].some(id => id != null && String(id) === String(cardId));
+    const card = matches(field?.spellTrap?.[zoneIndex]) ? field.spellTrap[zoneIndex] : field?.hand?.find(matches);
+    if (!canStartInteractiveChain(card)) return false;
+    if (!chainResponses(duel, Number(duel.player1Id), this).length &&
+        !chainResponses(duel, Number(duel.player2Id), this).length) return false;
+    const result = await this.placeCardOnField(duelId, userId, cardId, zoneIndex, 'face-up', undefined, true);
+    if (!result.success) throw new Error(result.message);
+    const placed = await this.findDuelByIdFromDatabase(duelId, false);
+    if (!placed) throw new Error('Duelo não encontrado');
+    await this.interactiveChains.open(placed, userId, card, zoneIndex);
+    return true;
+  }
+
   /**
    * Executado automaticamente quando o módulo é inicializado
    * Verifica e adiciona a coluna pending_choice se necessário
    */
   async onModuleInit() {
+    await this.duelsRepository.query(`ALTER TABLE duels ADD COLUMN IF NOT EXISTS chain_state JSONB NULL`);
     try {
       logger.info('🔧 [DuelsService] Verificando coluna pending_choice...');
       const pendingChoiceExists = await this.duelsRepository.query(`
@@ -457,6 +497,7 @@ export class DuelsService implements OnModuleInit {
             'duel.player2Field',
             'duel.turnCounter',
             'duel.pendingChoice',
+            'duel.chainState',
             'duel.actionLogs',
           ])
           .leftJoinAndSelect('duel.player1', 'player1', undefined, [
@@ -542,6 +583,7 @@ export class DuelsService implements OnModuleInit {
               player2Field: raw.player2_field,
               turnCounter: raw.turn_counter,
               pendingChoice: raw.pending_choice,
+              chainState: raw.chain_state,
               actionLogs: raw.action_logs,
               player1: raw.player1,
               player2: raw.player2,
@@ -1219,6 +1261,7 @@ export class DuelsService implements OnModuleInit {
   private shouldPersistDuelImmediately(updates: Partial<Duel>): boolean {
     const u = updates as any;
     return (
+      Object.prototype.hasOwnProperty.call(u, 'chainState') ||
       Object.prototype.hasOwnProperty.call(u, 'pendingChoice') ||
       u.status != null ||
       u.result != null ||
@@ -9017,6 +9060,7 @@ export class DuelsService implements OnModuleInit {
    */
   async goToPhase(duelId: string | number, targetPhase: TurnPhase): Promise<Duel | null> {
     const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
+    if ((await this.findDuelByIdFromDatabase(duelIdStr, false))?.chainState) throw new Error('Resolva a chain antes de avançar');
     let duel = this.activeDuels.get(duelIdStr);
 
     // Se não encontrou em memória, buscar do banco
@@ -9163,6 +9207,7 @@ export class DuelsService implements OnModuleInit {
 
   async nextPhase(duelId: string | number): Promise<Duel | null> {
     const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
+    if ((await this.findDuelByIdFromDatabase(duelIdStr, false))?.chainState) throw new Error('Resolva a chain antes de avançar');
     let duel = this.activeDuels.get(duelIdStr);
 
     if (!duel) {
@@ -9605,6 +9650,7 @@ export class DuelsService implements OnModuleInit {
    */
   async endTurn(duelId: string | number, userId: number, cardIdsToDiscard?: string[]): Promise<{ needsDiscard: boolean; cardsToDiscard?: number; duel?: Duel }> {
     const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
+    if ((await this.findDuelByIdFromDatabase(duelIdStr, false))?.chainState) throw new Error('Resolva a chain antes de avançar');
     // Flush campo pendente antes de ler mão/avançar turno
     await this.ensureFieldStateBeforeReload(duelIdStr);
     const duel = this.activeDuels.get(duelIdStr);
@@ -9645,6 +9691,7 @@ export class DuelsService implements OnModuleInit {
    */
   async advanceToNextTurn(duelId: string | number): Promise<{ needsDiscard: boolean; duel?: Duel }> {
     const duelIdStr = typeof duelId === 'string' ? duelId : duelId.toString();
+    if ((await this.findDuelByIdFromDatabase(duelIdStr, false))?.chainState) throw new Error('Resolva a chain antes de avançar');
 
     // CRÍTICO: flush do debounce de campo ANTES de qualquer reload do Postgres.
     // Sem isso, cartas colocadas há <~2.5s somem (DB antigo sobrescreve memória) ao passar o turno.

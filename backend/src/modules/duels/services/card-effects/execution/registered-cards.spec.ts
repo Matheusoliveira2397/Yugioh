@@ -1,3 +1,5 @@
+import { InteractiveChainController } from './interactive-chain';
+import { DuelsService } from '../../../duels.service';
 import 'reflect-metadata';
 import { CardEffectsModule } from '../card-effects.module';
 import { CardEffectRegistryService } from '../registry/card-effect-registry.service';
@@ -44,6 +46,34 @@ describe('production card registrations', () => {
     });
     await new (CardEffectsModule as any)(...args).onModuleInit();
     facade = new CardEffectsService(new EffectExecutor(registry));
+  });
+
+  it('integrates a real Waboku response and Graceful Charity resolution with a persisted choice', async () => {
+    Object.assign(duel, { status: 'IN_PROGRESS', currentTurn: 1, currentPhase: 'MAIN1', turnCounter: 2 });
+    const graceful = { idCarta: 'GracefulCharity', name: 'Graceful Charity', type: 'Spell', position: 'face-up' };
+    duel.player1Field.spellTrap[0] = graceful;
+    duel.player2Field.spellTrap[0] = { idCarta: 'Waboku', name: 'Waboku', type: 'Trap', position: 'set', trapSetTurnCounter: 1 };
+    host.cardEffectsService = facade;
+    host.isJinzoOnField = () => false;
+    host.isMirageDragonBlockingTraps = () => false;
+    host.recalculateMagePowerAtk = jest.fn();
+    host.updateDuelInDatabase.mockImplementation(async (_id: any, updates: any) => Object.assign(duel, updates));
+    host.resolveInteractiveLink = (state: any, link: any) => DuelsService.prototype.resolveInteractiveLink.call(host, state, link);
+    const controller = new InteractiveChainController(host);
+    await controller.open(duel, 10, graceful, 0);
+    await controller.act(duel, 20, { id: duel.chainState.id, revision: 0, zoneIndex: 0 });
+    await controller.act(duel, 10, { id: duel.chainState.id, revision: 1 });
+    await controller.act(duel, 20, { id: duel.chainState.id, revision: 2 });
+    expect(duel.player2Field.wabokuActiveThisTurn).toBe(true);
+    expect(duel.player1Field.hand).toHaveLength(4);
+    expect(duel.player1Field.graveyard).toContain(graceful);
+    expect(duel.pendingChoice.type).toBe('GRACEFUL_CHARITY');
+    expect(duel.chainState.status).toBe('choice');
+    const restored = JSON.parse(JSON.stringify(duel));
+    Object.assign(duel, restored); duel.pendingChoice = null;
+    await new InteractiveChainController(host).resume(duel);
+    expect(duel.chainState).toBeNull();
+    expect(host.drawCard).toHaveBeenCalledTimes(3);
   });
 
   it.each([
